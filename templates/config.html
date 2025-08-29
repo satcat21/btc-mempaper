@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{{ translations.dashboard_title }} - {{ translations.settings }}</title>
+    <link rel="icon" type="image/png" href="static/favicon.png">
+    <link rel="stylesheet" href="static/css/config.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+    <a href="/" class="back-button">← <span class="button-text">{{ translations.back_to_dashboard }}</span></a>
+    
+    <div class="container">
+        <div class="header">
+            <h1>⚙️ {{ translations.settings }}</h1>
+            <p>Configure your Bitcoin dashboard</p>
+        </div>
+        
+        <div id="config-container">
+            <!-- Configuration sections will be loaded here -->
+        </div>
+        
+        <div class="config-section" style="margin-top: 25px;">
+            <div class="section-title">
+                🖼️ {{ translations.meme_management }}
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">{{ translations.upload_new_meme }}</label>
+                <div class="upload-area" id="upload-area">
+                    <input type="file" id="file-input" accept="image/*" style="display: none;">
+                    <div class="upload-placeholder">
+                        <div style="font-size: 2rem; margin-bottom: 10px;">📷</div>
+                        <p>{{ translations.upload_placeholder }}</p>
+                        <p style="font-size: 0.8rem; color: #666;">{{ translations.upload_formats }}</p>
+                    </div>
+                </div>
+                <div id="upload-progress" style="display: none; margin-top: 10px;">
+                    <div style="background: #f0f0f0; border-radius: 10px; overflow: hidden;">
+                        <div id="progress-bar" style="height: 8px; background: #667eea; width: 0%; transition: width 0.3s;"></div>
+                    </div>
+                    <p id="upload-status" style="margin-top: 5px; font-size: 0.9rem;"></p>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">{{ translations.current_memes }}</label>
+                <div id="memes-list" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; margin-top: 10px;">
+                    <!-- Memes will be loaded here -->
+                </div>
+            </div>
+        </div>
+        
+        <button id="save-button" class="save-button">💾 {{ translations.save_configuration }}</button>
+        
+        <div style="text-align: center; margin-top: 20px; display: flex; gap: 15px; justify-content: center; flex-wrap: wrap;">
+            <a href="/" class="dashboard-return-button">
+                🏠 <span class="button-text">{{ translations.back_to_dashboard }}</span>
+            </a>
+            <button id="logout-button" class="logout-button">
+                🚪 <span class="button-text">{{ translations.logout }}</span>
+            </button>
+        </div>
+    </div>
+    
+    <!-- Language Change Confirmation Modal -->
+    <div id="language-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <h3>{{ translations.language }} {{ translations.settings }}</h3>
+            <p>Changing the language will save your current settings and refresh the page. Continue?</p>
+            <div class="modal-buttons">
+                <button id="confirm-language-change" class="save-button">{{ translations.save_configuration }}</button>
+                <button id="cancel-language-change" class="cancel-button">{{ translations.cancel }}</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Delete Meme Confirmation Modal -->
+    <div id="delete-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <h3>{{ translations.delete_confirmation_title }}</h3>
+            <p>{{ translations.delete_confirmation_message }}</p>
+            <div class="modal-buttons">
+                <button id="confirm-delete" class="save-button">{{ translations.confirm_delete }}</button>
+                <button id="cancel-delete" class="cancel-button">{{ translations.cancel }}</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Meme Inspection Modal -->
+    <div id="meme-modal" class="modal" style="display: none;">
+        <div class="modal-content meme-modal-content">
+            <div class="modal-header">
+                <h3 id="meme-modal-title">Meme Preview</h3>
+                <button class="modal-close" onclick="closeMemeModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="meme-preview-container">
+                    <img id="meme-modal-image" src="" alt="Meme Preview" />
+                </div>
+                <div class="meme-info">
+                    <div class="meme-info-row">
+                        <strong>Filename:</strong> <span id="meme-modal-filename"></span>
+                    </div>
+                    <div class="meme-info-row">
+                        <strong>Dimensions:</strong> <span id="meme-modal-dimensions">Loading...</span>
+                    </div>
+                    <div class="meme-info-row">
+                        <strong>File Size:</strong> <span id="meme-modal-filesize">Loading...</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="action-button" onclick="downloadMemeFromModal()">⬇️ {{ translations.download_meme }}</button>
+                <button class="action-button delete" onclick="deleteMemeFromModal()">🗑️ {{ translations.delete_meme }}</button>
+                <button class="cancel-button" onclick="closeMemeModal()">{{ translations.cancel }}</button>
+            </div>
+        </div>
+    </div>
+    
+    <div id="notification" class="notification"></div>
+    
+    <script>
+        // Device detection for adaptive sizing
+        function detectDevice() {
+            const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+            const isHighDPI = window.devicePixelRatio >= 2;
+            const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+            
+            // Add device classes to body for enhanced CSS targeting
+            document.body.classList.add(isTouchDevice ? 'touch-device' : 'no-touch');
+            document.body.classList.add(isHighDPI ? 'high-dpi' : 'standard-dpi');
+            document.body.classList.add(isMobile ? 'mobile-device' : 'desktop-device');
+            
+            console.log('Device detected:', { isTouchDevice, isHighDPI, isMobile });
+        }
+        
+        // Run device detection on load
+        detectDevice();
+        
+        // Pass translations to JavaScript
+        window.translations = {
+            configuration_saved: "{{ translations.configuration_saved }}",
+            upload_successful: "{{ translations.upload_successful }}",
+            upload_failed: "{{ translations.upload_failed }}",
+            download_failed: "{{ translations.download_failed }}",
+            meme_deleted_successfully: "{{ translations.meme_deleted_successfully }}",
+            meme_delete_failed: "{{ translations.meme_delete_failed }}",
+            no_memes_uploaded: "{{ translations.no_memes_uploaded }}",
+            download_meme: "{{ translations.download_meme }}",
+            delete_meme: "{{ translations.delete_meme }}",
+            enabled: "{{ translations.enabled }}",
+            disabled: "{{ translations.disabled }}"
+        };
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="static/js/config.js"></script>
+</body>
+</html>

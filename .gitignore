@@ -1,0 +1,64 @@
+# Python bytecode and cache files
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+.env
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Configuration and sensitive files
+config.json
+config.json.backup
+async_wallet_address_cache.json
+async_wallet_address_cache.secure.json
+wallet_balance_cache.json
+cache_metadata.json
+optimized_balance_cache.json
+*.secure.json
+*.backup
+current.png
+current_eink.png
+*.log
+
+# User uploaded content
+static/memes/*
+
+# generated images
+current_processed.png
+
+# Test files and temporary files
+demo_*.py
+temp/
+tmp/
+*.tmp
+config/.config_key

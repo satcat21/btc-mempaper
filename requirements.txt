@@ -1,0 +1,27 @@
+# Core dependencies for Mempaper Bitcoin Dashboard
+flask==3.1.0
+flask-socketio==5.5.1
+pillow==11.0.0
+babel==2.17.0
+requests==2.32.4
+python-dotenv==1.0.1
+websocket-client==1.8.0
+werkzeug==3.1.3
+watchdog==6.0.0  # For dynamic configuration file monitoring
+argon2-cffi==25.1.0  # Secure password hashing with Argon2id
+schedule==1.2.2  # For daily XPUB optimization scheduling
+
+# Security dependencies for configuration encryption
+cryptography==45.0.6  # Lightweight encryption for sensitive config data
+psutil==6.1.0  # System info for device fingerprinting
+
+# Optional: E-Paper display support
+# Uncomment the line below if you plan to use physical e-ink displays
+# Note: omni-epd requires manual installation from source on some systems
+# Install with: pip install git+https://github.com/robweber/omni-epd.git
+# omni-epd
+
+# Development dependencies (optional)
+# pytest==8.3.4
+# black==24.10.0
+# flake8==7.1.1

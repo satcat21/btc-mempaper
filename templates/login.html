@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{{ translations.dashboard_title }} - {{ translations.login }}</title>
+    <link rel="icon" type="image/png" href="static/favicon.png">
+    <link rel="stylesheet" href="static/css/login.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-header">
+            <h1>🔒 {{ translations.login }}</h1>
+        </div>
+        
+        <div id="error-message" class="error-message" style="display: none;"></div>
+        
+        <form id="login-form">
+            <div class="form-group">
+                <label class="form-label" for="username">{{ translations.username }}</label>
+                <input type="text" id="username" class="form-input" placeholder="{{ translations.username }}" required>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label" for="password">{{ translations.password }}</label>
+                <input type="password" id="password" class="form-input" placeholder="{{ translations.password }}" required>
+            </div>
+            
+            <button type="submit" id="login-button" class="login-button">
+                🔑 {{ translations.login }}
+            </button>
+        </form>
+        
+        <div class="security-note">
+            🛡️ {{ translations.rate_limit_warning }}
+        </div>
+    </div>
+    
+    <script src="static/js/login.js"></script>
+</body>
+</html>

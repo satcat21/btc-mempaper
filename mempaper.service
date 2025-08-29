@@ -1,0 +1,39 @@
+# /etc/systemd/system/mempaper.service
+[Unit]
+Description=Mempaper Bitcoin Dashboard
+Documentation=https://github.com/your-username/btc-mempaper
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+ExecStart=/bin/sh -c ". /home/pi/btc-mempaper/.venv/bin/activate && python3 /home/pi/btc-mempaper/serve.py"
+WorkingDirectory=/home/pi/btc-mempaper
+Restart=always
+RestartSec=5
+User=pi
+Group=pi
+Environment="PATH=/home/pi/btc-mempaper/.venv/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="PYTHONPATH=/home/pi/btc-mempaper"
+Environment="PYTHONUNBUFFERED=1"
+Environment="API_RATE_LIMIT_DELAY=3"
+Environment="FLASK_ENV=production"
+Environment="MAX_REQUESTS_PER_MINUTE=10"
+Environment="CACHE_DURATION=300"
+Environment="REQUEST_TIMEOUT=30"
+
+# Security settings - Fixed for home directory access
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=false
+ReadWritePaths=/home/pi/btc-mempaper
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mempaper
+
+[Install]
+WantedBy=multi-user.target

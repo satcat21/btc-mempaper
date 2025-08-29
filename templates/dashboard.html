@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{{ translations.dashboard_title }}</title>
+    <link rel="icon" type="image/png" href="static/favicon.png">
+    <link rel="stylesheet" href="static/css/dashboard.css">
+    <script src="static/socket.io.min.js"></script>
+</head>
+<body class="orientation-{{ orientation }}">
+    <img id="dashboard" src="/image" alt="{{ translations.dashboard_title }}" />
+    <div id="status-container">
+        <div id="websocket-status" class="status-item">🔄 {{ translations.websocket_connecting }}</div>
+        <div class="status-item status-info">{{ display_icon }} {{ translations.epaper_enabled if e_ink_enabled else translations.epaper_disabled }}</div>
+        {% if console_logging_enabled %}
+        <div class="status-item status-info" title="Browser console logging is automatically enabled for authenticated users">🛠️ <span class="button-text">Auto Console Logging</span></div>
+        {% endif %}
+        <a href="/config" id="config-button" class="status-item action-button">⚙️ <span class="button-text">{{ translations.settings }}</span></a>
+        <button id="logout-button" class="status-item action-button" onclick="logout()">🚪 <span class="button-text">{{ translations.logout }}</span></button>
+        <button id="reconnect-button" class="status-item" onclick="forceReconnect()" style="display: none; cursor: pointer; border: none; background: rgba(255,255,255,0.9);">🔄 Reconnect</button>
+    </div>
+    
+    <script>
+        // Device detection and adaptive sizing
+        function detectDevice() {
+            const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+            const isHighDPI = window.devicePixelRatio >= 2;
+            const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+            
+            // Add device classes to body for enhanced CSS targeting
+            document.body.classList.add(isTouchDevice ? 'touch-device' : 'no-touch');
+            document.body.classList.add(isHighDPI ? 'high-dpi' : 'standard-dpi');
+            document.body.classList.add(isMobile ? 'mobile-device' : 'desktop-device');
+            
+            console.log('Device detected:', { isTouchDevice, isHighDPI, isMobile });
+        }
+        
+        // Run device detection on load
+        detectDevice();
+        
+        // Pass translations and config to JavaScript
+        window.translations = {
+            websocket_connected: "{{ translations.websocket_connected }}",
+            websocket_disconnected: "{{ translations.websocket_disconnected }}",
+            updated: "{{ translations.updated }}"
+        };
+        window.orientation = "{{ orientation }}";
+        window.consoleLoggingEnabled = {{ 'true' if console_logging_enabled else 'false' }};
+        
+        // Logout function
+        async function logout() {
+            try {
+                const response = await fetch('/api/logout', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                });
+                
+                if (response.ok) {
+                    // Redirect to login page after successful logout
+                    window.location.href = '/login';
+                } else {
+                    alert('Logout failed');
+                }
+            } catch (error) {
+                console.error('Logout error:', error);
+                alert('Logout failed');
+            }
+        }
+    </script>
+    <script src="static/js/dashboard.js"></script>
+</body>
+</html>

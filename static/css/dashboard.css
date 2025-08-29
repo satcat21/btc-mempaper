@@ -1,0 +1,350 @@
+body {
+    background: #1d1f31; /*linear-gradient(180deg, #6610f2 0%, #6610f2 20%, #007bff 80%, #007bff 100%);*/
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Roboto', Arial, sans-serif;
+    padding: 20px 10px; /* Minimal padding since no top bar */
+    box-sizing: border-box;
+}
+
+#dashboard {
+    /* Base sizing - will be overridden by orientation-specific rules */
+    width: auto;
+    height: auto;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    border-radius: 8px;
+    object-fit: contain;
+}
+
+/* Horizontal orientation (5:3 aspect ratio - 800x480) */
+.orientation-horizontal #dashboard {
+    /* Maximize responsive sizing that maintains 5:3 aspect ratio */
+    width: min(98vw, calc(100vh - 120px) * 5/3);
+    max-height: calc(100vh - 120px);
+    aspect-ratio: 5/3;
+}
+
+/* Vertical orientation (3:5 aspect ratio - 480x800) */
+.orientation-vertical #dashboard {
+    /* Maximize responsive sizing that maintains 3:5 aspect ratio */
+    width: min(95vw, calc(100vh - 120px) * 3/5);
+    max-height: calc(100vh - 120px);
+    aspect-ratio: 3/5;
+}
+
+/* Large displays - scale image up significantly */
+@media (min-width: 1920px) {
+    .orientation-horizontal #dashboard {
+        width: min(90vw, min(80vh * 5/3, 1600px));
+        max-height: min(80vh, 960px);
+    }
+    
+    .orientation-vertical #dashboard {
+        width: min(75vw, min(80vh * 3/5, 800px));
+        max-height: min(80vh, 1333px);
+    }
+}
+
+/* Extra large displays - even more scaling */
+@media (min-width: 2560px) {
+    .orientation-horizontal #dashboard {
+        width: min(85vw, min(75vh * 5/3, 2000px));
+        max-height: min(75vh, 1200px);
+    }
+    
+    .orientation-vertical #dashboard {
+        width: min(70vw, min(75vh * 3/5, 1000px));
+        max-height: min(75vh, 1667px);
+    }
+}
+
+/* Ultra-wide and high-res displays */
+@media (min-width: 3440px) {
+    .orientation-horizontal #dashboard {
+        width: min(80vw, min(70vh * 5/3, 2400px));
+        max-height: min(70vh, 1440px);
+    }
+    
+    .orientation-vertical #dashboard {
+        width: min(65vw, min(70vh * 3/5, 1200px));
+        max-height: min(70vh, 2000px);
+    }
+}
+
+/* High-resolution displays with tall aspect ratios */
+@media (min-height: 1440px) {
+    .orientation-horizontal #dashboard {
+        max-height: min(75vh, 1080px);
+    }
+    
+    .orientation-vertical #dashboard {
+        max-height: min(80vh, 1440px);
+    }
+}
+
+/* Very tall displays - maximize vertical space usage */
+@media (min-height: 1800px) {
+    .orientation-horizontal #dashboard {
+        max-height: min(70vh, 1440px);
+    }
+    
+    .orientation-vertical #dashboard {
+        max-height: min(75vh, 1800px);
+    }
+}
+
+/* High-resolution mobile displays (like 2960x1440) */
+@media (max-width: 480px) and (min-height: 1200px) {
+    .orientation-vertical #dashboard {
+        width: min(95vw, min(80vh * 3/5, 450px));
+        max-height: min(80vh, 900px);
+    }
+}
+
+/* Responsive Dashboard Anpassungen - Maximale mobile Nutzung */
+@media (max-width: 768px) {
+    .orientation-horizontal #dashboard {
+        width: min(99vw, calc(100vh - 100px) * 5/3);
+        max-height: calc(100vh - 100px);
+    }
+    
+    .orientation-vertical #dashboard {
+        width: min(98vw, calc(100vh - 100px) * 3/5);
+        max-height: calc(100vh - 100px);
+    }
+}
+
+@media (max-width: 480px) {
+    .orientation-horizontal #dashboard {
+        width: min(99vw, calc(100vh - 90px) * 5/3);
+        max-height: calc(100vh - 90px);
+    }
+    
+    .orientation-vertical #dashboard {
+        width: min(98vw, calc(100vh - 90px) * 3/5);
+        max-height: calc(100vh - 90px);
+    }
+}
+
+/* Touch device optimizations for maximum screen usage */
+@media (pointer: coarse) and (max-width: 768px) {
+    .orientation-vertical #dashboard {
+        width: min(98vw, calc(100vh - 95px) * 3/5);
+        max-height: calc(100vh - 95px);
+    }
+    
+    .orientation-horizontal #dashboard {
+        width: min(99vw, calc(100vh - 95px) * 5/3);
+        max-height: calc(100vh - 95px);
+    }
+}
+
+/* High-DPI touch devices (modern smartphones) - maximize usage */
+@media (pointer: coarse) and (max-width: 480px) and (min-resolution: 2dppx) {
+    .orientation-vertical #dashboard {
+        width: min(98vw, calc(100vh - 85px) * 3/5);
+        max-height: calc(100vh - 85px);
+    }
+    
+    .orientation-horizontal #dashboard {
+        width: min(99vw, calc(100vh - 85px) * 5/3);
+        max-height: calc(100vh - 85px);
+    }
+}
+
+/* Very small touch devices - maximize usage */
+@media (pointer: coarse) and (max-width: 360px) {
+    .orientation-vertical #dashboard {
+        width: min(98vw, calc(100vh - 85px) * 3/5);
+        max-height: calc(100vh - 85px);
+    }
+    
+    .orientation-horizontal #dashboard {
+        width: min(99vw, calc(100vh - 85px) * 5/3);
+        max-height: calc(100vh - 85px);
+    }
+}
+
+/* Landscape mobile optimization */
+@media (max-height: 500px) and (orientation: landscape) {
+    .orientation-horizontal #dashboard {
+        width: min(99vw, calc(100vh - 70px) * 5/3);
+        max-height: calc(100vh - 70px);
+    }
+    
+    .orientation-vertical #dashboard {
+        width: min(85vw, calc(100vh - 70px) * 3/5);
+        max-height: calc(100vh - 70px);
+    }
+}
+
+#status-container {
+    margin-top: 15px; /* Space above status container */
+    margin-bottom: 10px;
+    display: flex;
+    gap: 15px;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+}
+
+.status-item {
+    padding: 8px 16px;
+    background: #5d6182 !important;
+    border-radius: 15px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    backdrop-filter: blur(10px);
+    font-size: 12px;
+    color: white;
+    white-space: nowrap;
+    border: none;
+    cursor: default;
+}
+
+/* Action buttons (Settings and Logout) styling */
+.action-button {
+    cursor: pointer !important;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 500;
+    transition: all 0.3s ease;
+    background: #5d6182 !important;
+    color: white;
+    border: 1px solid rgba(0,0,0,0.1);
+}
+
+.action-button:hover {
+    background: #5d6182 !important;
+    color: white;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+#logout-button.action-button {
+    background: #5d6182 !important;
+    color: white !important;
+    border-color: rgba(76, 59, 162, 0.3);
+}
+
+#logout-button.action-button:hover {
+    background: rgba(76, 59, 162, 0.95) !important;
+    border-color: rgba(76, 59, 162, 0.5);
+}
+
+/* Responsive Status Container */
+@media (max-width: 480px) {
+    #status-container {
+        margin-top: 12px;
+        margin-bottom: 8px;
+        gap: 8px;
+        padding: 0 10px;
+    }
+    
+    .status-item {
+        padding: 6px 12px;
+        font-size: 11px;
+        border-radius: 12px;
+    }
+    
+    .action-button {
+        padding: 8px 14px;
+        font-size: 12px;
+        gap: 4px;
+    }
+    
+    /* Hide button text on very small screens, show only icons */
+    .action-button .button-text {
+        display: none;
+    }
+}
+
+/* Medium mobile screens - show some text */
+@media (min-width: 481px) and (max-width: 600px) {
+    .action-button {
+        font-size: 11px;
+        padding: 7px 14px;
+    }
+}
+
+.status-connected {
+    color: white; /*#28a745 !important;*/
+    border: 2px solid #28a745;
+}
+
+.status-disconnected {
+    color: white; /*#dc3545 !important;*/
+    border: 2px solid #dc3545;
+}
+
+.status-reconnecting {
+    color: white; /*#ffc107 !important;*/
+    border: 2px solid #ffc107;
+    animation: pulse 1.5s infinite;
+}
+
+.status-warning {
+    color: white; /*#fd7e14 !important;*/
+    border: 2px solid #fd7e14;
+}
+
+.status-error {
+    color: white; /*#dc3545 !important;*/
+    border: 2px solid #dc3545;
+    /*background: rgba(220, 53, 69, 0.1) !important;*/
+}
+
+.status-info {
+    color: white; /*#17a2b8 !important;*/
+    border: 2px solid #17a2b8;
+}
+
+.status-config-reload {
+    color: white; /*#6f42c1 !important;*/
+    border: 2px solid #6f42c1;
+    background: rgba(111, 66, 193, 0.1) !important;
+    animation: pulse 1s ease-in-out;
+}
+
+/* Pulse animation for reconnecting status */
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.5; }
+    100% { opacity: 1; }
+}
+
+/* Extreme mobile optimization - maximize image size */
+@media (max-width: 414px) {
+    .orientation-vertical #dashboard {
+        width: min(99vw, calc(100vh - 80px) * 3/5);
+        max-height: calc(100vh - 80px);
+    }
+    
+    .orientation-horizontal #dashboard {
+        width: min(99vw, calc(100vh - 80px) * 5/3);
+        max-height: calc(100vh - 80px);
+    }
+    
+    #status-container {
+        margin-top: 8px;
+        margin-bottom: 5px;
+    }
+}
+
+/* iPhone SE and similar very small screens */
+@media (max-width: 375px) and (max-height: 667px) {
+    .orientation-vertical #dashboard {
+        width: min(99vw, calc(100vh - 75px) * 3/5);
+        max-height: calc(100vh - 75px);
+    }
+    
+    .orientation-horizontal #dashboard {
+        width: min(99vw, calc(100vh - 75px) * 5/3);
+        max-height: calc(100vh - 75px);
+    }
+}
