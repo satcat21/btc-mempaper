@@ -22,7 +22,7 @@ const socket = io({
     pollingTimeout: 30000
 });
 
-const statusEl = document.getElementById('websocket-status');
+const statusEl = null; // WebSocket status element removed from UI
 const reconnectBtn = document.getElementById('reconnect-button');
 let reconnectAttempts = 0;
 let lastImageUpdate = null;
@@ -32,8 +32,10 @@ let imageUpdateTimeout = null; // For debouncing image updates
 socket.on('connect', () => {
     console.log("✅ Connected to Mempaper WebSocket");
     reconnectAttempts = 0; // Reset counter
-    statusEl.textContent = "🟢 " + window.translations.websocket_connected;
-    statusEl.className = "status-item status-connected";
+    if (statusEl) {
+        statusEl.textContent = "🟢 " + window.translations.websocket_connected;
+        statusEl.className = "status-item status-connected";
+    }
     reconnectBtn.style.display = "none"; // Hide reconnect button
     
     // Only request latest image if we don't have one loaded yet
@@ -50,15 +52,19 @@ socket.on('connect', () => {
 // Connection lost
 socket.on('disconnect', (reason) => {
     console.log("❌ Disconnected from Mempaper WebSocket:", reason);
-    statusEl.textContent = "🔴 " + window.translations.websocket_disconnected;
-    statusEl.className = "status-item status-disconnected";
+    if (statusEl) {
+        statusEl.textContent = "🔴 " + window.translations.websocket_disconnected;
+        statusEl.className = "status-item status-disconnected";
+    }
 });
 
 // Connection errors
 socket.on('connect_error', (error) => {
     console.error("🚫 Socket.IO connection error:", error);
-    statusEl.textContent = "🚫 Connection failed";
-    statusEl.className = "status-item status-error";
+    if (statusEl) {
+        statusEl.textContent = "🚫 Connection failed";
+        statusEl.className = "status-item status-error";
+    }
 });
 
 // Transport errors
@@ -93,8 +99,10 @@ socket.io.engine.on('upgradeError', (error) => {
 socket.on('reconnect_attempt', (attemptNumber) => {
     reconnectAttempts = attemptNumber;
     console.log(`🔄 Reconnection attempt ${attemptNumber}...`);
-    statusEl.textContent = `🔄 Reconnecting... (${attemptNumber})`;
-    statusEl.className = "status-item status-reconnecting";
+    if (statusEl) {
+        statusEl.textContent = `🔄 Reconnecting... (${attemptNumber})`;
+        statusEl.className = "status-item status-reconnecting";
+    }
     
     // Show manual reconnect button after several failed attempts
     if (attemptNumber > 5) {
@@ -105,8 +113,10 @@ socket.on('reconnect_attempt', (attemptNumber) => {
 // Reconnection successful
 socket.on('reconnect', (attemptNumber) => {
     console.log(`✅ Reconnected after ${attemptNumber} attempts`);
-    statusEl.textContent = "🟢 " + window.translations.websocket_connected + ` (reconnected)`;
-    statusEl.className = "status-item status-connected";
+    if (statusEl) {
+        statusEl.textContent = "🟢 " + window.translations.websocket_connected + ` (reconnected)`;
+        statusEl.className = "status-item status-connected";
+    }
     reconnectAttempts = 0;
     reconnectBtn.style.display = "none"; // Hide reconnect button
 });
@@ -114,16 +124,20 @@ socket.on('reconnect', (attemptNumber) => {
 // Reconnection failed
 socket.on('reconnect_failed', () => {
     console.log("❌ Reconnection failed permanently");
-    statusEl.textContent = "❌ Connection failed - refresh page";
-    statusEl.className = "status-item status-error";
+    if (statusEl) {
+        statusEl.textContent = "❌ Connection failed - refresh page";
+        statusEl.className = "status-item status-error";
+    }
     reconnectBtn.style.display = "inline-block"; // Show reconnect button
 });
 
 // Connection error
 socket.on('connect_error', (error) => {
     console.log("🚨 Connection error:", error.message);
-    statusEl.textContent = `🚨 Connection error: ${error.message}`;
-    statusEl.className = "status-item status-error";
+    if (statusEl) {
+        statusEl.textContent = `🚨 Connection error: ${error.message}`;
+        statusEl.className = "status-item status-error";
+    }
 });
 
 // New image received
@@ -152,8 +166,10 @@ socket.on('new_image', (data) => {
         // Once loaded, update the main image
         dashboardImg.src = imageUrl;
         lastImageUpdate = new Date();
-        statusEl.textContent = "✨ " + window.translations.updated + ": " + lastImageUpdate.toLocaleTimeString();
-        statusEl.className = "status-item status-connected";
+        if (statusEl) {
+            statusEl.textContent = "✨ " + window.translations.updated + ": " + lastImageUpdate.toLocaleTimeString();
+            statusEl.className = "status-item status-connected";
+        }
         console.log("✅ Dashboard image updated successfully", {
             newSrcLength: dashboardImg.src.length,
             timestamp: lastImageUpdate.toISOString()
@@ -166,8 +182,10 @@ socket.on('new_image', (data) => {
             imageDataLength: data.image.length,
             error: "Image load failed"
         });
-        statusEl.textContent = "⚠️ Failed to load new image";
-        statusEl.className = "status-item status-warning";
+        if (statusEl) {
+            statusEl.textContent = "⚠️ Failed to load new image";
+            statusEl.className = "status-item status-warning";
+        }
         
         // Don't try fallback with invalid data
         console.log("� Skipping fallback due to invalid image data");
@@ -182,7 +200,7 @@ socket.on('background_ready', (data) => {
     console.log("🚀 Background processing completed", data);
     
     // Update status to show background processing is complete
-    if (statusEl.textContent.includes('Loading') || statusEl.textContent.includes('background')) {
+    if (statusEl && (statusEl.textContent.includes('Loading') || statusEl.textContent.includes('background'))) {
         statusEl.textContent = "✅ " + (window.translations.background_ready || "Background loading complete");
         statusEl.className = "status-item status-connected";
     }
@@ -197,8 +215,10 @@ socket.on('background_ready', (data) => {
 
 socket.on('background_error', (data) => {
     console.warn("⚠️ Background processing error", data);
-    statusEl.textContent = "⚠️ " + (window.translations.background_error || "Background loading failed");
-    statusEl.className = "status-item status-warning";
+    if (statusEl) {
+        statusEl.textContent = "⚠️ " + (window.translations.background_error || "Background loading failed");
+        statusEl.className = "status-item status-warning";
+    }
     
     // Show error notification
     showNotification("Background processing failed: " + data.message, "error");

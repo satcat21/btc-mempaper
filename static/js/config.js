@@ -308,7 +308,7 @@ function createPasswordChangeInterface(key, field) {
         // Save the password
         try {
             saveButton.disabled = true;
-            saveButton.textContent = 'Saving...';
+            saveButton.textContent = 'Saving2...';
             
             // Update the config with new password
             currentConfig[key] = newPassword;
@@ -380,34 +380,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Setup modal functionality
 function setupModals() {
-    // Language change modal
-    document.getElementById('confirm-language-change').addEventListener('click', async () => {
-        if (pendingLanguageChange) {
-            // Save current configuration with new language
-            const newConfig = { ...currentConfig, language: pendingLanguageChange };
-            
-            const success = await saveConfigurationSilent(newConfig);
-            if (success) {
-                // Refresh the page to apply new language
-                window.location.reload();
-            } else {
-                showNotification('Failed to save configuration', 'error');
-                hideLanguageModal();
-            }
-        }
-    });
-    
-    document.getElementById('cancel-language-change').addEventListener('click', () => {
-        hideLanguageModal();
-        // Revert language selection
-        if (pendingLanguageChange) {
-            const languageSelect = document.querySelector('[data-config-key="language"]');
-            if (languageSelect) {
-                languageSelect.value = currentConfig.language;
-            }
-        }
-    });
-    
     // Delete confirmation modal
     document.getElementById('confirm-delete').addEventListener('click', async () => {
         if (memeToDelete) {
@@ -422,16 +394,6 @@ function setupModals() {
 }
 
 // Modal helper functions
-function showLanguageModal(newLanguage) {
-    pendingLanguageChange = newLanguage;
-    document.getElementById('language-modal').style.display = 'flex';
-}
-
-function hideLanguageModal() {
-    pendingLanguageChange = null;
-    document.getElementById('language-modal').style.display = 'none';
-}
-
 function showDeleteModal(filename) {
     memeToDelete = filename;
     document.getElementById('delete-modal').style.display = 'flex';
@@ -575,7 +537,6 @@ class MemeCache {
                 // Only use cache if it's less than 1 hour old
                 if (Date.now() - data.timestamp < 3600000) {
                     this.cache = new Map(data.memes);
-                    console.log('📱 Loaded meme cache from localStorage:', this.cache.size, 'entries');
                 }
             }
         } catch (e) {
@@ -677,7 +638,6 @@ class MemeLoader {
         }
         
         this.isLoading = true;
-        console.log(`📥 Loading memes page ${page}...`);
         
         try {
             const response = await fetch(`/api/memes?page=${page}&per_page=${this.perPage}`);
@@ -686,7 +646,6 @@ class MemeLoader {
             this.totalMemes = data.total;
             this.loadedPages.add(page);
             
-            console.log(`✅ Loaded ${data.memes.length} memes from page ${page}`);
             return data;
         } catch (error) {
             console.error('Failed to load memes page:', page, error);
@@ -766,7 +725,6 @@ async function loadMemes() {
             memesList.innerHTML = `<p style="grid-column: 1/-1; text-align: center; color: #666;">${window.translations.no_memes_uploaded}</p>`;
         }
         
-        console.log(`📊 Meme gallery loaded: ${data.memes.length} of ${data.total} memes`);
         
     } catch (error) {
         console.error('Failed to load memes:', error);
@@ -838,7 +796,6 @@ async function loadMoreMemes(page, buttonElement) {
 // Clear cache when memes are uploaded or deleted
 function clearMemeCache() {
     memeCache.clear();
-    console.log('🗑️ Meme cache cleared');
 }
 
 // Logout functionality
@@ -877,20 +834,7 @@ async function loadConfiguration() {
         categories = data.categories;
         colorOptions = data.color_options || [];
         
-        console.log('Configuration loaded:', { 
-            config: Object.keys(currentConfig).length, 
-            schema: Object.keys(configSchema).length,
-            categories: categories.length,
-            colorOptions: colorOptions.length
-        });
-        
-        // Debug wallet configuration specifically
-        if (currentConfig.wallet_balance_addresses_with_comments) {
-            console.log('Loaded wallet data:', currentConfig.wallet_balance_addresses_with_comments);
-        } else {
-            console.log('No wallet_balance_addresses_with_comments found in config');
-            console.log('Available config keys:', Object.keys(currentConfig));
-        }
+        // Check wallet configuration data
         colorOptions = data.color_options || [];
         
         // console.log('Config loaded:', currentConfig);
@@ -900,7 +844,8 @@ async function loadConfiguration() {
         renderConfigurationForm();
     } catch (error) {
         // console.error('Configuration load error:', error);
-        showNotification(`Failed to load configuration: ${error.message}`, 'error');
+        const failedMessage = window.translations?.failed_to_load_configuration || 'Failed to load configuration';
+        showNotification(`${failedMessage}: ${error.message}`, 'error');
     }
 }
 
@@ -1021,7 +966,7 @@ function renderConfigurationForm() {
     });
     
     container.appendChild(grid);
-    console.log('Configuration form rendered successfully');
+    // Render the configuration form
     
     // Load cached balances for any existing wallet entries after form is rendered
     setTimeout(() => {
@@ -1103,12 +1048,17 @@ function createFormField(key, field, value) {
                 });
             }
             
-            // Special handling for language changes
+            // Special handling for language changes - remove immediate modal, save for later
             if (key === 'language') {
                 input.addEventListener('change', (e) => {
                     const newLanguage = e.target.value;
+                    
                     if (newLanguage !== currentConfig.language) {
-                        showLanguageModal(newLanguage);
+                        // Store the language change but don't update currentConfig yet
+                        pendingLanguageChange = newLanguage;
+                    } else {
+                        // Reset if user changes back to original
+                        pendingLanguageChange = null;
                     }
                 });
             }
@@ -2438,6 +2388,152 @@ async function saveConfigurationSilent(configToSave) {
     }
 }
 
+// Navigation button save handler
+async function handleSaveButtonClick(buttonElement) {
+    if (!buttonElement) return;
+    
+    buttonElement.disabled = true;
+    const originalHTML = buttonElement.innerHTML;
+    
+    // Show saving state
+    if (buttonElement.id.includes('mobile')) {
+        buttonElement.innerHTML = '<span style="font-size: 12px;">•••</span>';
+    } else {
+        buttonElement.innerHTML = '<span>Savin3...</span>';
+    }
+    
+    try {
+        const success = await saveConfiguration();
+        // Success notification is already shown in saveConfiguration
+    } catch (error) {
+        console.error('Save button error:', error);
+        showNotification('Failed to save configuration', 'error');
+    } finally {
+        buttonElement.disabled = false;
+        buttonElement.innerHTML = originalHTML;
+    }
+}
+
+// Global function that can be called from onclick
+window.saveConfigFromButton = async function(buttonId) {
+    const button = document.getElementById(buttonId);
+    await handleSaveButtonClick(button);
+};
+
+// Save configuration function that can be called from buttons
+async function saveConfiguration() {
+    try {
+        const formConfig = {};
+        
+        // Collect all form values
+        document.querySelectorAll('[data-config-key]').forEach(element => {
+            const key = element.dataset.configKey;
+            
+            if (element.getValue) {
+                const value = element.getValue();
+                formConfig[key] = value;
+                if (key.includes('wallet')) {
+                    console.log(`Collected wallet config ${key}:`, value);
+                }
+            } else if (element.type === 'checkbox') {
+                formConfig[key] = element.checked;
+            } else if (element.type === 'number') {
+                formConfig[key] = parseInt(element.value) || 0;
+            } else {
+                formConfig[key] = element.value;
+            }
+        });
+        
+        // If we have a pending language change, make sure it's included in formConfig
+        if (pendingLanguageChange) {
+            formConfig.language = pendingLanguageChange;
+        }
+        
+        // Merge form values with current config to preserve non-form fields
+        const newConfig = { ...currentConfig, ...formConfig };
+        
+        const response = await fetch('/api/config', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(newConfig)
+        });
+        
+        if (response.status === 401) {
+            // Session expired - try to handle gracefully
+            showNotification(window.translations?.session_expired || 'Session expired. Redirecting to login...', 'error');
+            setTimeout(() => {
+                window.location.href = '/login';
+            }, 2000);
+            return false;
+        }
+        
+        if (response.status === 429) {
+            const errorData = await response.json();
+            const retryAfter = errorData.retry_after || 60;
+            const rateLimitMessage = window.translations?.rate_limit_exceeded || 'Rate limit exceeded. Please wait {seconds} seconds before trying again.';
+            showNotification(rateLimitMessage.replace('{seconds}', retryAfter), 'error');
+            return false;
+        }
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            // Check if language was changed using pendingLanguageChange
+            const oldLanguage = currentConfig.language;
+            const newLanguage = pendingLanguageChange || formConfig.language;
+            const languageChanged = pendingLanguageChange !== null || (newLanguage && newLanguage !== oldLanguage);
+            
+            console.log('🔍 Language change detection (saveConfiguration):', {
+                oldLanguage,
+                newLanguage,
+                pendingLanguageChange,
+                languageChanged,
+                'pendingLanguageChange !== null': pendingLanguageChange !== null,
+                'formConfig has language': !!formConfig.language
+            });
+            
+            // Update current config
+            currentConfig = newConfig;
+            window.currentConfig = newConfig; // Make available globally
+            
+            // Handle language change with page reload
+            if (languageChanged) {
+                console.log('🔄 LANGUAGE CHANGE DETECTED! (saveConfiguration) Processing language change from', oldLanguage, 'to', newLanguage);
+                
+                // Clear the pending change and reload page immediately
+                pendingLanguageChange = null;
+                setTimeout(() => {
+                    console.log('🔄 FORCING PAGE RELOAD for language change (saveConfiguration)');
+                    window.location.reload(true); // Force reload from server
+                }, 500); // Very short timeout for immediate reload
+                
+                return true; // Return success before reload
+            } else {
+                // Fallback check: if language in formConfig is different from what was in currentConfig
+                if (formConfig.language && formConfig.language !== oldLanguage) {
+                    console.log('🔄 FALLBACK (saveConfiguration): Language difference detected via form config!', oldLanguage, '->', formConfig.language);
+                    setTimeout(() => {
+                        console.log('🔄 FALLBACK PAGE RELOAD for language change (saveConfiguration)');
+                        window.location.reload(true);
+                    }, 500);
+                    return true;
+                }
+            }
+            
+            return true;
+        } else {
+            showNotification(result.message || 'Failed to save configuration', 'error');
+            return false;
+        }
+    } catch (error) {
+        console.error('Save configuration error:', error);
+        showNotification('Failed to save configuration', 'error');
+        return false;
+    }
+}
+
 // Save configuration
 document.getElementById('save-button').addEventListener('click', async () => {
     const button = document.getElementById('save-button');
@@ -2466,44 +2562,74 @@ document.getElementById('save-button').addEventListener('click', async () => {
             }
         });
         
-        // Merge form values with current config to preserve non-form fields
-        const newConfig = { ...currentConfig, ...formConfig };
+        // If we have a pending language change, make sure it's included in formConfig
+        if (pendingLanguageChange) {
+            formConfig.language = pendingLanguageChange;
+            console.log('Including pending language change in form config:', pendingLanguageChange);
+        }
+        
         
         const response = await fetch('/api/config', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify(newConfig)
+            body: JSON.stringify(formConfig)
         });
-        
-        if (response.status === 401) {
-            // Session expired - try to handle gracefully
-            showNotification('Session expired. Redirecting to login...', 'error');
-            setTimeout(() => {
-                window.location.href = '/login';
-            }, 2000);
-            return;
-        }
-        
-        if (response.status === 429) {
-            const errorData = await response.json();
-            const retryAfter = errorData.retry_after || 60;
-            showNotification(`Rate limit exceeded. Please wait ${retryAfter} seconds before trying again.`, 'error');
-            return;
-        }
         
         const result = await response.json();
         
         if (result.success) {
-            showNotification(window.translations.configuration_saved, 'success');
-            currentConfig = newConfig;
-            window.currentConfig = newConfig; // Make available globally
+            // Check if language was changed using pendingLanguageChange
+            const oldLanguage = currentConfig.language;
+            const newLanguage = pendingLanguageChange || formConfig.language;
+            const languageChanged = pendingLanguageChange !== null || (newLanguage && newLanguage !== oldLanguage);
+            
+            console.log('🔍 Language change detection:', {
+                oldLanguage,
+                newLanguage,
+                pendingLanguageChange,
+                languageChanged,
+                'pendingLanguageChange !== null': pendingLanguageChange !== null,
+                'formConfig has language': !!formConfig.language
+            });
+            
+            // Update current config
+            currentConfig = { ...currentConfig, ...formConfig };
+            
+            // Handle language change with new language success message
+            if (languageChanged) {
+                console.log('🔄 LANGUAGE CHANGE DETECTED! Processing language change from', oldLanguage, 'to', newLanguage);
+                
+                // Show notification and force page reload
+                showNotification('Language changed! Reloading page...', 'success');
+                
+                // Clear the pending change and reload page immediately
+                pendingLanguageChange = null;
+                setTimeout(() => {
+                    console.log('🔄 FORCING PAGE RELOAD for language change');
+                    window.location.reload(true); // Force reload from server
+                }, 1000); // Shorter timeout
+            } else {
+                // Fallback check: if language in formConfig is different from what was in currentConfig
+                if (formConfig.language && formConfig.language !== oldLanguage) {
+                    console.log('🔄 FALLBACK: Language difference detected via form config!', oldLanguage, '->', formConfig.language);
+                    showNotification('Language changed! Reloading page...', 'success');
+                    setTimeout(() => {
+                        console.log('🔄 FALLBACK PAGE RELOAD for language change');
+                        window.location.reload(true);
+                    }, 1000);
+                } else {
+                    console.log('ℹ️ No language change detected, showing normal success message');
+                    showNotification(window.translations?.configuration_saved || 'Configuration saved successfully!', 'success');
+                }
+            }
         } else {
-            showNotification(result.message || 'Failed to save configuration', 'error');
+            showNotification(result.message || window.translations?.failed_to_save_configuration || 'Failed to save configuration', 'error');
         }
     } catch (error) {
-        showNotification('Failed to save configuration', 'error');
+        console.error('Error saving configuration:', error);
+        showNotification(window.translations?.failed_to_save_configuration || 'Failed to save configuration', 'error');
     } finally {
         button.disabled = false;
         button.textContent = '💾 Save Configuration';
@@ -2540,73 +2666,54 @@ let notificationTimeout = null;
 
 function showNotification(message, type = 'success') {
     const notification = document.getElementById('notification');
-    
+    if (!notification) return;
     // Clear any existing timeout
     if (notificationTimeout) {
         clearTimeout(notificationTimeout);
     }
-    
-    // Create notification content with close button
-    const messageSpan = document.createElement('span');
-    messageSpan.textContent = message;
-    messageSpan.style.flex = '1';
-    
-    const closeBtn = document.createElement('button');
-    closeBtn.className = 'close-btn';
-    closeBtn.innerHTML = '×';
-    closeBtn.setAttribute('aria-label', 'Close notification');
-    closeBtn.onclick = function(e) {
-        e.stopPropagation();
-        hideNotification();
-    };
-    
-    // Clear notification and add new content
-    notification.innerHTML = '';
-    notification.appendChild(messageSpan);
-    notification.appendChild(closeBtn);
-    
-    // Set notification style
-    notification.className = `notification ${type}`;
-    notification.classList.add('show');
-    
-    // Add click-to-dismiss functionality
-    notification.onclick = function() {
-        hideNotification();
-    };
-    
-    // Set auto-hide duration based on type
-    let duration;
-    switch (type) {
-        case 'error':
-            duration = 15000; // 15 seconds for errors
-            break;
-        case 'warning':
-            duration = 8000;  // 8 seconds for warnings
-            break;
-        case 'success':
-        default:
-            duration = 5000;  // 5 seconds for success/info
-            break;
+    // Content
+    notification.textContent = message;
+    // Inline, centered, narrow styling
+    notification.style.position = 'fixed';
+    notification.style.top = '18px';
+    notification.style.left = '50%';
+    notification.style.transform = 'translateX(-50%)';
+    notification.style.zIndex = '9999';
+    notification.style.padding = '10px 16px';
+    notification.style.borderRadius = '10px';
+    notification.style.fontSize = '0.95rem';
+    notification.style.minWidth = '200px';
+    notification.style.maxWidth = '360px';
+    notification.style.width = 'auto';
+    notification.style.textAlign = 'center';
+    notification.style.boxShadow = '0 8px 24px rgba(0,0,0,0.25)';
+    if (type === 'error') {
+        notification.style.background = '#e53e3e';
+        notification.style.color = '#fff';
+    } else if (type === 'warning') {
+        notification.style.background = '#d69e2e';
+        notification.style.color = '#1f1f1f';
+    } else if (type === 'info') {
+        notification.style.background = '#3182ce';
+        notification.style.color = '#fff';
+    } else {
+        notification.style.background = '#38a169';
+        notification.style.color = '#fff';
     }
-    
-    // Auto-hide notification after duration
-    notificationTimeout = setTimeout(() => {
-        hideNotification();
-    }, duration);
+    notification.style.display = 'block';
+    // Auto-hide duration
+    let duration = type === 'error' ? 8000 : type === 'warning' ? 5000 : 2500;
+    notificationTimeout = setTimeout(() => { hideNotification(); }, duration);
 }
 
 function hideNotification() {
     const notification = document.getElementById('notification');
-    notification.classList.remove('show');
-    
-    // Clear timeout if it exists
+    if (!notification) return;
+    notification.style.display = 'none';
     if (notificationTimeout) {
         clearTimeout(notificationTimeout);
         notificationTimeout = null;
     }
-    
-    // Remove click handler
-    notification.onclick = null;
 }
 
 // Meme Modal Functions
@@ -2994,7 +3101,7 @@ function initializeWebSocket() {
             configSocket.on('wallet_balance_updated', (data) => {
                 console.log('📊 Received wallet balance update:', data);
                 updateWalletBalancesFromWebSocket(data);
-                showNotification('Wallet balances updated automatically!', 'success');
+                showNotification(window.translations?.wallet_balances_updated || 'Wallet balances updated automatically!', 'success');
             });
             
         } catch (error) {
@@ -3085,7 +3192,7 @@ function setupNavigationButtons() {
                 if (button.id.includes('mobile')) {
                     button.innerHTML = '<span style="font-size: 12px;">•••</span>';
                 } else {
-                    button.innerHTML = '<span>Saving...</span>';
+                    button.innerHTML = '<span>Saving5...</span>';
                 }
                 
                 try {
@@ -3107,6 +3214,17 @@ function setupNavigationButtons() {
                         formConfig[key] = value;
                     });
                     
+                    // If we have a pending language change, make sure it's included in formConfig
+                    if (pendingLanguageChange) {
+                        formConfig.language = pendingLanguageChange;
+                        console.log('Including pending language change in form config:', pendingLanguageChange);
+                    }
+                    
+                    console.log('Form config collected:', formConfig);
+                    console.log('Current config language:', currentConfig.language);
+                    console.log('Form config language:', formConfig.language);
+                    console.log('Pending language change:', pendingLanguageChange);
+                    
                     console.log('Saving configuration:', formConfig);
                     
                     const response = await fetch('/api/config', {
@@ -3120,15 +3238,55 @@ function setupNavigationButtons() {
                     const result = await response.json();
                     
                     if (result.success) {
-                        showNotification(window.translations.configuration_saved || 'Configuration saved successfully!');
+                        // Check if language was changed using pendingLanguageChange
+                        const oldLanguage = currentConfig.language;
+                        const newLanguage = pendingLanguageChange || formConfig.language;
+                        const languageChanged = pendingLanguageChange !== null || (newLanguage && newLanguage !== oldLanguage);
+                        
+                        console.log('🔍 Language change detection (nav buttons):', {
+                            oldLanguage,
+                            newLanguage,
+                            pendingLanguageChange,
+                            languageChanged,
+                            'pendingLanguageChange !== null': pendingLanguageChange !== null,
+                            'formConfig has language': !!formConfig.language
+                        });
+                        
                         // Update current config
                         currentConfig = { ...currentConfig, ...formConfig };
+                        
+                        // Handle language change with new language success message
+                        if (languageChanged) {
+                            console.log('🔄 LANGUAGE CHANGE DETECTED! (nav buttons) Processing language change from', oldLanguage, 'to', newLanguage);
+                            
+                            // Show notification and force page reload
+                            showNotification('Language changed! Reloading page...', 'success');
+                            
+                            // Clear the pending change and reload page immediately
+                            pendingLanguageChange = null;
+                            setTimeout(() => {
+                                console.log('🔄 FORCING PAGE RELOAD for language change (nav buttons)');
+                                window.location.reload(true); // Force reload from server
+                            }, 1000); // Shorter timeout
+                        } else {
+                            // Fallback check: if language in formConfig is different from what was in currentConfig
+                            if (formConfig.language && formConfig.language !== oldLanguage) {
+                                console.log('🔄 FALLBACK (nav): Language difference detected via form config!', oldLanguage, '->', formConfig.language);
+                                showNotification('Language changed! Reloading page...', 'success');
+                                setTimeout(() => {
+                                    console.log('🔄 FALLBACK PAGE RELOAD for language change (nav)');
+                                    window.location.reload(true);
+                                }, 1000);
+                            } else {
+                                showNotification(window.translations?.configuration_saved || 'Configuration saved successfully!', 'success');
+                            }
+                        }
                     } else {
-                        showNotification(result.message || 'Failed to save configuration', 'error');
+                        showNotification(result.message || window.translations?.failed_to_save_configuration || 'Failed to save configuration', 'error');
                     }
                 } catch (error) {
                     console.error('Error saving configuration:', error);
-                    showNotification('Failed to save configuration', 'error');
+                    showNotification(window.translations?.failed_to_save_configuration || 'Failed to save configuration', 'error');
                 } finally {
                     button.disabled = false;
                     button.innerHTML = originalHTML;
@@ -3141,9 +3299,16 @@ function setupNavigationButtons() {
     const setupLogoutButton = (buttonId) => {
         const button = document.getElementById(buttonId);
         if (button) {
-            button.addEventListener('click', () => {
-                if (confirm(window.translations.confirm_logout || 'Are you sure you want to logout?')) {
-                    window.location.href = '/logout';
+            button.addEventListener('click', async () => {
+                if (confirm(window.translations?.are_you_sure_logout || window.translations?.confirm_logout || 'Are you sure you want to logout?')) {
+                    try {
+                        await fetch('/api/logout', { method: 'POST' });
+                        window.location.href = '/login';
+                    } catch (error) {
+                        console.error('Logout failed:', error);
+                        // Fallback to GET logout if POST fails
+                        window.location.href = '/logout';
+                    }
                 }
             });
         }

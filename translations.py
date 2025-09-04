@@ -19,6 +19,7 @@ translations = {
         "save_configuration": "Save Configuration",
         "back_to_dashboard": "Back to Dashboard",
         "configuration_saved": "Configuration saved successfully!",
+        "configuration_save_error": "Error saving configuration!",
         "login_failed": "Invalid credentials",
  
         # Configuration Categories
@@ -93,6 +94,15 @@ translations = {
         "meme_deleted_successfully": "Meme deleted successfully!",
         "meme_delete_failed": "Failed to delete meme",
         "download_failed": "Download failed",
+        
+        # Alert and Notification Messages
+        "failed_to_save_configuration": "Failed to save configuration",
+        "failed_to_load_configuration": "Failed to load configuration",
+        "password_changed_successfully": "Password changed successfully",
+        "session_expired": "Session expired. Redirecting to login...",
+        "rate_limit_exceeded": "Rate limit exceeded. Please wait {seconds} seconds before trying again.",
+        "wallet_balances_updated": "Wallet balances updated automatically!",
+        "are_you_sure_logout": "Are you sure you want to logout?",
         
         # Status Messages
         "websocket_connecting": "Connecting to real-time updates...",
@@ -208,6 +218,7 @@ translations = {
         "save_configuration": "Konfiguration speichern",
         "back_to_dashboard": "Zurück zum Dashboard",
         "configuration_saved": "Konfiguration erfolgreich gespeichert!",
+        "configuration_save_error": "Fehler beim Speichern der Konfiguration!",
         "login_failed": "Ungültige Anmeldedaten",
 
         # Configuration Categories
@@ -282,6 +293,15 @@ translations = {
         "meme_deleted_successfully": "Meme erfolgreich gelöscht!",
         "meme_delete_failed": "Fehler beim Löschen des Memes",
         "download_failed": "Download fehlgeschlagen",
+        
+        # Alert and Notification Messages
+        "failed_to_save_configuration": "Fehler beim Speichern der Konfiguration",
+        "failed_to_load_configuration": "Fehler beim Laden der Konfiguration",
+        "password_changed_successfully": "Passwort erfolgreich geändert",
+        "session_expired": "Sitzung abgelaufen. Weiterleitung zur Anmeldung...",
+        "rate_limit_exceeded": "Rate-Limit überschritten. Bitte warten Sie {seconds} Sekunden, bevor Sie es erneut versuchen.",
+        "wallet_balances_updated": "Wallet-Salden automatisch aktualisiert!",
+        "are_you_sure_logout": "Möchten Sie sich wirklich abmelden?",
         
         # Status Messages
         "websocket_connecting": "Verbinde zu Echtzeit-Updates...",
@@ -403,6 +423,7 @@ translations = {
         "save_configuration": "Guardar Configuración",
         "back_to_dashboard": "Volver al Panel",
         "configuration_saved": "¡Configuración guardada exitosamente!",
+        "configuration_save_error": "Error al guardar la configuración.",
         "login_failed": "Credenciales inválidas",
 
         # Configuration Categories
@@ -475,6 +496,15 @@ translations = {
         "meme_deleted_successfully": "¡Meme eliminado exitosamente!",
         "meme_delete_failed": "Error al eliminar el meme",
         "download_failed": "Descarga fallida",
+        
+        # Alert and Notification Messages
+        "failed_to_save_configuration": "Error al guardar la configuración",
+        "failed_to_load_configuration": "Error al cargar la configuración",
+        "password_changed_successfully": "Contraseña cambiada exitosamente",
+        "session_expired": "Sesión expirada. Redirigiendo al inicio de sesión...",
+        "rate_limit_exceeded": "Límite de tasa excedido. Por favor espere {seconds} segundos antes de intentar nuevamente.",
+        "wallet_balances_updated": "¡Saldos de cartera actualizados automáticamente!",
+        "are_you_sure_logout": "¿Estás seguro de que quieres cerrar sesión?",
         
         # Status Messages
         "websocket_connecting": "Conectando a actualizaciones en tiempo real...",
@@ -594,6 +624,7 @@ translations = {
         "save_configuration": "Sauvegarder la Configuration",
         "back_to_dashboard": "Retour au Tableau de Bord",
         "configuration_saved": "Configuration sauvegardée avec succès !",
+        "configuration_save_error": "Erreur lors de la sauvegarde de la configuration.",
         "login_failed": "Identifiants invalides",
 
         # Configuration Categories
@@ -666,6 +697,15 @@ translations = {
         "meme_deleted_successfully": "Mème supprimé avec succès !",
         "meme_delete_failed": "Échec de la suppression du mème",
         "download_failed": "Échec du téléchargement",
+        
+        # Alert and Notification Messages
+        "failed_to_save_configuration": "Échec de la sauvegarde de la configuration",
+        "failed_to_load_configuration": "Échec du chargement de la configuration",
+        "password_changed_successfully": "Mot de passe changé avec succès",
+        "session_expired": "Session expirée. Redirection vers la connexion...",
+        "rate_limit_exceeded": "Limite de taux dépassée. Veuillez attendre {seconds} secondes avant de réessayer.",
+        "wallet_balances_updated": "Soldes des portefeuilles mis à jour automatiquement !",
+        "are_you_sure_logout": "Êtes-vous sûr de vouloir vous déconnecter ?",
         
         # Status Messages
         "websocket_connecting": "Connexion aux mises à jour en temps réel...",

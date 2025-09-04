@@ -1411,42 +1411,44 @@ class MempaperApp:
             block_height (str): Bitcoin block height
             block_hash (str): Bitcoin block hash
         """
-        try:
-            # Use cached wallet data for fast image generation
-            print("⚡ Generating dashboard image with cached wallet data...")
-            img = self._generate_new_image(block_height, block_hash)
-            
-            # Emit to web clients via WebSocket only if generation was successful
-            if img:
-                buf = io.BytesIO()
-                img.save(buf, format='PNG')
-                buf.seek(0)
-                
-                with self.app.app_context():
-                    try:
-                        image_data = 'data:image/png;base64,' + base64.b64encode(buf.read()).decode()
-                        # Validate image data before sending
-                        if len(image_data) > 50 and image_data.startswith('data:image/png;base64,'):
-                            self.socketio.emit('new_image', {'image': image_data})
-                            print("📡 New image sent to web clients via WebSocket")
-                        else:
-                            print("⚠️ Invalid image data generated, not sending to clients")
-                    except Exception as e:
-                        print(f"⚠️ Failed to encode image for WebSocket: {e}")
-            # Start async wallet refresh in background
-            print("🔄 Starting async wallet refresh in background...")
-            # Use threading approach to avoid multiprocessing pickle issues
-            threading.Thread(
-                target=self._safe_wallet_refresh_thread,
-                args=(block_height, block_hash, False),  # False for startup_mode
-                daemon=True
-            ).start()
-            print("✅ Async wallet refresh thread started")
-
-        except Exception as e:
-            print(f"❌ Error regenerating dashboard for block {block_height}: {e}")
-            import traceback
-            traceback.print_exc()
+        max_retries = 3
+        for attempt in range(1, max_retries + 1):
+            try:
+                print(f"⚡ Generating dashboard image with cached wallet data... (attempt {attempt})")
+                img = self._generate_new_image(block_height, block_hash)
+                if img:
+                    buf = io.BytesIO()
+                    img.save(buf, format='PNG')
+                    buf.seek(0)
+                    with self.app.app_context():
+                        try:
+                            image_data = 'data:image/png;base64,' + base64.b64encode(buf.read()).decode()
+                            if len(image_data) > 50 and image_data.startswith('data:image/png;base64,'):
+                                self.socketio.emit('new_image', {'image': image_data})
+                                print("📡 New image sent to web clients via WebSocket")
+                            else:
+                                print("⚠️ Invalid image data generated, not sending to clients")
+                        except Exception as e:
+                            print(f"⚠️ Failed to encode image for WebSocket: {e}")
+                    print("🔄 Starting async wallet refresh in background...")
+                    threading.Thread(
+                        target=self._safe_wallet_refresh_thread,
+                        args=(block_height, block_hash, False),
+                        daemon=True
+                    ).start()
+                    print("✅ Async wallet refresh thread started")
+                    break
+                else:
+                    print(f"❌ Image generation returned None (attempt {attempt})")
+            except Exception as e:
+                print(f"❌ Error regenerating dashboard for block {block_height} (attempt {attempt}): {e}")
+                import traceback
+                traceback.print_exc()
+            if attempt < max_retries:
+                print(f"🔁 Retrying image generation in 2 seconds...")
+                time.sleep(2)
+            else:
+                print(f"❌ All {max_retries} attempts to generate dashboard image failed for block {block_height}")
     
     def _setup_routes(self):
         """Setup Flask routes."""
@@ -1846,6 +1848,20 @@ class MempaperApp:
                 traceback.print_exc()
                 return jsonify({'error': str(e)}), 500
         
+        @self.app.route('/api/translations/<language>', methods=['GET'])
+        @require_auth(self.auth_manager)
+        def get_translations(language):
+            """Get translations for a specific language."""
+            try:
+                from translations import translations
+                language_translations = translations.get(language, translations["en"])
+                return jsonify({
+                    'success': True,
+                    'translations': language_translations
+                })
+            except Exception as e:
+                return jsonify({'success': False, 'error': str(e)}), 500
+        
         @self.app.route('/api/config', methods=['POST'])
         @require_auth(self.auth_manager)
         def save_config():
@@ -1865,7 +1881,7 @@ class MempaperApp:
                     # Reinitialize components if needed
                     self._reinitialize_after_config_change()
                     
-                    return jsonify({'success': True, 'message': 'Configuration saved successfully'})
+                    return jsonify({'success': True, 'message': 'Configuration 2 saved successfully'})
                 else:
                     return jsonify({'success': False, 'message': 'Failed to save configuration'}), 500
             except Exception as e:

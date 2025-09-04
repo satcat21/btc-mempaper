@@ -182,141 +182,235 @@ body {
     }
 }
 
-#status-container {
-    margin-top: 15px; /* Space above status container */
-    margin-bottom: 10px;
+
+
+/* Desktop Navigation - Vertical Left Side */
+.desktop-nav-buttons {
+    position: fixed;
+    left: 20px;
+    top: 50%;
+    transform: translateY(-50%);
     display: flex;
+    flex-direction: column;
     gap: 15px;
-    flex-wrap: wrap;
+    z-index: 1000;
+}
+
+/* Mobile Navigation - Bottom Center (copied from config page styling) */
+.mobile-nav-buttons {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 20px;
+    padding: 15px 20px;
+    background: rgba(45, 48, 71, 0.95);
+    backdrop-filter: blur(15px);
+    border-radius: 25px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    z-index: 1000;
+    margin-top: 15px;
     justify-content: center;
     align-items: center;
-}
-
-.status-item {
-    padding: 8px 16px;
-    background: #5d6182 !important;
-    border-radius: 15px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-    backdrop-filter: blur(10px);
-    font-size: 12px;
-    color: white;
-    white-space: nowrap;
-    border: none;
-    cursor: default;
-}
-
-/* Action buttons (Settings and Logout) styling */
-.action-button {
-    cursor: pointer !important;
-    text-decoration: none;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    font-weight: 500;
     transition: all 0.3s ease;
-    background: #5d6182 !important;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.mobile-nav-buttons.visible {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* Mobile toggle button - small and subtle */
+.mobile-nav-toggle {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: 36px;
+    height: 36px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(45, 48, 71, 0.8);
+    backdrop-filter: blur(10px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    z-index: 1001;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     color: white;
-    border: 1px solid rgba(0,0,0,0.1);
+    font-size: 14px;
 }
 
-.action-button:hover {
-    background: #5d6182 !important;
+.mobile-nav-toggle:hover {
+    background: rgba(45, 48, 71, 0.95);
+    transform: scale(1.05);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.mobile-nav-toggle.active {
+    background: rgba(77, 81, 104, 0.95);
+}
+
+.mobile-nav-toggle svg {
+    transition: transform 0.3s ease;
+    fill: white !important;
+}
+
+/* Navigation button styles (copied from config page) */
+.nav-button {
+    padding: 12px 20px;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    min-width: 120px;
+    text-align: center;
+    transition: all 0.3s ease;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    background: #5d6182;
     color: white;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    pointer-events: auto;
+    z-index: 1001;
+    text-decoration: none;
 }
 
-#logout-button.action-button {
-    background: #5d6182 !important;
-    color: white !important;
-    border-color: rgba(76, 59, 162, 0.3);
+.nav-button:hover {
+    background: #4a4d6b;
+    transform: translateX(-3px);
 }
 
-#logout-button.action-button:hover {
-    background: rgba(76, 59, 162, 0.95) !important;
-    border-color: rgba(76, 59, 162, 0.5);
+.nav-button:disabled {
+    background: #666;
+    cursor: not-allowed;
+    transform: none;
 }
 
-/* Responsive Status Container */
-@media (max-width: 480px) {
-    #status-container {
-        margin-top: 12px;
-        margin-bottom: 8px;
-        gap: 8px;
-        padding: 0 10px;
-    }
-    
-    .status-item {
-        padding: 6px 12px;
-        font-size: 11px;
-        border-radius: 12px;
-    }
-    
-    .action-button {
-        padding: 8px 14px;
-        font-size: 12px;
-        gap: 4px;
-    }
-    
-    /* Hide button text on very small screens, show only icons */
-    .action-button .button-text {
-        display: none;
-    }
+.nav-button svg {
+    flex-shrink: 0;
+    pointer-events: none;
+    fill: white !important; /* Force white icons */
 }
 
-/* Medium mobile screens - show some text */
-@media (min-width: 481px) and (max-width: 600px) {
-    .action-button {
-        font-size: 11px;
-        padding: 7px 14px;
-    }
+/* Icon-only button styling (copied from config page) */
+.nav-button.icon-only {
+    min-width: 48px !important;
+    width: 48px !important;
+    height: 48px !important;
+    padding: 0 !important;
+    border-radius: 50% !important;
+    box-sizing: border-box !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
 }
 
-.status-connected {
-    color: white; /*#28a745 !important;*/
-    border: 2px solid #28a745;
+.nav-button.icon-only svg {
+    width: 20px !important;
+    height: 20px !important;
 }
 
-.status-disconnected {
-    color: white; /*#dc3545 !important;*/
-    border: 2px solid #dc3545;
+/* Specific desktop button overrides to ensure consistency */
+#desktop-config-button,
+#desktop-logout-button {
+    width: 48px !important;
+    height: 48px !important;
+    min-width: 48px !important;
+    padding: 0 !important;
+    box-sizing: border-box !important;
 }
 
-.status-reconnecting {
-    color: white; /*#ffc107 !important;*/
-    border: 2px solid #ffc107;
-    animation: pulse 1.5s infinite;
+#desktop-config-button svg,
+#desktop-logout-button svg {
+    width: 20px !important;
+    height: 20px !important;
 }
 
-.status-warning {
-    color: white; /*#fd7e14 !important;*/
-    border: 2px solid #fd7e14;
+/* Mobile navigation button styling (copied from config page) */
+.mobile-nav-button {
+    width: 50px;
+    height: 50px;
+    border: none;
+    border-radius: 50%;
+    font-size: 18px;
+    font-weight: 500;
+    cursor: pointer;
+    text-align: center;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    background: #5d6182;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin: 0;
+    pointer-events: auto;
+    z-index: 1001;
 }
 
-.status-error {
-    color: white; /*#dc3545 !important;*/
-    border: 2px solid #dc3545;
-    /*background: rgba(220, 53, 69, 0.1) !important;*/
+.mobile-nav-button:hover, .mobile-nav-button:active {
+    background: #4a4d6b;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
-.status-info {
-    color: white; /*#17a2b8 !important;*/
-    border: 2px solid #17a2b8;
+.mobile-nav-button:disabled {
+    background: #666;
+    cursor: not-allowed;
+    transform: none;
 }
 
-.status-config-reload {
-    color: white; /*#6f42c1 !important;*/
-    border: 2px solid #6f42c1;
-    background: rgba(111, 66, 193, 0.1) !important;
-    animation: pulse 1s ease-in-out;
+.mobile-nav-button svg {
+    pointer-events: none;
+    fill: white !important; /* Force white icons */
 }
 
-/* Pulse animation for reconnecting status */
-@keyframes pulse {
-    0% { opacity: 1; }
-    50% { opacity: 0.5; }
-    100% { opacity: 1; }
+.mobile-nav-button.icon-only svg {
+    width: 24px;
+    height: 24px;
 }
+
+/* Force white icons for dashboard nav buttons (copied from config page approach) */
+#config-button svg,
+#config-button svg path,
+#logout-button svg,
+#logout-button svg path,
+#desktop-config-button svg,
+#desktop-config-button svg path,
+#desktop-logout-button svg,
+#desktop-logout-button svg path,
+#mobile-config-button svg,
+#mobile-config-button svg path,
+#mobile-logout-button svg,
+#mobile-logout-button svg path,
+.nav-button svg,
+.nav-button svg path,
+.mobile-nav-button svg,
+.mobile-nav-button svg path,
+.nav-button.icon-only svg,
+.nav-button.icon-only svg path,
+.mobile-nav-button.icon-only svg,
+.mobile-nav-button.icon-only svg path {
+    fill: #ffffff !important;
+    color: #ffffff !important;
+    stroke: #ffffff !important;
+}
+
+
+
+
+
+
 
 /* Extreme mobile optimization - maximize image size */
 @media (max-width: 414px) {
@@ -328,11 +422,6 @@ body {
     .orientation-horizontal #dashboard {
         width: min(99vw, calc(100vh - 80px) * 5/3);
         max-height: calc(100vh - 80px);
-    }
-    
-    #status-container {
-        margin-top: 8px;
-        margin-bottom: 5px;
     }
 }
 
@@ -346,5 +435,58 @@ body {
     .orientation-horizontal #dashboard {
         width: min(99vw, calc(100vh - 75px) * 5/3);
         max-height: calc(100vh - 75px);
+    }
+}
+
+/* Navigation Layout Control (copied from config page) */
+/* Desktop: Show left-side navigation, hide mobile elements */
+@media (min-width: 769px) {
+    .desktop-nav-buttons {
+        display: flex;
+    }
+    
+    .mobile-nav-buttons {
+        display: none;
+    }
+    
+    .mobile-nav-toggle {
+        display: none;
+    }
+}
+
+/* Mobile: Hide left-side navigation, show bottom navigation and toggle */
+@media (max-width: 768px) {
+    .desktop-nav-buttons {
+        display: none;
+    }
+    
+    .mobile-nav-buttons {
+        display: flex;
+    }
+    
+    .mobile-nav-toggle {
+        display: flex;
+    }
+}
+
+/* Extra small screens (copied from config page) */
+@media (max-width: 480px) {
+    .mobile-nav-button {
+        width: 45px;
+        height: 45px;
+        font-size: 16px;
+    }
+    
+    .mobile-nav-buttons {
+        padding: 12px;
+        gap: 15px;
+    }
+    
+    .mobile-nav-toggle {
+        width: 32px;
+        height: 32px;
+        font-size: 12px;
+        bottom: 15px;
+        right: 15px;
     }
 }

@@ -1,56 +1,169 @@
 <!DOCTYPE html>
 <html>
+
 <head>
     <title>{{ translations.dashboard_title }} - {{ translations.settings }}</title>
     <link rel="icon" type="image/png" href="static/favicon.png">
     <link rel="stylesheet" href="static/css/config.css">
-    <script src="static/socket.io.min.js"></script>
+    <script src="static/js/socket.io.min.js"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        /* Ensure nav icons are always visible on desktop and mobile */
+        .nav-button svg,
+        .mobile-nav-button svg {
+            display: inline-block !important;
+            vertical-align: middle;
+        }
+
+        /* Optional: keep button content centered nicely */
+        .nav-button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+
+        .mobile-nav-button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* Icon color adjustment - always white */
+        .nav-button svg,
+        .mobile-nav-button svg {
+            fill: white !important;
+            /* Always white for better visibility */
+            transition: fill 0.2s;
+        }
+    </style>
+    <script>
+        // Fix Save and Logout buttons
+        document.addEventListener('DOMContentLoaded', function () {
+            var desktopSave = document.getElementById('desktop-save-button');
+            var mobileSave = document.getElementById('mobile-save-button');
+            var desktopLogout = document.getElementById('desktop-logout-button');
+            var mobileLogout = document.getElementById('mobile-logout-button');
+            
+            if (desktopSave) desktopSave.onclick = function () { saveConfigurationWithFeedback(desktopSave); };
+            if (mobileSave) mobileSave.onclick = function () { saveConfigurationWithFeedback(mobileSave); };
+
+            async function logout() {
+                try {
+                    const response = await fetch('/api/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+                    if (response.ok) {
+                        window.location.href = '/login';
+                    } else {
+                        alert('Logout failed');
+                    }
+                } catch (error) {
+                    alert('Logout failed');
+                }
+            }
+            
+            if (desktopLogout) desktopLogout.onclick = logout;
+            if (mobileLogout) mobileLogout.onclick = logout;
+            window.logout = logout;
+        });
+
+        // Save button feedback logic
+        window.saveConfigurationWithFeedback = async function (button) {
+            var originalHTML = button.innerHTML;
+            button.disabled = true;
+            // Pending: icon only
+            button.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" class="pending-icon">
+                <path d="M480-80q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm-40-82v-78q-33 0-56.5-23.5T360-320v-40L168-552q-3 18-5.5 36t-2.5 36q0 121 79.5 212T440-162Zm276-102q20-22 36-47.5t26.5-53q10.5-27.5 16-56.5t5.5-59q0-98-54.5-179T608-776h-16q-33 0-56.5 23.5T512-696v+56q0 50-35 85t-85 35h-56v40q0 33-23.5 56.5T256-400h-40v144l360 192Z"/>
+            </svg>`;
+            try {
+                await saveConfiguration();
+                showToast(window.translations.configuration_saved || 'Config saved successfully!', 'success');
+            } catch (e) {
+                showToast(window.translations.configuration_save_error || 'Error saving configuration!', 'error');
+            }
+            button.disabled = false;
+            button.innerHTML = originalHTML;
+        }
+
+        // Toast logic
+        window.showToast = function (message, type) {
+            var toast = document.getElementById('notification');
+            if (!toast) return;
+            toast.textContent = message;
+            toast.style.background = type === 'success' ? '#38a169' : '#e53e3e';
+            toast.style.color = '#fff';
+            toast.style.borderRadius = '10px';
+            toast.style.padding = '10px 16px';
+            toast.style.position = 'fixed';
+            toast.style.top = '18px';
+            toast.style.left = '50%';
+            toast.style.transform = 'translateX(-50%)';
+            toast.style.zIndex = '9999';
+            toast.style.fontSize = '0.95rem';
+            toast.style.boxShadow = '0 8px 24px rgba(0,0,0,0.25)';
+            toast.style.minWidth = '240px';
+            toast.style.maxWidth = '420px';
+            toast.style.width = 'auto';
+            toast.style.textAlign = 'center';
+            toast.style.display = 'block';
+            setTimeout(function () { toast.style.display = 'none'; }, 2200);
+        }
+    </script>
 </head>
+
 <body>
     <!-- Desktop Navigation Buttons (left side) -->
     <div class="desktop-nav-buttons">
-        <button id="desktop-back-button" class="nav-button">
-            <svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960" width="18px" fill="white"><path d="m344.09-427 211.56 211.57L480-140.78 140.78-480 480-819.22l75.65 74.65L344.09-533h475.13v106H344.09Z"/></svg>
+        <button id="desktop-back-button" class="nav-button icon-only" onclick="window.location.href='/'" title="{{ translations.back_to_dashboard }}">
+            <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px">
+                <path d="m274-450 248 248-42 42L140-500l340-340 42 42-248 248h526v60H274Z"/>
+            </svg>
         </button>
-        <button id="desktop-save-button" class="nav-button">
-            <svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960" width="18px" fill="white"><path d="M859.22-687.91v481.13q0 44.3-30.85 75.15-30.85 30.85-75.15 30.85H206.78q-44.3 0-75.15-30.85-30.85-30.85-30.85-75.15v-546.44q0-44.3 30.85-75.15 30.85-30.85 75.15-30.85h481.13l171.31 171.31Zm-106 44.74L643.17-753.22H206.78v546.44h546.44v-436.39ZM480-246.78q50 0 85-35t35-85q0-50-35-85t-85-35q-50 0-85 35t-35 85q0 50 35 85t85 35ZM246.78-553.22h360v-160h-360v160Zm-40-89.95v436.39-546.44 110.05Z"/></svg>
-            Save
+        <button id="desktop-save-button" class="nav-button icon-only" title="{{ translations.save_configuration }}">
+            <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px">
+                <path d="M840-680v480q0 33-23.5 56.5T760-120H200q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h480l160 160Zm-80 34L646-760H200v560h560v-446ZM480-240q50 0 85-35t35-85q0-50-35-85t-85-35q-50 0-85 35t-35 85q0 50 35 85t85 35ZM240-560h360v-160H240v160Zm-40-86v446-560 114Z"/>
+            </svg>
         </button>
-        <button id="desktop-logout-button" class="nav-button">
-            <svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960" width="18px" fill="white"><path d="M206.78-100.78q-44.3 0-75.15-30.85-30.85-30.85-30.85-75.15v-546.44q0-44.3 30.85-75.15 30.85-30.85 75.15-30.85h277.74v106H206.78v546.44h277.74v106H206.78Zm425.87-152.09L559-328.39 657.61-427H355.48v-106h302.13L559-631.61l73.65-75.52L859.22-480 632.65-252.87Z"/></svg>
-            Exit
+        <button id="desktop-logout-button" class="nav-button icon-only" title="{{ translations.logout }}">
+            <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px">
+                <path d="M206.78-100.78q-44.3 0-75.15-30.85-30.85-30.85-30.85-75.15v-546.44q0-44.3 30.85-75.15 30.85-30.85 75.15-30.85h277.74v106H206.78v546.44h277.74v106H206.78Zm425.87-152.09L559-328.39 657.61-427H355.48v-106h302.13L559-631.61l73.65-75.52L859.22-480 632.65-252.87Z"/>
+            </svg>
         </button>
     </div>
-    
+
     <!-- Mobile Navigation Buttons (bottom) -->
     <div class="mobile-nav-buttons">
-        <button id="mobile-back-button" class="mobile-nav-button">
-            <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="white"><path d="m344.09-427 211.56 211.57L480-140.78 140.78-480 480-819.22l75.65 74.65L344.09-533h475.13v106H344.09Z"/></svg>
+        <button id="mobile-back-button" class="mobile-nav-button icon-only" onclick="window.location.href='/'" title="{{ translations.back_to_dashboard }}">
+            <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px">
+                <path d="m274-450 248 248-42 42L140-500l340-340 42 42-248 248h526v60H274Z"/>
+            </svg>
         </button>
-        <button id="mobile-save-button" class="mobile-nav-button">
-            <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="white"><path d="M859.22-687.91v481.13q0 44.3-30.85 75.15-30.85 30.85-75.15 30.85H206.78q-44.3 0-75.15-30.85-30.85-30.85-30.85-75.15v-546.44q0-44.3 30.85-75.15 30.85-30.85 75.15-30.85h481.13l171.31 171.31Zm-106 44.74L643.17-753.22H206.78v546.44h546.44v-436.39ZM480-246.78q50 0 85-35t35-85q0-50-35-85t-85-35q-50 0-85 35t-35 85q0 50 35 85t85 35ZM246.78-553.22h360v-160h-360v160Zm-40-89.95v436.39-546.44 110.05Z"/></svg>
+        <button id="mobile-save-button" class="mobile-nav-button icon-only" title="{{ translations.save_configuration }}">
+            <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px">
+                <path d="M840-680v480q0 33-23.5 56.5T760-120H200q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h480l160 160Zm-80 34L646-760H200v560h560v-446ZM480-240q50 0 85-35t35-85q0-50-35-85t-85-35q-50 0-85 35t-35 85q0 50 35 85t85 35ZM240-560h360v-160H240v160Zm-40-86v446-560 114Z"/>
+            </svg>
         </button>
-        <button id="mobile-logout-button" class="mobile-nav-button">
-            <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="white"><path d="M206.78-100.78q-44.3 0-75.15-30.85-30.85-30.85-30.85-75.15v-546.44q0-44.3 30.85-75.15 30.85-30.85 75.15-30.85h277.74v106H206.78v546.44h277.74v106H206.78Zm425.87-152.09L559-328.39 657.61-427H355.48v-106h302.13L559-631.61l73.65-75.52L859.22-480 632.65-252.87Z"/></svg>
+        <button id="mobile-logout-button" class="mobile-nav-button icon-only" title="{{ translations.logout }}">
+            <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px">
+                <path d="M206.78-100.78q-44.3 0-75.15-30.85-30.85-30.85-30.85-75.15v-546.44q0-44.3 30.85-75.15 30.85-30.85 75.15-30.85h277.74v106H206.78v546.44h277.74v106H206.78Zm425.87-152.09L559-328.39 657.61-427H355.48v-106h302.13L559-631.61l73.65-75.52L859.22-480 632.65-252.87Z"/>
+            </svg>
         </button>
     </div>
-    
+
     <div class="container">
         <div class="header">
             <h1>⚙️ {{ translations.settings }}</h1>
             <p>Configure your Bitcoin dashboard</p>
         </div>
-        
+
         <div id="config-container">
             <!-- Configuration sections will be loaded here -->
         </div>
-        
+
         <div class="config-section" style="margin-top: 25px;">
             <div class="section-title">
                 🖼️ {{ translations.meme_management }}
             </div>
-            
+
             <div class="form-group">
                 <label class="form-label">{{ translations.upload_new_meme }}</label>
                 <div class="upload-area" id="upload-area">
@@ -63,33 +176,23 @@
                 </div>
                 <div id="upload-progress" style="display: none; margin-top: 10px;">
                     <div style="background: #f0f0f0; border-radius: 10px; overflow: hidden;">
-                        <div id="progress-bar" style="height: 8px; background: #667eea; width: 0%; transition: width 0.3s;"></div>
+                        <div id="progress-bar"
+                            style="height: 8px; background: #667eea; width: 0%; transition: width 0.3s;"></div>
                     </div>
                     <p id="upload-status" style="margin-top: 5px; font-size: 0.9rem;"></p>
                 </div>
             </div>
-            
+
             <div class="form-group">
                 <label class="form-label">{{ translations.current_memes }}</label>
-                <div id="memes-list" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; margin-top: 10px;">
+                <div id="memes-list"
+                    style="display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; margin-top: 10px;">
                     <!-- Memes will be loaded here -->
                 </div>
             </div>
         </div>
     </div>
-    
-    <!-- Language Change Confirmation Modal -->
-    <div id="language-modal" class="modal" style="display: none;">
-        <div class="modal-content">
-            <h3>{{ translations.language }} {{ translations.settings }}</h3>
-            <p>Changing the language will save your current settings and refresh the page. Continue?</p>
-            <div class="modal-buttons">
-                <button id="confirm-language-change" class="save-button">{{ translations.save_configuration }}</button>
-                <button id="cancel-language-change" class="cancel-button">{{ translations.cancel }}</button>
-            </div>
-        </div>
-    </div>
-    
+
     <!-- Delete Meme Confirmation Modal -->
     <div id="delete-modal" class="modal" style="display: none;">
         <div class="modal-content">
@@ -101,7 +204,7 @@
             </div>
         </div>
     </div>
-    
+
     <!-- Meme Inspection Modal -->
     <div id="meme-modal" class="modal" style="display: none;">
         <div class="modal-content meme-modal-content">
@@ -126,36 +229,39 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="action-button" onclick="downloadMemeFromModal()">⬇️ {{ translations.download_meme }}</button>
-                <button class="action-button delete" onclick="deleteMemeFromModal()">🗑️ {{ translations.delete_meme }}</button>
+                <button class="action-button" onclick="downloadMemeFromModal()">⬇️ {{ translations.download_meme
+                    }}</button>
+                <button class="action-button delete" onclick="deleteMemeFromModal()">🗑️ {{ translations.delete_meme
+                    }}</button>
                 <button class="cancel-button" onclick="closeMemeModal()">{{ translations.cancel }}</button>
             </div>
         </div>
     </div>
-    
+
     <div id="notification" class="notification"></div>
-    
+
     <script>
         // Device detection for adaptive sizing
         function detectDevice() {
             const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
             const isHighDPI = window.devicePixelRatio >= 2;
             const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-            
+
             // Add device classes to body for enhanced CSS targeting
             document.body.classList.add(isTouchDevice ? 'touch-device' : 'no-touch');
             document.body.classList.add(isHighDPI ? 'high-dpi' : 'standard-dpi');
             document.body.classList.add(isMobile ? 'mobile-device' : 'desktop-device');
-            
+
             console.log('Device detected:', { isTouchDevice, isHighDPI, isMobile });
         }
-        
+
         // Run device detection on load
         detectDevice();
-        
+
         // Pass translations to JavaScript
         window.translations = {
             configuration_saved: "{{ translations.configuration_saved }}",
+            configuration_save_error: "{{ translations.configuration_save_error }}",
             upload_successful: "{{ translations.upload_successful }}",
             upload_failed: "{{ translations.upload_failed }}",
             download_failed: "{{ translations.download_failed }}",
@@ -165,11 +271,19 @@
             download_meme: "{{ translations.download_meme }}",
             delete_meme: "{{ translations.delete_meme }}",
             enabled: "{{ translations.enabled }}",
-            disabled: "{{ translations.disabled }}"
+            disabled: "{{ translations.disabled }}",
+            failed_to_save_configuration: "{{ translations.failed_to_save_configuration }}",
+            failed_to_load_configuration: "{{ translations.failed_to_load_configuration }}",
+            session_expired: "{{ translations.session_expired }}",
+            rate_limit_exceeded: "{{ translations.rate_limit_exceeded }}",
+            confirm_logout: "{{ translations.confirm_logout }}",
+            are_you_sure_logout: "{{ translations.are_you_sure_logout }}",
+            wallet_balances_updated: "{{ translations.wallet_balances_updated }}"
         };
     </script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="static/js/session-manager.js"></script>
     <script src="static/js/config.js"></script>
 </body>
+
 </html>

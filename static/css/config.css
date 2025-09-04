@@ -835,8 +835,8 @@ body {
     display: flex;
     align-items: center;
     gap: 10px;
-    min-width: 250px;
-    max-width: 400px;
+    min-width: 160px;
+    max-width: 220px;
     word-wrap: break-word;
 }
 
@@ -1583,6 +1583,8 @@ body {
     align-items: center;
     justify-content: center;
     gap: 8px;
+    pointer-events: auto;
+    z-index: 1001;
 }
 
 .nav-button:hover {
@@ -1598,6 +1600,103 @@ body {
 
 .nav-button svg {
     flex-shrink: 0;
+    pointer-events: none;
+    fill: white !important; /* Force white icons */
+}
+
+/* Icon-only button styling */
+.nav-button.icon-only {
+    min-width: 48px;
+    width: 48px;
+    height: 48px;
+    padding: 12px;
+    border-radius: 50%;
+}
+
+.nav-button.icon-only svg {
+    width: 20px;
+    height: 20px;
+}
+
+/* NUCLEAR OPTION - Force white icons everywhere - Sept 4 2025 */
+* svg[height="20px"],
+* svg[height="24px"],
+.nav-button svg,
+.mobile-nav-button svg,
+.nav-button.icon-only svg,
+.mobile-nav-button.icon-only svg,
+.nav-button svg *,
+.mobile-nav-button svg *,
+button svg,
+button svg * {
+    fill: #ffffff !important;
+    color: #ffffff !important;
+    stroke: #ffffff !important;
+}
+
+/* Force white fill with highest specificity */
+.nav-button.icon-only svg path,
+.mobile-nav-button.icon-only svg path,
+.nav-button svg path,
+.mobile-nav-button svg path {
+    fill: #ffffff !important;
+    color: #ffffff !important;
+    stroke: #ffffff !important;
+}
+
+/* Specific button targeting for maximum specificity */
+#desktop-back-button svg,
+#desktop-back-button svg path,
+#desktop-back-button svg *,
+#desktop-save-button svg,
+#desktop-save-button svg path,
+#desktop-save-button svg *,
+#desktop-logout-button svg,
+#desktop-logout-button svg path,
+#desktop-logout-button svg *,
+#mobile-back-button svg,
+#mobile-back-button svg path,
+#mobile-back-button svg *,
+#mobile-save-button svg,
+#mobile-save-button svg path,
+#mobile-save-button svg *,
+#mobile-logout-button svg,
+#mobile-logout-button svg path,
+#mobile-logout-button svg * {
+    fill: #ffffff !important;
+    color: #ffffff !important;
+    stroke: #ffffff !important;
+}
+
+/* Force override any currentColor inheritance */
+#desktop-back-button,
+#desktop-save-button, 
+#desktop-logout-button,
+#mobile-back-button,
+#mobile-save-button,
+#mobile-logout-button {
+    color: #ffffff !important;
+}
+
+/* Always white on hover too */
+.nav-button:hover svg,
+.mobile-nav-button:hover svg {
+    fill: #ffffff !important;
+}
+
+.nav-button:hover svg path,
+.mobile-nav-button:hover svg path {
+    fill: #ffffff !important;
+}
+
+/* Pending icon animation */
+.pending-icon {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
 }
 
 /* Mobile Navigation - Bottom Fixed */
@@ -1637,6 +1736,8 @@ body {
     justify-content: center;
     flex-shrink: 0;
     margin: 0;
+    pointer-events: auto;
+    z-index: 1001;
 }
 
 .mobile-nav-button:hover, .mobile-nav-button:active {
@@ -1649,6 +1750,16 @@ body {
     background: #666;
     cursor: not-allowed;
     transform: none;
+}
+
+.mobile-nav-button svg {
+    pointer-events: none;
+    fill: white !important; /* Force white icons */
+}
+
+.mobile-nav-button.icon-only svg {
+    width: 24px;
+    height: 24px;
 }
 
 /* Desktop: Show desktop nav, hide mobile nav */
