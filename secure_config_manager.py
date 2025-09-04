@@ -1,7 +1,12 @@
 """
 Secure Configuration Manager
 
-Provides lightweight encryption for sensitive configuration data on Raspberry Pi.
+Provid        self.encrypted_fields = {
+            'wallet_balance_addresses',
+            'wallet_balance_addresses_with_comments', 
+            'admin_password_hash',
+            'secret_key',
+        }tweight encryption for sensitive configuration data on Raspberry Pi.
 Uses Fernet (AES 128) for fast, secure encryption suitable for embedded devices.
 
 Security Features:
@@ -44,7 +49,7 @@ class SecureConfigManager:
         self.sensitive_fields = {
             'wallet_balance_addresses',
             'wallet_balance_addresses_with_comments', 
-            'block_reward_addresses',
+            'block_reward_addresses_table',
             'admin_password_hash',
             'secret_key',
         }

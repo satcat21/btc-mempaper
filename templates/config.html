@@ -4,10 +4,37 @@
     <title>{{ translations.dashboard_title }} - {{ translations.settings }}</title>
     <link rel="icon" type="image/png" href="static/favicon.png">
     <link rel="stylesheet" href="static/css/config.css">
+    <script src="static/socket.io.min.js"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1">
 </head>
 <body>
-    <a href="/" class="back-button">← <span class="button-text">{{ translations.back_to_dashboard }}</span></a>
+    <!-- Desktop Navigation Buttons (left side) -->
+    <div class="desktop-nav-buttons">
+        <button id="desktop-back-button" class="nav-button">
+            <svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960" width="18px" fill="white"><path d="m344.09-427 211.56 211.57L480-140.78 140.78-480 480-819.22l75.65 74.65L344.09-533h475.13v106H344.09Z"/></svg>
+        </button>
+        <button id="desktop-save-button" class="nav-button">
+            <svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960" width="18px" fill="white"><path d="M859.22-687.91v481.13q0 44.3-30.85 75.15-30.85 30.85-75.15 30.85H206.78q-44.3 0-75.15-30.85-30.85-30.85-30.85-75.15v-546.44q0-44.3 30.85-75.15 30.85-30.85 75.15-30.85h481.13l171.31 171.31Zm-106 44.74L643.17-753.22H206.78v546.44h546.44v-436.39ZM480-246.78q50 0 85-35t35-85q0-50-35-85t-85-35q-50 0-85 35t-35 85q0 50 35 85t85 35ZM246.78-553.22h360v-160h-360v160Zm-40-89.95v436.39-546.44 110.05Z"/></svg>
+            Save
+        </button>
+        <button id="desktop-logout-button" class="nav-button">
+            <svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960" width="18px" fill="white"><path d="M206.78-100.78q-44.3 0-75.15-30.85-30.85-30.85-30.85-75.15v-546.44q0-44.3 30.85-75.15 30.85-30.85 75.15-30.85h277.74v106H206.78v546.44h277.74v106H206.78Zm425.87-152.09L559-328.39 657.61-427H355.48v-106h302.13L559-631.61l73.65-75.52L859.22-480 632.65-252.87Z"/></svg>
+            Exit
+        </button>
+    </div>
+    
+    <!-- Mobile Navigation Buttons (bottom) -->
+    <div class="mobile-nav-buttons">
+        <button id="mobile-back-button" class="mobile-nav-button">
+            <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="white"><path d="m344.09-427 211.56 211.57L480-140.78 140.78-480 480-819.22l75.65 74.65L344.09-533h475.13v106H344.09Z"/></svg>
+        </button>
+        <button id="mobile-save-button" class="mobile-nav-button">
+            <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="white"><path d="M859.22-687.91v481.13q0 44.3-30.85 75.15-30.85 30.85-75.15 30.85H206.78q-44.3 0-75.15-30.85-30.85-30.85-30.85-75.15v-546.44q0-44.3 30.85-75.15 30.85-30.85 75.15-30.85h481.13l171.31 171.31Zm-106 44.74L643.17-753.22H206.78v546.44h546.44v-436.39ZM480-246.78q50 0 85-35t35-85q0-50-35-85t-85-35q-50 0-85 35t-35 85q0 50 35 85t85 35ZM246.78-553.22h360v-160h-360v160Zm-40-89.95v436.39-546.44 110.05Z"/></svg>
+        </button>
+        <button id="mobile-logout-button" class="mobile-nav-button">
+            <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="white"><path d="M206.78-100.78q-44.3 0-75.15-30.85-30.85-30.85-30.85-75.15v-546.44q0-44.3 30.85-75.15 30.85-30.85 75.15-30.85h277.74v106H206.78v546.44h277.74v106H206.78Zm425.87-152.09L559-328.39 657.61-427H355.48v-106h302.13L559-631.61l73.65-75.52L859.22-480 632.65-252.87Z"/></svg>
+        </button>
+    </div>
     
     <div class="container">
         <div class="header">
@@ -31,7 +58,7 @@
                     <div class="upload-placeholder">
                         <div style="font-size: 2rem; margin-bottom: 10px;">📷</div>
                         <p>{{ translations.upload_placeholder }}</p>
-                        <p style="font-size: 0.8rem; color: #666;">{{ translations.upload_formats }}</p>
+                        <p style="font-size: 0.8rem; color: #667eea;">{{ translations.upload_formats }}</p>
                     </div>
                 </div>
                 <div id="upload-progress" style="display: none; margin-top: 10px;">
@@ -48,17 +75,6 @@
                     <!-- Memes will be loaded here -->
                 </div>
             </div>
-        </div>
-        
-        <button id="save-button" class="save-button">💾 {{ translations.save_configuration }}</button>
-        
-        <div style="text-align: center; margin-top: 20px; display: flex; gap: 15px; justify-content: center; flex-wrap: wrap;">
-            <a href="/" class="dashboard-return-button">
-                🏠 <span class="button-text">{{ translations.back_to_dashboard }}</span>
-            </a>
-            <button id="logout-button" class="logout-button">
-                🚪 <span class="button-text">{{ translations.logout }}</span>
-            </button>
         </div>
     </div>
     
@@ -153,6 +169,7 @@
         };
     </script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="static/js/session-manager.js"></script>
     <script src="static/js/config.js"></script>
 </body>
 </html>

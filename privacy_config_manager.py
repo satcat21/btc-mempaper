@@ -23,9 +23,9 @@ class PrivacyConfigurationManager:
         
         # Privacy-sensitive features that require local mempool
         self.privacy_features = {
-            "wallet_balances": ["show_wallet_balances_block", "wallet_balance_addresses", "xpub_derivation_count"],
-            "block_rewards": ["block_reward_addresses"],
-            "bitaxe": ["show_bitaxe_block", "bitaxe_miner_ips"]
+            "wallet_balances": ["show_wallet_balances_block", "wallet_balance_addresses"],
+            "block_rewards": ["block_reward_addresses_table"],
+            "bitaxe": ["show_bitaxe_block", "bitaxe_miner_table"]
         }
     
     def is_public_mempool_instance(self, mempool_ip: str, mempool_port: int) -> bool:
@@ -211,7 +211,7 @@ class PrivacyConfigurationManager:
         
         elif block_type == "bitaxe" and not config.get("show_bitaxe_block", True):
             disabled_features.extend([
-                "bitaxe_miner_ips",
+                "bitaxe_miner_table",
                 "hashrate_color",
                 "found_blocks_color"
             ])
@@ -220,7 +220,7 @@ class PrivacyConfigurationManager:
             disabled_features.extend([
                 "wallet_balance_addresses",
                 "wallet_balance_unit",
-                "wallet_balance_show_fiat",
+                "wallet_balance_currency",
                 "xpub_derivation_count",
                 "info_block_balance_color",
                 "info_block_fiat_value_color"

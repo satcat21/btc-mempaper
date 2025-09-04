@@ -22,8 +22,14 @@ class BitaxeAPI:
             config: Application configuration dictionary
         """
         self.config = config or {}
-        self.miner_ips = self.config.get("bitaxe_miner_ips", "").split(',')
-        self.miner_ips = [ip.strip() for ip in self.miner_ips if ip.strip()]
+        
+        # Load miner configuration from table format
+        bitaxe_table = self.config.get("bitaxe_miner_table", [])
+        self.miner_ips = [entry.get("address", "").strip() for entry in bitaxe_table 
+                        if isinstance(entry, dict) and entry.get("address", "").strip()]
+        self.miner_comments = {entry.get("address", "").strip(): entry.get("comment", "Bitaxe Miner") 
+                             for entry in bitaxe_table 
+                             if isinstance(entry, dict) and entry.get("address", "").strip()}
     
     def get_miner_hashrate(self, ip: str, timeout: int = 5) -> float:
         """

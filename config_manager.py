@@ -214,10 +214,20 @@ class ConfigManager:
             default: Default value if key not found
             
         Returns:
-            Configuration value or default
+            Configuration value or default (with fallback to default config)
         """
         with self.config_lock:
-            return self.config.get(key, default)
+            # First check current config
+            if key in self.config:
+                return self.config[key]
+            
+            # If not found, check default config
+            default_config = self.get_default_config()
+            if key in default_config:
+                return default_config[key]
+            
+            # Finally return provided default
+            return default
     
     def set(self, key: str, value: Any) -> None:
         """
@@ -327,27 +337,17 @@ class ConfigManager:
             "omni_device_name": "waveshare_epd.epd7in3f",
             "admin_username": "admin",
             "admin_password": "mempaper2025",
-            "secret_key": "btc-mempaper-default-secret-key-change-me",
-            "rate_limit_requests": 100,
-            "rate_limit_window": 900,  # 15 minutes
             # --- Info block config additions ---
             "show_btc_price_block": True,
             "btc_price_currency": "USD",  # USD, EUR, GBP, CAD, CHF, AUD, JPY
             "show_bitaxe_block": True,
-            "bitaxe_miner_ips": "",  # Comma-separated list of Bitaxe miner IPs
-            "block_reward_addresses": [],  # BTC addresses to monitor for valid blocks
+            "bitaxe_miner_table": [],  # List of {address, comment} objects for table view
+            "block_reward_addresses_table": [],  # List of {address, comment} objects for block reward monitoring
             "show_wallet_balances_block": True,
             "wallet_balance_addresses": [],  # List of addresses/xpubs/zpubs to show
+            "wallet_balance_addresses_with_comments": [],  # List of {address, comment, type} objects for table view
             "wallet_balance_unit": "sats",  # "btc" or "sats"
-            "wallet_balance_show_fiat": True,  # Show fiat value alongside BTC/sats
-            "xpub_derivation_count": 20,  # Number of addresses to derive from each xpub/zpub
-            # --- Gap limit and bootstrap search settings ---
-            "xpub_enable_gap_limit": True,  # Enable gap limit detection for comprehensive wallet scanning
-            "xpub_gap_limit_last_n": 20,  # Number of consecutive unused addresses needed to stop scanning
-            "xpub_gap_limit_increment": 20,  # Number of addresses to add when expanding search
-            "xpub_enable_bootstrap_search": True,  # Enable bootstrap search to find first used address
-            "xpub_bootstrap_max_addresses": 200,  # Maximum addresses to check during bootstrap
-            "xpub_bootstrap_increment": 20,  # Number of addresses to add during bootstrap
+            "wallet_balance_currency": "EUR",  # USD, EUR, GBP, CAD, CHF, AUD, JPY - fiat currency for wallet balance display
             "prioritize_large_scaled_meme": False,
             "color_mode_dark": True
         }
@@ -436,49 +436,88 @@ class ConfigManager:
             "show_btc_price_block",
             "show_bitaxe_block",
             "show_wallet_balances_block",
-            "wallet_balance_show_fiat",
             "color_mode_dark"
         ]
         for setting in bool_settings:
             if setting in config:
                 validated[setting] = bool(config[setting])
 
-        # List settings
-        list_settings = ["wallet_balance_addresses", "block_reward_addresses"]
-        for setting in list_settings:
+        # List settings (simple string lists)
+        simple_list_settings = ["wallet_balance_addresses"]
+        for setting in simple_list_settings:
             if setting in config and isinstance(config[setting], list):
                 validated[setting] = [str(item).strip() for item in config[setting] if str(item).strip()]
+        
+        # Special handling for wallet_balance_addresses_with_comments (list of objects)
+        if "wallet_balance_addresses_with_comments" in config:
+            if isinstance(config["wallet_balance_addresses_with_comments"], list):
+                validated_entries = []
+                for item in config["wallet_balance_addresses_with_comments"]:
+                    if isinstance(item, dict):
+                        # Validate object structure
+                        if "address" in item and isinstance(item["address"], str) and item["address"].strip():
+                            entry = {
+                                "address": item["address"].strip(),
+                                "comment": str(item.get("comment", "")).strip() or "Address",
+                                "type": str(item.get("type", "")).strip() or "address"
+                            }
+                            validated_entries.append(entry)
+                validated["wallet_balance_addresses_with_comments"] = validated_entries
+            else:
+                validated["wallet_balance_addresses_with_comments"] = []
+
+        # Special handling for bitaxe_miner_table (list of objects)
+        if "bitaxe_miner_table" in config:
+            if isinstance(config["bitaxe_miner_table"], list):
+                validated_entries = []
+                for item in config["bitaxe_miner_table"]:
+                    if isinstance(item, dict) and "address" in item:
+                        entry = {
+                            "address": str(item.get("address", "")).strip(),
+                            "comment": str(item.get("comment", "")).strip() or "Bitaxe Miner"
+                        }
+                        if entry["address"]:  # Only add non-empty addresses
+                            validated_entries.append(entry)
+                validated["bitaxe_miner_table"] = validated_entries
+            else:
+                validated["bitaxe_miner_table"] = []
+
+        # Special handling for block_reward_addresses_table (list of objects)
+        if "block_reward_addresses_table" in config:
+            if isinstance(config["block_reward_addresses_table"], list):
+                validated_entries = []
+                for item in config["block_reward_addresses_table"]:
+                    if isinstance(item, dict) and "address" in item:
+                        entry = {
+                            "address": str(item.get("address", "")).strip(),
+                            "comment": str(item.get("comment", "")).strip() or "Block Reward Address"
+                        }
+                        if entry["address"]:  # Only add non-empty addresses
+                            validated_entries.append(entry)
+                validated["block_reward_addresses_table"] = validated_entries
+            else:
+                validated["block_reward_addresses_table"] = []
 
         # Currency validation for BTC price
         valid_currencies = ["USD", "EUR", "GBP", "CAD", "CHF", "AUD", "JPY"]
         if config.get("btc_price_currency", "").upper() in valid_currencies:
             validated["btc_price_currency"] = config["btc_price_currency"].upper()
+            
+        # Currency validation for wallet balance
+        if config.get("wallet_balance_currency", "").upper() in valid_currencies:
+            validated["wallet_balance_currency"] = config["wallet_balance_currency"].upper()
 
         # Balance unit validation
         valid_units = ["btc", "sats"]
         if config.get("wallet_balance_unit", "").lower() in valid_units:
             validated["wallet_balance_unit"] = config["wallet_balance_unit"].lower()
-        
-        # XPUB derivation count validation
-        xpub_count = config.get("xpub_derivation_count")
-        if isinstance(xpub_count, (int, str)):
-            try:
-                count = int(xpub_count)
-                if 1 <= count <= 100:
-                    validated["xpub_derivation_count"] = count
-            except (ValueError, TypeError):
-                pass
 
         # String settings
         string_settings = [
             "mempool_ip",
             "omni_device_name",
             "admin_username",
-            "admin_password",
-            "secret_key",
-            "font_regular",
-            "font_bold",
-            "bitaxe_miner_ips"
+            "admin_password"
         ]
         for setting in string_settings:
             if setting in config and isinstance(config[setting], str):
@@ -489,12 +528,7 @@ class ConfigManager:
             "mempool_rest_port": (1, 65535),
             "mempool_ws_port": (1, 65535),
             "display_width": (100, 2000),
-            "display_height": (100, 2000),
-            "rate_limit_requests": (10, 1000),
-            "rate_limit_window": (60, 3600),
-            "session_timeout": (300, 172800),  # 5 minutes to 48 hours
-            "backup_duration_minutes": (1, 1440),  # 1 minute to 24 hours
-            "block_height_area": (50, 500)  # Block height display area
+            "display_height": (100, 2000)
         }
         for setting, (min_val, max_val) in int_settings.items():
             if setting in config:
@@ -528,7 +562,6 @@ class ConfigManager:
             "mempool_ip",
             "omni_device_name", 
             "admin_username",
-            "secret_key",
             "font_regular",
             "font_bold"
         ]
@@ -639,19 +672,18 @@ class ConfigManager:
                 "category": "bitaxe_stats"
             },
 
-            "bitaxe_miner_ips": {
-                "type": "text",
-                "label": t.get("bitaxe_miner_ips", "Bitaxe Miner IPs"),
-                "placeholder": "192.168.1.10,192.168.1.11,192.168.1.12",
-                "description": t.get("bitaxe_miner_ips_desc", "Comma-separated list of Bitaxe miner IP addresses to monitor"),
-                "default": "",
+            "bitaxe_miner_table": {
+                "type": "bitaxe_table",
+                "label": t.get("bitaxe_miner_table", "Bitaxe Monitoring Table"),
+                "description": t.get("bitaxe_miner_table_desc", "Manage your Bitaxe miner IP addresses with comments for easy identification."),
+                "default": [],
                 "category": "bitaxe_stats"
             },
-            "block_reward_addresses": {
-                "type": "tags",
-                "label": t.get("block_reward_addresses", "Block Reward Monitoring Addresses"),
-                "placeholder": "Add BTC addresses to monitor for block rewards",
-                "description": t.get("block_reward_addresses_desc", "BTC addresses to monitor for coinbase transactions (block rewards)"),
+            "block_reward_addresses_table": {
+                "type": "block_reward_table",
+                "label": t.get("block_reward_addresses_table", "Block Reward Monitoring Table"),
+                "description": t.get("block_reward_addresses_table_desc", "Manage BTC addresses to monitor for block rewards with comments and found blocks tracking."),
+                "default": [],
                 "category": "bitaxe_stats"
             },
             "show_wallet_balances_block": {
@@ -661,11 +693,14 @@ class ConfigManager:
                 "default": True,
                 "category": "wallet_monitoring"
             },
+            "wallet_balance_addresses_with_comments": {
+                "type": "wallet_table",
+                "label": t.get("wallet_balance_addresses_table", "Wallet Monitoring Table"),
+                "description": t.get("wallet_balance_addresses_table_desc", "Manage your wallet addresses, XPUBs, and ZPUBs with comments and balance monitoring."),
+                "category": "wallet_monitoring"
+            },
             "wallet_balance_addresses": {
-                "type": "tags",
-                "label": t.get("wallet_balance_addresses", "Wallet Addresses/XPUBs/ZPUBs"),
-                "placeholder": "Add BTC addresses, XPUBs, or ZPUBs",
-                "description": t.get("wallet_balance_addresses_desc", "List of BTC addresses, XPUBs, or ZPUBs to display balances for. Extended keys will derive addresses automatically."),
+                "type": "hidden",
                 "category": "wallet_monitoring"
             },
             "wallet_balance_unit": {
@@ -679,70 +714,20 @@ class ConfigManager:
                 ],
                 "category": "wallet_monitoring"
             },
-            "wallet_balance_show_fiat": {
-                "type": "boolean",
-                "label": t.get("wallet_balance_show_fiat", "Show Fiat Value"),
-                "description": t.get("wallet_balance_show_fiat_desc", "Show fiat currency value alongside BTC/sats balance"),
-                "default": True,
-                "category": "wallet_monitoring"
-            },
-            "xpub_derivation_count": {
-                "type": "number",
-                "label": t.get("xpub_derivation_count", "XPUB/ZPUB Address Count"),
-                "description": t.get("xpub_derivation_count_desc", "Number of addresses to derive from each XPUB/ZPUB (1-100)"),
-                "default": 20,
-                "min": 1,
-                "max": 100,
-                "category": "wallet_monitoring"
-            },
-            "xpub_enable_gap_limit": {
-                "type": "boolean",
-                "label": t.get("xpub_enable_gap_limit", "Enable Gap Limit Detection"),
-                "description": t.get("xpub_enable_gap_limit_desc", "Enable advanced gap limit detection to find all used addresses automatically"),
-                "default": True,
-                "category": "wallet_monitoring"
-            },
-            "xpub_gap_limit_last_n": {
-                "type": "number",
-                "label": t.get("xpub_gap_limit_last_n", "Gap Limit (Consecutive Unused)"),
-                "description": t.get("xpub_gap_limit_last_n_desc", "Number of consecutive unused addresses needed to stop scanning (5-100)"),
-                "default": 20,
-                "min": 5,
-                "max": 100,
-                "category": "wallet_monitoring"
-            },
-            "xpub_gap_limit_increment": {
-                "type": "number",
-                "label": t.get("xpub_gap_limit_increment", "Gap Limit Search Increment"),
-                "description": t.get("xpub_gap_limit_increment_desc", "Number of addresses to add each time when expanding search (1-50)"),
-                "default": 20,
-                "min": 1,
-                "max": 50,
-                "category": "wallet_monitoring"
-            },
-            "xpub_enable_bootstrap_search": {
-                "type": "boolean",
-                "label": t.get("xpub_enable_bootstrap_search", "Enable Bootstrap Search"),
-                "description": t.get("xpub_enable_bootstrap_search_desc", "Enable bootstrap search to find wallets with used addresses beyond the initial range"),
-                "default": True,
-                "category": "wallet_monitoring"
-            },
-            "xpub_bootstrap_max_addresses": {
-                "type": "number",
-                "label": t.get("xpub_bootstrap_max_addresses", "Bootstrap Maximum Addresses"),
-                "description": t.get("xpub_bootstrap_max_addresses_desc", "Maximum addresses to check during bootstrap search (20-1000)"),
-                "default": 200,
-                "min": 20,
-                "max": 1000,
-                "category": "wallet_monitoring"
-            },
-            "xpub_bootstrap_increment": {
-                "type": "number",
-                "label": t.get("xpub_bootstrap_increment", "Bootstrap Search Increment"),
-                "description": t.get("xpub_bootstrap_increment_desc", "Number of addresses to add each time during bootstrap (1-50)"),
-                "default": 20,
-                "min": 1,
-                "max": 50,
+            "wallet_balance_currency": {
+                "type": "select",
+                "label": t.get("wallet_balance_currency", "BTC Price Currency"),
+                "description": t.get("wallet_balance_currency_desc", "Fiat currency for wallet balance display"),
+                "default": "EUR",
+                "options": [
+                    {"value": "USD", "label": "US Dollar (USD)", "symbol": "$"},
+                    {"value": "EUR", "label": "Euro (EUR)", "symbol": "€"},
+                    {"value": "GBP", "label": "British Pound (GBP)", "symbol": "£"},
+                    {"value": "CAD", "label": "Canadian Dollar (CAD)", "symbol": "C$"},
+                    {"value": "CHF", "label": "Swiss Franc (CHF)", "symbol": "CHF"},
+                    {"value": "AUD", "label": "Australian Dollar (AUD)", "symbol": "A$"},
+                    {"value": "JPY", "label": "Japanese Yen (JPY)", "symbol": "¥"}
+                ],
                 "category": "wallet_monitoring"
             },
             "language": {
@@ -931,74 +916,11 @@ class ConfigManager:
                 "description": t.get("admin_password_desc", "Password for admin authentication"),
                 "category": "general"
             },
-            "secret_key": {
-                "type": "string",
-                "label": t.get("secret_key", "Session Secret Key"),
-                "placeholder": "Random secret key for session security",
-                "description": t.get("secret_key_desc", "Secret key used to encrypt session cookies - change this for better security"),
-                "category": "general"
-            },
-            "rate_limit_requests": {
-                "type": "number",
-                "label": t.get("rate_limit_requests", "Rate Limit (Requests)"),
-                "min": 10,
-                "max": 1000,
-                "description": t.get("rate_limit_requests_desc", "Maximum requests per time window"),
-                "category": "general"
-            },
-            "rate_limit_window": {
-                "type": "number",
-                "label": t.get("rate_limit_window", "Rate Limit Window (seconds)"),
-                "min": 60,
-                "max": 3600,
-                "description": t.get("rate_limit_window_desc", "Time window for rate limiting"),
-                "category": "general"
-            },
-            "session_timeout": {
-                "type": "number",
-                "label": t.get("session_timeout", "Session Timeout (seconds)"),
-                "min": 300,
-                "max": 172800,
-                "description": t.get("session_timeout_desc", "How long users stay logged in (3600 = 1 hour, 172800 = 48 hours)"),
-                "category": "general"
-            },
-            "font_regular": {
-                "type": "text",
-                "label": t.get("font_regular", "Regular Font Path"),
-                "placeholder": "fonts/Roboto-Regular.ttf",
-                "description": t.get("font_regular_desc", "Path to regular font file"),
-                "category": "colors_design"
-            },
-            "font_bold": {
-                "type": "text",
-                "label": t.get("font_bold", "Bold Font Path"),
-                "placeholder": "fonts/Roboto-Bold.ttf",
-                "description": t.get("font_bold_desc", "Path to bold font file"),
-                "category": "colors_design"
-            },
             "color_mode_dark": {
                 "type": "boolean",
                 "label":  t.get("color_mode_dark", "Dark Mode"),
                 "description":  t.get("color_mode_dark_desc", "Enable dark mode for the webinterface."),
                 "default": True,
-                "category": "colors_design"
-            },
-            "backup_duration_minutes": {
-                "type": "number",
-                "label": t.get("backup_duration", "Backup Duration (Minutes)"),
-                "description": t.get("backup_duration_desc", "How long to keep backup connection during disconnections"),
-                "min": 1,
-                "max": 1440,
-                "default": 45,
-                "category": "mempool"
-            },
-            "block_height_area": {
-                "type": "number",
-                "label": t.get("block_height_area", "Block Height Display Area"),
-                "description": t.get("block_height_area_desc", "Area size for block height display"),
-                "min": 50,
-                "max": 500,
-                "default": 160,
                 "category": "colors_design"
             },
             "enable_browser_console_logging": {
@@ -1029,8 +951,7 @@ class ConfigManager:
             {"id": "mempool", "label": t.get("mempool_settings", "Mempool"), "icon": "/static/icons/mempool.png"},
             {"id": "bitaxe_stats", "label": t.get("bitaxe_stats", "Bitaxe Stats"), "icon": "⛏️"},
             {"id": "price_stats", "label": t.get("price_stats", "Price Stats"), "icon": "💰"},
-            {"id": "wallet_monitoring", "label": t.get("wallet_monitoring", "Wallet Monitoring"), "icon": "�"},
-            {"id": "twitter_x", "label": t.get("twitter_x", "Twitter/X"), "icon": "�"}
+            {"id": "wallet_monitoring", "label": t.get("wallet_monitoring", "Wallet Monitoring"), "icon": "💳"}
         ]
     
     def get_current_config(self) -> Dict[str, Any]:

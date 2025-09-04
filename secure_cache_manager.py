@@ -33,9 +33,18 @@ class SecureCacheManager:
         self.encrypted_cache_file = cache_file.replace('.json', '.secure.json')
         self.cache_lock = threading.RLock()
         
+        # Ensure cache directory exists
+        cache_dir = os.path.dirname(cache_file)
+        if cache_dir and not os.path.exists(cache_dir):
+            os.makedirs(cache_dir, exist_ok=True)
+        
         # Use shared encryption system from secure config
-        config_dir = os.path.dirname(cache_file) or '.'
-        config_path = os.path.join(config_dir, 'config.json')
+        # Always look for config in the root directory, not in cache subdirectory
+        if cache_dir.startswith('cache'):
+            config_path = 'config/config.json'
+        else:
+            config_dir = os.path.dirname(cache_file) or '.'
+            config_path = os.path.join(config_dir, 'config.json')
         
         try:
             self.secure_manager = SecureConfigManager(config_path)
@@ -54,7 +63,7 @@ class SecureCacheManager:
             Cache data dictionary
         """
         with self.cache_lock:
-            # Try encrypted cache first
+            # Load encrypted cache only
             if self.encryption_available and os.path.exists(self.encrypted_cache_file):
                 try:
                     with open(self.encrypted_cache_file, 'r') as f:
@@ -63,24 +72,14 @@ class SecureCacheManager:
                     if encrypted_data.get('_encrypted_cache'):
                         decrypted_data = self.secure_manager._decrypt_data(encrypted_data['data'])
                         if decrypted_data is not None:
-                            print(f"🔓 Loaded encrypted cache: {self.cache_file}")
+                            print(f"🔓 Loaded encrypted cache: {self.encrypted_cache_file}")
                             return decrypted_data
                         else:
-                            print(f"⚠️ Failed to decrypt cache: {self.cache_file}")
+                            print(f"⚠️ Failed to decrypt cache: {self.encrypted_cache_file}")
                 except Exception as e:
                     print(f"⚠️ Error loading encrypted cache: {e}")
             
-            # Fallback to plain cache
-            if os.path.exists(self.cache_file):
-                try:
-                    with open(self.cache_file, 'r') as f:
-                        data = json.load(f)
-                    print(f"📄 Loaded plain cache: {self.cache_file}")
-                    return data
-                except Exception as e:
-                    print(f"⚠️ Error loading plain cache: {e}")
-            
-            # Return empty cache if nothing found
+            # Return empty cache if encrypted cache not found
             return {}
     
     def save_cache(self, cache_data: Dict[str, Any]) -> bool:
@@ -95,7 +94,7 @@ class SecureCacheManager:
         """
         with self.cache_lock:
             try:
-                # Save encrypted cache if encryption available
+                # Only save encrypted cache
                 if self.encryption_available and self.secure_manager:
                     encrypted_cache = {
                         '_encrypted_cache': True,
@@ -110,102 +109,44 @@ class SecureCacheManager:
                     # Set restrictive permissions
                     os.chmod(self.encrypted_cache_file, 0o600)
                     
-                    # Remove plain cache file if it exists (migration)
-                    if os.path.exists(self.cache_file):
-                        try:
-                            os.remove(self.cache_file)
-                            print(f"🗑️ Removed plain cache file: {self.cache_file}")
-                        except:
-                            pass
-                    
-                    print(f"🔒 Saved encrypted cache: {self.encrypted_cache_file}")
+                    print(f" Saved encrypted cache: {self.encrypted_cache_file}")
                     return True
-                
-                # Fallback to plain cache
-                with open(self.cache_file, 'w') as f:
-                    json.dump(cache_data, f, indent=2)
-                print(f"📄 Saved plain cache: {self.cache_file}")
-                return True
+                else:
+                    print(f"❌ Encryption not available - cannot save cache")
+                    return False
                 
             except Exception as e:
                 print(f"❌ Error saving cache: {e}")
                 return False
     
-    def migrate_plain_cache(self) -> bool:
-        """
-        Migrate existing plain cache to encrypted format.
-        
-        Returns:
-            True if migration successful
-        """
-        if not os.path.exists(self.cache_file):
-            print(f"✅ No plain cache to migrate: {self.cache_file}")
-            return True
-        
-        if not self.encryption_available:
-            print(f"⚠️ Cannot migrate cache - encryption not available")
-            return False
-        
-        try:
-            # Load existing cache
-            cache_data = {}
-            with open(self.cache_file, 'r') as f:
-                cache_data = json.load(f)
-            
-            if not cache_data:
-                print(f"✅ Empty cache, nothing to migrate")
-                return True
-            
-            # Save as encrypted
-            success = self.save_cache(cache_data)
-            
-            if success:
-                print(f"✅ Cache migration successful: {self.cache_file} → {self.encrypted_cache_file}")
-                return True
-            else:
-                print(f"❌ Cache migration failed: {self.cache_file}")
-                return False
-                
-        except Exception as e:
-            print(f"❌ Cache migration error: {e}")
-            return False
-    
     def clear_cache(self) -> bool:
-        """Clear both encrypted and plain cache files."""
-        success = True
-        
-        for cache_path in [self.cache_file, self.encrypted_cache_file]:
-            if os.path.exists(cache_path):
-                try:
-                    os.remove(cache_path)
-                    print(f"🗑️ Cleared cache: {cache_path}")
-                except Exception as e:
-                    print(f"⚠️ Failed to clear {cache_path}: {e}")
-                    success = False
-        
-        return success
+        """Clear encrypted cache file."""
+        if os.path.exists(self.encrypted_cache_file):
+            try:
+                os.remove(self.encrypted_cache_file)
+                print(f"🗑️ Cleared cache: {self.encrypted_cache_file}")
+                return True
+            except Exception as e:
+                print(f"⚠️ Failed to clear {self.encrypted_cache_file}: {e}")
+                return False
+        else:
+            print(f"ℹ️ No cache file to clear: {self.encrypted_cache_file}")
+            return True
     
     def get_cache_info(self) -> Dict[str, Any]:
         """Get information about cache files."""
         info = {
-            'plain_cache_exists': os.path.exists(self.cache_file),
             'encrypted_cache_exists': os.path.exists(self.encrypted_cache_file),
             'encryption_available': self.encryption_available,
-            'plain_cache_size': 0,
             'encrypted_cache_size': 0,
             'recommendation': None
         }
-        
-        if info['plain_cache_exists']:
-            info['plain_cache_size'] = os.path.getsize(self.cache_file)
         
         if info['encrypted_cache_exists']:
             info['encrypted_cache_size'] = os.path.getsize(self.encrypted_cache_file)
         
         # Security recommendations
-        if info['plain_cache_exists'] and info['encryption_available']:
-            info['recommendation'] = "Migrate plain cache to encrypted format"
-        elif not info['encryption_available'] and (info['plain_cache_exists'] or info['encrypted_cache_exists']):
+        if not info['encryption_available']:
             info['recommendation'] = "Install cryptography library to enable cache encryption"
         
         return info
@@ -296,28 +237,28 @@ def patch_async_cache_manager():
 
 
 def migrate_all_caches():
-    """Migrate all existing cache files to encrypted format."""
+    """Check all secure cache files (migration no longer needed as plain caches are deprecated)."""
     cache_files = [
         'wallet_address_cache.json',
-        'async_wallet_address_cache.json'
+        'cache/async_wallet_address_cache.json'
     ]
     
-    migrated = 0
+    # Check if secure cache files exist
+    existing_secure = 0
     for cache_file in cache_files:
-        if os.path.exists(cache_file):
-            secure_cache = SecureCacheManager(cache_file)
-            if secure_cache.migrate_plain_cache():
-                migrated += 1
+        secure_cache = SecureCacheManager(cache_file)
+        if secure_cache.get_cache_info()['encrypted_cache_exists']:
+            existing_secure += 1
     
-    print(f"✅ Migrated {migrated} cache files to encrypted format")
-    return migrated
+    print(f"✅ Found {existing_secure} existing secure cache files")
+    return existing_secure
 
 
 def get_all_cache_status():
     """Get security status of all cache files."""
     cache_files = [
         'wallet_address_cache.json',
-        'async_wallet_address_cache.json'
+        'cache/async_wallet_address_cache.json'
     ]
     
     status = {}
@@ -338,7 +279,6 @@ def main():
     
     for cache_file, info in cache_status.items():
         print(f"\n📁 {cache_file}:")
-        print(f"   Plain cache exists: {'✅' if info['plain_cache_exists'] else '❌'}")
         print(f"   Encrypted cache exists: {'✅' if info['encrypted_cache_exists'] else '❌'}")
         print(f"   Encryption available: {'✅' if info['encryption_available'] else '❌'}")
         

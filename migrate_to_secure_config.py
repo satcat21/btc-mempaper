@@ -52,7 +52,6 @@ def migrate_to_secure_config():
     sensitive_fields = [
         'admin_password_hash',
         'secret_key', 
-        'twitter_bearer_token',
         'block_reward_addresses'
     ]
     

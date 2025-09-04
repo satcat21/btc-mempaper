@@ -89,13 +89,13 @@ COLOR_SETS = {
 }
 
 FEE_COLOR_TONES = {
-    # Vivid (left), Gradient (right)
-    "green":   ("#A8FFB0", "#388E3C"),   # light mint green to rich green
-    "yellow":  ("#FFF566", "#BDB76B"),   # soft lemon yellow to olive yellow
-    "orange":  ("#FFB347", "#FF6F00"),   # light orange to deep orange
-    "red":     ("#FF6F6F", "#B71C1C"),   # salmon red to deep red
-    "blue":    ("#4FC3F7", "#0D47A1"),   # sky blue to deep blue
-    "black":   ("#CCCCCC", "#222222"),   # light gray to almost black
+    # Brightened colors optimized for dark backgrounds and small text readability
+    "green":   ("#8AF1DC", "#4CAF50"),   # Light Green to Material Green (high contrast)
+    "yellow":  ("#D0E276", "#FFC107"),   # Bright Yellow to Material Amber (very visible)
+    "orange":  ("#DBD36B", "#FF9800"),   # Light Orange to Material Orange (warm and bright)
+    "red":     ("#D9997B", "#F44336"),   # Light Red to Material Red (attention-grabbing)
+    "blue":    ("#AD85E1", "#2196F3"),   # Light Blue to Material Blue (excellent contrast)
+    "black":   ("#E0E0E0", "#BDBDBD"),   # Light Grey to Medium Grey (high readability)
 }
 
 # --- Layout and Block Constants (single source of truth) ---
@@ -815,6 +815,44 @@ class ImageRenderer:
             # Fallback to ISO format
             return today.strftime("%Y-%m-%d")
     
+    def get_optimal_date_font_size(self, date_text, max_width=None, max_font_size=None, min_font_size=None):
+        """
+        Calculate optimal font size for date text to fit within display width.
+        
+        Args:
+            date_text (str): The date text to measure
+            max_width (int, optional): Maximum width in pixels. Defaults to 90% of display width.
+            max_font_size (int, optional): Maximum font size to try. Defaults to config value or 48.
+            min_font_size (int, optional): Minimum font size allowed. Defaults to config value or 20.
+        
+        Returns:
+            int: Optimal font size that fits the text within the width constraints
+        """
+        if max_width is None:
+            max_width = int(self.width * 0.9)  # Use 90% of display width as default
+        
+        if max_font_size is None:
+            max_font_size = self.config.get("date_font_max_size", 48)
+        
+        if min_font_size is None:
+            min_font_size = self.config.get("date_font_min_size", 32)
+        
+        # Start with the maximum font size and work down
+        for font_size in range(max_font_size, min_font_size - 1, -1):
+            try:
+                test_font = ImageFont.truetype(self.font_bold, font_size)
+                bbox = test_font.getbbox(date_text)
+                text_width = bbox[2] - bbox[0]
+                
+                if text_width <= max_width:
+                    return font_size
+            except Exception as e:
+                # If font loading fails, continue with smaller size
+                continue
+        
+        # If all else fails, return minimum font size
+        return min_font_size
+
     def draw_centered(self, draw, text, y, font, fill="black"):
         """
         Draw text centered horizontally at specified y position.
@@ -882,8 +920,8 @@ class ImageRenderer:
             y += text_height + line_spacing
         
         return y
-    
-    def render_dual_images(self, block_height, block_hash, twitter_api=None, mempool_api=None, twitter_content_manager=None, startup_mode=False):
+
+    def render_dual_images(self, block_height, block_hash, mempool_api=None,  startup_mode=False):
         """
         Render both web-quality and e-ink optimized images efficiently.
         Optimized to share common elements and reduce API calls.
@@ -891,9 +929,7 @@ class ImageRenderer:
         Args:
             block_height (str): Current Bitcoin block height
             block_hash (str): Current Bitcoin block hash
-            twitter_api (TwitterAPI, optional): Twitter API instance for tweets
             mempool_api (MempoolAPI, optional): Mempool API instance for formatting
-            twitter_content_manager (TwitterContentManager, optional): Twitter content manager for prioritized content
             startup_mode (bool): If True, use cached data only and skip expensive gap limit detection
             
         Returns:
@@ -915,19 +951,7 @@ class ImageRenderer:
         
         # Try Twitter content first, fallback to memes
         content_path = None
-        if twitter_content_manager:
-            try:
-                print("🐦 Attempting Twitter content generation...")
-                content_path = twitter_content_manager.generate_tweet_screenshot()
-                if content_path:
-                    print(f"✅ Using Twitter content: {os.path.basename(content_path)}")
-                else:
-                    print("⚠️  Twitter content generation failed, using meme fallback")
-            except Exception as e:
-                print(f"❌ Twitter content error: {e}")
-                print("   Falling back to meme selection...")
-        
-        # Fallback to random meme if no Twitter content
+        # Fallback to random meme
         if not content_path:
             content_path = self.pick_random_meme()
             print(f"🎭 Selected meme: {os.path.basename(content_path) if content_path else 'None'}")
@@ -945,8 +969,17 @@ class ImageRenderer:
             bitaxe_data = self.bitaxe_api.fetch_bitaxe_stats()
             info_blocks.append((self.render_bitaxe_block, bitaxe_data))
         if config.get("show_wallet_balances_block", True):
+            print("🔍 [IMG] Loading cached wallet data...")
             wallet_data = self.wallet_api.get_cached_wallet_balances()
-            if wallet_data is None:
+            # Import privacy utils if available
+            try:
+                from privacy_utils import mask_bitcoin_data
+                masked_wallet_data = mask_bitcoin_data(wallet_data)
+                print(f"📋 [IMG] Cached wallet data result: {masked_wallet_data}")
+            except ImportError:
+                print(f"📋 [IMG] Cached wallet data result: {wallet_data}")
+            if wallet_data is None or wallet_data.get("error"):
+                print("⚠️ [IMG] No cached wallet data available or error occurred, using default values")
                 wallet_data = {
                     "total_btc": 0,
                     "total_fiat": 0,
@@ -954,14 +987,19 @@ class ImageRenderer:
                     "addresses": [],
                     "xpubs": [],
                 }
-            if btc_price_data:
-                wallet_data["total_fiat"] = self.wallet_api._convert_to_fiat(wallet_data["total_btc"], wallet_data["fiat_currency"])
             else:
-                btc_price_data = self.btc_price_api.fetch_btc_price()
+                print(f"✅ [IMG] Using cached wallet data: {wallet_data.get('total_btc', 0)} BTC")
+            
+            # Only try to convert to fiat if we have valid wallet data
+            if wallet_data.get("total_btc") is not None and not wallet_data.get("error"):
                 if btc_price_data:
                     wallet_data["total_fiat"] = self.wallet_api._convert_to_fiat(wallet_data["total_btc"], wallet_data["fiat_currency"])
                 else:
-                    print("⚠️ Failed to fetch BTC price data for wallet balance updates. Use cache as it is.")
+                    btc_price_data = self.btc_price_api.fetch_btc_price()
+                    if btc_price_data:
+                        wallet_data["total_fiat"] = self.wallet_api._convert_to_fiat(wallet_data["total_btc"], wallet_data["fiat_currency"])
+                    else:
+                        print("⚠️ Failed to fetch BTC price data for wallet balance updates. Use cache as it is.")
 
             info_blocks.append((self.render_wallet_balances_block, wallet_data))
         
@@ -984,7 +1022,7 @@ class ImageRenderer:
         else:
             print("🌐 Generating web-quality image...")
         web_img = self._render_image_with_shared_data(
-            block_height, block_hash, twitter_api, mempool_api,
+            block_height, block_hash, mempool_api,
             shared_data, web_quality=True, startup_mode=startup_mode
         )
         
@@ -996,14 +1034,14 @@ class ImageRenderer:
         eink_img = None
         if self.e_ink_enabled:
             eink_img = self._render_image_with_shared_data(
-                block_height, block_hash, twitter_api, mempool_api,
+                block_height, block_hash, mempool_api,
                 shared_data, web_quality=False, startup_mode=startup_mode
             )
         
         print("✅ Dual image generation completed efficiently")
         return web_img, eink_img, content_path  # Return selected content path for caching
     
-    def render_dual_images_with_cached_meme(self, block_height, block_hash, cached_meme_path, twitter_api=None, mempool_api=None):
+    def render_dual_images_with_cached_meme(self, block_height, block_hash, cached_meme_path, mempool_api=None):
         """
         Render both web-quality and e-ink optimized images using a specific cached meme.
         Used when configuration changes require image refresh but meme should stay the same.
@@ -1012,7 +1050,6 @@ class ImageRenderer:
             block_height (str): Current Bitcoin block height
             block_hash (str): Current Bitcoin block hash
             cached_meme_path (str): Path to the cached meme to use
-            twitter_api (TwitterAPI, optional): Twitter API instance for tweets
             mempool_api (MempoolAPI, optional): Mempool API instance for formatting
             
         Returns:
@@ -1048,8 +1085,17 @@ class ImageRenderer:
             bitaxe_data = self.bitaxe_api.fetch_bitaxe_stats()
             info_blocks.append((self.render_bitaxe_block, bitaxe_data))
         if config.get("show_wallet_balances_block", True):
+            print("🔍 [CACHE_IMG] Loading cached wallet data...")
             wallet_data = self.wallet_api.get_cached_wallet_balances()
-            if wallet_data is None:
+            # Import privacy utils if available
+            try:
+                from privacy_utils import mask_bitcoin_data
+                masked_wallet_data = mask_bitcoin_data(wallet_data)
+                print(f"📋 [CACHE_IMG] Cached wallet data result: {masked_wallet_data}")
+            except ImportError:
+                print(f"📋 [CACHE_IMG] Cached wallet data result: {wallet_data}")
+            if wallet_data is None or wallet_data.get("error"):
+                print("⚠️ [CACHE_IMG] No cached wallet data available or error occurred, using default values")
                 wallet_data = {
                     "total_btc": 0,
                     "total_fiat": 0,
@@ -1057,14 +1103,19 @@ class ImageRenderer:
                     "addresses": [],
                     "xpubs": [],
                 }
-            if btc_price_data:
-                wallet_data["total_fiat"] = self.wallet_api._convert_to_fiat(wallet_data["total_btc"], wallet_data["fiat_currency"])
             else:
-                btc_price_data = self.btc_price_api.fetch_btc_price()
+                print(f"✅ [CACHE_IMG] Using cached wallet data: {wallet_data.get('total_btc', 0)} BTC")
+            
+            # Only try to convert to fiat if we have valid wallet data
+            if wallet_data.get("total_btc") is not None and not wallet_data.get("error"):
                 if btc_price_data:
                     wallet_data["total_fiat"] = self.wallet_api._convert_to_fiat(wallet_data["total_btc"], wallet_data["fiat_currency"])
                 else:
-                    print("⚠️ Failed to fetch BTC price data for wallet balance updates. Use cache as it is.")
+                    btc_price_data = self.btc_price_api.fetch_btc_price()
+                    if btc_price_data:
+                        wallet_data["total_fiat"] = self.wallet_api._convert_to_fiat(wallet_data["total_btc"], wallet_data["fiat_currency"])
+                    else:
+                        print("⚠️ Failed to fetch BTC price data for wallet balance updates. Use cache as it is.")
 
             info_blocks.append((self.render_wallet_balances_block, wallet_data))
         # Random selection logic here if needed
@@ -1084,21 +1135,21 @@ class ImageRenderer:
         # === GENERATE WEB IMAGE ===
         print("🌐 Regenerating web-quality image...")
         web_img = self._render_image_with_shared_data(
-            block_height, block_hash, twitter_api, mempool_api,
+            block_height, block_hash, mempool_api,
             shared_data, web_quality=True
         )
         
         # === GENERATE E-INK IMAGE ===
         print("🖥️ Regenerating e-ink optimized image...")
         eink_img = self._render_image_with_shared_data(
-            block_height, block_hash, twitter_api, mempool_api,
+            block_height, block_hash, mempool_api,
             shared_data, web_quality=False
         )
         
         print("✅ Image regeneration with cached meme completed")
         return web_img, eink_img, meme_path
     
-    def _render_image_with_shared_data(self, block_height, block_hash, twitter_api, mempool_api,
+    def _render_image_with_shared_data(self, block_height, block_hash, mempool_api,
                                       shared_data, web_quality=False, startup_mode=False):
         """
         Render image using pre-collected shared data to avoid duplicate API calls.
@@ -1106,7 +1157,6 @@ class ImageRenderer:
         Args:
             block_height (str): Current Bitcoin block height
             block_hash (str): Current Bitcoin block hash
-            twitter_api (TwitterAPI, optional): Twitter API instance for tweets
             mempool_api (MempoolAPI, optional): Mempool API instance for formatting
             holiday_info (dict): Pre-collected holiday information
             configured_fee (int): Pre-collected fee information
@@ -1118,8 +1168,14 @@ class ImageRenderer:
         Returns:
             PIL.Image: Rendered dashboard image
         """
-        # Load fonts
-        font_date = ImageFont.truetype(self.font_bold, 48)
+        # Get the date text first to calculate optimal font size
+        date_text = self.get_localized_date()
+        
+        # Calculate optimal font size for the date
+        optimal_date_font_size = self.get_optimal_date_font_size(date_text)
+        
+        # Load fonts with calculated date font size
+        font_date = ImageFont.truetype(self.font_bold, optimal_date_font_size)
         font_holiday_title = ImageFont.truetype(self.font_bold, 20)
         font_holiday_desc = ImageFont.truetype(self.font_regular, 16)
         font_block_label = ImageFont.truetype(self.font_regular, 16)
@@ -1145,7 +1201,7 @@ class ImageRenderer:
         start_color = self.get_color("hash_start", web_quality)
         end_color = self.get_color("hash_end", web_quality)
 
-        date_text = self.get_localized_date()
+        # Use the date_text we already calculated
         bbox = font_date.getbbox(date_text)
         text_width = bbox[2] - bbox[0]
         x = (self.width - text_width) // 2
@@ -1257,7 +1313,7 @@ class ImageRenderer:
                 current_y += meme_height
             else:
                 self._render_fallback_content(img, draw, current_y, meme_height,
-                                            font_holiday_title, twitter_api, web_quality)
+                                            font_holiday_title, web_quality)
                 current_y += meme_height
             if len(info_blocks_to_render):
                 # Render info blocks (each centered in assigned space)
@@ -1325,7 +1381,7 @@ class ImageRenderer:
                 blocks_y += meme_height
             else:
                 self._render_fallback_content(img, draw, blocks_y, meme_height,
-                                            font_holiday_title, twitter_api, web_quality)
+                                            font_holiday_title, web_quality)
                 blocks_y += meme_height
 
             # Render info blocks below meme, with dark style
@@ -1357,7 +1413,7 @@ class ImageRenderer:
             # meme_top_y = blocks_y + BLOCK_MARGIN
             # meme_area_height = meme_bottom_y - meme_top_y
             # self._render_content_with_meme(img, draw, meme_top_y, meme_area_height,
-            #                             font_holiday_title, font_holiday_desc, twitter_api, meme_path, web_quality)
+            #                             font_holiday_title, font_holiday_desc, meme_path, web_quality)
 
         # Block info at bottom
         self._render_block_info_with_data(img, draw, block_height, block_hash, font_block_label,
@@ -1367,7 +1423,7 @@ class ImageRenderer:
         return img
     
     def _render_content_with_meme(self, img, draw, meme_top_y, available_height,
-                                font_holiday_title, font_holiday_desc, twitter_api, meme_path, web_quality):
+                                font_holiday_title, font_holiday_desc, meme_path, web_quality):
         """
         Render content using pre-selected meme data to avoid redundant selection.
         """
@@ -1401,11 +1457,11 @@ class ImageRenderer:
                 print(f"⚠️ Error rendering pre-selected meme {meme_path}: {e}")
                 # Fallback to rendering text if meme fails
                 self._render_fallback_content(img, draw, meme_top_y, available_height, 
-                                            font_holiday_title, twitter_api, web_quality)
+                                            font_holiday_title, web_quality)
         else:
             # No meme available, render alternative content
             self._render_fallback_content(img, draw, meme_top_y, available_height, 
-                                        font_holiday_title, twitter_api, web_quality)
+                                        font_holiday_title, web_quality)
 
     def add_rounded_corners(self, img, radius):
         # Create mask
@@ -1619,34 +1675,10 @@ class ImageRenderer:
         img.paste(gradient, (int(x), int(y)), gradient)
 
     def _render_fallback_content(self, img, draw, meme_top_y, available_height, 
-                               font_holiday_title, twitter_api, web_quality):
+                               font_holiday_title, web_quality):
         """
         Render fallback content (Twitter or meme) when pre-selected meme fails.
         """
-        # Check for Twitter content first
-        if twitter_api:
-            tweet = twitter_api.get_random_recent_tweet_cached()
-            if tweet:
-                # Create tweet screenshot and use it as the content
-                screenshot_filename = twitter_api.create_tweet_screenshot(tweet)
-                if screenshot_filename:
-                    # Load the generated screenshot
-                    screenshot_path = os.path.join("static", "memes", screenshot_filename)
-                    if os.path.exists(screenshot_path):
-                        tweet_img = Image.open(screenshot_path)
-                        # Resize to fit available space
-                        max_width = int(self.width * 0.95)
-                        if tweet_img.width > max_width:
-                            ratio = max_width / tweet_img.width
-                            new_height = int(tweet_img.height * ratio)
-                            tweet_img = tweet_img.resize((max_width, new_height), Image.Resampling.LANCZOS)
-                        
-                        # Center and paste the tweet screenshot
-                        x = (self.width - tweet_img.width) // 2
-                        y = meme_top_y + (available_height - tweet_img.height) // 2
-                        img.paste(tweet_img, (x, y))
-                        print("🐦 Rendered Twitter content as fallback")
-                        return
         
         # Fallback to random meme selection
         print("🎲 Falling back to random meme selection")

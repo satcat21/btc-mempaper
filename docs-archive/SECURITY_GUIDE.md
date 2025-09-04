@@ -19,8 +19,7 @@ This guide provides lightweight but effective protection for sensitive Bitcoin d
   "wallet_balance_addresses_with_comments": [...],
   "block_reward_addresses": ["bc1q..."],
   "admin_password_hash": "...",
-  "secret_key": "...",
-  "twitter_bearer_token": "..."
+  "secret_key": "..."
 }
 ```
 

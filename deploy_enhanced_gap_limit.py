@@ -65,7 +65,7 @@ def show_deployment_instructions():
     
     print("🚨 TROUBLESHOOTING:")
     print("   If still showing 'Async cache HIT' instead of gap limit detection:")
-    print("   • Clear the cache: rm ~/btc-mempaper/async_wallet_address_cache.json.enc")
+    print("   • Clear the cache: rm ~/btc-mempaper/cache/async_wallet_address_cache.secure.json")
     print("   • Restart service: sudo systemctl restart mempaper")
     print()
     

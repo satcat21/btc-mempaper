@@ -161,8 +161,9 @@ body {
     font-weight: 600;
     margin-bottom: 20px;
     color: white; /*#333;*/
-    border-bottom: 2px solid #f0f0f0;
+    border-bottom: 2px solid rgba(255, 255, 255, 0.3);
     padding-bottom: 10px;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
 }
 
 .form-group {
@@ -185,9 +186,11 @@ body {
 .form-input {
     width: 100%;
     padding: 12px 16px;
-    border: 2px solid #e1e5e9;
+    border: 2px solid rgba(255, 255, 255, 0.3);
     border-radius: 8px;
     font-size: 14px;
+    background: #2a2d3e;
+    color: #ffffff;
     transition: border-color 0.3s ease;
 }
 
@@ -200,10 +203,11 @@ body {
 .form-select {
     width: 100%;
     padding: 12px 16px;
-    border: 2px solid #e1e5e9;
+    border: 2px solid rgba(255, 255, 255, 0.3);
     border-radius: 8px;
     font-size: 14px;
-    background: #5d6182; /*white;*/
+    background: #2a2d3e;
+    color: #ffffff;
     cursor: pointer;
 }
 
@@ -216,11 +220,11 @@ body {
 .color-select-trigger {
     width: 100%;
     padding: 12px 16px;
-    border: 2px solid #e1e5e9;
+    border: 2px solid rgba(255, 255, 255, 0.3);
     border-radius: 8px;
     font-size: 14px;
-    background: #5d6182; /*white;*/
-    color: white;
+    background: #2a2d3e;
+    color: #ffffff;
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -242,11 +246,11 @@ body {
     top: 100%;
     left: 0;
     right: 0;
-    background: #5d6182; /*white;*/
-    color: white;
-    border: 2px solid #e1e5e9;
+    background: #2a2d3e;
+    color: #ffffff;
+    border: 2px solid rgba(255, 255, 255, 0.3);
     border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
     z-index: 1000;
     max-height: 300px;
     overflow-y: auto;
@@ -499,6 +503,259 @@ body {
     }
 }
 
+/* Wallet Table Styles */
+.wallet-table-container {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 15px;
+    backdrop-filter: blur(10px);
+}
+
+.wallet-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 15px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.wallet-table th {
+    padding: 12px 10px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: #2a2d3e !important;
+    color: #ffffff !important;
+    font-weight: 600;
+    text-align: left;
+    font-size: 0.9em;
+}
+
+.wallet-table td {
+    padding: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.08);
+    transition: background-color 0.2s ease;
+}
+
+.wallet-table tr:hover td {
+    background: rgba(255, 255, 255, 0.18);
+}
+
+.wallet-table tr:hover th {
+    background: #0f1220 !important;
+}
+
+.wallet-address-input,
+.wallet-comment-input {
+    width: 100%;
+    border: 1px solid rgba(255, 255, 255, 0.3) !important;
+    padding: 8px !important;
+    background: rgba(255, 255, 255, 0.1) !important;
+    color: #ffffff !important;
+    font-size: 0.9em;
+    border-radius: 4px !important;
+}
+
+.wallet-address-input::placeholder,
+.wallet-comment-input::placeholder {
+    color: rgba(255, 255, 255, 0.8) !important;
+    font-style: italic;
+}
+
+.wallet-address-input:focus,
+.wallet-comment-input:focus {
+    outline: none;
+    background: rgba(255, 255, 255, 0.2) !important;
+    border-color: rgba(255, 255, 255, 0.6) !important;
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.1);
+}
+
+.wallet-balance-display {
+    color: #4FC3F7 !important;
+    font-family: monospace;
+    font-size: 0.9em;
+    font-weight: 500;
+}
+
+/* Bitaxe Table Styling */
+.bitaxe-table-container {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 15px;
+    backdrop-filter: blur(10px);
+}
+
+.bitaxe-address-input,
+.bitaxe-comment-input {
+    width: 100%;
+    padding: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    background: rgba(255, 255, 255, 0.1);
+    color: #ffffff;
+    border-radius: 4px;
+    font-size: 0.9em;
+}
+
+.bitaxe-address-input::placeholder,
+.bitaxe-comment-input::placeholder {
+    color: rgba(255, 255, 255, 0.8) !important;
+    font-style: italic;
+}
+
+.bitaxe-address-input:focus,
+.bitaxe-comment-input:focus {
+    outline: none;
+    background: rgba(255, 255, 255, 0.2) !important;
+    border-color: rgba(255, 255, 255, 0.6) !important;
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.1);
+}
+
+/* Block Reward Table Styling */
+.block-reward-table-container {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 15px;
+    backdrop-filter: blur(10px);
+}
+
+.block-reward-address-input,
+.block-reward-comment-input {
+    width: 100%;
+    padding: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    background: rgba(255, 255, 255, 0.1);
+    color: #ffffff;
+    border-radius: 4px;
+    font-size: 0.9em;
+}
+
+.block-reward-address-input::placeholder,
+.block-reward-comment-input::placeholder {
+    color: rgba(255, 255, 255, 0.8) !important;
+    font-style: italic;
+}
+
+.block-reward-address-input:focus,
+.block-reward-comment-input:focus {
+    outline: none;
+    background: rgba(255, 255, 255, 0.2) !important;
+    border-color: rgba(255, 255, 255, 0.6) !important;
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.1);
+}
+
+.wallet-add-btn {
+    background: rgba(255, 255, 255, 0.15);
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    color: #ffffff;
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9em;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    margin-right: 10px;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.wallet-add-btn:hover {
+    background: rgba(255, 255, 255, 0.25);
+    border-color: rgba(255, 255, 255, 0.6);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.wallet-add-btn:active {
+    transform: translateY(0);
+    background: rgba(255, 255, 255, 0.1);
+}
+
+/* Bitaxe Table Button Styling */
+.bitaxe-add-btn {
+    background: rgba(255, 255, 255, 0.15);
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    color: #ffffff;
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9em;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    margin-right: 10px;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.bitaxe-add-btn:hover {
+    background: rgba(255, 255, 255, 0.25);
+    border-color: rgba(255, 255, 255, 0.6);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.bitaxe-add-btn:active {
+    transform: translateY(0);
+    background: rgba(255, 255, 255, 0.1);
+}
+
+/* Block Reward Table Button Styling */
+.block-reward-add-btn {
+    background: rgba(255, 255, 255, 0.15);
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    color: #ffffff;
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9em;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    margin-top: 10px;
+    margin-right: 10px;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.block-reward-add-btn:hover {
+    background: rgba(255, 255, 255, 0.25);
+    border-color: rgba(255, 255, 255, 0.6);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.block-reward-add-btn:active {
+    transform: translateY(0);
+    background: rgba(255, 255, 255, 0.1);
+}
+
+/* Mobile optimizations for wallet table */
+@media (max-width: 768px) {
+    .wallet-table-container {
+        padding: 10px;
+    }
+    
+    .wallet-table {
+        font-size: 0.8em;
+    }
+    
+    .wallet-table th,
+    .wallet-table td {
+        padding: 6px 4px;
+    }
+    
+    .wallet-address-input,
+    .wallet-comment-input {
+        font-size: 14px !important; /* Prevents zoom on iOS */
+        padding: 6px !important;
+    }
+    
+    .wallet-balance-display {
+        font-size: 0.75em;
+    }
+    
+    .wallet-add-btn {
+        padding: 10px 14px;
+        font-size: 14px;
+        margin-bottom: 5px;
+    }
+}
+
 .save-button {
     background: linear-gradient(45deg, #667eea, #764ba2);
     color: white;
@@ -567,13 +824,20 @@ body {
     position: fixed;
     top: 20px;
     right: 20px;
-    padding: 15px 20px;
+    padding: 15px 20px 15px 15px;
     border-radius: 8px;
     color: white;
     font-weight: 500;
     z-index: 1000;
     transform: translateX(400px);
     transition: transform 0.3s ease;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 250px;
+    max-width: 400px;
+    word-wrap: break-word;
 }
 
 .notification.show {
@@ -586,6 +850,37 @@ body {
 
 .notification.error {
     background: #dc3545;
+}
+
+.notification.warning {
+    background: #ffc107;
+    color: #212529;
+}
+
+.notification .close-btn {
+    margin-left: auto;
+    background: none;
+    border: none;
+    color: inherit;
+    font-size: 18px;
+    font-weight: bold;
+    cursor: pointer;
+    padding: 0;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: background-color 0.2s ease;
+}
+
+.notification .close-btn:hover {
+    background-color: rgba(255, 255, 255, 0.2);
+}
+
+.notification.warning .close-btn:hover {
+    background-color: rgba(0, 0, 0, 0.1);
 }
 
 .modal {
@@ -791,17 +1086,20 @@ body {
     text-align: center;
     cursor: pointer;
     transition: all 0.3s ease;
-    background: #f8f9fa;
+    background: #2a2d3e;
+    color: #ffffff;
 }
 
 .upload-area:hover {
     border-color: #5a67d8;
-    background: #f0f4ff;
+    background: #353850;
+    color: #ffffff;
 }
 
 .upload-area.dragover {
     border-color: #4c51bf;
-    background: #e6fffa;
+    background: #3d4157;
+    color: #ffffff;
 }
 
 .meme-thumbnail {
@@ -1063,4 +1361,363 @@ body {
 
 .custom-select-container.open .custom-select-options {
     z-index: 100001; /* Even higher for the dropdown itself */
+}
+
+/* Lazy Loading Optimization Styles */
+.meme-lazy {
+    transition: opacity 0.3s ease;
+    opacity: 0.7;
+}
+
+.meme-lazy.loaded {
+    opacity: 1;
+}
+
+.meme-lazy.error {
+    opacity: 0.4;
+    filter: grayscale(1);
+}
+
+/* Load more button */
+.load-more-btn {
+    transition: all 0.3s ease;
+    font-weight: 500;
+}
+
+.load-more-btn:hover {
+    background: #5a6fd8 !important;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+.load-more-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+/* Improved loading states */
+.meme-thumbnail {
+    background: linear-gradient(45deg, #f0f0f0 25%, transparent 25%, transparent 75%, #f0f0f0 75%, #f0f0f0),
+                linear-gradient(45deg, #f0f0f0 25%, transparent 25%, transparent 75%, #f0f0f0 75%, #f0f0f0);
+    background-size: 20px 20px;
+    background-position: 0 0, 10px 10px;
+    animation: checkerboard 1s linear infinite;
+}
+
+.meme-thumbnail.loaded {
+    background: #f0f0f0;
+    animation: none;
+}
+
+@keyframes checkerboard {
+    0% { background-position: 0 0, 10px 10px; }
+    100% { background-position: 20px 20px, 30px 30px; }
+}
+
+/* Better responsive behavior for lazy loading */
+@media (max-width: 768px) {
+    .load-more-btn {
+        padding: 12px;
+        font-size: 14px;
+    }
+    
+    .meme-lazy {
+        min-height: 80px;
+    }
+}
+
+/* Header toggle styles for section enable/disable */
+.section-title {
+    position: relative;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.section-toggle {
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.9rem;
+    font-weight: 400;
+}
+
+.section-toggle-switch {
+    position: relative;
+    width: 44px;
+    height: 24px;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 12px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.section-toggle-switch.enabled {
+    background: #4CAF50;
+    border-color: #4CAF50;
+}
+
+.section-toggle-switch::before {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 18px;
+    height: 18px;
+    background: white;
+    border-radius: 50%;
+    transition: transform 0.3s ease;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.section-toggle-switch.enabled::before {
+    transform: translateX(20px);
+}
+
+/* Disabled section styles */
+.config-section.section-disabled {
+    opacity: 0.6;
+    pointer-events: none;
+    background: rgba(255, 255, 255, 0.03);
+    transition: opacity 0.3s ease, background-color 0.3s ease;
+}
+
+.config-section.section-disabled .form-group {
+    opacity: 0.5;
+    transition: opacity 0.3s ease;
+}
+
+.config-section.section-disabled .form-select,
+.config-section.section-disabled .form-control,
+.config-section.section-disabled input,
+.config-section.section-disabled textarea,
+.config-section.section-disabled button:not(.section-toggle-switch) {
+    background: rgba(255, 255, 255, 0.05) !important;
+    color: rgba(255, 255, 255, 0.4) !important;
+    cursor: not-allowed !important;
+    border-color: rgba(255, 255, 255, 0.1) !important;
+    transition: all 0.3s ease;
+}
+
+.config-section.section-disabled .table {
+    opacity: 0.5;
+    transition: opacity 0.3s ease;
+}
+
+.config-section.section-disabled .table th,
+.config-section.section-disabled .table td {
+    color: rgba(255, 255, 255, 0.4) !important;
+}
+
+.config-section.section-disabled .btn {
+    background: rgba(255, 255, 255, 0.05) !important;
+    color: rgba(255, 255, 255, 0.4) !important;
+    border-color: rgba(255, 255, 255, 0.1) !important;
+    cursor: not-allowed !important;
+    transition: all 0.3s ease;
+}
+
+/* Keep section toggle always interactive */
+.config-section.section-disabled .section-toggle {
+    pointer-events: all;
+    opacity: 1;
+}
+
+.config-section.section-disabled .section-toggle-switch {
+    pointer-events: all;
+    opacity: 1;
+}
+
+/* Smooth transitions for section state changes */
+.config-section {
+    transition: opacity 0.3s ease, background-color 0.3s ease;
+}
+
+/* Responsive Navigation Buttons */
+/* Hide the old back-button on desktop and mobile when new nav is available */
+@media (min-width: 769px) {
+    .back-button {
+        display: none;
+    }
+}
+
+@media (max-width: 768px) {
+    .back-button {
+        display: none;
+    }
+}
+
+/* Desktop Navigation - Vertical Left Side */
+.desktop-nav-buttons {
+    position: fixed;
+    left: 20px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    z-index: 1000;
+}
+
+.nav-button {
+    padding: 12px 20px;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    min-width: 120px;
+    text-align: center;
+    transition: all 0.3s ease;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    background: #5d6182;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.nav-button:hover {
+    background: #4a4d6b;
+    transform: translateX(-3px);
+}
+
+.nav-button:disabled {
+    background: #666;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.nav-button svg {
+    flex-shrink: 0;
+}
+
+/* Mobile Navigation - Bottom Fixed */
+.mobile-nav-buttons {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: rgba(29, 31, 49, 0.95);
+    backdrop-filter: blur(10px);
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 15px 20px;
+    gap: 30px;
+    z-index: 1000;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.mobile-nav-button {
+    width: 50px;
+    height: 50px;
+    border: none;
+    border-radius: 50%;
+    font-size: 18px;
+    font-weight: 500;
+    cursor: pointer;
+    text-align: center;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    background: #5d6182;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin: 0;
+}
+
+.mobile-nav-button:hover, .mobile-nav-button:active {
+    background: #4a4d6b;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.mobile-nav-button:disabled {
+    background: #666;
+    cursor: not-allowed;
+    transform: none;
+}
+
+/* Desktop: Show desktop nav, hide mobile nav */
+@media (min-width: 769px) {
+    .desktop-nav-buttons {
+        display: flex;
+    }
+    
+    .mobile-nav-buttons {
+        display: none;
+    }
+    
+    /* Adjust container to make room for left navigation */
+    .container {
+        margin-left: 160px;
+        max-width: calc(1200px - 160px);
+    }
+}
+
+/* Mobile: Hide desktop nav, show mobile nav */
+@media (max-width: 768px) {
+    .desktop-nav-buttons {
+        display: none;
+    }
+    
+    .mobile-nav-buttons {
+        display: flex;
+        position: fixed;
+        bottom: 0;
+        left: 50%;
+        transform: translateX(-50%);
+        width: auto;
+        min-width: 200px;
+        justify-content: center;
+        align-items: center;
+        background: rgba(29, 31, 49, 0.95);
+        backdrop-filter: blur(10px);
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 20px 20px 0 0;
+        padding: 15px 25px;
+        gap: 25px;
+        z-index: 1000;
+    }
+    
+    /* Add bottom padding to prevent content being hidden behind mobile nav */
+    body {
+        padding-bottom: 90px;
+    }
+    
+    .container {
+        margin-left: auto;
+        padding-bottom: 20px;
+    }
+}
+
+/* Extra small screens */
+@media (max-width: 480px) {
+    .mobile-nav-button {
+        width: 45px;
+        height: 45px;
+        font-size: 16px;
+    }
+    
+    .mobile-nav-buttons {
+        padding: 12px;
+        gap: 15px;
+    }
+    
+    body {
+        padding-bottom: 85px;
+    }
 }

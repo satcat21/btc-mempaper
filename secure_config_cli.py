@@ -81,10 +81,10 @@ def show_status(args):
         cache_status = get_all_cache_status()
         
         for cache_file, info in cache_status.items():
-            if info['plain_cache_exists'] or info['encrypted_cache_exists']:
+            if info['encrypted_cache_exists']:
                 print(f"   📁 {cache_file}:")
-                print(f"      Plain cache: {'⚠️' if info['plain_cache_exists'] else '✅'}")
                 print(f"      Encrypted cache: {'✅' if info['encrypted_cache_exists'] else '❌'}")
+                print(f"      Encryption available: {'✅' if info['encryption_available'] else '❌'}")
                 
                 if info['recommendation']:
                     print(f"      💡 {info['recommendation']}")
@@ -111,7 +111,7 @@ def show_status(args):
         ('config.secure.json', 'Encrypted configuration'),
         ('.config_key', 'Encryption key salt'),
         ('wallet_address_cache.secure.json', 'Encrypted address cache'),
-        ('async_wallet_address_cache.secure.json', 'Encrypted async cache')
+        ('cache/async_wallet_address_cache.secure.json', 'Encrypted async cache')
     ]
     
     for filename, description in files_to_check:
@@ -215,26 +215,24 @@ def create_backup(args):
 
 
 def migrate_cache_command(args):
-    """Migrate plain cache files to encrypted format."""
+    """Check secure cache files (migration no longer needed)."""
     if not CACHE_SECURITY_AVAILABLE:
         print("❌ Cache security features not available")
         print("Ensure secure_cache_manager.py is present in the project")
         return False
     
-    print("🗂️ Migrating cache files to secure format...")
+    print("🗂️ Checking secure cache files...")
     
-    migrated_count = migrate_all_caches()
+    # Check existing secure caches
+    existing_count = migrate_all_caches()
     
-    if migrated_count > 0:
-        print(f"✅ Successfully migrated {migrated_count} cache files!")
-        print("\nCache files are now encrypted and secure.")
-        return True
-    elif migrated_count == 0:
-        print("ℹ️ No cache files found to migrate")
+    if existing_count > 0:
+        print(f"✅ Found {existing_count} secure cache files!")
+        print("\nCache files are encrypted and secure.")
         return True
     else:
-        print("❌ Cache migration failed!")
-        return False
+        print("ℹ️ No secure cache files found (normal for new installations)")
+        return True
 
 
 def cache_status_command(args):
@@ -247,33 +245,32 @@ def cache_status_command(args):
     print("🗂️ Cache Security Status")
     print("=" * 40)
     
-    cache_files = find_cache_files()
+    # Use the proper secure cache status function
+    cache_status = get_all_cache_status()
     
-    if not cache_files:
+    if not cache_status:
         print("ℹ️ No cache files found")
         return True
     
     encrypted_count = 0
-    plain_count = 0
     
-    for cache_file in cache_files:
-        if cache_file.endswith('.enc'):
-            print(f"🔐 {cache_file} - ENCRYPTED")
+    for cache_file, info in cache_status.items():
+        if info['encrypted_cache_exists']:
+            print(f"🔐 {cache_file} - ENCRYPTED (secure)")
             encrypted_count += 1
+            if info['recommendation']:
+                print(f"   💡 {info['recommendation']}")
         else:
-            print(f"⚠️  {cache_file} - PLAIN TEXT (VULNERABLE)")
-            plain_count += 1
+            print(f"ℹ️ {cache_file} - No cache file found")
     
     print("\n" + "=" * 40)
-    print(f"📊 Summary: {encrypted_count} encrypted, {plain_count} plain text")
+    print(f"📊 Summary: {encrypted_count} encrypted cache files")
     
-    if plain_count > 0:
-        print("\n⚠️ Security Warning:")
-        print(f"Found {plain_count} unencrypted cache files containing sensitive data")
-        print("Run 'python secure_config_cli.py migrate-cache' to secure them")
-        return False
-    else:
+    if encrypted_count > 0:
         print("\n✅ All cache files are properly encrypted")
+        return True
+    else:
+        print("\nℹ️ No cache files found (normal for new installations)")
         return True
 
 
@@ -340,10 +337,10 @@ Examples:
     permissions_parser = subparsers.add_parser('permissions', help='Set up secure file permissions')
     permissions_parser.set_defaults(func=setup_permissions)
     
-    # Cache migration command
+    # Cache check command
     migrate_cache_parser = subparsers.add_parser(
         'migrate-cache',
-        help='Migrate plain cache files to encrypted format'
+        help='Check secure cache files status'
     )
     migrate_cache_parser.set_defaults(func=migrate_cache_command)
     

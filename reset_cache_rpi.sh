@@ -40,9 +40,8 @@ remove_directory() {
 echo "🗑️  Removing cache files..."
 
 # Remove wallet address cache files
-remove_file "async_wallet_address_cache.json"
-remove_file "async_wallet_address_cache.secure.json"
-remove_file "cache_metadata.json"
+remove_file "cache/async_wallet_address_cache.secure.json"
+remove_file "cache.json"
 remove_file "wallet_address_cache.secure.json"
 remove_file "wallet_address_cache.json"
 
@@ -56,8 +55,8 @@ remove_file "current_eink.png"
 remove_file "current_processed.png"
 
 # Remove any backup cache files
-remove_file "async_wallet_address_cache.json.backup"
-remove_file "cache_metadata.json.backup"
+remove_file "cache/async_wallet_address_cache.secure.json.backup"
+remove_file "cache.json.backup"
 
 # Remove Python cache directories
 remove_directory "__pycache__"

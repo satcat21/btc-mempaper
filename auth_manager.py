@@ -16,6 +16,7 @@ from collections import defaultdict, deque
 from typing import Dict, Tuple
 from flask import request, jsonify, session
 from secure_password_manager import SecurePasswordManager
+from security_config import SecurityConfig
 
 logger = logging.getLogger(__name__)
 
@@ -156,19 +157,71 @@ class AuthManager:
         Returns:
             bool: True if session is authenticated and valid
         """
-        if not session.get('authenticated', False):
+        # Check if authenticated flag exists
+        authenticated = session.get('authenticated', False)
+        if not authenticated:
+            logger.debug("Session check failed: not authenticated")
             return False
         
         # Check session timeout
         login_time = session.get('login_time', 0)
-        session_timeout = self.config_manager.get('session_timeout', 172800)  # Default 48 hours
+        session_timeout = SecurityConfig.SESSION_TIMEOUT
+        current_time = time.time()
+        elapsed_time = current_time - login_time
         
-        if time.time() - login_time > session_timeout:
+        logger.debug(f"Session check: login_time={login_time}, current_time={current_time}, elapsed={elapsed_time}, timeout={session_timeout}")
+        
+        if elapsed_time > session_timeout:
             # Session expired, clear it
+            logger.info(f"Session expired: {elapsed_time} seconds > {session_timeout} seconds timeout")
             session.clear()
             return False
         
+        # Session is valid
+        logger.debug(f"Session valid: {session_timeout - elapsed_time} seconds remaining")
         return True
+    
+    def refresh_session(self) -> bool:
+        """
+        Refresh the current session by updating the login time.
+        Only works if session is currently authenticated.
+        
+        Returns:
+            bool: True if session was refreshed, False if not authenticated
+        """
+        if session.get('authenticated', False):
+            session['login_time'] = time.time()
+            return True
+        return False
+    
+    def get_session_info(self) -> dict:
+        """
+        Get information about the current session.
+        
+        Returns:
+            dict: Session information including time remaining
+        """
+        if not session.get('authenticated', False):
+            return {
+                'authenticated': False,
+                'time_remaining': 0,
+                'expires_at': 0
+            }
+        
+        login_time = session.get('login_time', 0)
+        session_timeout = SecurityConfig.SESSION_TIMEOUT
+        current_time = time.time()
+        elapsed_time = current_time - login_time
+        time_remaining = max(0, session_timeout - elapsed_time)
+        expires_at = login_time + session_timeout
+        
+        return {
+            'authenticated': True,
+            'time_remaining': int(time_remaining),
+            'expires_at': int(expires_at),
+            'elapsed_time': int(elapsed_time),
+            'session_timeout': session_timeout
+        }
     
     def login(self, username: str, password: str) -> bool:
         """
@@ -185,6 +238,8 @@ class AuthManager:
             session['authenticated'] = True
             session['username'] = username
             session['login_time'] = time.time()
+            # Make session permanent to leverage Flask's session management
+            session.permanent = True
             return True
         return False
     
@@ -202,8 +257,8 @@ class AuthManager:
         Returns:
             Tuple[bool, int]: (allowed, reset_time)
         """
-        max_requests = self.config_manager.get("rate_limit_requests", 100)
-        window = self.config_manager.get("rate_limit_window", 900)  # 15 minutes
+        max_requests = SecurityConfig.RATE_LIMIT_REQUESTS
+        window = SecurityConfig.RATE_LIMIT_WINDOW
         
         allowed = self.rate_limiter.is_allowed(ip, max_requests, window)
         reset_time = self.rate_limiter.get_reset_time(ip, window)
@@ -214,6 +269,7 @@ class AuthManager:
 def require_auth(auth_manager: AuthManager):
     """
     Decorator to require authentication for routes.
+    Automatically refreshes session on authenticated activity.
     
     Args:
         auth_manager (AuthManager): Authentication manager instance
@@ -221,26 +277,18 @@ def require_auth(auth_manager: AuthManager):
     def decorator(f):
         @wraps(f)
         def decorated_function(*args, **kwargs):
-            # Check rate limiting first
-            client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
-            if client_ip:
-                client_ip = client_ip.split(',')[0].strip()
-            
-            allowed, reset_time = auth_manager.check_rate_limit(client_ip)
-            if not allowed:
-                return jsonify({
-                    'error': 'Rate limit exceeded',
-                    'message': f'Too many requests. Try again in {reset_time} seconds.',
-                    'retry_after': reset_time
-                }), 429
-            
-            # Check authentication
+            # Check authentication first
             if not auth_manager.is_authenticated():
                 return jsonify({
                     'error': 'Authentication required',
                     'message': 'Please login to access this resource'
                 }), 401
             
+            # Automatically refresh session on any authenticated activity
+            auth_manager.refresh_session()
+            
+            # If authenticated, skip rate limiting for API requests
+            # (Rate limiting still applies to login attempts via separate decorator)
             return f(*args, **kwargs)
         return decorated_function
     return decorator
@@ -250,6 +298,7 @@ def require_web_auth(auth_manager: AuthManager):
     """
     Decorator to require authentication for web page routes.
     Redirects to login page instead of returning JSON error.
+    Automatically refreshes session on authenticated activity.
     
     Args:
         auth_manager (AuthManager): Authentication manager instance
@@ -257,24 +306,17 @@ def require_web_auth(auth_manager: AuthManager):
     def decorator(f):
         @wraps(f)
         def decorated_function(*args, **kwargs):
-            # Check rate limiting first
-            client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
-            if client_ip:
-                client_ip = client_ip.split(',')[0].strip()
-            
-            allowed, reset_time = auth_manager.check_rate_limit(client_ip)
-            if not allowed:
-                # For web pages, redirect to login with error message
-                from flask import redirect, url_for, flash
-                flash(f'Too many requests. Try again in {reset_time} seconds.', 'error')
-                return redirect(url_for('login_page'))
-            
-            # Check authentication
+            # Check authentication first
             if not auth_manager.is_authenticated():
                 # Redirect to login page for web requests
                 from flask import redirect, url_for
                 return redirect(url_for('login_page'))
             
+            # Automatically refresh session on any authenticated activity
+            auth_manager.refresh_session()
+            
+            # If authenticated, skip rate limiting for web pages
+            # (Rate limiting still applies to login attempts)
             return f(*args, **kwargs)
         return decorated_function
     return decorator

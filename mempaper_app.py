@@ -14,6 +14,7 @@ import json
 import io
 import base64
 import threading
+import multiprocessing
 import urllib3
 import os
 import time
@@ -27,7 +28,16 @@ from websocket_client import MempoolWebSocket
 from image_renderer import ImageRenderer
 from translations import translations
 from config_manager import ConfigManager
+from technical_config import TechnicalConfig
+from security_config import SecurityConfig
 from auth_manager import AuthManager, require_auth, require_web_auth, require_rate_limit
+
+# Privacy utilities for secure logging
+try:
+    from privacy_utils import BitcoinPrivacyMasker
+    PRIVACY_UTILS_AVAILABLE = True
+except ImportError:
+    PRIVACY_UTILS_AVAILABLE = False
 
 # Disable SSL warnings for local mempool connections
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -44,36 +54,119 @@ class MempaperApp:
             config_path (str): Path to configuration file
         """
         
+        # Ensure required directories exist
+        os.makedirs("config", exist_ok=True)
+        os.makedirs("cache", exist_ok=True)
+        
         # Initialize configuration manager
         self.config_manager = ConfigManager(config_path)
         self.config = self.config_manager.get_current_config()
         
-        # Note: Callback registration moved to end of __init__ to avoid issues during initialization
+        # Merge in hardcoded technical settings
+        technical_settings = TechnicalConfig.get_all_technical_settings()
+        self.config.update(technical_settings)
         
+        # Log technical configuration for debugging
+        TechnicalConfig.log_technical_settings()
+        
+        # Initialize Flask app and SocketIO
+        self._init_app_components()
+        
+        # Note: Callback registration moved to end of __init__ to avoid issues during initialization
+    
+    @staticmethod
+    def mask_wallet_data_for_logging(wallet_data):
+        """
+        Create a privacy-safe copy of wallet data for logging.
+        
+        Args:
+            wallet_data (dict): Original wallet data
+            
+        Returns:
+            dict: Privacy-masked copy safe for logging
+        """
+        if not PRIVACY_UTILS_AVAILABLE or not wallet_data:
+            return wallet_data
+        
+        # Create a deep copy to avoid modifying original data
+        import copy
+        masked_data = copy.deepcopy(wallet_data)
+        
+        # Mask addresses
+        if 'addresses' in masked_data:
+            for addr_info in masked_data['addresses']:
+                if 'address' in addr_info:
+                    addr_info['address'] = BitcoinPrivacyMasker.mask_address(addr_info['address'])
+        
+        # Mask XPUBs
+        if 'xpubs' in masked_data:
+            for xpub_info in masked_data['xpubs']:
+                if 'xpub' in xpub_info:
+                    xpub_info['xpub'] = BitcoinPrivacyMasker.mask_xpub(xpub_info['xpub'])
+        
+        return masked_data
+    
+    def _init_flask_app(self):
+        """Initialize Flask application and configure it."""
         # Initialize Flask app
         self.app = Flask(__name__, static_folder="static")
-        self.app.secret_key = self.config.get('secret_key', 'btc-mempaper-default-secret-key')  # For session management
+        self.app.secret_key = SecurityConfig.get_secret_key_from_env_or_generate()  # For session management
         
+        # Configure session settings for longer-lived sessions
+        self.app.config['PERMANENT_SESSION_LIFETIME'] = SecurityConfig.SESSION_TIMEOUT
+        self.app.config['SESSION_COOKIE_SECURE'] = False  # Set to True for HTTPS
+        self.app.config['SESSION_COOKIE_HTTPONLY'] = True
+        self.app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+    
+    def _init_socketio(self):
+        """Initialize SocketIO with proper configuration."""
         # Configure SocketIO with extended timeouts for 48-hour sessions
         skip_socketio = self.config.get("skip_socketio_on_startup", False)
         if skip_socketio:
             print("⚡ Skipping SocketIO initialization for faster startup")
             self.socketio = None
         else:
+            # Auto-detect async mode based on environment and available packages
+            is_production = os.getenv('FLASK_ENV') == 'production' or os.getenv('GUNICORN_CMD_ARGS') is not None
+            
+            # Check if gevent is available
+            try:
+                import gevent
+                gevent_available = True
+            except ImportError:
+                gevent_available = False
+            
+            # Use gevent only if available and in production, otherwise use threading
+            async_mode = "gevent" if (is_production and gevent_available) else "threading"
+            
+            # Raspberry Pi Zero WH optimizations (512MB RAM, single core)
+            is_pi_zero = os.path.exists('/proc/device-tree/model') and 'Zero' in open('/proc/device-tree/model', 'rb').read().decode('utf-8', errors='ignore')
+            
             socketio_config = {
                 'cors_allowed_origins': '*', 
-                'async_mode': "threading",
+                'async_mode': async_mode,  # Auto-detect: gevent for production, threading for development
                 'transports': ['polling'],  # Use polling only to avoid transport negotiation issues
-                'ping_timeout': 60,      # Ping timeout in seconds
-                'ping_interval': 25,     # Ping interval in seconds  
-                'max_http_buffer_size': 10000000,  # 10MB buffer for large images
+                'ping_timeout': 90 if is_pi_zero else 60,      # Longer timeout for Pi Zero
+                'ping_interval': 30 if is_pi_zero else 25,     # Longer interval for Pi Zero
+                'max_http_buffer_size': 5000000 if is_pi_zero else 10000000,  # 5MB for Pi Zero, 10MB for others
                 'engineio_logger': False,  # Reduce log noise
                 'allow_upgrades': False,   # Disable transport upgrades to prevent negotiation issues
                 'cookie': False,           # Disable cookies for better compatibility
                 'always_connect': True,    # Force connection acceptance
                 'cors_credentials': False  # Disable credentials for CORS
             }
+            print(f"⚡ SocketIO async mode: {async_mode} ({'production' if is_production else 'development'})")
+            if is_pi_zero:
+                print("🍓 Raspberry Pi Zero detected - using optimized settings")
             self.socketio = SocketIO(self.app, **socketio_config)
+    
+    def _init_app_components(self):
+        """Initialize the main application components."""
+        # Initialize Flask app first
+        self._init_flask_app()
+        
+        # Initialize SocketIO
+        self._init_socketio()
         
         # Initialize authentication manager with config_manager for secure password handling
         self.auth_manager = AuthManager(self.config_manager)
@@ -103,16 +196,28 @@ class MempaperApp:
         from block_monitor import initialize_block_monitor
         self.block_monitor = initialize_block_monitor(self.config_manager)
         
+        # Sync cache to current blockchain height (important for recovery after downtime)
+        if self.block_monitor:
+            print("🔄 Performing cache sync to current blockchain height...")
+            try:
+                self.block_monitor.sync_cache_to_current()
+                print("✅ Cache sync completed successfully")
+            except Exception as e:
+                print(f"⚠️ Cache sync failed: {e}")
+        
         # Start block monitoring if addresses are configured and not skipped for fast startup
-        block_addresses = self.config.get("block_reward_addresses", [])
+        block_table_addresses = self.config.get("block_reward_addresses_table", [])
+        has_addresses = bool(block_table_addresses)
+        
         skip_block_monitoring = self.config.get("skip_block_monitoring_on_startup", False)
         
-        if block_addresses and not skip_block_monitoring:
+        if has_addresses and not skip_block_monitoring:
             self.block_monitor.start_monitoring()
-            print(f"📡 Block reward monitoring started for {len(block_addresses)} addresses")
+            total_addresses = len(block_table_addresses)
+            print(f"📡 Block reward monitoring started for {total_addresses} addresses")
         elif skip_block_monitoring:
             print("⚡ Skipping block monitoring for faster startup")
-        elif not block_addresses:
+        elif not has_addresses:
             print("ⓘ No block reward addresses configured")
         
         # Check e-Paper display configuration
@@ -125,7 +230,8 @@ class MempaperApp:
         # Image caching variables
         self.current_image_path = "cache/current.png"  # High-quality web image
         self.current_eink_image_path = "cache/current_eink.png"  # E-ink optimized image
-        self.cache_metadata_path = "cache/cache_metadata.json"  # Persistent cache state
+        self.cache_metadata_path = "cache/cache.json"  # Persistent cache state
+        
         self.current_block_height = None
         self.current_block_hash = None
         self.current_meme_path = None  # Cache current meme for config-triggered regeneration
@@ -177,7 +283,6 @@ class MempaperApp:
         self.config_manager.add_change_callback(self._on_config_file_changed)
         self.config_manager.add_change_callback(self._on_config_change)
         # On Windows, force config reload and callback notification after registering callbacks
-        import os
         if os.name == 'nt':
             self.config_manager._reload_config_from_file()
             self.config_manager._notify_change_callbacks(self.config_manager.config)
@@ -520,7 +625,6 @@ class MempaperApp:
         import threading
         import time
         import subprocess
-        import os
         import sys
         import signal
         
@@ -656,7 +760,6 @@ class MempaperApp:
     def _cancel_older_display_processes(self, new_block_height):
         """Cancel any running display processes for older blocks."""
         import signal
-        import os
         import subprocess
         
         with self.display_process_lock:
@@ -959,6 +1062,45 @@ class MempaperApp:
             # Update config reference even if no image refresh needed
             self.config = new_config
             print("📝 Configuration updated (no image refresh required)")
+        
+        # Check for block reward address changes (independent of image refresh)
+        self._check_block_reward_address_changes(old_config, new_config)
+    
+    def _check_block_reward_address_changes(self, old_config, new_config):
+        """Check if block reward addresses have changed and update cache accordingly."""
+        try:
+            # Get old addresses from table
+            old_table = set()
+            for entry in old_config.get("block_reward_addresses_table", []):
+                if isinstance(entry, dict) and entry.get("address"):
+                    old_table.add(entry["address"])
+            old_addresses = old_table
+            
+            # Get new addresses from table
+            new_table = set()
+            for entry in new_config.get("block_reward_addresses_table", []):
+                if isinstance(entry, dict) and entry.get("address"):
+                    new_table.add(entry["address"])
+            new_addresses = new_table
+            
+            # Check for changes
+            if old_addresses != new_addresses:
+                added_addresses = new_addresses - old_addresses
+                removed_addresses = old_addresses - new_addresses
+                
+                if added_addresses:
+                    print(f"➕ New block reward addresses detected: {', '.join(added_addresses)}")
+                
+                if removed_addresses:
+                    print(f"➖ Removed block reward addresses: {', '.join(removed_addresses)}")
+                
+                # Update block monitor and cache
+                if hasattr(self, 'block_monitor') and self.block_monitor:
+                    self.block_monitor._update_monitored_addresses()
+                    print("✅ Block reward cache updated with new address list")
+                
+        except Exception as e:
+            print(f"⚠️ Error checking block reward address changes: {e}")
     
     def _regenerate_image_with_cached_meme(self):
         """Regenerate images using cached meme when configuration changes."""
@@ -1022,11 +1164,19 @@ class MempaperApp:
                     "wallet_data": None,     # or fetch as needed
                     "info_blocks": [],       # or build as needed
                 }
-                # Now, start async wallet refresh
-                threading.Thread(
-                    target=self.image_renderer.async_wallet_refresh,
-                    args=(self.current_block_height, self.current_block_hash, shared_data, False)
-                ).start()
+                # Now, start async wallet refresh in background using threading (no multiprocessing issues)
+                print("🔄 Starting async wallet refresh in background...")
+                try:
+                    # Use a simple approach that avoids multiprocessing issues
+                    # This runs in a thread but the actual work happens in subprocess via image_renderer
+                    threading.Thread(
+                        target=self._safe_wallet_refresh_thread,
+                        args=(self.current_block_height, self.current_block_hash, False),
+                        daemon=True
+                    ).start()
+                    print("✅ Wallet refresh thread started")
+                except Exception as proc_e:
+                    print(f"❌ Failed to start wallet refresh thread: {proc_e}")
 
         except Exception as e:
             print(f"❌ Error regenerating image with cached meme: {e}")
@@ -1034,36 +1184,144 @@ class MempaperApp:
             self._generate_new_image(self.current_block_height, self.current_block_hash, skip_epaper=False)
     
     def async_wallet_refresh(self, block_height, block_hash, startup_mode=False):
-        # Fetch fresh wallet data
-        fresh_wallet_data = self.image_renderer.wallet_api.fetch_wallet_balances(startup_mode=startup_mode)
-        cached_wallet_data = self.image_renderer.wallet_api.get_cached_wallet_balances()
-        # Ensure both are dicts before accessing .get()
-        if not isinstance(fresh_wallet_data, dict):
-            fresh_wallet_data = {}
-        if not isinstance(cached_wallet_data, dict):
-            cached_wallet_data = {}
-        # Compare only BTC/sats balance
-        fresh_btc = fresh_wallet_data.get("total_btc", 0)
-        cached_btc = cached_wallet_data.get("total_btc", 0)
+        """Fetch fresh wallet data and regenerate image if balance changed."""
+        print(f"🚀 [WALLET] Starting wallet refresh for block {block_height}...")
+        try:
+            # Fetch fresh wallet data
+            print("🔍 [WALLET] Fetching fresh wallet data...")
+            fresh_wallet_data = self.image_renderer.wallet_api.fetch_wallet_balances(startup_mode=startup_mode)
+            
+            # Log wallet data with privacy masking
+            masked_fresh_data = MempaperApp.mask_wallet_data_for_logging(fresh_wallet_data)
+            print(f"✅ [WALLET] Fresh wallet data: {masked_fresh_data}")
+            
+            # Get cached wallet data
+            print("📖 [WALLET] Loading cached wallet data...")
+            cached_wallet_data = self.image_renderer.wallet_api.get_cached_wallet_balances()
+            
+            # Log cached data with privacy masking
+            masked_cached_data = MempaperApp.mask_wallet_data_for_logging(cached_wallet_data)
+            print(f"📋 [WALLET] Cached wallet data: {masked_cached_data}")
+            
+            # Ensure both are dicts before accessing .get()
+            if not isinstance(fresh_wallet_data, dict):
+                fresh_wallet_data = {}
+            if not isinstance(cached_wallet_data, dict):
+                cached_wallet_data = {}
+            
+            # Compare only BTC/sats balance
+            fresh_btc = fresh_wallet_data.get("total_btc", 0)
+            cached_btc = cached_wallet_data.get("total_btc", 0)
+            
+            print(f"⚖️ [WALLET] Balance comparison: Fresh={fresh_btc} BTC, Cached={cached_btc} BTC")
 
-        if fresh_btc != cached_btc:
-            # Regenerate image
-            print("🔄 Wallet data changed, updating cache and regenerating image...")
-            self.image_renderer.wallet_api.update_cache(fresh_wallet_data)
-            # Regenerate image with updated wallet data
-            web_img, eink_img, content_path = self.image_renderer.render_dual_images(
-                block_height, block_hash,
-                mempool_api=self.mempool_api,
-                startup_mode=startup_mode
-            )
-            # Save images
-            if web_img is not None:
-                web_img.save(self.current_image_path)
-            if eink_img is not None:
-                eink_img.save(self.current_eink_image_path)
-        # Update cache metadata
-        self._save_cache_metadata()
-        print("✅ Dashboard image updated with fresh wallet data")
+            if fresh_btc != cached_btc:
+                # Regenerate image
+                print("🔄 [WALLET] Wallet data changed, updating cache and regenerating image...")
+                self.image_renderer.wallet_api.update_cache(fresh_wallet_data)
+                
+                # Emit WebSocket event for balance update
+                if hasattr(self, 'socketio') and self.socketio:
+                    self.socketio.emit('wallet_balance_updated', fresh_wallet_data)
+                    print("📡 [WALLET] Balance update broadcasted via WebSocket")
+                
+                # Regenerate image with updated wallet data
+                web_img, eink_img, content_path = self.image_renderer.render_dual_images(
+                    block_height, block_hash,
+                    mempool_api=self.mempool_api,
+                    startup_mode=startup_mode
+                )
+                # Save images
+                if web_img is not None:
+                    web_img.save(self.current_image_path)
+                if eink_img is not None:
+                    eink_img.save(self.current_eink_image_path)
+                print("✅ [WALLET] Image regenerated with updated wallet data")
+            else:
+                print("✅ [WALLET] No wallet balance change detected, keeping current image")
+                # Still update the cache to keep timestamp fresh
+                self.image_renderer.wallet_api.update_cache(fresh_wallet_data)
+                
+            # Update cache metadata
+            self._save_cache_metadata()
+            print("✅ [WALLET] Wallet refresh completed successfully")
+            
+        except Exception as e:
+            print(f"❌ [WALLET] Error during wallet refresh: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def _safe_wallet_refresh_thread(self, block_height, block_hash, startup_mode=False):
+        """Safe wallet refresh that runs in thread but uses subprocess for actual work."""
+        try:
+            print(f"🚀 [THREAD] Starting safe wallet refresh for block {block_height}...")
+            
+            # Call the existing process-based refresh logic directly
+            self._run_wallet_refresh_process(block_height, block_hash, startup_mode)
+            
+        except Exception as e:
+            print(f"❌ [THREAD] Error in safe wallet refresh: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def _run_wallet_refresh_process(self, block_height, block_hash, startup_mode=False):
+        """Wrapper to run wallet refresh in separate process to avoid gunicorn timeouts."""
+        try:
+            # Re-initialize components in the new process
+            from config_manager import ConfigManager
+            from image_renderer import ImageRenderer
+            from translations import translations
+            
+            # Load config and initialize image renderer with wallet API
+            config_manager = ConfigManager()
+            config = config_manager.get_current_config()
+            image_renderer = ImageRenderer(config, translations)
+            
+            print(f"🔄 [PROCESS] Wallet refresh process started for block {block_height}")
+            
+            # Fetch fresh wallet data
+            print("🔍 [PROCESS] Fetching fresh wallet data...")
+            fresh_wallet_data = image_renderer.wallet_api.fetch_wallet_balances(startup_mode=startup_mode)
+            
+            # Log wallet data with privacy masking
+            masked_fresh_data = MempaperApp.mask_wallet_data_for_logging(fresh_wallet_data)
+            print(f"✅ [PROCESS] Fresh wallet data: {masked_fresh_data}")
+            
+            # Get cached wallet data
+            print("📖 [PROCESS] Loading cached wallet data...")
+            cached_wallet_data = image_renderer.wallet_api.get_cached_wallet_balances()
+            
+            # Log cached data with privacy masking  
+            masked_cached_data = MempaperApp.mask_wallet_data_for_logging(cached_wallet_data)
+            print(f"📋 [PROCESS] Cached wallet data: {masked_cached_data}")
+            
+            # Ensure both are dicts before accessing .get()
+            if not isinstance(fresh_wallet_data, dict):
+                fresh_wallet_data = {}
+            if not isinstance(cached_wallet_data, dict):
+                cached_wallet_data = {}
+            
+            # Compare only BTC/sats balance
+            fresh_btc = fresh_wallet_data.get("total_btc", 0)
+            cached_btc = cached_wallet_data.get("total_btc", 0)
+            
+            print(f"⚖️ [PROCESS] Balance comparison: Fresh={fresh_btc} BTC, Cached={cached_btc} BTC")
+
+            if fresh_btc != cached_btc:
+                print("🔄 [PROCESS] Wallet data changed, updating cache...")
+                image_renderer.wallet_api.update_cache(fresh_wallet_data)
+                print("✅ [PROCESS] Cache updated - image will be refreshed on next request")
+            else:
+                print("✅ [PROCESS] No wallet balance change detected")
+                # Still update the cache to keep timestamp fresh
+                image_renderer.wallet_api.update_cache(fresh_wallet_data)
+                
+            print("✅ [PROCESS] Wallet refresh process completed successfully")
+            
+        except Exception as e:
+            print(f"❌ [PROCESS] Error during wallet refresh process: {e}")
+            import traceback
+            traceback.print_exc()
 
     def _generate_new_image(self, block_height: int, block_hash: str, skip_epaper: bool = False):
         """Generate a new dashboard image and cache it."""
@@ -1092,6 +1350,16 @@ class MempaperApp:
         
         # Save persistent cache metadata to survive app restarts
         self._save_cache_metadata()
+        
+        # Start async wallet refresh in background for all image generations
+        print("🔄 Starting async wallet refresh in background...")
+        # Use threading approach to avoid multiprocessing pickle issues
+        threading.Thread(
+            target=self._safe_wallet_refresh_thread,
+            args=(block_height, block_hash, False),  # False for startup_mode
+            daemon=True
+        ).start()
+        print("✅ Async wallet refresh thread started")
         
         # Display on e-Paper (only if enabled, not skipped, and actually new content)
         if self.e_ink_enabled and not skip_epaper:
@@ -1166,11 +1434,14 @@ class MempaperApp:
                     except Exception as e:
                         print(f"⚠️ Failed to encode image for WebSocket: {e}")
             # Start async wallet refresh in background
+            print("🔄 Starting async wallet refresh in background...")
+            # Use threading approach to avoid multiprocessing pickle issues
             threading.Thread(
-                target=self.async_wallet_refresh,
+                target=self._safe_wallet_refresh_thread,
                 args=(block_height, block_hash, False),  # False for startup_mode
                 daemon=True
             ).start()
+            print("✅ Async wallet refresh thread started")
 
         except Exception as e:
             print(f"❌ Error regenerating dashboard for block {block_height}: {e}")
@@ -1179,6 +1450,52 @@ class MempaperApp:
     
     def _setup_routes(self):
         """Setup Flask routes."""
+        
+        # Add optimized static file serving with cache headers for memes
+        @self.app.route('/static/memes/<filename>')
+        def serve_meme_with_cache(filename):
+            """Serve meme files with proper cache headers to reduce browser overhead."""
+            from flask import Response
+            import os
+            from datetime import datetime, timedelta
+            
+            file_path = os.path.join('static', 'memes', filename)
+            
+            if not os.path.exists(file_path):
+                return "File not found", 404
+            
+            # Get file stats for ETag and Last-Modified
+            file_stat = os.stat(file_path)
+            file_mtime = datetime.fromtimestamp(file_stat.st_mtime)
+            etag = f'"{file_stat.st_mtime}-{file_stat.st_size}"'
+            
+            # Check if client has cached version (If-None-Match header)
+            if request.headers.get('If-None-Match') == etag:
+                return Response(status=304)  # Not Modified
+            
+            # Check if client has cached version (If-Modified-Since header)
+            if_modified_since = request.headers.get('If-Modified-Since')
+            if if_modified_since:
+                try:
+                    client_cache_time = datetime.strptime(if_modified_since, '%a, %d %b %Y %H:%M:%S GMT')
+                    if file_mtime <= client_cache_time:
+                        return Response(status=304)  # Not Modified
+                except ValueError:
+                    pass  # Invalid date format, serve the file
+            
+            # Serve file with cache headers
+            response = send_file(file_path)
+            
+            # Set cache headers for 1 hour (3600 seconds)
+            response.headers['Cache-Control'] = 'public, max-age=3600, must-revalidate'
+            response.headers['ETag'] = etag
+            response.headers['Last-Modified'] = file_mtime.strftime('%a, %d %b %Y %H:%M:%S GMT')
+            
+            # Add immutable cache for files that don't change (optional)
+            # Uncomment the next line for longer caching if memes rarely change
+            # response.headers['Cache-Control'] = 'public, max-age=86400, immutable'  # 24 hours
+            
+            return response
         
         @self.app.route('/image')
         @require_web_auth(self.auth_manager)
@@ -1278,18 +1595,247 @@ class MempaperApp:
             self.auth_manager.logout()
             return jsonify({'success': True, 'message': 'Logout successful'})
         
+        @self.app.route('/api/session/status', methods=['GET'])
+        def session_status():
+            """Get current session status and remaining time."""
+            # Don't require auth since we need to check if we're authenticated
+            session_info = self.auth_manager.get_session_info()
+            
+            # Add debug information
+            debug_info = {
+                'flask_session_keys': list(session.keys()),
+                'flask_session_id': session.get('_id', 'no-id'),
+                'app_secret_key_length': len(self.app.secret_key) if self.app.secret_key else 0,
+                'current_timestamp': time.time()
+            }
+            
+            return jsonify({
+                **session_info,
+                'debug': debug_info
+            })
+        
+        @self.app.route('/api/session/refresh', methods=['POST'])
+        @require_auth(self.auth_manager)
+        def session_refresh():
+            """Refresh the current session to extend its lifetime."""
+            if self.auth_manager.refresh_session():
+                return jsonify({
+                    'success': True,
+                    'message': 'Session refreshed successfully',
+                    'session_info': self.auth_manager.get_session_info()
+                })
+            else:
+                return jsonify({
+                    'success': False,
+                    'message': 'Session could not be refreshed'
+                }), 401
+        @self.app.route('/api/test-wallet-config', methods=['GET'])
+        def test_wallet_config():
+            """Test endpoint to check wallet configuration (no auth required for debugging)"""
+            try:
+                print("🧪 [DEBUG] Test wallet config endpoint called")
+                
+                # Get regular configuration
+                config_data = self.config_manager.get_current_config()
+                print(f"🧪 [DEBUG] Regular config has {len(config_data)} keys")
+                
+                wallet_addresses = config_data.get('wallet_balance_addresses_with_comments', [])
+                print(f"🧪 [DEBUG] Found {len(wallet_addresses)} wallet addresses in regular config")
+                
+                # Also try secure config directly
+                secure_addresses = None
+                if hasattr(self.image_renderer, 'wallet_api') and self.image_renderer.wallet_api.secure_config_manager:
+                    secure_config = self.image_renderer.wallet_api.secure_config_manager.load_secure_config()
+                    if secure_config and 'wallet_balance_addresses_with_comments' in secure_config:
+                        secure_addresses = secure_config['wallet_balance_addresses_with_comments']
+                        print(f"🧪 [DEBUG] Found {len(secure_addresses)} wallet addresses in secure config")
+
+                # Try to get cached balances if wallet API is available
+                balances_result = None
+                if hasattr(self.image_renderer, 'wallet_api') and self.image_renderer.wallet_api:
+                    try:
+                        print("🧪 [DEBUG] Attempting to get cached wallet balances...")
+                        
+                        # Use the wallet API to get cached data directly
+                        cached_data = self.image_renderer.wallet_api.get_cached_wallet_data()
+                        print(f"🧪 [DEBUG] Cached wallet data: {cached_data}")
+                        
+                        balances_result = cached_data
+                    except Exception as balance_error:
+                        print(f"🧪 [DEBUG] Error getting cached balances: {balance_error}")
+                        balances_result = {'error': str(balance_error)}
+
+                return jsonify({
+                    'success': True,
+                    'wallet_addresses_from_regular_config': wallet_addresses,
+                    'wallet_addresses_from_secure_config': secure_addresses,
+                    'cached_balances': balances_result,
+                    'regular_config_keys': list(config_data.keys()),
+                    'message': f'Found {len(wallet_addresses)} wallet addresses'
+                })
+            except Exception as e:
+                print(f"🧪 [DEBUG] Error in test endpoint: {e}")
+                import traceback
+                traceback.print_exc()
+                return jsonify({
+                    'success': False,
+                    'error': str(e)
+                })
+
+        @self.app.route('/api/test-wallet-balance', methods=['GET'])
+        def test_wallet_balance():
+            """Test endpoint to get wallet balances (no auth required for debugging)"""
+            try:
+                print("🧪 [DEBUG] Test wallet balance endpoint called")
+                
+                # Get wallet addresses from config
+                config_data = self.config_manager.get_current_config()
+                wallet_addresses = config_data.get('wallet_balance_addresses_with_comments', [])
+                
+                if not wallet_addresses:
+                    return jsonify({
+                        'success': False,
+                        'message': 'No wallet addresses found in configuration'
+                    })
+                
+                print(f"🧪 [DEBUG] Testing balances for {len(wallet_addresses)} addresses")
+                
+                # Use the wallet API to get balances directly
+                if hasattr(self.image_renderer, 'wallet_api') and self.image_renderer.wallet_api:
+                    try:
+                        # Extract just the address strings
+                        address_list = []
+                        for addr_entry in wallet_addresses:
+                            if isinstance(addr_entry, dict) and 'address' in addr_entry:
+                                address_list.append(addr_entry['address'])
+                            elif isinstance(addr_entry, str):
+                                address_list.append(addr_entry)
+                        
+                        print(f"🧪 [DEBUG] Address list for balance lookup: {address_list}")
+                        
+                        # Get balances using the wallet API
+                        balances = []
+                        for address in address_list:
+                            try:
+                                balance = self.image_renderer.wallet_api.get_address_balance(address)
+                                balances.append(balance)
+                                print(f"🧪 [DEBUG] Balance for {address[:10]}...: {balance}")
+                            except Exception as addr_error:
+                                print(f"🧪 [DEBUG] Error getting balance for {address}: {addr_error}")
+                                balances.append(0.0)
+                        
+                        # Also get cached data
+                        cached_data = self.image_renderer.wallet_api.get_cached_wallet_data()
+                        
+                        return jsonify({
+                            'success': True,
+                            'addresses': wallet_addresses,
+                            'balances': balances,
+                            'cached_data': cached_data,
+                            'message': f'Retrieved balances for {len(address_list)} addresses'
+                        })
+                        
+                    except Exception as api_error:
+                        print(f"🧪 [DEBUG] Error using wallet API: {api_error}")
+                        return jsonify({
+                            'success': False,
+                            'error': str(api_error),
+                            'addresses': wallet_addresses
+                        })
+                else:
+                    return jsonify({
+                        'success': False,
+                        'message': 'Wallet API not available',
+                        'addresses': wallet_addresses
+                    })
+                    
+            except Exception as e:
+                print(f"🧪 [DEBUG] Error in test balance endpoint: {e}")
+                import traceback
+                traceback.print_exc()
+                return jsonify({
+                    'success': False,
+                    'error': str(e)
+                })
+
         @self.app.route('/api/config', methods=['GET'])
         @require_auth(self.auth_manager)
-        @require_rate_limit(self.auth_manager, exempt_authenticated=True)
         def get_config():
-            """Get current configuration."""
+            """Get current configuration including secure wallet addresses."""
             try:
+                print("📋 [DEBUG] Config API called - checking for wallet addresses...")
+                
                 # Get current language and translations
                 lang = self.config.get("language", "en")
                 current_translations = translations.get(lang, translations["en"])
                 
+                # Get the regular configuration
+                config_data = self.config_manager.get_current_config()
+                
+                # Add wallet addresses from secure configuration if available
+                if hasattr(self.image_renderer, 'wallet_api') and self.image_renderer.wallet_api.secure_config_manager:
+                    secure_config = self.image_renderer.wallet_api.secure_config_manager.load_secure_config()
+                    print(f"📋 [DEBUG] Secure config loaded: {secure_config is not None}")
+                    if secure_config:
+                        print(f"📋 [DEBUG] Secure config keys: {list(secure_config.keys())}")
+                    if secure_config and 'wallet_balance_addresses_with_comments' in secure_config:
+                        wallet_addresses = secure_config['wallet_balance_addresses_with_comments']
+                        config_data['wallet_balance_addresses_with_comments'] = wallet_addresses
+                        print(f"📋 [DEBUG] Added {len(wallet_addresses)} wallet addresses to config response")
+                        
+                        # ENHANCEMENT: Include cached balances in the configuration
+                        try:
+                            if hasattr(self.image_renderer, 'wallet_api') and self.image_renderer.wallet_api:
+                                print("📋 [DEBUG] Attempting to include cached balances in config...")
+                                cached_data = self.image_renderer.wallet_api.get_cached_wallet_balances()
+                                print(f"📋 [DEBUG] Cached wallet data: {cached_data}")
+                                
+                                # Merge balances into wallet addresses
+                                if cached_data and 'addresses' in cached_data:
+                                    address_balances = {}
+                                    # Create lookup for address balances
+                                    for addr_info in cached_data['addresses']:
+                                        if 'address' in addr_info and 'balance_btc' in addr_info:
+                                            address_balances[addr_info['address']] = addr_info['balance_btc']
+                                    
+                                    # Create lookup for xpub balances  
+                                    if 'xpubs' in cached_data:
+                                        for xpub_info in cached_data['xpubs']:
+                                            if 'xpub' in xpub_info and 'balance_btc' in xpub_info:
+                                                address_balances[xpub_info['xpub']] = xpub_info['balance_btc']
+                                    
+                                    print(f"📋 [DEBUG] Address balance lookup: {address_balances}")
+                                    
+                                    # Add balances to wallet addresses
+                                    for addr_entry in wallet_addresses:
+                                        if 'address' in addr_entry:
+                                            address = addr_entry['address']
+                                            if address in address_balances:
+                                                addr_entry['cached_balance'] = address_balances[address]
+                                                print(f"📋 [DEBUG] Added balance {address_balances[address]} for {address[:10]}...")
+                                            else:
+                                                addr_entry['cached_balance'] = 0.0
+                                                print(f"📋 [DEBUG] No balance found for {address[:10]}...")
+                                    
+                                    config_data['wallet_balance_addresses_with_comments'] = wallet_addresses
+                                    config_data['wallet_total_balance'] = cached_data.get('total_btc', 0.0)
+                                    print(f"📋 [DEBUG] Enhanced config with cached balances, total: {cached_data.get('total_btc', 0.0)}")
+                                    
+                        except Exception as balance_error:
+                            print(f"📋 [DEBUG] Error adding cached balances to config: {balance_error}")
+                            # Continue without cached balances if there's an error
+                        
+                        for i, addr in enumerate(wallet_addresses):
+                            address_display = addr.get('address', 'N/A')[:10] + '...' if addr.get('address') else 'N/A'
+                            balance_display = addr.get('cached_balance', 'N/A')
+                            print(f"📋 [DEBUG] Address {i}: {address_display} ({addr.get('comment', 'No comment')}) - Balance: {balance_display}")
+                    else:
+                        print("📋 [DEBUG] No wallet_balance_addresses_with_comments found in secure config")
+                else:
+                    print("📋 [DEBUG] No wallet API or secure config manager available")
+                
                 return jsonify({
-                    'config': self.config_manager.get_current_config(),
+                    'config': config_data,
                     'schema': self.config_manager.get_config_schema(current_translations),
                     'categories': self.config_manager.get_categories(current_translations),
                     'color_options': self.config_manager.get_color_options()
@@ -1302,10 +1848,12 @@ class MempaperApp:
         
         @self.app.route('/api/config', methods=['POST'])
         @require_auth(self.auth_manager)
-        @require_rate_limit(self.auth_manager, exempt_authenticated=True)
         def save_config():
             """Save configuration changes."""
             try:
+                # Refresh session on any authenticated activity
+                self.auth_manager.refresh_session()
+                
                 new_config = request.json
                 if self.config_manager.save_config(new_config):
                     # Update local config reference
@@ -1325,7 +1873,6 @@ class MempaperApp:
         
         @self.app.route('/api/upload-meme', methods=['POST'])
         @require_auth(self.auth_manager)
-        @require_rate_limit(self.auth_manager, exempt_authenticated=True)
         def upload_meme():
             """Handle meme image uploads."""
             try:
@@ -1367,33 +1914,70 @@ class MempaperApp:
         
         @self.app.route('/api/memes', methods=['GET'])
         @require_auth(self.auth_manager)
-        @require_rate_limit(self.auth_manager, exempt_authenticated=True)
         def list_memes():
-            """List all uploaded memes."""
+            """List all uploaded memes with pagination and lazy loading support."""
             try:
+                # Get pagination parameters
+                page = request.args.get('page', 1, type=int)
+                per_page = request.args.get('per_page', 50, type=int)  # Limit to 50 memes per request
+                metadata_only = request.args.get('metadata_only', 'false').lower() == 'true'
+                
                 memes_dir = os.path.join('static', 'memes')
                 if not os.path.exists(memes_dir):
-                    return jsonify({'memes': []})
+                    return jsonify({'memes': [], 'total': 0, 'page': page, 'per_page': per_page})
                 
-                memes = []
+                # Get all meme files
+                all_files = []
                 for filename in os.listdir(memes_dir):
                     if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp')):
-                        file_path = os.path.join(memes_dir, filename)
+                        all_files.append(filename)
+                
+                # Sort files for consistent pagination
+                all_files.sort()
+                
+                # Calculate pagination
+                total_files = len(all_files)
+                start_idx = (page - 1) * per_page
+                end_idx = start_idx + per_page
+                page_files = all_files[start_idx:end_idx]
+                
+                memes = []
+                for filename in page_files:
+                    file_path = os.path.join(memes_dir, filename)
+                    try:
                         file_size = os.path.getsize(file_path)
-                        memes.append({
+                        file_stat = os.stat(file_path)
+                        
+                        meme_data = {
                             'filename': filename,
                             'size': file_size,
-                            'url': f'/static/memes/{filename}'
-                        })
+                            'url': f'/static/memes/{filename}',
+                            'last_modified': file_stat.st_mtime
+                        }
+                        
+                        # Only include full URL if not metadata_only mode
+                        if not metadata_only:
+                            meme_data['url'] = f'/static/memes/{filename}'
+                        
+                        memes.append(meme_data)
+                    except OSError:
+                        # Skip files that can't be read
+                        continue
                 
-                return jsonify({'memes': memes})
+                return jsonify({
+                    'memes': memes,
+                    'total': total_files,
+                    'page': page,
+                    'per_page': per_page,
+                    'has_next': end_idx < total_files,
+                    'has_prev': page > 1
+                })
                 
             except Exception as e:
                 return jsonify({'success': False, 'message': str(e)}), 500
         
         @self.app.route('/api/download-meme/<filename>', methods=['GET'])
         @require_auth(self.auth_manager)
-        @require_rate_limit(self.auth_manager, exempt_authenticated=True)
         def download_meme(filename):
             """Download a specific meme file."""
             try:
@@ -1411,7 +1995,6 @@ class MempaperApp:
         
         @self.app.route('/api/delete-meme/<filename>', methods=['DELETE'])
         @require_auth(self.auth_manager)
-        @require_rate_limit(self.auth_manager, exempt_authenticated=True)
         def delete_meme(filename):
             """Delete a specific meme file."""
             try:
@@ -1431,6 +2014,189 @@ class MempaperApp:
                 })
                 
             except Exception as e:
+                return jsonify({'success': False, 'message': str(e)}), 500
+        
+        @self.app.route('/api/wallet_balance', methods=['POST'])
+        @require_auth(self.auth_manager)
+        def refresh_wallet_balances():
+            """Refresh wallet balances for the provided addresses."""
+            try:
+                request_data = request.json
+                if not request_data or 'addresses' not in request_data:
+                    return jsonify({'success': False, 'message': 'No addresses provided'}), 400
+                
+                addresses = request_data['addresses']
+                if not isinstance(addresses, list):
+                    return jsonify({'success': False, 'message': 'Addresses must be a list'}), 400
+                
+                # Extract just the address strings for the wallet API
+                address_list = []
+                for addr_entry in addresses:
+                    if isinstance(addr_entry, dict) and 'address' in addr_entry:
+                        address_list.append(addr_entry['address'])
+                    elif isinstance(addr_entry, str):
+                        address_list.append(addr_entry)
+                
+                if not address_list:
+                    return jsonify({'success': True, 'balances': []})
+                
+                # Use the wallet API to fetch balances
+                try:
+                    balances = []
+                    for address in address_list:
+                        # Determine address type and use appropriate method
+                        address = address.strip()
+                        if not address:
+                            balances.append(0.0)
+                            continue
+                            
+                        try:
+                            if address.startswith(('xpub', 'zpub', 'ypub')):
+                                # Use xpub balance method for extended public keys
+                                balance = self.image_renderer.wallet_api.get_xpub_balance(address)
+                            else:
+                                # Use regular address balance method
+                                balance = self.image_renderer.wallet_api.get_address_balance(address)
+                            
+                            balances.append(balance)
+                            
+                        except Exception as addr_error:
+                            print(f"Error fetching balance for {address}: {addr_error}")
+                            balances.append(0.0)
+                    
+                    # Emit WebSocket event with updated cache after manual refresh
+                    cached_wallet_data = self.image_renderer.wallet_api.get_cached_wallet_balances()
+                    if hasattr(self, 'socketio') and self.socketio and cached_wallet_data:
+                        self.socketio.emit('wallet_balance_updated', cached_wallet_data)
+                        print("📡 [MANUAL] Balance update broadcasted via WebSocket")
+                    
+                    return jsonify({
+                        'success': True,
+                        'balances': balances
+                    })
+                    
+                except Exception as wallet_error:
+                    print(f"Wallet balance API error: {wallet_error}")
+                    # Return zeros if wallet API fails
+                    return jsonify({
+                        'success': True,
+                        'balances': [0.0] * len(address_list),
+                        'warning': 'Could not fetch live balances, showing cached/zero values'
+                    })
+                
+            except Exception as e:
+                print(f"Error in refresh_wallet_balances: {e}")
+                import traceback
+                traceback.print_exc()
+                return jsonify({'success': False, 'message': str(e)}), 500
+
+        @self.app.route('/api/wallet_balance_cached', methods=['POST'])
+        @require_auth(self.auth_manager)
+        def get_cached_wallet_balances():
+            """Get cached wallet balances for the provided addresses."""
+            try:
+                request_data = request.json
+                if not request_data or 'addresses' not in request_data:
+                    return jsonify({'success': False, 'message': 'No addresses provided'}), 400
+                
+                addresses = request_data['addresses']
+                if not isinstance(addresses, list):
+                    return jsonify({'success': False, 'message': 'Addresses must be a list'}), 400
+                
+                # Extract just the address strings for the wallet API
+                address_list = []
+                for addr_entry in addresses:
+                    if isinstance(addr_entry, dict) and 'address' in addr_entry:
+                        address_list.append(addr_entry['address'])
+                    elif isinstance(addr_entry, str):
+                        address_list.append(addr_entry)
+                
+                if not address_list:
+                    return jsonify({'success': True, 'balances': []})
+                
+                # Get cached wallet data
+                cached_wallet_data = self.image_renderer.wallet_api.get_cached_wallet_balances()
+                
+                balances = []
+                for address in address_list:
+                    address = address.strip()
+                    if not address:
+                        balances.append(0.0)
+                        continue
+                    
+                    balance = 0.0  # Default balance
+                    
+                    if cached_wallet_data:
+                        # Check if address is an xpub/ypub/zpub
+                        if address.startswith(('xpub', 'zpub', 'ypub')):
+                            # Look for xpub data in cache (array format)
+                            xpub_entries = cached_wallet_data.get('xpubs', [])
+                            for xpub_entry in xpub_entries:
+                                if xpub_entry.get('xpub') == address:
+                                    balance = xpub_entry.get('balance_btc', 0.0)
+                                    break
+                        else:
+                            # Look for regular address in cache (array format)
+                            address_entries = cached_wallet_data.get('addresses', [])
+                            for addr_entry in address_entries:
+                                if addr_entry.get('address') == address:
+                                    balance = addr_entry.get('balance_btc', 0.0)
+                                    break
+                    
+                    balances.append(balance)
+                
+                return jsonify({
+                    'success': True,
+                    'balances': balances,
+                    'cached': True
+                })
+                
+            except Exception as e:
+                print(f"Error in get_cached_wallet_balances: {e}")
+                import traceback
+                traceback.print_exc()
+                return jsonify({'success': False, 'message': str(e)}), 500
+
+        @self.app.route('/api/block-rewards/<address>/found-blocks', methods=['GET'])
+        @require_auth(self.auth_manager)
+        def get_found_blocks_count(address):
+            """Get the number of found blocks for a specific Bitcoin address."""
+            try:
+                if not address:
+                    return jsonify({'success': False, 'message': 'No address provided'}), 400
+                
+                # Get found blocks count from block monitor
+                found_blocks = 0
+                
+                if hasattr(self, 'block_monitor') and self.block_monitor:
+                    # Check if this address is in the monitored addresses
+                    current_config = self.config_manager.get_current_config()
+                    
+                    # Support both table format and legacy format
+                    monitored_addresses = set()
+                    
+                    # New table format
+                    block_reward_table = current_config.get("block_reward_addresses_table", [])
+                    for entry in block_reward_table:
+                        if isinstance(entry, dict) and entry.get("address"):
+                            monitored_addresses.add(entry["address"])
+                    
+                    if address in monitored_addresses:
+                        # Use new cache system for fast retrieval
+                        found_blocks = self.block_monitor.get_coinbase_count(address)
+                    else:
+                        found_blocks = 0
+                
+                return jsonify({
+                    'success': True,
+                    'address': address,
+                    'found_blocks': found_blocks
+                })
+                
+            except Exception as e:
+                print(f"Error in get_found_blocks_count: {e}")
+                import traceback
+                traceback.print_exc()
                 return jsonify({'success': False, 'message': str(e)}), 500
         
         # WebSocket event handlers (only if SocketIO is enabled)
@@ -1595,7 +2361,7 @@ class MempaperApp:
         
         # Run Flask app
         if self.socketio:
-            self.socketio.run(self.app, host=host, port=port, debug=debug)
+            self.socketio.run(self.app, host=host, port=port, debug=debug, allow_unsafe_werkzeug=True)
         else:
             print("⚡ Running Flask app without SocketIO")
             self.app.run(host=host, port=port, debug=debug)

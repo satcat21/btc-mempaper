@@ -14,6 +14,13 @@ body {
     color: white; /*#333;*/
 }
 
+@font-face {
+    font-family: 'IBMPlexMono';
+    src: url('../fonts/IBMPlexMono-Medium.ttf') format('truetype');
+    font-weight: 500;
+    font-style: normal;
+}
+
 .login-container {
     background: #2e324e; /*rgba(255,255,255,0.95);*/
     border-radius: 20px;
@@ -30,9 +37,13 @@ body {
 }
 
 .login-header h1 {
-    font-size: 2rem;
+    font-family: 'IBMPlexMono', monospace;
+    font-size: 2.2rem;
     margin-bottom: 10px;
-    color: white; /*#333;*/
+    color: #e8e9ea; /* Subtle off-white like mempool.space */
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    text-transform: lowercase;
 }
 
 .login-header p {
@@ -60,6 +71,12 @@ body {
     font-size: 16px;
     transition: border-color 0.3s ease;
     background: rgb(45, 51, 72); /*white*/
+    color: white; /* Fix black text to white */
+}
+
+.form-input::placeholder {
+    color: #a0a6b8; /* Light grey placeholder text */
+    opacity: 1;
 }
 
 .form-input:focus {
@@ -128,4 +145,18 @@ body {
     font-size: 0.85rem;
     margin-top: 20px;
     border-left: 3px solid #17a2b8;
+}
+
+.community-message {
+    margin-top: 25px;
+    padding-top: 20px;
+    /*border-top: 1px solid rgba(255, 255, 255, 0.1);*/
+    color: #a0a6b8;
+    font-size: 0.9rem;
+    font-weight: 400;
+    letter-spacing: 0.025em;
+}
+
+.community-message::selection {
+    background: rgba(102, 126, 234, 0.3);
 }

@@ -381,7 +381,7 @@ document.addEventListener('DOMContentLoaded', function() {
 let consoleLoggingEnabled = false;
 
 // Add event listeners for console log events
-socket.on('console_log', (data) => {
+socket.on('console_logs', (data) => {
     if (consoleLoggingEnabled && data.logs && Array.isArray(data.logs)) {
         data.logs.forEach(logEntry => {
             try {

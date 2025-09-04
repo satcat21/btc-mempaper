@@ -2,8 +2,8 @@
 Block Reward Monitor Module
 
 Monitors Bitcoin addresses for coinbase transactions (block rewards) and maintains
-a count of valid blocks found. This integrates with the observe_btc_addresses_for_block_rewards.py
-logic but provides a simplified interface for the main application.
+a count of valid blocks found. This integrates with the new BlockRewardCache system
+for efficient caching and incremental updates.
 
 """
 
@@ -14,6 +14,9 @@ import threading
 import time
 from typing import List, Set, Dict, Any
 import urllib3
+
+# Import the new caching system
+from block_reward_cache import BlockRewardCache
 
 # Disable SSL warnings for self-signed certificates
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -33,21 +36,30 @@ class BlockRewardMonitor:
     
     def __init__(self, config_manager=None):
         """
-        Initialize block reward monitor.
+        Initialize block reward monitor with new caching system.
         
         Args:
             config_manager: ConfigManager instance for getting monitored addresses
         """
         self.config_manager = config_manager
-        self.valid_blocks_file = "valid_blocks_count.json"
+        self.valid_blocks_file = "valid_blocks_count.json"  # Legacy file for compatibility
         self.monitored_addresses = set()
         self.valid_blocks_count = 0
+        self.blocks_by_address = {}  # Track found blocks per address
         self.ws = None
         self.monitoring_thread = None
         self.running = False
         
-        # Load existing count
-        self._load_valid_blocks_count()
+        # Initialize new caching system
+        self.cache = BlockRewardCache(config_manager)
+        
+        # Load existing count and migrate to new system if needed
+        self._load_and_migrate_legacy_data()
+        
+        # Update addresses from config
+        self._update_monitored_addresses()
+        # Load existing count and migrate to new system if needed
+        self._load_and_migrate_legacy_data()
         
         # Update addresses from config
         self._update_monitored_addresses()
@@ -57,6 +69,30 @@ class BlockRewardMonitor:
         ws_url = self._get_mempool_ws_url()
         print(f"📡 Block monitor using mempool API: {base_url}")
         print(f"🔗 Block monitor WebSocket: {ws_url}")
+    
+    def _load_and_migrate_legacy_data(self):
+        """Load legacy data and migrate to new caching system if needed."""
+        try:
+            if os.path.exists(self.valid_blocks_file):
+                with open(self.valid_blocks_file, 'r') as f:
+                    data = json.load(f)
+                    self.valid_blocks_count = data.get("valid_blocks", 0)
+                    self.blocks_by_address = data.get("blocks_by_address", {})
+                    
+                    print(f"📊 Loaded legacy valid blocks count: {self.valid_blocks_count}")
+                    if self.blocks_by_address:
+                        # Crop addresses for privacy in logs
+                        cropped_blocks = {self.cache._crop_address_for_log(addr): count 
+                                         for addr, count in self.blocks_by_address.items()}
+                        print(f"📍 Legacy per-address blocks: {cropped_blocks}")
+                    
+                    # Note: Legacy data is kept for backward compatibility
+                    # New system uses BlockRewardCache for more detailed tracking
+                    
+        except Exception as e:
+            print(f"⚠️ Error loading legacy valid blocks count: {e}")
+            self.valid_blocks_count = 0
+            self.blocks_by_address = {}
     
     def _get_mempool_base_url(self) -> str:
         """Get mempool API base URL from configuration."""
@@ -93,16 +129,24 @@ class BlockRewardMonitor:
                 with open(self.valid_blocks_file, 'r') as f:
                     data = json.load(f)
                     self.valid_blocks_count = data.get("valid_blocks", 0)
+                    self.blocks_by_address = data.get("blocks_by_address", {})
                     print(f"📊 Loaded valid blocks count: {self.valid_blocks_count}")
+                    if self.blocks_by_address:
+                        # Crop addresses for privacy in logs
+                        cropped_blocks = {self.cache._crop_address_for_log(addr): count 
+                                         for addr, count in self.blocks_by_address.items()}
+                        print(f"📍 Per-address blocks: {cropped_blocks}")
         except Exception as e:
             print(f"⚠️ Error loading valid blocks count: {e}")
             self.valid_blocks_count = 0
+            self.blocks_by_address = {}
     
     def _save_valid_blocks_count(self):
         """Save valid blocks count to file."""
         try:
             data = {
                 "valid_blocks": self.valid_blocks_count,
+                "blocks_by_address": self.blocks_by_address,
                 "last_updated": time.time(),
                 "monitored_addresses": list(self.monitored_addresses)
             }
@@ -112,16 +156,45 @@ class BlockRewardMonitor:
             print(f"⚠️ Error saving valid blocks count: {e}")
     
     def _update_monitored_addresses(self):
-        """Update monitored addresses from config."""
+        """Update monitored addresses from config and sync with cache system."""
         if self.config_manager:
             config = self.config_manager.get_current_config()
-            addresses = config.get("block_reward_addresses", [])
-            self.monitored_addresses = set(addresses)
+            
+            # Get addresses from block reward monitoring table
+            monitored_addresses = []
+            
+            # New table format
+            block_reward_table = config.get("block_reward_addresses_table", [])
+            for entry in block_reward_table:
+                if isinstance(entry, dict) and entry.get("address"):
+                    monitored_addresses.append(entry["address"])
+            
+            # Remove duplicates
+            monitored_addresses = list(set(monitored_addresses))
+            
+            self.monitored_addresses = set(monitored_addresses)
             print(f"📍 Monitoring {len(self.monitored_addresses)} addresses for block rewards")
+            
+            # Update cache system with new addresses
+            if monitored_addresses:
+                print(f"🔄 Updating cache system with {len(monitored_addresses)} addresses")
+                self.cache.update_monitored_addresses(monitored_addresses)
     
     def get_valid_blocks_count(self) -> int:
-        """Get current valid blocks count."""
+        """Get current valid blocks count (legacy method for compatibility)."""
         return self.valid_blocks_count
+    
+    def get_coinbase_count(self, address: str) -> int:
+        """
+        Get coinbase transaction count for a specific address using the cache system.
+        
+        Args:
+            address: Bitcoin address to check
+            
+        Returns:
+            Number of coinbase transactions found for this address
+        """
+        return self.cache.get_coinbase_count(address)
     
     def increment_valid_blocks(self, block_hash: str, txid: str, address: str, value_sats: int):
         """
@@ -133,12 +206,51 @@ class BlockRewardMonitor:
             address: Address that received the reward
             value_sats: Value in satoshis
         """
+        # Legacy tracking for backward compatibility
         self.valid_blocks_count += 1
+        
+        # Track per-address count (legacy)
+        if address in self.blocks_by_address:
+            self.blocks_by_address[address] += 1
+        else:
+            self.blocks_by_address[address] = 1
+        
+        # Save legacy data
         self._save_valid_blocks_count()
         
+        # Extract block height from block hash if possible
+        block_height = None
+        try:
+            base_url = self._get_mempool_base_url()
+            response = requests.get(f"{base_url}/block/{block_hash}", timeout=5, verify=False)
+            if response.ok:
+                block_data = response.json()
+                block_height = block_data.get('height')
+        except Exception as e:
+            print(f"⚠️ Could not get block height for {block_hash}: {e}")
+        
+        # Update new cache system
+        if block_height:
+            self.cache.update_for_new_block(block_hash, block_height)
+        
         btc_value = value_sats / 1e8
-        print(f"🎯 BLOCK REWARD FOUND! Block: {block_hash[:16]}... -> {address}: {btc_value:.8f} BTC")
+        cropped_address = self.cache._crop_address_for_log(address)
+        print(f"🎯 BLOCK REWARD FOUND! Block: {block_hash[:16]}... -> {cropped_address}: {btc_value:.8f} BTC")
         print(f"📊 Total valid blocks found: {self.valid_blocks_count}")
+        print(f"📍 Blocks for {cropped_address}: {self.blocks_by_address[address]}")
+        if block_height:
+            print(f"🏗️ Block height: {block_height}")
+    
+    def sync_cache_to_current(self) -> bool:
+        """
+        Sync all monitored addresses in cache to current blockchain height.
+        This should be called on startup to catch up on any missed blocks.
+        
+        Returns:
+            True if sync completed successfully
+        """
+        print(f"🔄 Starting cache sync to current blockchain height...")
+        return self.cache.sync_all_addresses()
     
     def check_coinbase_for_addresses(self, tx: Dict[str, Any]) -> List[Dict[str, Any]]:
         """

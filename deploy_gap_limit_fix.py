@@ -33,7 +33,7 @@ def show_deployment_instructions():
     
     print("3️⃣ **Clear cache files to force fresh derivation:**")
     print("   sudo systemctl stop mempaper")
-    print("   rm -f async_wallet_address_cache.json*")
+    print("   rm -f cache/async_wallet_address_cache.secure.json*")
     print("   rm -f wallet_address_cache.json*")
     print()
     

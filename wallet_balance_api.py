@@ -23,6 +23,17 @@ try:
     SECURE_CONFIG_AVAILABLE = True
 except ImportError:
     SECURE_CONFIG_AVAILABLE = False
+
+# Optional import for privacy utilities - graceful fallback if not available
+try:
+    from privacy_utils import BitcoinPrivacyMasker, print_privacy_safe
+    PRIVACY_UTILS_AVAILABLE = True
+except ImportError:
+    PRIVACY_UTILS_AVAILABLE = False
+    # Fallback to regular print if privacy utils not available
+    def print_privacy_safe(message, **kwargs):
+        print(message)
+
 import threading
 from typing import Dict, List, Set, Optional, Union, Tuple
 from address_derivation import AddressDerivation
@@ -47,6 +58,13 @@ try:
     SECURE_CACHE_AVAILABLE = True
 except ImportError:
     SECURE_CACHE_AVAILABLE = False
+
+# Optional import for unified secure cache - graceful fallback if not available
+try:
+    from unified_secure_cache import get_unified_cache
+    UNIFIED_CACHE_AVAILABLE = True
+except ImportError:
+    UNIFIED_CACHE_AVAILABLE = False
 
 
 class WalletBalanceAPI:
@@ -131,22 +149,32 @@ class WalletBalanceAPI:
         
         # Set up caching strategy
         self.use_async_cache = use_async_cache and ASYNC_CACHE_AVAILABLE
+        self.use_unified_cache = UNIFIED_CACHE_AVAILABLE
+        
+        # Always try to initialize unified cache for wallet balance cache
+        if self.use_unified_cache:
+            try:
+                self.unified_cache = get_unified_cache()
+                print(f"🔐 Unified secure cache initialized for wallet data")
+            except Exception as e:
+                print(f"⚠️ Failed to initialize unified cache: {e}")
+                self.use_unified_cache = False
         
         if self.use_async_cache:
-            # Use async cache manager for optimal performance
+            # Use async cache manager for optimal performance (address derivation)
             self.async_cache_manager = AsyncAddressCacheManager()
             print(f"🚀 Using async address cache for optimal performance")
-        else:
-            # Setup cache system with security if available
-            self.cache_file = "wallet_address_cache.json"
+        elif not self.use_unified_cache:
+            # Fallback to individual secure cache or empty cache for address data
+            self.cache_file = "cache/wallet_address_cache.json"
             
             if SECURE_CACHE_AVAILABLE:
                 self.secure_cache_manager = SecureCacheManager(self.cache_file)
                 self.address_cache = self.secure_cache_manager.load_cache()
                 print(f"🔐 Using secure encrypted address cache")
             else:
-                self.address_cache = self._load_address_cache()
-                print(f"⚠️ Using plain text cache (secure cache unavailable)")
+                print(f"❌ Secure cache unavailable - using empty cache")
+                self.address_cache = {}
 
     def _convert_to_fiat(self, btc_amount, fiat_currency):
         """
@@ -200,13 +228,19 @@ class WalletBalanceAPI:
     def _load_optimized_balance_cache(self, xpub: str) -> Optional[Dict]:
         """Load optimized balance monitoring cache."""
         cache_key = self._get_optimized_balance_cache_key(xpub)
-        cache_file = f"optimized_balance_cache.json"
         
         try:
-            if os.path.exists(cache_file):
-                with open(cache_file, 'r') as f:
-                    cache_data = json.load(f)
-                    return cache_data.get(cache_key)
+            if self.use_unified_cache:
+                # Load from unified secure cache
+                optimized_cache = self.unified_cache.get_cache("optimized_balance_cache")
+                return optimized_cache.get(cache_key)
+            else:
+                # Fallback to individual file
+                cache_file = f"cache/optimized_balance_cache.json"
+                if os.path.exists(cache_file):
+                    with open(cache_file, 'r') as f:
+                        cache_data = json.load(f)
+                        return cache_data.get(cache_key)
         except Exception as e:
             print(f"⚠️ Failed to load optimized balance cache: {e}")
         
@@ -215,21 +249,32 @@ class WalletBalanceAPI:
     def _save_optimized_balance_cache(self, xpub: str, cache_data: Dict) -> bool:
         """Save optimized balance monitoring cache."""
         cache_key = self._get_optimized_balance_cache_key(xpub)
-        cache_file = f"optimized_balance_cache.json"
         
         try:
-            # Load existing cache
-            existing_cache = {}
-            if os.path.exists(cache_file):
-                with open(cache_file, 'r') as f:
-                    existing_cache = json.load(f)
-            
-            # Update cache
-            existing_cache[cache_key] = cache_data
-            
-            # Save updated cache
-            with open(cache_file, 'w') as f:
-                json.dump(existing_cache, f, indent=2)
+            if self.use_unified_cache:
+                # Save to unified secure cache
+                optimized_cache = self.unified_cache.get_cache("optimized_balance_cache")
+                optimized_cache[cache_key] = cache_data
+                self.unified_cache.set_cache("optimized_balance_cache", optimized_cache)
+            else:
+                # Fallback to individual file
+                cache_file = f"cache/optimized_balance_cache.json"
+                
+                # Ensure cache directory exists
+                os.makedirs(os.path.dirname(cache_file), exist_ok=True)
+                
+                # Load existing cache
+                existing_cache = {}
+                if os.path.exists(cache_file):
+                    with open(cache_file, 'r') as f:
+                        existing_cache = json.load(f)
+                
+                # Update cache
+                existing_cache[cache_key] = cache_data
+                
+                # Save updated cache
+                with open(cache_file, 'w') as f:
+                    json.dump(existing_cache, f, indent=2)
                 
             return True
         except Exception as e:
@@ -430,14 +475,8 @@ class WalletBalanceAPI:
             # Use secure cache manager
             return self.secure_cache_manager.save_cache(self.address_cache)
         else:
-            # Fallback to plain text cache
-            try:
-                with open(self.cache_file, 'w') as f:
-                    json.dump(self.address_cache, f, indent=2)
-                return True
-            except Exception as e:
-                print(f"⚠️ Failed to save address cache: {e}")
-                return False
+            print(f"❌ Secure cache manager not available - cannot save cache")
+            return False
     
     def _get_cache_key(self, extended_key: str, count: int, start_index: int = 0) -> str:
         """Generate cache key for derivation parameters."""
@@ -784,6 +823,23 @@ class WalletBalanceAPI:
         Returns:
             Balance in BTC
         """
+        # Debug: Check if address is actually an object (this should NOT happen)
+        if isinstance(address, dict):
+            print(f"🚨 ERROR: get_address_balance received a dict instead of string: {address}")
+            import traceback
+            print("🚨 Call stack:")
+            traceback.print_stack()
+            # Try to extract address from the object
+            if 'address' in address:
+                print(f"🔧 Attempting to extract address: {address['address']}")
+                address = address['address']
+            else:
+                print(f"❌ Cannot extract address from object: {address}")
+                return 0.0
+        elif not isinstance(address, str):
+            print(f"🚨 ERROR: get_address_balance received non-string type {type(address)}: {address}")
+            return 0.0
+            
         try:
             url = f"{self.base_url}/address/{address}"
             response = requests.get(url, timeout=10, verify=False)
@@ -882,7 +938,11 @@ class WalletBalanceAPI:
             
             # Mark this XPUB as having active gap limit detection
             self._active_gap_limit_detection.add(xpub)
-            print(f"🔒 [BLOCKING] Starting exclusive gap limit detection for {xpub[:20]}...")
+            if PRIVACY_UTILS_AVAILABLE:
+                masked_xpub = BitcoinPrivacyMasker.mask_xpub(xpub)
+                print(f"🔒 [BLOCKING] Starting exclusive gap limit detection for {masked_xpub}...")
+            else:
+                print(f"🔒 [BLOCKING] Starting exclusive gap limit detection for {xpub[:20]}...")
         
         try:
             return self._perform_gap_limit_detection(xpub)
@@ -912,7 +972,11 @@ class WalletBalanceAPI:
         initial_count = self.config.get("xpub_derivation_count", 20)
         current_count = initial_count
         
-        print(f"🔍 Enhanced gap limit detection for {xpub[:20]}... (initial: {initial_count})")
+        if PRIVACY_UTILS_AVAILABLE:
+            masked_xpub = BitcoinPrivacyMasker.mask_xpub(xpub)
+            print(f"🔍 Enhanced gap limit detection for {masked_xpub} (initial: {initial_count})")
+        else:
+            print(f"🔍 Enhanced gap limit detection for {xpub[:20]}... (initial: {initial_count})")
         
         # Phase 1: Bootstrap - find at least one address with positive balance
         bootstrap_complete = False
@@ -941,7 +1005,13 @@ class WalletBalanceAPI:
                     
                     # Use batch processing for better performance on NEW addresses only
                     print(f"   📊 Batch checking {len(new_addresses_only)} NEW addresses (indices {new_addresses[0][1]}-{new_addresses[-1][1]}) for usage history...")
-                    batch_usage_info = self.get_batch_address_usage_info(new_addresses_only, batch_size=20)
+                    batch_usage_list = self.get_batch_address_usage_info(new_addresses_only, batch_size=20)
+                    
+                    # Convert list to dict for easier lookup
+                    batch_usage_info = {}
+                    for i, address in enumerate(new_addresses_only):
+                        if i < len(batch_usage_list):
+                            batch_usage_info[address] = batch_usage_list[i]
                     
                     # Store new address information
                     for address, index in new_addresses:
@@ -967,11 +1037,23 @@ class WalletBalanceAPI:
                         ever_used = usage_info.get('was_ever_used', False) or usage_info.get('total_received', 0) > 0
                         
                         if balance > 0:
-                            print(f"   💰 Address {index:2d}: {address[:20]}... = {balance:.8f} BTC (ACTIVE)")
+                            if PRIVACY_UTILS_AVAILABLE:
+                                masked_address = BitcoinPrivacyMasker.mask_address(address)
+                                print(f"   💰 Address {index:2d}: {masked_address} = {balance:.8f} BTC (ACTIVE)")
+                            else:
+                                print(f"   💰 Address {index:2d}: {address[:20]}... = {balance:.8f} BTC (ACTIVE)")
                         elif ever_used:
-                            print(f"   📝 Address {index:2d}: {address[:20]}... = 0.00000000 BTC (USED IN PAST)")
+                            if PRIVACY_UTILS_AVAILABLE:
+                                masked_address = BitcoinPrivacyMasker.mask_address(address)
+                                print(f"   📝 Address {index:2d}: {masked_address} = 0.00000000 BTC (USED IN PAST)")
+                            else:
+                                print(f"   📝 Address {index:2d}: {address[:20]}... = 0.00000000 BTC (USED IN PAST)")
                         else:
-                            print(f"   ⭕ Address {index:2d}: {address[:20]}... = 0.00000000 BTC (NEVER USED)")
+                            if PRIVACY_UTILS_AVAILABLE:
+                                masked_address = BitcoinPrivacyMasker.mask_address(address)
+                                print(f"   ⭕ Address {index:2d}: {masked_address} = 0.00000000 BTC (NEVER USED)")
+                            else:
+                                print(f"   ⭕ Address {index:2d}: {address[:20]}... = 0.00000000 BTC (NEVER USED)")
                 
                 # Calculate totals from ALL addresses processed so far
                 for address, (index, usage_info) in all_addresses_info.items():
@@ -1101,12 +1183,13 @@ class WalletBalanceAPI:
         
         return final_addresses, current_count
     
-    def _get_secure_wallet_entries(self) -> List[str]:
+    def _get_secure_wallet_entries(self) -> List[Union[str, Dict]]:
         """
         Securely load wallet addresses and XPUBs from encrypted configuration.
+        Supports both old format (strings) and new format (objects with address/comment/type).
         
         Returns:
-            List of wallet addresses and XPUBs
+            List of wallet addresses and XPUBs (strings or objects)
         """
         if not self.secure_config_manager:
             # Fallback to config file if secure config unavailable
@@ -1120,11 +1203,17 @@ class WalletBalanceAPI:
                 print("⚠️ Failed to load secure config, using fallback")
                 return self.config.get("wallet_balance_addresses", [])
             
-            # Get wallet addresses from secure config
+            # Try new format first (objects with comments)
+            wallet_entries_with_comments = secure_config.get("wallet_balance_addresses_with_comments", [])
+            if wallet_entries_with_comments:
+                print(f"🔐 Loaded {len(wallet_entries_with_comments)} wallet entries with comments from secure configuration")
+                return wallet_entries_with_comments
+            
+            # Fallback to old format (simple strings)
             wallet_entries = secure_config.get("wallet_balance_addresses", [])
             
             if wallet_entries:
-                print(f"🔐 Loaded {len(wallet_entries)} wallet entries from secure configuration")
+                print(f"🔐 Loaded {len(wallet_entries)} wallet entries (old format) from secure configuration")
                 return wallet_entries
             else:
                 # Fallback to regular config if no secure entries found
@@ -1175,6 +1264,7 @@ class WalletBalanceAPI:
                         user_addresses.append(address)
                 else:
                     # Fallback for malformed entries
+                    print(f"🔍 [DEBUG] Fallback processing for: {entry}")
                     if isinstance(entry, str):
                         if entry.lower().startswith(("xpub", "zpub")):
                             user_xpubs.append(entry)
@@ -1220,6 +1310,23 @@ class WalletBalanceAPI:
         Returns:
             Balance in BTC
         """
+        # Debug: Check if xpub is actually an object (this should NOT happen)
+        if isinstance(xpub, dict):
+            print(f"🚨 ERROR: get_xpub_balance received a dict instead of string: {xpub}")
+            import traceback
+            print("🚨 Call stack:")
+            traceback.print_stack()
+            # Try to extract xpub from the object
+            if 'address' in xpub:
+                print(f"🔧 Attempting to extract xpub: {xpub['address']}")
+                xpub = xpub['address']
+            else:
+                print(f"❌ Cannot extract xpub from object: {xpub}")
+                return 0.0
+        elif not isinstance(xpub, str):
+            print(f"🚨 ERROR: get_xpub_balance received non-string type {type(xpub)}: {xpub}")
+            return 0.0
+            
         import time
         try:
             # Check balance cache first (except in startup mode where we want minimal processing)
@@ -1438,24 +1545,22 @@ class WalletBalanceAPI:
             total_btc = (sum(addr["balance_btc"] for addr in address_balances) + 
                         sum(xpub["balance_btc"] for xpub in xpub_balances))
             
-            # 6. Get fiat conversion if enabled
-            show_fiat = self.config.get("wallet_balance_show_fiat", False)
-            fiat_currency = self.config.get("btc_price_currency", "USD")  # Use same as BTC price
+            # 6. Get fiat conversion using wallet-specific currency
+            fiat_currency = self.config.get("wallet_balance_currency", "EUR")  # Use wallet-specific currency
             total_fiat = None
             
-            if show_fiat:
-                if total_btc > 0:
-                    print(f"💰 Converting {total_btc:.8f} BTC to {fiat_currency}...")
-                    total_fiat = self._convert_to_fiat(total_btc, fiat_currency)
-                    if total_fiat:
-                        print(f"✅ Conversion successful: {total_fiat:.2f} {fiat_currency}")
-                    else:
-                        print(f"❌ Conversion failed for {fiat_currency}")
-                        total_fiat = 0.0  # Set to 0 if conversion fails
+            if total_btc > 0:
+                print(f"💰 Converting {total_btc:.8f} BTC to {fiat_currency}...")
+                total_fiat = self._convert_to_fiat(total_btc, fiat_currency)
+                if total_fiat:
+                    print(f"✅ Conversion successful: {total_fiat:.2f} {fiat_currency}")
                 else:
-                    # Zero balance - show 0.00 in fiat currency
-                    total_fiat = 0.0
-                    print(f"💰 Zero balance - showing 0.00 {fiat_currency}")
+                    print(f"❌ Conversion failed for {fiat_currency}")
+                    total_fiat = 0.0  # Set to 0 if conversion fails
+            else:
+                # Zero balance - show 0.00 in fiat currency
+                total_fiat = 0.0
+                print(f"💰 Zero balance - showing 0.00 {fiat_currency}")
             
             # 7. Determine display unit
             unit = self.config.get("wallet_balance_unit", "BTC")
@@ -1468,7 +1573,7 @@ class WalletBalanceAPI:
                 "fiat_currency": fiat_currency,
                 "unit": unit,
                 "duplicates_removed": duplicates_count,
-                "show_fiat": show_fiat
+                "show_fiat": True  # Always show fiat now that we have wallet-specific currency
             }
 
             self.update_cache(fetched_data)
@@ -1482,32 +1587,33 @@ class WalletBalanceAPI:
     
     def update_cache(self, wallet_data):
         self._wallet_cache = wallet_data
-        if hasattr(self, 'secure_cache_manager') and SECURE_CACHE_AVAILABLE:
+        
+        if self.use_unified_cache:
+            # Save to unified secure cache
+            self.unified_cache.set_cache("wallet_balance_cache", wallet_data)
+            print("💾 Wallet balance cache updated in unified secure storage")
+        elif hasattr(self, 'secure_cache_manager') and SECURE_CACHE_AVAILABLE:
             self.secure_cache_manager.save_cache(wallet_data)
             print("💾 Wallet balance cache updated in secure storage")
         else:
-            cache_file = "wallet_balance_cache.json"
-            try:
-                import json
-                with open(cache_file, "w") as f:
-                    json.dump(wallet_data, f, indent=2)
-                print(f"💾 Wallet balance cache updated: {cache_file}")
-            except Exception as e:
-                print(f"⚠️ Failed to update wallet balance cache: {e}")
+            # No fallback to individual file - secure cache only
+            print("⚠️ Unified secure cache not available - wallet balance not cached")
+            print("⚠️ Please ensure unified secure cache is properly initialized")
 
     def get_cached_wallet_balances(self):
-        if hasattr(self, 'secure_cache_manager') and SECURE_CACHE_AVAILABLE:
+        if self.use_unified_cache:
+            # Load from unified secure cache
+            cache = self.unified_cache.get_cache("wallet_balance_cache")
+            if cache:
+                self._wallet_cache = cache
+                return cache
+        elif hasattr(self, 'secure_cache_manager') and SECURE_CACHE_AVAILABLE:
             cache = self.secure_cache_manager.load_cache()
             if cache:
                 self._wallet_cache = cache
+                return cache
         else:
-            cache_file = "wallet_balance_cache.json"
-            import os
-            import json
-            if os.path.exists(cache_file):
-                try:
-                    with open(cache_file, "r") as f:
-                        cache = json.load(f)
-                        self._wallet_cache = cache
-                except Exception as e:
-                    print(f"⚠️ Failed to load wallet balance cache: {e}")
+            # No fallback to individual file - secure cache only
+            print("⚠️ Unified secure cache not available - no cached wallet balance")
+        
+        return None

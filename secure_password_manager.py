@@ -259,9 +259,19 @@ class SecurePasswordManager:
             return True
         
         # Check if we have a cleartext password to migrate
-        cleartext_password = self.config_manager.get('admin_password')
+        # Use direct config access to avoid default fallback
+        with self.config_manager.config_lock:
+            current_config = self.config_manager.config
+            cleartext_password = current_config.get('admin_password')
+            
         if not cleartext_password or cleartext_password.strip() == "":
             # No password to migrate - will trigger first-time setup
+            return True
+            
+        # Don't migrate if it's the default password value
+        default_password = "mempaper2025"
+        if cleartext_password == default_password:
+            logger.info("Skipping migration of default password - treating as no password set")
             return True
         
         logger.info("Migrating existing cleartext password to secure hash")

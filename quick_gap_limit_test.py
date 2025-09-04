@@ -37,7 +37,7 @@ except Exception as e:
     print(f'❌ Error testing WalletBalanceAPI: {e}')
 
 # Check cache state
-cache_exists = os.path.exists('async_wallet_address_cache.secure.json')
+cache_exists = os.path.exists('cache/async_wallet_address_cache.secure.json')
 print()
 print(f'📁 Async cache exists: {cache_exists}')
 if not cache_exists:

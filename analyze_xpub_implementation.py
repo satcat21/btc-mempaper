@@ -37,7 +37,7 @@ def analyze_current_implementation():
     print(f"✅ 2. Cache all derived addresses:")
     print(f"     - IMPLEMENTED with dual caching system:")
     print(f"       * Simple cache: wallet_address_cache.json")
-    print(f"       * Async cache: async_wallet_address_cache.json")
+    print(f"       * Async cache: cache/async_wallet_address_cache.secure.json")
     
     # Requirement 3: Gap limit detection and extension  
     print(f"❌ 3. Gap limit detection (if ANY of last 10 derived addresses have/had balance > 0 → derive 10 more):")

@@ -150,13 +150,17 @@ class ConfigurationObserver:
 class AsyncAddressCacheManager:
     """Manages asynchronous address derivation and caching."""
     
-    def __init__(self, cache_file: str = "async_wallet_address_cache.json"):
+    def __init__(self, cache_file: str = "cache/async_wallet_address_cache.secure.json"):
         """
         Initialize async cache manager.
         
         Args:
-            cache_file: Path to cache file
+            cache_file: Path to cache file (uses secure encrypted cache)
         """
+        # Always use the base name without .secure for the SecureCacheManager
+        # The SecureCacheManager will automatically handle the .secure.json file
+        if cache_file.endswith('.secure.json'):
+            cache_file = cache_file.replace('.secure.json', '.json')
         self.cache_file = cache_file
         self.address_derivation = AddressDerivation()
         
@@ -166,8 +170,8 @@ class AsyncAddressCacheManager:
             self.cache = self.secure_cache_manager.load_cache()
             print(f"🔐 Using secure encrypted async cache")
         else:
-            self.cache = self._load_cache()
-            print(f"⚠️ Using plain text async cache (secure cache unavailable)")
+            print(f"❌ Secure cache unavailable - cannot initialize cache manager")
+            self.cache = {}
         
         self.work_queue = queue.Queue()
         self.worker_thread = None
@@ -197,29 +201,8 @@ class AsyncAddressCacheManager:
             # Use secure cache manager
             return self.secure_cache_manager.save_cache(self.cache)
         else:
-            # Fallback to plain text cache with atomic write
-            try:
-                # Write to temporary file first, then atomic rename
-                temp_file = self.cache_file + '.tmp'
-                with open(temp_file, 'w') as f:
-                    json.dump(self.cache, f, indent=2)
-                
-                # Atomic rename
-                if os.path.exists(self.cache_file):
-                    os.remove(self.cache_file)
-                os.rename(temp_file, self.cache_file)
-                
-                return True
-            except Exception as e:
-                print(f"⚠️ Failed to save async cache: {e}")
-                # Clean up temp file
-                temp_file = self.cache_file + '.tmp'
-                if os.path.exists(temp_file):
-                    try:
-                        os.remove(temp_file)
-                    except:
-                        pass
-                return False
+            print(f"❌ Secure cache manager not available - cannot save cache")
+            return False
     
     def _calculate_cache_key(self, config: Dict) -> str:
         """Calculate cache key for configuration."""

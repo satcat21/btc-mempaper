@@ -39,13 +39,21 @@ Thumbs.db
 # Configuration and sensitive files
 config.json
 config.json.backup
-async_wallet_address_cache.json
-async_wallet_address_cache.secure.json
+config/.secret_key
+
+# Cache files (all cache data now encrypted in cache.secure.json)
+cache/async_wallet_address_cache.secure.json
+cache/cache.secure.json
+cache/block_reward_cache.json
+cache/optimized_balance_cache.json
+cache/wallet_balance_cache.json
+cache/cache_metadata.json
 wallet_balance_cache.json
-cache_metadata.json
+cache.json
 optimized_balance_cache.json
 *.secure.json
 *.backup
+*.migrated_backup
 current.png
 current_eink.png
 *.log

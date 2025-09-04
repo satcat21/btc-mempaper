@@ -8,7 +8,7 @@ StartLimitIntervalSec=0
 
 [Service]
 Type=simple
-ExecStart=/bin/sh -c ". /home/pi/btc-mempaper/.venv/bin/activate && python3 /home/pi/btc-mempaper/serve.py"
+ExecStart=/bin/sh -c ". /home/pi/btc-mempaper/.venv/bin/activate && gunicorn --config /home/pi/btc-mempaper/gunicorn.conf.py wsgi:application"
 WorkingDirectory=/home/pi/btc-mempaper
 Restart=always
 RestartSec=5

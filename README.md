@@ -178,8 +178,6 @@ Below are all allowed and supported settings in `config.json`:
 - `e-ink-display-connected`: Enable e-Paper display (true/false)
 - `omni_device_name`: Device name for e-Paper (e.g. `waveshare_epd.epd7in3f`)
 - `admin_username`: Dashboard admin username
-- `rate_limit_requests`: Max requests per window
-- `rate_limit_window`: Rate limit window (seconds)
 - `show_btc_price_block`: Show BTC price block (true/false)
 - `btc_price_currency`: Fiat currency for price display (`USD`, `EUR`, etc.)
 - `show_bitaxe_block`: Show Bitaxe miner block (true/false)
@@ -196,12 +194,22 @@ Below are all allowed and supported settings in `config.json`:
 - `xpub_bootstrap_increment`: XPUB bootstrap increment
 - `color_mode_dark`: Enable dark mode (true/false)
 - `font_regular`, `font_bold`: Paths to font files
-- `session_timeout`: Session timeout (seconds)
 - `backup_duration_minutes`: Backup interval (minutes)
 - `block_height_area`: Block height display area (pixels)
 - `moscow_time_unit`: Moscow time unit (`hour`, etc.)
 
 For more details and advanced options, see `config.json.example` and the `/admin` web configuration interface.
+
+### 🔒 Security Settings (Hardcoded for Best Protection)
+
+For enhanced security, critical security settings are no longer user-configurable and use industry best practices:
+
+- **Rate Limiting**: Maximum 5 failed login attempts per 5-minute window
+- **Session Timeout**: 1 hour automatic logout 
+- **Secret Key**: Cryptographically secure 512-bit random key generated on startup
+- **Password Hashing**: Argon2id with memory-hard protection against GPU attacks
+
+These settings are defined in `security_config.py` and cannot be modified through the web interface.
 
 ---
 
@@ -354,7 +362,6 @@ btc-mempaper/
 ├── btc_price_api.py              # Bitcoin price API
 ├── bitaxe_api.py                 # Bitaxe miner API
 ├── mempool_api.py                # Mempool integration
-├── twitter_api.py                # (Paused) Twitter/X API
 ├── display/                      # Display utilities and scripts
 ├── static/                       # Web assets (css, js, memes, icons, tweets)
 ├── templates/                    # HTML templates (dashboard, login, config)
@@ -378,6 +385,95 @@ python start_fast.py  # Fast startup for development
 2. Add tests for new features
 3. Update documentation
 4. Use secure coding practices
+
+---
+
+## ⛏️ Block Reward Monitoring
+
+BTC Mempaper includes an advanced block reward monitoring system that tracks coinbase transactions for specified Bitcoin addresses. This feature is useful for mining pools, solo miners, or anyone wanting to monitor Bitcoin addresses for block rewards.
+
+### **Features**
+
+- **Smart Caching**: Efficient filesystem cache that stores coinbase transaction counts per address
+- **Transaction History API**: Uses mempool address transaction history instead of scanning entire blockchain
+- **Incremental Updates**: Only scans new blocks since last sync, avoiding full rescans
+- **Recovery System**: Automatically catches up on missed blocks after downtime
+- **Fast API Response**: Cache provides instant response times for web interface
+- **Efficient Scanning**: Optimized approach that gets transaction history and filters for coinbase transactions
+
+### **Cache Structure**
+
+The system maintains a cache file `block_reward_cache.json` with the following structure:
+
+```json
+{
+  "addresses": {
+    "bc1qexampleaddress": {
+      "total_coinbase_count": 5,
+      "synced_height": 850000,
+      "last_updated": 1693737600,
+      "first_block_found": 840000,
+      "latest_block_found": 849500
+    }
+  },
+  "global_sync_height": 850000,
+  "cache_version": "1.0",
+  "last_full_scan": 1693737600
+}
+```
+
+### **How It Works**
+
+1. **New Address Added**: 
+   - Fetches complete transaction history from mempool API
+   - Filters transactions for coinbase transactions (no inputs except coinbase)
+   - Caches total coinbase count and sync height
+   - Much faster than scanning entire blockchain
+
+2. **New Block Found**:
+   - Checks if coinbase transaction pays monitored addresses
+   - Increments cached count if match found
+   - Updates sync height to current block
+
+3. **System Recovery**:
+   - On startup, compares cache sync height with current blockchain height
+   - For small gaps (≤1000 blocks): scans missing blocks directly
+   - For large gaps (>1000 blocks): re-fetches transaction history and filters by height
+   - Updates cache with any new coinbase transactions found
+
+4. **Web Interface**:
+   - API endpoint returns cached count instantly
+   - No blockchain scanning required for display
+   - Real-time updates via WebSocket when new blocks found
+
+### **Configuration**
+
+Add addresses to monitor in the configuration interface under "Bitaxe Stats" > "Block Reward Monitoring Table":
+
+```json
+{
+  "block_reward_addresses_table": [
+    {
+      "address": "bc1qexampleaddress1",
+      "comment": "Mining Pool 1"
+    },
+    {
+      "address": "bc1qexampleaddress2", 
+      "comment": "Solo Mining Wallet"
+    }
+  ]
+}
+```
+
+### **Testing**
+
+Test the cache system with the included test script:
+
+```bash
+python test_block_cache.py
+```
+
+This will verify cache functionality and demonstrate the system in action.
 
 ---
 

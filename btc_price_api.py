@@ -85,7 +85,7 @@ class BitcoinPriceAPI:
             return "Price unavailable"
         
         currency = price_data.get("currency", "USD")
-        price = price_data.get("currency_price", 0)
+        price = price_data.get("price_in_selected_currency", 0)
         
         if currency == "USD":
             symbol = "$"

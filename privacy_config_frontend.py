@@ -90,10 +90,9 @@ def register_privacy_config_routes(app, config_manager):
             if privacy_manager.is_public_mempool_instance(mempool_ip, mempool_port):
                 privacy_sensitive_fields = [
                     'wallet_balance_addresses',
-                    'block_reward_addresses', 
-                    'xpub_derivation_count',
+                    'block_reward_addresses_table',
                     'show_wallet_balances_block',
-                    'bitaxe_miner_ips',
+                    'bitaxe_miner_table',
                     'show_bitaxe_block'
                 ]
                 
@@ -228,14 +227,7 @@ ENHANCED_CONFIG_TEMPLATE = """
                         Show Bitaxe Block
                     </label>
                     <div id="bitaxe-fields" class="sub-fields">
-                        <div class="field-group">
-                            <label>Bitaxe Miner IPs:</label>
-                            <input type="text" id="bitaxe_miner_ips" placeholder="192.168.1.200,192.168.1.201">
-                            <div class="tooltip">
-                                <span>ℹ️</span>
-                                <span class="tooltiptext">Comma-separated list of Bitaxe miner IP addresses on your local network.</span>
-                            </div>
-                        </div>
+                        <!-- Bitaxe miner table will be rendered by the main config system -->
                     </div>
                 </div>
                 
