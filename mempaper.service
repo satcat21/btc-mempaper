@@ -1,7 +1,7 @@
 # /etc/systemd/system/mempaper.service
 [Unit]
 Description=Mempaper Bitcoin Dashboard
-Documentation=https://github.com/your-username/btc-mempaper
+Documentation=https://github.com/satcat21/btc-mempaper
 After=network-online.target
 Wants=network-online.target
 StartLimitIntervalSec=0

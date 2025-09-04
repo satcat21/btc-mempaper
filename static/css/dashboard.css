@@ -226,13 +226,13 @@ body {
 /* Mobile toggle button - small and subtle */
 .mobile-nav-toggle {
     position: fixed;
-    bottom: 20px;
+    bottom: 5px;
     right: 20px;
     width: 36px;
     height: 36px;
     border: none;
     border-radius: 50%;
-    background: rgba(45, 48, 71, 0.8);
+    background: rgba(45, 48, 71, 0.4);
     backdrop-filter: blur(10px);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
     z-index: 1001;
@@ -257,7 +257,7 @@ body {
 
 .mobile-nav-toggle svg {
     transition: transform 0.3s ease;
-    fill: white !important;
+    fill: #b0b0b0 !important;
 }
 
 /* Navigation button styles (copied from config page) */
@@ -486,7 +486,7 @@ body {
         width: 32px;
         height: 32px;
         font-size: 12px;
-        bottom: 15px;
+        bottom: 3px;
         right: 15px;
     }
 }

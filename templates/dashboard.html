@@ -4,6 +4,7 @@
     <title>{{ translations.dashboard_title }}</title>
     <link rel="icon" type="image/png" href="static/favicon.png">
     <link rel="stylesheet" href="static/css/dashboard.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <script src="static/js/socket.io.min.js"></script>
 </head>
 <body class="orientation-{{ orientation }}">
@@ -25,7 +26,7 @@
     
     <!-- Mobile Navigation Toggle Button -->
     <button id="mobile-nav-toggle" class="mobile-nav-toggle" onclick="toggleMobileNav()" title="{{ translations.menu }}">
-        <svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960" width="18px" fill="white">
+        <svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960" width="18px" fill="#b0b0b0">
             <path d="M256-405.91 181.91-480 480-778.09 778.09-480 704-405.91l-224-223-224 223Z"/>
         </svg>
     </button>

@@ -50,7 +50,7 @@ Mempaper combines live Bitcoin blockchain data, social media integration, and be
 
 ### 1. **Clone Repository**
 ```bash
-git clone https://github.com/your-username/btc-mempaper.git
+git clone https://github.com/satcat21/btc-mempaper.git
 cd btc-mempaper
 ```
 
@@ -149,7 +149,7 @@ sudo raspi-config
 
 3. **Install application**:
 ```bash
-git clone https://github.com/your-username/btc-mempaper.git
+git clone https://github.com/satcat21/btc-mempaper.git
 cd btc-mempaper
 python -m venv venv
 source venv/bin/activate

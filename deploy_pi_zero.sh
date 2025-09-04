@@ -54,7 +54,7 @@ echo "⚙️ Optimizing systemd service for Pi Zero..."
 sudo tee /etc/systemd/system/mempaper.service > /dev/null << 'EOF'
 [Unit]
 Description=Mempaper Bitcoin Dashboard (Pi Zero Optimized)
-Documentation=https://github.com/your-username/btc-mempaper
+Documentation=https://github.com/satcat21/btc-mempaper
 After=network-online.target
 Wants=network-online.target
 StartLimitIntervalSec=0
