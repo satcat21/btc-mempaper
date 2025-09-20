@@ -7,107 +7,6 @@
     <link rel="stylesheet" href="static/css/config.css">
     <script src="static/js/socket.io.min.js"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <style>
-        /* Ensure nav icons are always visible on desktop and mobile */
-        .nav-button svg,
-        .mobile-nav-button svg {
-            display: inline-block !important;
-            vertical-align: middle;
-        }
-
-        /* Optional: keep button content centered nicely */
-        .nav-button {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            gap: 6px;
-        }
-
-        .mobile-nav-button {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        /* Icon color adjustment - always white */
-        .nav-button svg,
-        .mobile-nav-button svg {
-            fill: white !important;
-            /* Always white for better visibility */
-            transition: fill 0.2s;
-        }
-    </style>
-    <script>
-        // Fix Save and Logout buttons
-        document.addEventListener('DOMContentLoaded', function () {
-            var desktopSave = document.getElementById('desktop-save-button');
-            var mobileSave = document.getElementById('mobile-save-button');
-            var desktopLogout = document.getElementById('desktop-logout-button');
-            var mobileLogout = document.getElementById('mobile-logout-button');
-            
-            if (desktopSave) desktopSave.onclick = function () { saveConfigurationWithFeedback(desktopSave); };
-            if (mobileSave) mobileSave.onclick = function () { saveConfigurationWithFeedback(mobileSave); };
-
-            async function logout() {
-                try {
-                    const response = await fetch('/api/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
-                    if (response.ok) {
-                        window.location.href = '/login';
-                    } else {
-                        alert('Logout failed');
-                    }
-                } catch (error) {
-                    alert('Logout failed');
-                }
-            }
-            
-            if (desktopLogout) desktopLogout.onclick = logout;
-            if (mobileLogout) mobileLogout.onclick = logout;
-            window.logout = logout;
-        });
-
-        // Save button feedback logic
-        window.saveConfigurationWithFeedback = async function (button) {
-            var originalHTML = button.innerHTML;
-            button.disabled = true;
-            // Pending: icon only
-            button.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" class="pending-icon">
-                <path d="M480-80q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm-40-82v-78q-33 0-56.5-23.5T360-320v-40L168-552q-3 18-5.5 36t-2.5 36q0 121 79.5 212T440-162Zm276-102q20-22 36-47.5t26.5-53q10.5-27.5 16-56.5t5.5-59q0-98-54.5-179T608-776h-16q-33 0-56.5 23.5T512-696v+56q0 50-35 85t-85 35h-56v40q0 33-23.5 56.5T256-400h-40v144l360 192Z"/>
-            </svg>`;
-            try {
-                await saveConfiguration();
-                showToast(window.translations.configuration_saved || 'Config saved successfully!', 'success');
-            } catch (e) {
-                showToast(window.translations.configuration_save_error || 'Error saving configuration!', 'error');
-            }
-            button.disabled = false;
-            button.innerHTML = originalHTML;
-        }
-
-        // Toast logic
-        window.showToast = function (message, type) {
-            var toast = document.getElementById('notification');
-            if (!toast) return;
-            toast.textContent = message;
-            toast.style.background = type === 'success' ? '#38a169' : '#e53e3e';
-            toast.style.color = '#fff';
-            toast.style.borderRadius = '10px';
-            toast.style.padding = '10px 16px';
-            toast.style.position = 'fixed';
-            toast.style.top = '18px';
-            toast.style.left = '50%';
-            toast.style.transform = 'translateX(-50%)';
-            toast.style.zIndex = '9999';
-            toast.style.fontSize = '0.95rem';
-            toast.style.boxShadow = '0 8px 24px rgba(0,0,0,0.25)';
-            toast.style.minWidth = '240px';
-            toast.style.maxWidth = '420px';
-            toast.style.width = 'auto';
-            toast.style.textAlign = 'center';
-            toast.style.display = 'block';
-            setTimeout(function () { toast.style.display = 'none'; }, 2200);
-        }
-    </script>
 </head>
 
 <body>
@@ -151,45 +50,12 @@
 
     <div class="container">
         <div class="header">
-            <h1>⚙️ {{ translations.settings }}</h1>
-            <p>Configure your Bitcoin dashboard</p>
+            <h1>{{ translations.settings }}</h1>
+            <p>{{ translations.configure_dashboard }}</p>
         </div>
 
         <div id="config-container">
             <!-- Configuration sections will be loaded here -->
-        </div>
-
-        <div class="config-section" style="margin-top: 25px;">
-            <div class="section-title">
-                🖼️ {{ translations.meme_management }}
-            </div>
-
-            <div class="form-group">
-                <label class="form-label">{{ translations.upload_new_meme }}</label>
-                <div class="upload-area" id="upload-area">
-                    <input type="file" id="file-input" accept="image/*" style="display: none;">
-                    <div class="upload-placeholder">
-                        <div style="font-size: 2rem; margin-bottom: 10px;">📷</div>
-                        <p>{{ translations.upload_placeholder }}</p>
-                        <p style="font-size: 0.8rem; color: #667eea;">{{ translations.upload_formats }}</p>
-                    </div>
-                </div>
-                <div id="upload-progress" style="display: none; margin-top: 10px;">
-                    <div style="background: #f0f0f0; border-radius: 10px; overflow: hidden;">
-                        <div id="progress-bar"
-                            style="height: 8px; background: #667eea; width: 0%; transition: width 0.3s;"></div>
-                    </div>
-                    <p id="upload-status" style="margin-top: 5px; font-size: 0.9rem;"></p>
-                </div>
-            </div>
-
-            <div class="form-group">
-                <label class="form-label">{{ translations.current_memes }}</label>
-                <div id="memes-list"
-                    style="display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; margin-top: 10px;">
-                    <!-- Memes will be loaded here -->
-                </div>
-            </div>
         </div>
     </div>
 
@@ -218,70 +84,32 @@
                 </div>
                 <div class="meme-info">
                     <div class="meme-info-row">
-                        <strong>Filename:</strong> <span id="meme-modal-filename"></span>
+                        <strong>{{ translations.filename }}</strong> <span id="meme-modal-filename"></span>
                     </div>
                     <div class="meme-info-row">
-                        <strong>Dimensions:</strong> <span id="meme-modal-dimensions">Loading...</span>
+                        <strong>{{ translations.dimensions }}</strong> <span id="meme-modal-dimensions">{{ translations.loading }}</span>
                     </div>
                     <div class="meme-info-row">
-                        <strong>File Size:</strong> <span id="meme-modal-filesize">Loading...</span>
+                        <strong>{{ translations.file_size }}</strong> <span id="meme-modal-filesize">{{ translations.loading }}</span>
                     </div>
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="action-button" onclick="downloadMemeFromModal()">⬇️ {{ translations.download_meme
-                    }}</button>
-                <button class="action-button delete" onclick="deleteMemeFromModal()">🗑️ {{ translations.delete_meme
-                    }}</button>
-                <button class="cancel-button" onclick="closeMemeModal()">{{ translations.cancel }}</button>
+                <button class="icon-button" onclick="downloadMemeFromModal()" title="{{ translations.download_meme }}">
+                    <img src="/static/icons/download.svg" alt="Download" />
+                </button>
+                <button class="icon-button delete" onclick="deleteMemeFromModal()" title="{{ translations.delete_meme }}">
+                    <img src="/static/icons/delete.svg" alt="Delete" />
+                </button>
+                <button class="icon-button cancel" onclick="closeMemeModal()" title="{{ translations.cancel }}">
+                    <img src="/static/icons/cancel.svg" alt="Cancel" />
+                </button>
             </div>
         </div>
     </div>
 
     <div id="notification" class="notification"></div>
 
-    <script>
-        // Device detection for adaptive sizing
-        function detectDevice() {
-            const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-            const isHighDPI = window.devicePixelRatio >= 2;
-            const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-
-            // Add device classes to body for enhanced CSS targeting
-            document.body.classList.add(isTouchDevice ? 'touch-device' : 'no-touch');
-            document.body.classList.add(isHighDPI ? 'high-dpi' : 'standard-dpi');
-            document.body.classList.add(isMobile ? 'mobile-device' : 'desktop-device');
-
-            console.log('Device detected:', { isTouchDevice, isHighDPI, isMobile });
-        }
-
-        // Run device detection on load
-        detectDevice();
-
-        // Pass translations to JavaScript
-        window.translations = {
-            configuration_saved: "{{ translations.configuration_saved }}",
-            configuration_save_error: "{{ translations.configuration_save_error }}",
-            upload_successful: "{{ translations.upload_successful }}",
-            upload_failed: "{{ translations.upload_failed }}",
-            download_failed: "{{ translations.download_failed }}",
-            meme_deleted_successfully: "{{ translations.meme_deleted_successfully }}",
-            meme_delete_failed: "{{ translations.meme_delete_failed }}",
-            no_memes_uploaded: "{{ translations.no_memes_uploaded }}",
-            download_meme: "{{ translations.download_meme }}",
-            delete_meme: "{{ translations.delete_meme }}",
-            enabled: "{{ translations.enabled }}",
-            disabled: "{{ translations.disabled }}",
-            failed_to_save_configuration: "{{ translations.failed_to_save_configuration }}",
-            failed_to_load_configuration: "{{ translations.failed_to_load_configuration }}",
-            session_expired: "{{ translations.session_expired }}",
-            rate_limit_exceeded: "{{ translations.rate_limit_exceeded }}",
-            confirm_logout: "{{ translations.confirm_logout }}",
-            are_you_sure_logout: "{{ translations.are_you_sure_logout }}",
-            wallet_balances_updated: "{{ translations.wallet_balances_updated }}"
-        };
-    </script>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="static/js/session-manager.js"></script>
     <script src="static/js/config.js"></script>
 </body>

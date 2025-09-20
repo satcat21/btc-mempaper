@@ -168,7 +168,7 @@ class AsyncAddressCacheManager:
         if SECURE_CACHE_AVAILABLE:
             self.secure_cache_manager = SecureCacheManager(self.cache_file)
             self.cache = self.secure_cache_manager.load_cache()
-            print(f"🔐 Using secure encrypted async cache")
+            # print(f"🔐 Using secure encrypted async cache")
         else:
             print(f"❌ Secure cache unavailable - cannot initialize cache manager")
             self.cache = {}
@@ -587,47 +587,3 @@ class WalletConfigurationManager:
             "queue_size": cache_stats["queue_size"],
             "cache_file_size": cache_stats["cache_file_size"]
         }
-
-
-def test_configuration_management():
-    """Test the configuration management system."""
-    print("🧪 Configuration Management Test")
-    print("=" * 40)
-    
-    # Create manager
-    manager = WalletConfigurationManager()
-    
-    # Add callback to monitor cache events
-    def cache_callback(event_type, data):
-        if event_type == "cache_rebuilt":
-            print(f"🎉 Cache rebuilt: {data['total_derived']} addresses in {data['duration']:.2f}s")
-    
-    manager.cache_manager.add_callback(cache_callback)
-    
-    # Start monitoring
-    manager.start_monitoring(1.0)  # Check every second for testing
-    
-    print(f"📊 Initial status:")
-    status = manager.get_status()
-    for key, value in status.items():
-        print(f"   {key}: {value}")
-    
-    # Wait a bit for initial cache build
-    import time
-    print(f"\n⏳ Waiting for initial cache build...")
-    time.sleep(5)
-    
-    # Check status again
-    print(f"\n📊 Status after cache build:")
-    status = manager.get_status()
-    for key, value in status.items():
-        print(f"   {key}: {value}")
-    
-    # Clean up
-    manager.stop_monitoring()
-    
-    print(f"\n✅ Configuration management test complete")
-
-
-if __name__ == "__main__":
-    test_configuration_management()

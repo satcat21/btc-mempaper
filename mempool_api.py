@@ -74,7 +74,15 @@ class MempoolAPI:
             height = self.get_tip_height()
             block_hash = self.get_tip_hash()
             
-            print(f"Current block - Height: {height}, Hash: {block_hash[:16]}...")
+            # Format hash for display: first 6 + last 6 characters with grouping
+            hash_first = block_hash[:6]
+            hash_last = block_hash[-6:]
+            # Group characters in pairs
+            hash_first_grouped = ' '.join([hash_first[i:i+2] for i in range(0, len(hash_first), 2)])
+            hash_last_grouped = ' '.join([hash_last[i:i+2] for i in range(0, len(hash_last), 2)])
+            hash_display = f"{hash_first_grouped} ... {hash_last_grouped}"
+            
+            print(f"Current block - Height: {height}, Hash: {hash_display}")
             
             return {
                 "block_height": height,

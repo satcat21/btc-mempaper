@@ -353,3 +353,40 @@ def require_rate_limit(auth_manager: AuthManager, exempt_authenticated=False):
             return f(*args, **kwargs)
         return decorated_function
     return decorator
+
+
+def require_mobile_auth(mobile_token_manager):
+    """
+    Decorator to require mobile API token authentication for routes.
+    
+    Args:
+        mobile_token_manager: Mobile token manager instance
+    """
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            # First check for mobile session authentication
+            if session.get('mobile_authenticated') and session.get('mobile_token'):
+                token = session.get('mobile_token')
+                if mobile_token_manager.validate_token(token):
+                    return f(*args, **kwargs)
+            
+            # Check for token in Authorization header
+            auth_header = request.headers.get('Authorization', '')
+            if auth_header.startswith('Bearer '):
+                token = auth_header[7:]  # Remove 'Bearer ' prefix
+                if mobile_token_manager.validate_token(token):
+                    return f(*args, **kwargs)
+            
+            # Check for token in request body
+            data = request.json or {}
+            token = data.get('token', '')
+            if token and mobile_token_manager.validate_token(token):
+                return f(*args, **kwargs)
+            
+            return jsonify({
+                'error': 'Mobile authentication required',
+                'message': 'Valid API token required for mobile access'
+            }), 401
+        return decorated_function
+    return decorator

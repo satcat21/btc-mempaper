@@ -153,6 +153,13 @@ body {
     z-index: 1; /* Explicitly set low z-index for config sections */
 }
 
+/* Make Meme Management section twice as wide on desktop */
+@media (min-width: 1024px) {
+    .meme-management-section {
+        grid-column: span 2;
+    }
+}
+
 .section-title {
     display: flex;
     align-items: center;
@@ -357,7 +364,7 @@ body {
     padding: 12px 16px;
     border: none;
     border-radius: 6px;
-    background: transparent;
+    background: #3a3f57;
     cursor: pointer;
     font-size: 14px;
     transition: all 0.3s ease;
@@ -365,12 +372,24 @@ body {
     align-items: center;
     justify-content: center;
     gap: 8px;
+    color: #9ca3af;
+}
+
+.toggle-option img {
+    width: 20px;
+    height: 20px;
+    filter: brightness(0) invert(0.6); /* Make unselected icons grey */
+    transition: filter 0.3s ease;
 }
 
 .toggle-option.active {
     background: #667eea;
     color: white;
     box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+}
+
+.toggle-option.active img {
+    filter: brightness(0) invert(1); /* Make active icons white */
 }
 
 .language-option {
@@ -822,27 +841,21 @@ body {
 
 .notification {
     position: fixed;
-    top: 20px;
-    right: 20px;
-    padding: 15px 20px 15px 15px;
-    border-radius: 8px;
+    top: 18px;
+    right: 50px;
+    padding: 10px 16px;
+    border-radius: 10px;
     color: white;
     font-weight: 500;
-    z-index: 1000;
-    transform: translateX(400px);
-    transition: transform 0.3s ease;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    min-width: 160px;
-    max-width: 220px;
+    z-index: 9999;
+    display: block;
+    min-width: 240px;
+    max-width: 420px;
+    width: auto;
+    text-align: center;
     word-wrap: break-word;
 }
 
-.notification.show {
-    transform: translateX(0);
-}
 
 .notification.success {
     background: #28a745;
@@ -931,6 +944,9 @@ body {
     max-height: 90vh;
     overflow-y: auto;
     text-align: left;
+    background: #2e324e;
+    border-radius: 12px;
+    padding: 24px;
 }
 
 .modal-header {
@@ -939,12 +955,12 @@ body {
     align-items: center;
     margin-bottom: 20px;
     padding-bottom: 15px;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid #4a5069;
 }
 
 .modal-header h3 {
     margin: 0;
-    color: white; /*#333;*/
+    color: white;
 }
 
 .modal-close {
@@ -952,7 +968,7 @@ body {
     border: none;
     font-size: 24px;
     cursor: pointer;
-    color: #999;
+    color: #9ca3af;
     width: 30px;
     height: 30px;
     display: flex;
@@ -963,8 +979,8 @@ body {
 }
 
 .modal-close:hover {
-    background: #f5f5f5;
-    color: white; /*#333;*/
+    background: #4a5069;
+    color: white;
 }
 
 .modal-body {
@@ -974,7 +990,7 @@ body {
 .meme-preview-container {
     text-align: center;
     margin-bottom: 20px;
-    background: #f8f9fa;
+    background: #3a3f57;
     border-radius: 10px;
     padding: 20px;
     max-height: 400px;
@@ -989,11 +1005,11 @@ body {
     max-height: 360px;
     object-fit: contain;
     border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
 }
 
 .meme-info {
-    background: #f8f9fa;
+    background: #3a3f57;
     border-radius: 8px;
     padding: 15px;
 }
@@ -1003,7 +1019,7 @@ body {
     justify-content: space-between;
     align-items: center;
     padding: 8px 0;
-    border-bottom: 1px solid #e9ecef;
+    border-bottom: 1px solid #4a5069;
 }
 
 .meme-info-row:last-child {
@@ -1011,12 +1027,12 @@ body {
 }
 
 .meme-info-row strong {
-    color: #495057;
+    color: white;
     min-width: 100px;
 }
 
 .meme-info-row span {
-    color: #6c757d;
+    color: white;
     flex: 1;
     text-align: right;
     font-family: monospace;
@@ -1027,7 +1043,49 @@ body {
     justify-content: center;
     gap: 15px;
     padding-top: 15px;
-    border-top: 1px solid #eee;
+    border-top: 1px solid #4a5069;
+}
+
+/* Icon button styles for modal */
+.icon-button {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+    position: relative;
+    background: #667eea;
+}
+
+.icon-button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+.icon-button.delete {
+    background: #e53e3e;
+}
+
+.icon-button.delete:hover {
+    box-shadow: 0 4px 12px rgba(229, 62, 62, 0.3);
+}
+
+.icon-button.cancel {
+    background: #6b7280;
+}
+
+.icon-button.cancel:hover {
+    box-shadow: 0 4px 12px rgba(107, 114, 128, 0.3);
+}
+
+.icon-button img {
+    width: 24px;
+    height: 24px;
+    filter: brightness(0) invert(1);
 }
 
 @media (max-width: 768px) {
@@ -1380,14 +1438,28 @@ body {
 
 /* Load more button */
 .load-more-btn {
-    transition: all 0.3s ease;
-    font-weight: 500;
+    background: linear-gradient(45deg, #667eea, #764ba2) !important;
+    color: white !important;
+    border: none !important;
+    border-radius: 8px !important;
+    padding: 15px !important;
+    font-size: 16px !important;
+    font-weight: 600 !important;
+    cursor: pointer !important;
+    transition: all 0.3s ease !important;
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3) !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 8px !important;
+    margin: 10px !important;
+    grid-column: 1/-1 !important;
 }
 
 .load-more-btn:hover {
-    background: #5a6fd8 !important;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+    background: linear-gradient(45deg, #5a6fd8, #6a4c93) !important;
+    transform: translateY(-2px) !important;
+    box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4) !important;
 }
 
 .load-more-btn:disabled {
@@ -1689,6 +1761,18 @@ button svg * {
     fill: #ffffff !important;
 }
 
+/* Force mobile nav button icons to be visible and white on all browsers */
+.mobile-nav-button svg,
+.mobile-nav-button svg path,
+.mobile-nav-button svg * {
+     fill: #ffffff !important;
+     color: #ffffff !important;
+     stroke: #ffffff !important;
+     opacity: 1 !important;
+     visibility: visible !important;
+     display: inline-block !important;
+}
+
 /* Pending icon animation */
 .pending-icon {
     animation: spin 1s linear infinite;
@@ -1772,10 +1856,13 @@ button svg * {
         display: none;
     }
     
-    /* Adjust container to make room for left navigation */
+    /* Adjust container to make room for left navigation and center content */
     .container {
-        margin-left: 160px;
-        max-width: calc(1200px - 160px);
+        margin-left: auto;
+        margin-right: auto;
+        max-width: 1200px;
+        padding-left: calc(20px + 80px); /* original padding + half navigation width for centering */
+        padding-right: calc(20px + 80px); /* original padding + half navigation width for centering */
     }
 }
 
@@ -1830,5 +1917,11 @@ button svg * {
     
     body {
         padding-bottom: 85px;
+    }
+    /* Force all SVG icons in mobile nav buttons to be white */
+    .mobile-nav-button svg,
+    .mobile-nav-button svg path {
+        fill: white !important;
+        color: white !important;
     }
 }

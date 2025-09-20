@@ -49,7 +49,7 @@ class SecureCacheManager:
         try:
             self.secure_manager = SecureConfigManager(config_path)
             self.encryption_available = True
-            print(f"🔐 Secure cache manager initialized for {cache_file}")
+            # print(f"🔐 Secure cache manager initialized for {cache_file}")
         except Exception as e:
             print(f"⚠️ Cache encryption unavailable: {e}")
             self.encryption_available = False

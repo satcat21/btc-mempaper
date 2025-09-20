@@ -87,7 +87,7 @@ class UnifiedSecureCache:
                             # Validate cache structure
                             if self._validate_cache_structure(decrypted_data):
                                 self.cache_data = decrypted_data
-                                print(f"✅ Loaded unified secure cache from {self.secure_cache_file}")
+                                # print(f"✅ Loaded unified secure cache from {self.secure_cache_file}")
                                 return
                             else:
                                 print(f"⚠️ Invalid secure cache structure, will migrate individual files")

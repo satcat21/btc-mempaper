@@ -109,16 +109,16 @@ function addRefreshSessionButton() {
     refreshBtn.style.padding = '10px 20px';
     refreshBtn.style.borderRadius = '4px';
     refreshBtn.style.cursor = 'pointer';
-    refreshBtn.textContent = '🔄 Refresh Session';
+    refreshBtn.textContent = 'Refresh Session';
     
     refreshBtn.addEventListener('click', async () => {
         refreshBtn.disabled = true;
-        refreshBtn.textContent = '🔄 Refreshing...';
+        refreshBtn.textContent = 'Refreshing...';
         
         const success = await refreshSession();
         
         refreshBtn.disabled = false;
-        refreshBtn.textContent = '🔄 Refresh Session';
+        refreshBtn.textContent = 'Refresh Session';
         
         if (!success) {
             showFailedRefreshMessage();
@@ -200,7 +200,7 @@ async function saveConfigurationWithSessionHandling(configData) {
 // Message display functions
 function showSessionWarning(minutes) {
     if (typeof showNotification === 'function') {
-        showNotification(`⏰ Session expires in ${minutes} minutes. Click 'Refresh Session' to extend.`, 'warning');
+        showNotification(`Session expires in ${minutes} minutes. Click 'Refresh Session' to extend.`, 'warning');
     } else {
         alert(`Session expires in ${minutes} minutes. Please refresh your session to continue.`);
     }
@@ -208,7 +208,7 @@ function showSessionWarning(minutes) {
 
 function showSessionExpiredMessage() {
     if (typeof showNotification === 'function') {
-        showNotification('🔒 Session expired. Redirecting to login...', 'error');
+        showNotification('Session expired. Redirecting to login...', 'error');
     } else {
         alert('Session expired. Please login again.');
     }
@@ -220,13 +220,13 @@ function showSessionExpiredMessage() {
 
 function showSessionRefreshedMessage() {
     if (typeof showNotification === 'function') {
-        showNotification('✅ Session refreshed successfully!', 'success');
+        showNotification('Session refreshed successfully!', 'success');
     }
 }
 
 function showFailedRefreshMessage() {
     if (typeof showNotification === 'function') {
-        showNotification('❌ Failed to refresh session. Please save your work and login again.', 'error');
+        showNotification('Failed to refresh session. Please save your work and login again.', 'error');
     } else {
         alert('Failed to refresh session. Please save your work and login again.');
     }
@@ -236,7 +236,7 @@ function showFailedRefreshMessage() {
  * Initialize session management
  */
 function initializeSessionManager() {
-    console.log('🔐 Initializing session manager');
+    console.log('Initializing session manager');
     
     // Start session monitoring (check every 2 minutes)
     sessionCheckInterval = setInterval(checkSessionStatus, 120000);
@@ -247,7 +247,7 @@ function initializeSessionManager() {
     // Track user activity on form elements
     setTimeout(trackUserActivity, 1000);
     
-    console.log('✅ Session manager initialized');
+    console.log('Session manager initialized');
 }
 
 /**

@@ -19,8 +19,8 @@ class TechnicalConfig:
     
     # === Font Configuration ===
     # Standard font paths - fallback to system fonts if custom fonts not available
-    FONT_REGULAR = "fonts/Roboto-Regular.ttf"
-    FONT_BOLD = "fonts/Roboto-Bold.ttf"
+    FONT_REGULAR = "static/fonts/Roboto-Regular.ttf"
+    FONT_BOLD = "static/fonts/Roboto-Bold.ttf"
     
     # Date font sizing - optimized for most e-paper displays
     DATE_FONT_MAX_SIZE = 48  # Large enough for readability

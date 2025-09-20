@@ -34,14 +34,18 @@ except ImportError:
 class BlockRewardMonitor:
     """Monitors BTC addresses for block rewards and tracks valid blocks count."""
     
-    def __init__(self, config_manager=None):
+    def __init__(self, config_manager=None, image_generation_callback=None, new_block_notification_callback=None):
         """
         Initialize block reward monitor with new caching system.
         
         Args:
             config_manager: ConfigManager instance for getting monitored addresses
+            image_generation_callback: Optional callback to trigger image generation on new blocks
+            new_block_notification_callback: Optional callback to notify web clients about new blocks
         """
         self.config_manager = config_manager
+        self.image_generation_callback = image_generation_callback
+        self.new_block_notification_callback = new_block_notification_callback
         self.valid_blocks_file = "valid_blocks_count.json"  # Legacy file for compatibility
         self.monitored_addresses = set()
         self.valid_blocks_count = 0
@@ -56,13 +60,15 @@ class BlockRewardMonitor:
         # Load existing count and migrate to new system if needed
         self._load_and_migrate_legacy_data()
         
-        # Update addresses from config
+        # Update addresses from config (this will also clean up legacy data)
         self._update_monitored_addresses()
-        # Load existing count and migrate to new system if needed
-        self._load_and_migrate_legacy_data()
         
-        # Update addresses from config
-        self._update_monitored_addresses()
+        # Debug: Check if image generation callback is set
+        if not self.image_generation_callback:
+        # if self.image_generation_callback:
+        #    print("✅ Block monitor: Image generation callback is SET - will trigger image updates on new blocks")
+        # else:
+            print("⚠️ Block monitor: No image generation callback - only monitoring block rewards")
         
         # Log mempool configuration
         base_url = self._get_mempool_base_url()
@@ -76,8 +82,13 @@ class BlockRewardMonitor:
             if os.path.exists(self.valid_blocks_file):
                 with open(self.valid_blocks_file, 'r') as f:
                     data = json.load(f)
-                    self.valid_blocks_count = data.get("valid_blocks", 0)
-                    self.blocks_by_address = data.get("blocks_by_address", {})
+                    if isinstance(data, dict):
+                        self.valid_blocks_count = data.get("valid_blocks", 0)
+                        self.blocks_by_address = data.get("blocks_by_address", {})
+                    else:
+                        print(f"⚠️ Unexpected legacy data type: {type(data)} value={data}")
+                        self.valid_blocks_count = 0
+                        self.blocks_by_address = {}
                     
                     print(f"📊 Loaded legacy valid blocks count: {self.valid_blocks_count}")
                     if self.blocks_by_address:
@@ -98,8 +109,8 @@ class BlockRewardMonitor:
         """Get mempool API base URL from configuration."""
         if self.config_manager:
             config = self.config_manager.get_current_config()
-            mempool_ip = config.get("mempool_ip")
-            mempool_rest_port = config.get("mempool_rest_port")
+            mempool_ip = config.get("mempool_ip") if isinstance(config, dict) else None
+            mempool_rest_port = config.get("mempool_rest_port") if isinstance(config, dict) else None
             
             if not mempool_ip or not mempool_rest_port:
                 raise ValueError("❌ Mempool configuration missing. Please configure mempool_ip and mempool_rest_port.")
@@ -112,8 +123,8 @@ class BlockRewardMonitor:
         """Get mempool WebSocket URL from configuration."""
         if self.config_manager:
             config = self.config_manager.get_current_config()
-            mempool_ip = config.get("mempool_ip")
-            mempool_ws_port = config.get("mempool_ws_port")
+            mempool_ip = config.get("mempool_ip") if isinstance(config, dict) else None
+            mempool_ws_port = config.get("mempool_ws_port") if isinstance(config, dict) else None
             
             if not mempool_ip or not mempool_ws_port:
                 raise ValueError("❌ Mempool WebSocket configuration missing. Please configure mempool_ip and mempool_ws_port.")
@@ -128,8 +139,13 @@ class BlockRewardMonitor:
             if os.path.exists(self.valid_blocks_file):
                 with open(self.valid_blocks_file, 'r') as f:
                     data = json.load(f)
-                    self.valid_blocks_count = data.get("valid_blocks", 0)
-                    self.blocks_by_address = data.get("blocks_by_address", {})
+                    if isinstance(data, dict):
+                        self.valid_blocks_count = data.get("valid_blocks", 0)
+                        self.blocks_by_address = data.get("blocks_by_address", {})
+                    else:
+                        print(f"⚠️ Unexpected valid blocks data type: {type(data)} value={data}")
+                        self.valid_blocks_count = 0
+                        self.blocks_by_address = {}
                     print(f"📊 Loaded valid blocks count: {self.valid_blocks_count}")
                     if self.blocks_by_address:
                         # Crop addresses for privacy in logs
@@ -164,9 +180,9 @@ class BlockRewardMonitor:
             monitored_addresses = []
             
             # New table format
-            block_reward_table = config.get("block_reward_addresses_table", [])
+            block_reward_table = config.get("block_reward_addresses_table", []) if isinstance(config, dict) else []
             for entry in block_reward_table:
-                if isinstance(entry, dict) and entry.get("address"):
+                if isinstance(entry, dict) and "address" in entry:
                     monitored_addresses.append(entry["address"])
             
             # Remove duplicates
@@ -175,10 +191,37 @@ class BlockRewardMonitor:
             self.monitored_addresses = set(monitored_addresses)
             print(f"📍 Monitoring {len(self.monitored_addresses)} addresses for block rewards")
             
+            # Clean up legacy blocks_by_address data for addresses no longer monitored
+            if hasattr(self, 'blocks_by_address') and self.blocks_by_address:
+                current_legacy_addresses = set(self.blocks_by_address.keys())
+                addresses_to_remove = current_legacy_addresses - self.monitored_addresses
+                
+                if addresses_to_remove:
+                    print(f"🧹 Cleaning up legacy data for {len(addresses_to_remove)} removed addresses")
+                    
+                    # Calculate total blocks to subtract before removing addresses
+                    removed_count = sum(self.blocks_by_address.get(addr, 0) for addr in addresses_to_remove)
+                    
+                    for addr in addresses_to_remove:
+                        # Privacy log the removal
+                        cropped_addr = self.cache._crop_address_for_log(addr) if hasattr(self.cache, '_crop_address_for_log') else addr[:6] + '...' + addr[-6:]
+                        print(f"🗑️ Removing legacy data for address: {cropped_addr}")
+                        del self.blocks_by_address[addr]
+                    
+                    # Update valid_blocks_count by subtracting removed address counts
+                    self.valid_blocks_count = max(0, self.valid_blocks_count - removed_count)
+                    
+                    # Save the cleaned legacy data
+                    self._save_valid_blocks_count()
+            
             # Update cache system with new addresses
             if monitored_addresses:
                 print(f"🔄 Updating cache system with {len(monitored_addresses)} addresses")
                 self.cache.update_monitored_addresses(monitored_addresses)
+            else:
+                print("📍 No addresses to monitor - cleaning up cache system")
+                # Clean up cache system if no addresses to monitor
+                self.cache.update_monitored_addresses([])
     
     def get_valid_blocks_count(self) -> int:
         """Get current valid blocks count (legacy method for compatibility)."""
@@ -225,7 +268,11 @@ class BlockRewardMonitor:
             response = requests.get(f"{base_url}/block/{block_hash}", timeout=5, verify=False)
             if response.ok:
                 block_data = response.json()
-                block_height = block_data.get('height')
+                if isinstance(block_data, dict):
+                    block_height = block_data.get('height')
+                else:
+                    print(f"⚠️ Unexpected block_data type: {type(block_data)} value={block_data}")
+                    block_height = None
         except Exception as e:
             print(f"⚠️ Could not get block height for {block_hash}: {e}")
         
@@ -263,14 +310,15 @@ class BlockRewardMonitor:
             List of found payouts
         """
         found = []
-        for vout in tx.get('vout', []):
-            addr = vout.get('scriptpubkey_address')
+        vout_list = tx.get('vout', []) if isinstance(tx, dict) else []
+        for vout in vout_list:
+            addr = vout.get('scriptpubkey_address') if isinstance(vout, dict) else None
             if addr in self.monitored_addresses:
                 found.append({
                     'address': addr,
                     'value_sats': vout['value'],
                     'txid': tx['txid'],
-                    'block_height': tx.get('status', {}).get('block_height')
+                    'block_height': tx.get('status', {}).get('block_height') if isinstance(tx, dict) and isinstance(tx.get('status', {}), dict) else None
                 })
         return found
     
@@ -340,24 +388,65 @@ class BlockRewardMonitor:
             return {}
     
     def start_monitoring(self):
-        """Start WebSocket monitoring for new blocks."""
+        """Start WebSocket monitoring for new blocks (always connects, even if no reward addresses)."""
         if not WEBSOCKET_AVAILABLE:
             print("⚠️ WebSocket monitoring unavailable (websocket-client not installed)")
             print("📊 Block rewards will still be counted manually, but not in real-time")
             return
-            
+
         if self.running:
             print("📡 Block monitoring already running")
             return
-            
-        if not self.monitored_addresses:
-            print("⚠️ No addresses to monitor for block rewards")
-            return
-        
+
+        # Always connect to WebSocket for block notifications
         self.running = True
         self.monitoring_thread = threading.Thread(target=self._monitor_blocks, daemon=True)
         self.monitoring_thread.start()
-        print(f"📡 Started block reward monitoring for {len(self.monitored_addresses)} addresses")
+        print(f"📡 Block monitoring started (WebSocket will notify on every new block)")
+
+        # Startup catch-up: check current block height and process missed blocks
+        try:
+            base_url = self._get_mempool_base_url()
+            resp = requests.get(f"{base_url}/blocks/tip", timeout=10, verify=False)
+            if resp.ok:
+                tip_data = resp.json()
+                current_height = tip_data.get("height") if isinstance(tip_data, dict) else None
+                last_cached_height = self.cache.get_last_cached_block_height() if hasattr(self.cache, "get_last_cached_block_height") else None
+                if last_cached_height and current_height and current_height > last_cached_height:
+                    print(f"🔄 Missed blocks detected: {last_cached_height} → {current_height}. Generating images for missed blocks...")
+                    for h in range(last_cached_height + 1, current_height + 1):
+                        # Fetch block hash for height
+                        block_resp = requests.get(f"{base_url}/block-height/{h}", timeout=10, verify=False)
+                        if block_resp.ok:
+                            block_json = block_resp.json()
+                            block_hash = None
+                            # Fix: Handle both dict and list responses robustly
+                            if isinstance(block_json, dict):
+                                block_hash = block_json.get("blockHash")
+                            elif isinstance(block_json, list):
+                                # Some APIs return a list of dicts
+                                for item in block_json:
+                                    if isinstance(item, dict) and "blockHash" in item:
+                                        block_hash = item["blockHash"]
+                                        break
+                                if not block_hash:
+                                    print(f"⚠️ Unexpected block_json list format for height {h}: {block_json}")
+                            else:
+                                print(f"⚠️ Unexpected block_json type for height {h}: {type(block_json)}")
+                            if block_hash and self.image_generation_callback:
+                                print(f"🎨 Generating image for missed block {h}")
+                                try:
+                                    self.image_generation_callback(h, block_hash)
+                                except Exception as e:
+                                    print(f"❌ Failed to generate image for missed block {h}: {e}")
+                            elif not block_hash:
+                                print(f"⚠️ Could not extract block hash for missed block {h} (block_json={block_json})")
+                        else:
+                            print(f"⚠️ Could not fetch block hash for height {h}")
+                else:
+                    print("✅ No missed blocks detected at startup.")
+        except Exception as e:
+            print(f"⚠️ Error during startup catch-up for missed blocks: {e}")
     
     def stop_monitoring(self):
         """Stop WebSocket monitoring."""
@@ -371,9 +460,12 @@ class BlockRewardMonitor:
         if not WEBSOCKET_AVAILABLE:
             return
             
+        heartbeat_count = 0
         while self.running:
             try:
                 ws_url = self._get_mempool_ws_url()
+                # print(f"🟢 [HEARTBEAT] Block monitor thread alive, connecting to WebSocket: {ws_url} (count={heartbeat_count})")
+                heartbeat_count += 1
                 self.ws = websocket.WebSocketApp(
                     ws_url,
                     on_open=self._on_open,
@@ -395,19 +487,38 @@ class BlockRewardMonitor:
     
     def _on_message(self, ws, message):
         """Handle WebSocket message."""
+        # print(f"🟢 [HEARTBEAT] WebSocket message received at {time.strftime('%H:%M:%S')}")
         try:
             data = json.loads(message)
             if data.get("block"):
                 block_hash = data["block"]["id"]
-                print(f"🆕 New block: {block_hash[:16]}...")
-                
-                # Give the mempool a moment to process the new block before fetching transactions
+                block_height = data["block"].get("height")
+                # print(f"🟢 [HEARTBEAT] Block event received: block_height={block_height}, block_hash={block_hash}")
+                # Format block height with thousand separators for better readability
+                if block_height:
+                    formatted_height = f"{block_height:,}".replace(",", ".")
+                    print(f"🆕 New block: {formatted_height}")
+                else:
+                    print(f"🆕 New block: {block_hash[:16]}... (height unknown)")
+                # ...existing code...
+                if self.new_block_notification_callback and block_height:
+                    print(f"📡 Sending new block notification to web clients for block {block_height}")
+                    try:
+                        self.new_block_notification_callback(block_height, block_hash)
+                    except Exception as e:
+                        print(f"⚠️ Failed to send block notification: {e}")
+                if self.image_generation_callback and block_height:
+                    print(f"🎨 Triggering image generation for new block {block_height}")
+                    try:
+                        self.image_generation_callback(block_height, block_hash)
+                        print(f"✅ Image generation triggered successfully for block {block_height}")
+                    except Exception as e:
+                        print(f"❌ Failed to trigger image generation for block {block_height}: {e}")
+                        import traceback
+                        traceback.print_exc()
                 time.sleep(2)
-                
-                # Fetch coinbase transaction with retry logic
                 coinbase_tx = self._fetch_coinbase_with_retry(block_hash)
                 if coinbase_tx:
-                    # Check for payouts to monitored addresses
                     payouts = self.check_coinbase_for_addresses(coinbase_tx)
                     for payout in payouts:
                         self.increment_valid_blocks(
@@ -418,6 +529,8 @@ class BlockRewardMonitor:
                         )
         except Exception as e:
             print(f"⚠️ Error processing WebSocket message: {e}")
+            import traceback
+            traceback.print_exc()
     
     def _fetch_coinbase_with_retry(self, block_hash: str, max_retries: int = 3) -> Dict[str, Any]:
         """Fetch coinbase transaction with retry logic for newly mined blocks."""
@@ -450,10 +563,10 @@ class BlockRewardMonitor:
 # Global instance for use in the main application
 block_monitor = None
 
-def initialize_block_monitor(config_manager):
+def initialize_block_monitor(config_manager, image_generation_callback=None, new_block_notification_callback=None):
     """Initialize the global block monitor instance."""
     global block_monitor
-    block_monitor = BlockRewardMonitor(config_manager)
+    block_monitor = BlockRewardMonitor(config_manager, image_generation_callback, new_block_notification_callback)
     return block_monitor
 
 def get_block_monitor():

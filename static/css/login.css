@@ -40,7 +40,7 @@ body {
     font-family: 'IBMPlexMono', monospace;
     font-size: 2.2rem;
     margin-bottom: 10px;
-    color: #e8e9ea; /* Subtle off-white like mempool.space */
+    color: #e8e9ea;
     font-weight: 500;
     letter-spacing: -0.01em;
     text-transform: lowercase;

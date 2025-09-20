@@ -1,23 +1,30 @@
 {
   "language": "en",
-  "display_orientation": "vertical",
-  "prioritize_large_scaled_meme": true,
+  "admin_username": "admin",
+
   "mempool_ip": "192.168.0.119",
   "mempool_rest_port": 4081,
   "mempool_ws_port": 8999,
   "fee_parameter": "fastestFee",
-  "display_width": 800,
-  "display_height": 480,
+
+  "live_block_notifications_enabled": false,
+  "prioritize_large_scaled_meme": true,
+  "color_mode_dark": true,
+  
   "e-ink-display-connected": false,
   "omni_device_name": "waveshare_epd.epd7in3f",
-  "admin_username": "admin",
-  "show_btc_price_block": true,
+  "display_orientation": "vertical",
+  "display_width": 800,
+  "display_height": 480,
+
+  "show_btc_price_block": false,
   "btc_price_currency": "USD",
+  "moscow_time_unit": "hour",
+
   "show_bitaxe_block": true,
   "bitaxe_miner_table": [],
-  "show_wallet_balances_block": true,
+
+  "show_wallet_balances_block": false,
   "wallet_balance_unit": "btc",
-  "wallet_balance_currency": "EUR",
-  "color_mode_dark": true,
-  "moscow_time_unit": "hour"
+  "wallet_balance_currency": "EUR"
 }

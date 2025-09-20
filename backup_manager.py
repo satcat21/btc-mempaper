@@ -82,33 +82,6 @@ def monitor_backup_window():
         ws_client.close_connection()
         print("🔌 WebSocket connection closed")
 
-def test_backup_scenario():
-    """Test the backup reconnection logic with simulation."""
-    print("🧪 Testing Backup Scenario Simulation")
-    print("=" * 40)
-    
-    config = load_config()
-    ws_client = create_backup_aware_websocket(config)
-    
-    if not ws_client:
-        print("❌ Cannot create test client")
-        return
-    
-    # Simulate backup scenario
-    print("📊 Backup Scenario Delays:")
-    print("Normal mode (attempts 1-5):")
-    for i in range(5):
-        delay = ws_client.reconnect_delays[min(i, len(ws_client.reconnect_delays)-1)]
-        print(f"  Attempt {i+1}: {delay}s")
-    
-    print("\nBackup mode (attempts 6+):")
-    for i in range(8):
-        delay = ws_client.backup_mode_delays[min(i, len(ws_client.backup_mode_delays)-1)]
-        print(f"  Attempt {i+6}: {delay}s ({delay//60}min)")
-    
-    total_time = sum(ws_client.reconnect_delays) + sum(ws_client.backup_mode_delays[:3])
-    print(f"\nTotal time for 15 attempts: ~{total_time//60} minutes")
-
 def schedule_backup_preparation(backup_start_time):
     """Prepare for a scheduled backup at a specific time."""
     print(f"⏰ Scheduling backup preparation for {backup_start_time}")
@@ -144,7 +117,6 @@ if __name__ == "__main__":
         print("Backup Management Utility")
         print("Usage:")
         print("  python backup_manager.py monitor          # Monitor during backup")
-        print("  python backup_manager.py test             # Test backup delays")
         print("  python backup_manager.py schedule HH:MM   # Schedule backup prep")
         sys.exit(1)
     
@@ -152,8 +124,6 @@ if __name__ == "__main__":
     
     if command == "monitor":
         monitor_backup_window()
-    elif command == "test":
-        test_backup_scenario()
     elif command == "schedule" and len(sys.argv) == 3:
         schedule_backup_preparation(sys.argv[2])
     else:

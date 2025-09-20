@@ -363,9 +363,12 @@ btc-mempaper/
 ├── bitaxe_api.py                 # Bitaxe miner API
 ├── mempool_api.py                # Mempool integration
 ├── display/                      # Display utilities and scripts
-├── static/                       # Web assets (css, js, memes, icons, tweets)
+├── static/                       # Web assets (css, js, memes, icons)
+│   ├── fonts/                    # Typography files (Roboto, IBMPlexMono)
+│   ├── css/                      # Stylesheets
+│   ├── js/                       # JavaScript files
+│   └── memes/                    # Uploaded meme images
 ├── templates/                    # HTML templates (dashboard, login, config)
-├── fonts/                        # Typography files (Roboto, IBMPlexMono)
 ├── setup_secure_password.py      # Secure password setup script
 ├── initialize_memes.py           # Meme download script
 ├── serve.py                      # Production server entrypoint

@@ -22,7 +22,14 @@ class BitcoinPriceAPI:
             config: Application configuration dictionary
         """
         self.config = config or {}
-        self.base_url = "https://mempool.space/api"
+        self.base_url = self._build_base_url()
+    
+    def _build_base_url(self) -> str:
+        """Build the base URL for price API from configuration."""
+        # Use the same pattern as the main app for consistency
+        mempool_ip = self.config.get("mempool_ip", "127.0.0.1")
+        mempool_rest_port = self.config.get("mempool_rest_port", "8080")
+        return f"https://{mempool_ip}:{mempool_rest_port}/api"
     
     def fetch_btc_price(self) -> Optional[Dict[str, Union[str, float, int]]]:
         """
@@ -38,9 +45,12 @@ class BitcoinPriceAPI:
         """
         try:
             # Get Bitcoin price in USD
-            response = requests.get(f"{self.base_url}/v1/prices", timeout=10)
+            # Use verify=False for self-hosted instances (consistent with rest of codebase)
+            print(f"💱 Fetching price data from: {self.base_url}/v1/prices")
+            response = requests.get(f"{self.base_url}/v1/prices", timeout=10, verify=False)
             response.raise_for_status()
             price_data = response.json()
+            print(f"💱 Successfully fetched price data from configured mempool instance")
             
             # Get configured currency
             selected_currency = self.config.get("btc_price_currency", "USD")

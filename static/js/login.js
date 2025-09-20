@@ -7,7 +7,7 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
     const password = document.getElementById('password').value;
     
     button.disabled = true;
-    button.textContent = '🔄 Logging in...';
+    button.textContent = 'Logging in...';
     errorDiv.style.display = 'none';
     
     try {
@@ -32,7 +32,7 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
         errorDiv.style.display = 'block';
     } finally {
         button.disabled = false;
-        button.textContent = '🔑 Login';
+        button.textContent = 'Login';
     }
 });
 

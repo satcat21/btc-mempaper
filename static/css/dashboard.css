@@ -490,3 +490,42 @@ body {
         right: 15px;
     }
 }
+
+/* Block Toast Notifications */
+#block-toast-container {
+    pointer-events: none;
+}
+
+#block-toast-container > div {
+    pointer-events: auto;
+}
+
+/* Mobile responsiveness for block toasts */
+@media (max-width: 768px) {
+    #block-toast-container {
+        top: 10px !important;
+        right: 10px !important;
+        left: 10px !important;
+        width: auto !important;
+    }
+    
+    #block-toast-container > div {
+        min-width: auto !important;
+        max-width: none !important;
+        width: 100% !important;
+        font-size: 13px !important;
+    }
+}
+
+@media (max-width: 480px) {
+    #block-toast-container {
+        top: 5px !important;
+        right: 5px !important;
+        left: 5px !important;
+    }
+    
+    #block-toast-container > div {
+        padding: 12px 16px !important;
+        font-size: 12px !important;
+    }
+}

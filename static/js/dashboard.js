@@ -1,28 +1,76 @@
-const socket = io({
-    // Transport configuration - polling only to match server
-    transports: ['polling'],                // Match server polling-only configuration
-    upgrade: false,                         // Disable transport upgrades
-    rememberUpgrade: false,                 // Don't remember upgrades
-    
-    // Connection settings
-    autoConnect: true,
-    forceNew: false,                        // Reuse connections when possible
-    timeout: 20000,                         // Increased timeout for initial connection
-    
-    // Reconnection settings
-    reconnection: true,
-    reconnectionAttempts: Infinity,
-    reconnectionDelay: 1000,        // Start with 1 second
-    reconnectionDelayMax: 30000,    // Max 30 seconds between attempts
-    
-    // CORS and compatibility
-    withCredentials: false,         // Disable credentials
-    
-    // Polling-specific settings for initial connection
-    pollingTimeout: 30000
-});
+let socket = null;
+let reconnecting = false;
+let reconnectTimeout = null;
 
-const statusEl = null; // WebSocket status element removed from UI
+function connectSocket() {
+    socket = io({
+        transports: ['polling'],
+        upgrade: false,
+        rememberUpgrade: false,
+        autoConnect: true,
+        forceNew: false,
+        timeout: 20000,
+        reconnection: true,
+        reconnectionAttempts: Infinity,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 30000,
+        withCredentials: false,
+        pollingTimeout: 30000
+    });
+    setupSocketHandlers();
+}
+
+function setupSocketHandlers() {
+    socket.on('connect', () => {
+        console.log("✅ Connected to Mempaper WebSocket");
+        reconnectAttempts = 0;
+        reconnecting = false;
+        if (reconnectBtn) reconnectBtn.style.display = "none";
+        // Only request latest image if we don't have one loaded yet
+        const dashboardImg = document.getElementById("dashboard");
+        if (!dashboardImg.src || dashboardImg.src.includes('placeholder') || dashboardImg.src === window.location.href) {
+            socket.emit('request_latest_image');
+        }
+        // Subscribe to block notifications if enabled
+        if (typeof live_block_notifications_enabled !== 'undefined' && live_block_notifications_enabled) {
+            subscribeToBlockNotifications();
+        }
+    });
+
+    socket.on('disconnect', (reason) => {
+        console.log("❌ Disconnected from Mempaper WebSocket:", reason);
+        attemptReconnect();
+    });
+
+    socket.on('connect_error', (error) => {
+        console.error("🚫 Socket.IO connection error:", error);
+        attemptReconnect();
+    });
+
+    socket.on('error', (error) => {
+        console.error("⚠️ Socket.IO transport error:", error);
+        attemptReconnect();
+    });
+
+    // ...existing code for other handlers...
+    // (copy all other socket.on handlers here, unchanged)
+    // ...existing code...
+}
+
+function attemptReconnect() {
+    if (reconnecting) return;
+    reconnecting = true;
+    if (reconnectTimeout) clearTimeout(reconnectTimeout);
+    reconnectTimeout = setTimeout(() => {
+        console.log("🔄 Attempting WebSocket reconnect...");
+        if (socket) socket.connect();
+        reconnecting = false;
+    }, 2000);
+}
+
+// Initial connection
+connectSocket();
+
 const reconnectBtn = document.getElementById('reconnect-button');
 let reconnectAttempts = 0;
 let lastImageUpdate = null;
@@ -32,39 +80,26 @@ let imageUpdateTimeout = null; // For debouncing image updates
 socket.on('connect', () => {
     console.log("✅ Connected to Mempaper WebSocket");
     reconnectAttempts = 0; // Reset counter
-    if (statusEl) {
-        statusEl.textContent = "🟢 " + window.translations.websocket_connected;
-        statusEl.className = "status-item status-connected";
+    if (reconnectBtn) {
+        reconnectBtn.style.display = "none"; // Hide reconnect button
     }
-    reconnectBtn.style.display = "none"; // Hide reconnect button
     
     // Only request latest image if we don't have one loaded yet
     const dashboardImg = document.getElementById("dashboard");
     if (!dashboardImg.src || dashboardImg.src.includes('placeholder') || dashboardImg.src === window.location.href) {
         console.log("📱 Requesting latest image (no current image or placeholder)");
         socket.emit('request_latest_image');
-    } else {
-        console.log("📸 Valid image already loaded, skipping automatic request");
-        console.log("   Current src length:", dashboardImg.src.length);
     }
 });
 
 // Connection lost
 socket.on('disconnect', (reason) => {
     console.log("❌ Disconnected from Mempaper WebSocket:", reason);
-    if (statusEl) {
-        statusEl.textContent = "🔴 " + window.translations.websocket_disconnected;
-        statusEl.className = "status-item status-disconnected";
-    }
 });
 
 // Connection errors
 socket.on('connect_error', (error) => {
     console.error("🚫 Socket.IO connection error:", error);
-    if (statusEl) {
-        statusEl.textContent = "🚫 Connection failed";
-        statusEl.className = "status-item status-error";
-    }
 });
 
 // Transport errors
@@ -99,45 +134,35 @@ socket.io.engine.on('upgradeError', (error) => {
 socket.on('reconnect_attempt', (attemptNumber) => {
     reconnectAttempts = attemptNumber;
     console.log(`🔄 Reconnection attempt ${attemptNumber}...`);
-    if (statusEl) {
-        statusEl.textContent = `🔄 Reconnecting... (${attemptNumber})`;
-        statusEl.className = "status-item status-reconnecting";
-    }
     
     // Show manual reconnect button after several failed attempts
     if (attemptNumber > 5) {
-        reconnectBtn.style.display = "inline-block";
+        if (reconnectBtn) {
+            reconnectBtn.style.display = "inline-block";
+        }
     }
 });
 
 // Reconnection successful
 socket.on('reconnect', (attemptNumber) => {
     console.log(`✅ Reconnected after ${attemptNumber} attempts`);
-    if (statusEl) {
-        statusEl.textContent = "🟢 " + window.translations.websocket_connected + ` (reconnected)`;
-        statusEl.className = "status-item status-connected";
-    }
     reconnectAttempts = 0;
-    reconnectBtn.style.display = "none"; // Hide reconnect button
+    if (reconnectBtn) {
+        reconnectBtn.style.display = "none"; // Hide reconnect button
+    }
 });
 
 // Reconnection failed
 socket.on('reconnect_failed', () => {
     console.log("❌ Reconnection failed permanently");
-    if (statusEl) {
-        statusEl.textContent = "❌ Connection failed - refresh page";
-        statusEl.className = "status-item status-error";
+    if (reconnectBtn) {
+        reconnectBtn.style.display = "inline-block"; // Show reconnect button
     }
-    reconnectBtn.style.display = "inline-block"; // Show reconnect button
 });
 
 // Connection error
 socket.on('connect_error', (error) => {
     console.log("🚨 Connection error:", error.message);
-    if (statusEl) {
-        statusEl.textContent = `🚨 Connection error: ${error.message}`;
-        statusEl.className = "status-item status-error";
-    }
 });
 
 // New image received
@@ -166,10 +191,6 @@ socket.on('new_image', (data) => {
         // Once loaded, update the main image
         dashboardImg.src = imageUrl;
         lastImageUpdate = new Date();
-        if (statusEl) {
-            statusEl.textContent = "✨ " + window.translations.updated + ": " + lastImageUpdate.toLocaleTimeString();
-            statusEl.className = "status-item status-connected";
-        }
         console.log("✅ Dashboard image updated successfully", {
             newSrcLength: dashboardImg.src.length,
             timestamp: lastImageUpdate.toISOString()
@@ -182,13 +203,9 @@ socket.on('new_image', (data) => {
             imageDataLength: data.image.length,
             error: "Image load failed"
         });
-        if (statusEl) {
-            statusEl.textContent = "⚠️ Failed to load new image";
-            statusEl.className = "status-item status-warning";
-        }
         
         // Don't try fallback with invalid data
-        console.log("� Skipping fallback due to invalid image data");
+        console.log("⏭️ Skipping fallback due to invalid image data");
     };
     
     // Start loading the new image
@@ -198,12 +215,6 @@ socket.on('new_image', (data) => {
 // Background processing status updates (for instant startup mode)
 socket.on('background_ready', (data) => {
     console.log("🚀 Background processing completed", data);
-    
-    // Update status to show background processing is complete
-    if (statusEl && (statusEl.textContent.includes('Loading') || statusEl.textContent.includes('background'))) {
-        statusEl.textContent = "✅ " + (window.translations.background_ready || "Background loading complete");
-        statusEl.className = "status-item status-connected";
-    }
     
     // Request fresh image since background processing is done
     console.log("📱 Requesting fresh image after background completion");
@@ -215,10 +226,6 @@ socket.on('background_ready', (data) => {
 
 socket.on('background_error', (data) => {
     console.warn("⚠️ Background processing error", data);
-    if (statusEl) {
-        statusEl.textContent = "⚠️ " + (window.translations.background_error || "Background loading failed");
-        statusEl.className = "status-item status-warning";
-    }
     
     // Show error notification
     showNotification("Background processing failed: " + data.message, "error");
@@ -271,32 +278,178 @@ function showNotification(message, type = "info") {
     }, 4000);
 }
 
+// Show block notification toast
+function showBlockToast(blockData) {
+    // Create toast container if it doesn't exist
+    let toastContainer = document.getElementById('block-toast-container');
+    if (!toastContainer) {
+        toastContainer = document.createElement('div');
+        toastContainer.id = 'block-toast-container';
+        toastContainer.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 10000;
+            font-family: 'Roboto', Arial, sans-serif;
+        `;
+        document.body.appendChild(toastContainer);
+    }
+    
+    // Create toast element
+    const toast = document.createElement('div');
+    toast.style.cssText = `
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 16px 20px;
+        border-radius: 12px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        backdrop-filter: blur(15px);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        margin-bottom: 10px;
+        min-width: 320px;
+        max-width: 400px;
+        opacity: 0;
+        transform: translateX(100%);
+        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        position: relative;
+        font-size: 14px;
+        line-height: 1.4;
+    `;
+    
+    // Create close button
+    const closeBtn = document.createElement('button');
+    closeBtn.innerHTML = '×';
+    closeBtn.style.cssText = `
+        position: absolute;
+        top: 8px;
+        right: 12px;
+        background: none;
+        border: none;
+        color: white;
+        font-size: 20px;
+        cursor: pointer;
+        width: 24px;
+        height: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        transition: background-color 0.2s;
+    `;
+    
+    closeBtn.addEventListener('mouseenter', () => {
+        closeBtn.style.backgroundColor = 'rgba(255, 255, 255, 0.2)';
+    });
+    
+    closeBtn.addEventListener('mouseleave', () => {
+        closeBtn.style.backgroundColor = 'transparent';
+    });
+    
+    // Format timestamp to local time
+    const timestamp = new Date(blockData.timestamp * 1000);
+    const timeString = timestamp.toLocaleTimeString();
+    
+    // Format numbers
+    const heightFormatted = blockData.block_height.toLocaleString().replace(/,/g, '.');
+    const rewardFormatted = blockData.total_reward_btc.toFixed(8);
+    const feesFormatted = blockData.total_fees_btc.toFixed(4);
+    const medianFeeFormatted = blockData.median_fee_sat_vb.toFixed(1);
+    
+    // Create toast content
+    toast.innerHTML = `
+        <div style="margin-right: 20px;">
+            <div style="font-weight: bold; font-size: 16px; margin-bottom: 8px; color: #FFD700;">
+                New Block ${heightFormatted}
+            </div>
+            <div style="margin-bottom: 4px;">
+                <span style="opacity: 0.8;">Time:</span> <span style="font-weight: 500;">${timeString}</span>
+            </div>
+            <div style="margin-bottom: 4px;">
+                <span style="opacity: 0.8;">Hash:</span> <span style="font-family: monospace; font-size: 12px;">${blockData.block_hash}</span>
+            </div>
+            <div style="margin-bottom: 4px;">
+                <span style="opacity: 0.8;">Pool:</span> <span style="font-weight: 500;">${blockData.pool_name}</span>
+            </div>
+            <div style="margin-bottom: 4px;">
+                <span style="opacity: 0.8;">Reward:</span> <span style="font-weight: 500; color: #90EE90;">${rewardFormatted} BTC</span>
+                <span style="font-size: 12px; opacity: 0.7;">(+${feesFormatted} fees)</span>
+            </div>
+            <div>
+                <span style="opacity: 0.8;">Median Fee:</span> <span style="font-weight: 500;">${medianFeeFormatted} sat/vB</span>
+            </div>
+        </div>
+    `;
+    
+    // Add close button
+    toast.appendChild(closeBtn);
+    
+    // Close toast function
+    const closeToast = () => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(100%)';
+        setTimeout(() => {
+            if (toast.parentNode) {
+                toast.parentNode.removeChild(toast);
+            }
+        }, 400);
+    };
+    
+    // Close button click handler
+    closeBtn.addEventListener('click', closeToast);
+    
+    // Add toast to container
+    toastContainer.appendChild(toast);
+    
+    // Animate in
+    setTimeout(() => {
+        toast.style.opacity = '1';
+        toast.style.transform = 'translateX(0)';
+    }, 10);
+    
+    // Auto-close after 30 seconds
+    setTimeout(closeToast, 30000);
+}
+
+// New block notification with toast
+socket.on('new_block_notification', (data) => {
+    console.log("🎯 New block notification received:", data);
+    
+    // Only show notification if page matches
+    if (data.page && data.page !== 'dashboard') {
+        // console.log('[DEBUG] Block notification for other page, ignoring.');
+        return;
+    }
+    const state = getNotificationState();
+    const now = Date.now();
+    if (state.lastNotification && (now - state.lastNotification) < 10000) {
+        // console.log("⚠️ Duplicate block notification detected, skipping");
+        return;
+    }
+    state.lastNotification = now;
+    setNotificationState(state);
+    showBlockToast(data);
+    try {
+        localStorage.setItem('mempaper_block_notification', JSON.stringify({
+            timestamp: now,
+            data: data
+        }));
+        setTimeout(() => {
+            localStorage.removeItem('mempaper_block_notification');
+        }, 1000);
+    } catch (e) {
+        console.warn('Could not broadcast notification to other pages:', e);
+    }
+});
+
 // Configuration reloaded notification
 socket.on('config_reloaded', (data) => {
     console.log("⚙️ Configuration reloaded from file");
-    
-    // Show temporary notification
-    const originalText = statusEl.textContent;
-    const originalClass = statusEl.className;
-    
-    statusEl.textContent = "⚙️ Configuration reloaded";
-    statusEl.className = "status-item status-config-reload";
     
     // Request fresh image after config change
     setTimeout(() => {
         socket.emit('request_latest_image');
         refreshCurrentImage();
     }, 500);
-    
-    // Restore original status after 3 seconds
-    setTimeout(() => {
-        if (lastImageUpdate) {
-            statusEl.textContent = "✨ " + window.translations.updated + ": " + lastImageUpdate.toLocaleTimeString();
-        } else {
-            statusEl.textContent = originalText;
-        }
-        statusEl.className = originalClass;
-    }, 3000);
 });
 
 // Enhanced status monitoring
@@ -305,25 +458,18 @@ setInterval(() => {
     
     if (!socket.connected) {
         if (reconnectAttempts > 0) {
-            statusEl.textContent = `� Reconnecting... (${reconnectAttempts})`;
+            console.log(`🔄 Reconnecting... (${reconnectAttempts})`);
         } else {
-            statusEl.textContent = "🔴 " + window.translations.websocket_disconnected;
+            console.log("🔴 WebSocket disconnected");
         }
-        statusEl.className = "status-item status-disconnected";
     } else {
-        // Show last update time if available
+        // Check for stale image data and auto-request if needed
         if (lastImageUpdate) {
             const timeSinceUpdate = Math.floor((now - lastImageUpdate) / 1000);
-            if (timeSinceUpdate > 300) { // 5 minutes
-                statusEl.textContent = `🟡 Last update: ${Math.floor(timeSinceUpdate/60)}min ago`;
-                statusEl.className = "status-item status-warning";
-                
-                // Auto-request new image if too old
-                if (timeSinceUpdate > 600) { // 10 minutes
-                    console.log("🔄 Auto-requesting image update (stale data)");
-                    socket.emit('request_latest_image');
-                    refreshCurrentImage();
-                }
+            if (timeSinceUpdate > 600) { // 10 minutes
+                console.log("🔄 Auto-requesting image update (stale data)");
+                socket.emit('request_latest_image');
+                refreshCurrentImage();
             }
         }
     }
@@ -364,7 +510,7 @@ function refreshCurrentImage() {
 
 // Request initial image when page loads
 document.addEventListener('DOMContentLoaded', function() {
-    console.log("📄 Page loaded - checking if image request needed");
+    console.log("📄 Page loaded.");
     
     const dashboardImg = document.getElementById("dashboard");
     
@@ -397,80 +543,106 @@ document.addEventListener('DOMContentLoaded', function() {
     }, 1000);
 });
 
-// Console Logging functionality
-let consoleLoggingEnabled = false;
+// Block notification subscription functionality
+let blockNotificationsEnabled = false;
+let notificationTimeoutId = null;
 
-// Add event listeners for console log events
-socket.on('console_logs', (data) => {
-    if (consoleLoggingEnabled && data.logs && Array.isArray(data.logs)) {
-        data.logs.forEach(logEntry => {
-            try {
-                const { level, msg, timestamp } = logEntry;
-                const formattedMsg = `[${timestamp}] ${msg}`;
-                
-                // Output to browser console with appropriate level
-                switch (level.toLowerCase()) {
-                    case 'error':
-                        console.error(`🔴 [MEMPAPER] ${formattedMsg}`);
-                        break;
-                    case 'warning':
-                    case 'warn':
-                        console.warn(`🟡 [MEMPAPER] ${formattedMsg}`);
-                        break;
-                    case 'info':
-                        console.info(`🔵 [MEMPAPER] ${formattedMsg}`);
-                        break;
-                    case 'debug':
-                        console.debug(`⚪ [MEMPAPER] ${formattedMsg}`);
-                        break;
-                    default:
-                        console.log(`🟢 [MEMPAPER] ${formattedMsg}`);
-                }
-            } catch (e) {
-                console.error('Error processing log entry:', e, logEntry);
-            }
-        });
+// Global notification state management (shared across tabs/pages)
+function getNotificationState() {
+    try {
+        const state = localStorage.getItem('mempaper_notification_state');
+        return state ? JSON.parse(state) : { lastNotification: 0, subscribedPages: [] };
+    } catch (e) {
+        return { lastNotification: 0, subscribedPages: [] };
     }
-});
-
-socket.on('console_log_status', (data) => {
-    if (data.status === 'enabled') {
-        consoleLoggingEnabled = true;
-        if (data.message) {
-            console.log('🟢 [MEMPAPER] ' + data.message);
-        } else {
-            console.log('🟢 [MEMPAPER] Console log streaming enabled');
-        }
-    } else if (data.status === 'disabled') {
-        consoleLoggingEnabled = false;
-        console.log('🔴 [MEMPAPER] Console log streaming disabled');
-    }
-});
-
-socket.on('console_log_enabled', (data) => {
-    consoleLoggingEnabled = true;
-    console.log('🟢 [MEMPAPER] ' + data.message);
-});
-
-socket.on('console_log_error', (data) => {
-    console.error('❌ [MEMPAPER] Console log error:', data.error);
-});
-
-// Global functions for enabling/disabling console logs
-window.enableMempaperLogs = function() {
-    console.log('🔌 [MEMPAPER] Requesting console log streaming...');
-    socket.emit('enable_console_logs');
-};
-
-window.disableMempaperLogs = function() {
-    console.log('🔌 [MEMPAPER] Disabling console log streaming...');
-    socket.emit('disable_console_logs');
-};
-
-// Display instructions for console logging
-if (typeof window !== 'undefined') {
-    console.log('%c🎯 MEMPAPER CONSOLE LOGGING', 'color: #ff6b35; font-size: 16px; font-weight: bold;');
-    console.log('%cConsole logging is automatic when enabled in Settings', 'color: #4ecdc4; font-weight: bold;');
-    console.log('%cManual controls: enableMempaperLogs() / disableMempaperLogs()', 'color: #4ecdc4; font-weight: bold;');
-    console.log('%cNote: Enable "Browser Console Logging" in Settings page', 'color: #ffd93d;');
 }
+
+function setNotificationState(state) {
+    try {
+        localStorage.setItem('mempaper_notification_state', JSON.stringify(state));
+    } catch (e) {
+        console.warn('Could not save notification state:', e);
+    }
+}
+
+function registerPageForNotifications(pageType) {
+    const state = getNotificationState();
+    if (!state.subscribedPages.includes(pageType)) {
+        state.subscribedPages.push(pageType);
+        setNotificationState(state);
+    }
+}
+
+function unregisterPageForNotifications(pageType) {
+    const state = getNotificationState();
+    state.subscribedPages = state.subscribedPages.filter(page => page !== pageType);
+    setNotificationState(state);
+}
+
+// Check if live block notifications are enabled from server config
+document.addEventListener('DOMContentLoaded', function() {
+    // Always register and subscribe for notifications if authenticated
+    registerPageForNotifications('dashboard');
+    subscribeToBlockNotifications();
+    // Listen for notifications from other pages
+    window.addEventListener('storage', function(e) {
+        if (e.key === 'mempaper_block_notification') {
+            try {
+                const notificationData = JSON.parse(e.newValue);
+                if (notificationData && notificationData.timestamp > Date.now() - 5000) {
+                    // Show notification if it's recent (within 5 seconds)
+                    console.log('🔔 Received cross-page block notification');
+                    showBlockToast(notificationData.data);
+                }
+            } catch (error) {
+                console.warn('Error parsing cross-page notification:', error);
+            }
+        }
+    });
+});
+
+// Cleanup on page unload
+window.addEventListener('beforeunload', function() {
+    unregisterPageForNotifications('dashboard');
+});
+
+// Subscribe to block notifications
+function subscribeToBlockNotifications() {
+    // Always subscribe, mark page type
+    console.log('Subscribing to live block notifications for dashboard page...');
+    socket.emit('subscribe_block_notifications', { page: 'dashboard' });
+}
+
+// Unsubscribe from block notifications
+function unsubscribeFromBlockNotifications() {
+    console.log('🔕 Unsubscribing from live block notifications...');
+    socket.emit('unsubscribe_block_notifications');
+}
+
+// Add event listeners for block notification subscription events
+socket.on('block_notification_status', (data) => {
+    if (data.status === 'subscribed') {
+        blockNotificationsEnabled = true;
+        if (data.message) {
+            console.log('[MEMPAPER] ' + data.message);
+        } else {
+            console.log('[MEMPAPER] Subscribed to live block notifications');
+        }
+    } else if (data.status === 'unsubscribed') {
+        blockNotificationsEnabled = false;
+        console.log('[MEMPAPER] Unsubscribed from live block notifications');
+    }
+});
+
+socket.on('block_notification_error', (data) => {
+    console.error('[MEMPAPER] Block notification error:', data.error);
+});
+
+// Global functions for enabling/disabling block notifications
+window.enableBlockNotifications = function() {
+    subscribeToBlockNotifications();
+};
+
+window.disableBlockNotifications = function() {
+    unsubscribeFromBlockNotifications();
+};

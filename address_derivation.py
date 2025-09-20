@@ -298,52 +298,38 @@ class AddressDerivation:
         """
         try:
             public_key, chain_code, address_format = self.parse_extended_key(extended_key)
+            print(f"[DEBUG] Extended key format detected: {address_format} ({extended_key[:8]}...)")
             addresses = []
-            
+
             for i in range(start_index, start_index + count):
                 try:
                     # Derive child key for external chain (0) and then address index
                     external_key, external_chain = self._derive_child_key(public_key, chain_code, 0)
                     child_key, _ = self._derive_child_key(external_key, external_chain, i)
-                    
+
                     # Generate address based on format
                     if address_format == 'p2pkh':
                         address = self._pubkey_to_p2pkh_address(child_key)
                     elif address_format == 'p2wpkh':
                         address = self._pubkey_to_p2wpkh_address(child_key)
                     else:
-                        raise ValueError(f"Unsupported address format: {address_format}")
-                    
+                        print(f"[ERROR] Unsupported address format: {address_format}")
+                        continue
+
                     addresses.append((address, i))
-                    
+                    print(f"[DEBUG] Derived address {i}: {address}")
+
                 except Exception as e:
-                    print(f"⚠️ Failed to derive address at index {i}: {e}")
+                    print(f"[ERROR] Failed to derive address at index {i}: {e}")
+                    import traceback
+                    traceback.print_exc()
                     continue
-            
+
+            print(f"[DEBUG] Total addresses derived from {extended_key[:8]}...: {len(addresses)}")
             return addresses
-            
+
         except Exception as e:
-            print(f"⚠️ Error deriving addresses from {extended_key[:20]}...: {e}")
+            print(f"[ERROR] Error deriving addresses from {extended_key[:20]}...: {e}")
+            import traceback
+            traceback.print_exc()
             return []
-
-
-def test_derivation():
-    """Test address derivation with known test vectors."""
-    derivation = AddressDerivation()
-    
-    # Test xpub derivation (these should match known test vectors)
-    test_xpub = "xpub6CUGRUonZSQ4TWtTMmzXdrXDtypWKiKrhko4egpiMZbpiaQL2jkwSB1icqYh2cfDfVxdx4df189oLKnC5fSwqPfgyP3hooxujYzAu3fDVmz"
-    
-    try:
-        addresses = derivation.derive_addresses(test_xpub, 3)
-        print("Address derivation test:")
-        for addr, idx in addresses:
-            print(f"  {idx}: {addr}")
-        return True
-    except Exception as e:
-        print(f"Address derivation test failed: {e}")
-        return False
-
-
-if __name__ == "__main__":
-    test_derivation()

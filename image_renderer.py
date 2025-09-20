@@ -128,10 +128,10 @@ class ImageRenderer:
         else:
             self.width, self.height = self.display_width, self.display_height  # 800x480
         self.meme_dir = os.path.join("static", "memes")
-        self.font_regular = os.path.join("fonts", "Roboto-Regular.ttf")
-        self.font_bold = os.path.join("fonts", "Roboto-Bold.ttf")
-        self.font_mono = os.path.join("fonts", "IBMPlexMono-Bold.ttf")
-        self.font_block_height = os.path.join("fonts", "RobotoCondensed-ExtraBold.ttf")
+        self.font_regular = os.path.join("static", "fonts", "Roboto-Regular.ttf")
+        self.font_bold = os.path.join("static", "fonts", "Roboto-Bold.ttf")
+        self.font_mono = os.path.join("static", "fonts", "IBMPlexMono-Bold.ttf")
+        self.font_block_height = os.path.join("static", "fonts", "RobotoCondensed-ExtraBold.ttf")
         self.block_height_area = config.get("block_height_area", 180)
         
         # Color palette for 7-color e-Paper display
@@ -972,12 +972,12 @@ class ImageRenderer:
             print("🔍 [IMG] Loading cached wallet data...")
             wallet_data = self.wallet_api.get_cached_wallet_balances()
             # Import privacy utils if available
-            try:
-                from privacy_utils import mask_bitcoin_data
-                masked_wallet_data = mask_bitcoin_data(wallet_data)
-                print(f"📋 [IMG] Cached wallet data result: {masked_wallet_data}")
-            except ImportError:
-                print(f"📋 [IMG] Cached wallet data result: {wallet_data}")
+            # try:
+                # from privacy_utils import mask_bitcoin_data
+                # masked_wallet_data = mask_bitcoin_data(wallet_data)
+                # print(f"📋 [IMG] Cached wallet data result: {masked_wallet_data}")
+            # except ImportError:
+                # print(f"📋 [IMG] Cached wallet data result: {wallet_data}")
             if wallet_data is None or wallet_data.get("error"):
                 print("⚠️ [IMG] No cached wallet data available or error occurred, using default values")
                 wallet_data = {
@@ -1088,12 +1088,12 @@ class ImageRenderer:
             print("🔍 [CACHE_IMG] Loading cached wallet data...")
             wallet_data = self.wallet_api.get_cached_wallet_balances()
             # Import privacy utils if available
-            try:
-                from privacy_utils import mask_bitcoin_data
-                masked_wallet_data = mask_bitcoin_data(wallet_data)
-                print(f"📋 [CACHE_IMG] Cached wallet data result: {masked_wallet_data}")
-            except ImportError:
-                print(f"📋 [CACHE_IMG] Cached wallet data result: {wallet_data}")
+            # try:
+                # from privacy_utils import mask_bitcoin_data
+                # masked_wallet_data = mask_bitcoin_data(wallet_data)
+                # print(f"📋 [CACHE_IMG] Cached wallet data result: {masked_wallet_data}")
+            # except ImportError:
+                # print(f"📋 [CACHE_IMG] Cached wallet data result: {wallet_data}")
             if wallet_data is None or wallet_data.get("error"):
                 print("⚠️ [CACHE_IMG] No cached wallet data available or error occurred, using default values")
                 wallet_data = {
@@ -1237,7 +1237,7 @@ class ImageRenderer:
 
         prioritize_large_meme = self.config.get("prioritize_large_scaled_meme", False)
 
-        # Info blocks setup
+        # Info blocks setup - moved after data initialization
         # info_blocks = []
         # config = self.config
         # if config.get("show_btc_price_block", True):
@@ -1247,9 +1247,28 @@ class ImageRenderer:
         # if config.get("show_wallet_balances_block", True):
         #     info_blocks.append((self.render_wallet_balances_block, wallet_data))
 
+        # Define constants needed for calculations
         #INFO_BLOCK_HEIGHT = 60
         HOLIDAY_HEIGHT = 70 if holiday_info else 0
         BLOCK_MARGIN = 15
+
+        # Calculate space required for info blocks
+        def calculate_info_blocks_space(config_ref):
+            """Calculate the total height needed for info blocks including margins."""
+            block_count = 0
+            if config_ref.get("show_btc_price_block", True):
+                block_count += 1
+            if config_ref.get("show_bitaxe_block", True):
+                block_count += 1
+            if config_ref.get("show_wallet_balances_block", True):
+                block_count += 1
+            
+            if block_count == 0:
+                return 0
+            # Each block: INFO_BLOCK_HEIGHT + BLOCK_MARGIN, plus one extra BLOCK_MARGIN at top
+            return block_count * (INFO_BLOCK_HEIGHT + BLOCK_MARGIN) + BLOCK_MARGIN
+
+        info_blocks_space = calculate_info_blocks_space(self.config)
 
         if prioritize_large_meme:
             # --- Step 1: Determine meme scaling ---
@@ -1361,7 +1380,17 @@ class ImageRenderer:
                     meme_img = Image.open(meme_path)
                     aspect_ratio = meme_img.width / meme_img.height
                     max_width = self.width - 40
-                    max_height = available_content_height - 20
+                    # Reserve space for info blocks that will be rendered below the meme
+                    max_height = available_content_height - info_blocks_space - 20
+                    print(f"🔧 [SCALING] Available content height: {available_content_height}px")
+                    print(f"🔧 [SCALING] Info blocks space: {info_blocks_space}px")
+                    print(f"🔧 [SCALING] Max meme height (non-prioritize): {max_height}px")
+                    
+                    # Ensure we have positive height for scaling
+                    if max_height <= 0:
+                        print(f"⚠️ [SCALING] Not enough space for meme, info blocks need {info_blocks_space}px")
+                        max_height = 50  # Minimum height
+                    
                     scaled_width = min(max_width, int(max_height * aspect_ratio))
                     scaled_height = int(scaled_width / aspect_ratio)
                     if scaled_height > max_height:
@@ -1380,9 +1409,17 @@ class ImageRenderer:
                 img.paste(meme_img, (meme_x, blocks_y), meme_img)
                 blocks_y += meme_height
             else:
-                self._render_fallback_content(img, draw, blocks_y, meme_height,
+                # Calculate available height for fallback content (reserve space for info blocks)
+                fallback_available_height = available_content_height - info_blocks_space - 20
+                print(f"🔧 [SCALING] Fallback content height: {fallback_available_height}px")
+                
+                # Ensure positive height
+                if fallback_available_height <= 0:
+                    fallback_available_height = 50  # Minimum height
+                
+                self._render_fallback_content(img, draw, blocks_y, fallback_available_height,
                                             font_holiday_title, web_quality)
-                blocks_y += meme_height
+                blocks_y += fallback_available_height
 
             # Render info blocks below meme, with dark style
             if len(info_blocks):

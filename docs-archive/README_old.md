@@ -215,10 +215,10 @@ btc-mempaper/
 ├── static/                 # Web assets
 │   ├── favicon.png
 │   ├── socket.io.min.js
-│   └── memes/             # Uploaded memes
-├── fonts/                 # Typography
-│   ├── Roboto-Regular.ttf
-│   └── Roboto-Bold.ttf
+│   ├── memes/              # Uploaded memes
+│   └── fonts/              # Typography
+│       ├── Roboto-Regular.ttf
+│       └── Roboto-Bold.ttf
 └── display/               # E-paper utilities
     ├── prepare_image.py
     ├── show_image.py

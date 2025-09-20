@@ -68,7 +68,7 @@ max_requests = 200  # Reduced for Pi Zero to prevent memory leaks
 max_requests_jitter = 10  # Reduced jitter
 
 # Logging
-loglevel = "debug"
+loglevel = "error" #"debug"
 errorlog = "-"   # Log to stderr
 
 # Disable access logs to prevent formatting errors

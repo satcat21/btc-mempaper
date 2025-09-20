@@ -1,9 +1,47 @@
+// Fix: Define closeMemeModal globally for HTML onclick handlers
+function closeMemeModal() {
+    const memeModal = document.getElementById('meme-modal');
+    if (memeModal) {
+        memeModal.style.display = 'none';
+    }
+    window.currentModalMeme = null;
+}
+    function initializeWebSocket() {
+        // Connect to backend using Socket.IO
+        if (window.io) {
+            const socket = window.io();
+            window.configSocket = socket;
+
+            socket.on('connect', function() {
+                console.log('🔌 Config WebSocket connected');
+            });
+
+            socket.on('disconnect', function(reason) {
+                console.warn('Config WebSocket disconnected:', reason);
+            });
+
+            socket.on('connect_error', function(error) {
+                console.error('Config WebSocket connection error:', error);
+            });
+
+            // Example: listen for block notifications
+            socket.on('block_notification', function(data) {
+                console.log('🔔 [CONFIG] Block notification:', data);
+                // You can add custom notification handling here
+            });
+        } else {
+            console.error('Socket.IO client (window.io) not found. Make sure socket.io.min.js is loaded.');
+        }
+    }
 let currentConfig = {};
 let configSchema = {};
 let categories = [];
 let colorOptions = [];
 let pendingLanguageChange = null;
 let memeToDelete = null;
+
+// Check if we're on the config page
+const isConfigPage = window.location.pathname.includes('/config');
 
 // Helper function to get the toggle key for a category
 function getSectionToggleKey(categoryId) {
@@ -308,7 +346,7 @@ function createPasswordChangeInterface(key, field) {
         // Save the password
         try {
             saveButton.disabled = true;
-            saveButton.textContent = 'Saving2...';
+            saveButton.textContent = '';
             
             // Update the config with new password
             currentConfig[key] = newPassword;
@@ -374,40 +412,84 @@ function createPasswordChangeInterface(key, field) {
 document.addEventListener('DOMContentLoaded', () => {
     loadConfiguration();
     loadMemes();
+    // Reverted: No injected viewport meta, no centering or max-width styles
+
     setupUpload();
     setupModals();
+    // Always register and subscribe for block notifications if authenticated
+    registerPageForNotifications('config');
+    subscribeToBlockNotifications();
+    // Listen for notifications from other pages
+    window.addEventListener('storage', function(e) {
+        if (e.key === 'mempaper_block_notification') {
+            try {
+                const notificationData = JSON.parse(e.newValue);
+                if (notificationData && notificationData.timestamp > Date.now() - 5000) {
+                    // Show notification if it's recent (within 5 seconds)
+                    console.log('🔔 Received cross-page block notification');
+                    showBlockToast(notificationData.data);
+                }
+            } catch (error) {
+                console.warn('Error parsing cross-page notification:', error);
+            }
+        }
+    });
 });
 
 // Setup modal functionality
 function setupModals() {
     // Delete confirmation modal
-    document.getElementById('confirm-delete').addEventListener('click', async () => {
-        if (memeToDelete) {
-            await deleteMeme(memeToDelete);
-            hideDeleteModal();
-        }
-    });
+    const confirmDeleteBtn = document.getElementById('confirm-delete');
+    const cancelDeleteBtn = document.getElementById('cancel-delete');
     
-    document.getElementById('cancel-delete').addEventListener('click', () => {
-        hideDeleteModal();
-    });
+    if (confirmDeleteBtn) {
+        confirmDeleteBtn.addEventListener('click', async () => {
+            if (memeToDelete) {
+                await deleteMeme(memeToDelete);
+                hideDeleteModal();
+            }
+        });
+    }
+    
+    if (cancelDeleteBtn) {
+        cancelDeleteBtn.addEventListener('click', () => {
+            hideDeleteModal();
+        });
+    }
 }
 
 // Modal helper functions
 function showDeleteModal(filename) {
     memeToDelete = filename;
-    document.getElementById('delete-modal').style.display = 'flex';
+    const deleteModal = document.getElementById('delete-modal');
+    if (deleteModal) {
+        deleteModal.style.display = 'flex';
+    } else if (isConfigPage) {
+        console.warn('Delete modal not found');
+    }
 }
 
 function hideDeleteModal() {
     memeToDelete = null;
-    document.getElementById('delete-modal').style.display = 'none';
+    const deleteModal = document.getElementById('delete-modal');
+    if (deleteModal) {
+        deleteModal.style.display = 'none';
+    } else if (isConfigPage) {
+        console.warn('Delete modal not found');
+    }
 }
 
 // Setup upload functionality
 function setupUpload() {
     const uploadArea = document.getElementById('upload-area');
     const fileInput = document.getElementById('file-input');
+    
+    if (!uploadArea || !fileInput) {
+        if (isConfigPage) {
+            console.warn('Upload elements not found - upload functionality disabled');
+        }
+        return;
+    }
     
     uploadArea.addEventListener('click', () => fileInput.click());
     
@@ -442,9 +524,15 @@ async function uploadFile(file) {
     const progressBar = document.getElementById('progress-bar');
     const statusText = document.getElementById('upload-status');
     
-    progressDiv.style.display = 'block';
-    progressBar.style.width = '0%';
-    statusText.textContent = 'Uploading...';
+    if (!progressDiv || !progressBar || !statusText) {
+        if (isConfigPage) {
+            console.warn('Upload progress elements not found - uploading without progress indication');
+        }
+    } else {
+        progressDiv.style.display = 'block';
+        progressBar.style.width = '0%';
+        statusText.textContent = 'Uploading...';
+    }
     
     const formData = new FormData();
     formData.append('file', file);
@@ -455,26 +543,36 @@ async function uploadFile(file) {
             body: formData
         });
         
-        progressBar.style.width = '100%';
+        if (progressBar) {
+            progressBar.style.width = '100%';
+        }
         
         const result = await response.json();
         
         if (result.success) {
-            statusText.textContent = window.translations.upload_successful;
-            statusText.style.color = '#28a745';
+            if (statusText) {
+                statusText.textContent = window.translations.upload_successful;
+                statusText.style.color = '#28a745';
+            }
             clearMemeCache(); // Clear cache before reloading
             loadMemes(); // Refresh memes list
             
             setTimeout(() => {
-                progressDiv.style.display = 'none';
+                if (progressDiv) {
+                    progressDiv.style.display = 'none';
+                }
             }, 2000);
         } else {
-            statusText.textContent = result.message || window.translations.upload_failed;
-            statusText.style.color = '#dc3545';
+            if (statusText) {
+                statusText.textContent = result.message || window.translations.upload_failed;
+                statusText.style.color = '#dc3545';
+            }
         }
     } catch (error) {
-        statusText.textContent = window.translations.upload_failed + ': ' + error.message;
-        statusText.style.color = '#dc3545';
+        if (statusText) {
+            statusText.textContent = window.translations.upload_failed + ': ' + error.message;
+            statusText.style.color = '#dc3545';
+        }
     }
 }
 
@@ -633,19 +731,19 @@ class MemeLoader {
     }
     
     async loadMemePage(page = 1) {
-        if (this.loadedPages.has(page) || this.isLoading) {
+        // Only block if currently loading this page
+        if (this.isLoading) {
             return null;
         }
-        
         this.isLoading = true;
-        
         try {
             const response = await fetch(`/api/memes?page=${page}&per_page=${this.perPage}`);
             const data = await response.json();
-            
             this.totalMemes = data.total;
-            this.loadedPages.add(page);
-            
+            // Only mark page as loaded if fetch succeeded
+            if (data && data.memes && data.memes.length > 0) {
+                this.loadedPages.add(page);
+            }
             return data;
         } catch (error) {
             console.error('Failed to load memes page:', page, error);
@@ -662,25 +760,23 @@ const memeLoader = new MemeLoader();
 async function loadMemes() {
     try {
         const memesList = document.getElementById('memes-list');
-        
-        // Show loading indicator
-        memesList.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: #666;">🔄 Loading memes...</div>';
-        
-        // Load first page
-        const data = await memeLoader.loadMemePage(1);
-        
-        if (!data) {
-            memesList.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: #f44;">❌ Failed to load memes</div>';
+        if (!memesList) {
+            console.warn('memes-list element not found, skipping meme load');
             return;
         }
-        
+        // Show loading indicator
+        memesList.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: #666;">Loading memes...</div>';
+        // Load first page
+        const data = await memeLoader.loadMemePage(1);
+        if (!data) {
+            memesList.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: #f44;">Failed to load memes</div>';
+            return;
+        }
         memesList.innerHTML = '';
-        
         if (data.memes && data.memes.length > 0) {
             data.memes.forEach(meme => {
                 const memeDiv = document.createElement('div');
                 memeDiv.className = 'meme-thumbnail';
-                
                 // Create placeholder image with lazy loading
                 const img = document.createElement('img');
                 img.dataset.filename = meme.filename;
@@ -690,33 +786,41 @@ async function loadMemes() {
                 img.style.cursor = 'pointer';
                 img.title = 'Click to inspect';
                 img.onclick = () => openMemeModal(meme.filename, meme.url);
-                
                 // Add placeholder until loaded
                 img.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100%" height="100%" fill="%23f0f0f0"/><text x="50%" y="50%" text-anchor="middle" dy=".3em" fill="%23999">📷</text></svg>';
                 img.classList.add('meme-lazy');
-                
                 // Set up lazy loading observer
                 memeLoader.observer.observe(img);
-                
                 memeDiv.innerHTML = `
                     <div class="meme-actions">
-                        <button class="action-button" onclick="downloadMeme('${meme.filename}')" title="${window.translations.download_meme}">⬇️</button>
-                        <button class="action-button delete" onclick="showDeleteModal('${meme.filename}')" title="${window.translations.delete_meme}">🗑️</button>
+                        <button class="action-button" onclick="downloadMeme('${meme.filename}')" title="${window.translations?.download_meme || 'Download'}">
+                            <img src="/static/icons/download.svg" alt="Download" style="width: 16px; height: 16px; filter: brightness(0) invert(1);" />
+                        </button>
+                        <button class="action-button delete" onclick="showDeleteModal('${meme.filename}')" title="${window.translations?.delete_meme || 'Delete'}">
+                            <img src="/static/icons/delete.svg" alt="Delete" style="width: 16px; height: 16px; filter: brightness(0) invert(1);" />
+                        </button>
                     </div>
                     <div class="meme-filename">${meme.filename}</div>
                 `;
-                
                 // Insert the image at the beginning
                 memeDiv.insertBefore(img, memeDiv.firstChild);
                 memesList.appendChild(memeDiv);
             });
-            
             // Add load more button if there are more pages
             if (data.has_next) {
                 const loadMoreBtn = document.createElement('button');
                 loadMoreBtn.className = 'load-more-btn';
-                loadMoreBtn.style.cssText = 'grid-column: 1/-1; padding: 15px; margin: 10px; background: #667eea; color: white; border: none; border-radius: 8px; cursor: pointer;';
-                loadMoreBtn.textContent = `📥 Load More (${data.total - data.memes.length} remaining)`;
+                loadMoreBtn.style.cssText = 'grid-column: 1/-1; padding: 15px; margin: 10px; background: linear-gradient(45deg, #667eea, #764ba2); color: white; border: none; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: all 0.3s ease; font-weight: 600; box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);';
+                const remaining = data.total - data.memes.length;
+                
+                // Create icon element
+                const iconImg = document.createElement('img');
+                iconImg.src = '/static/icons/unfold_more.svg';
+                iconImg.style.cssText = 'width: 20px; height: 20px; filter: brightness(0) invert(1);'; // Make icon white
+                
+                loadMoreBtn.appendChild(iconImg);
+                const loadMoreText = window.translations?.load_more_remaining || 'Load More ({remaining} remaining)';
+                loadMoreBtn.appendChild(document.createTextNode(loadMoreText.replace('{remaining}', remaining)));
                 loadMoreBtn.onclick = () => loadMoreMemes(data.page + 1, loadMoreBtn);
                 memesList.appendChild(loadMoreBtn);
             }
@@ -729,13 +833,13 @@ async function loadMemes() {
     } catch (error) {
         console.error('Failed to load memes:', error);
         const memesList = document.getElementById('memes-list');
-        memesList.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: #f44;">❌ Failed to load memes</div>';
+        memesList.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: #f44;">Failed to load memes</div>';
     }
 }
 
 async function loadMoreMemes(page, buttonElement) {
     try {
-        buttonElement.textContent = '🔄 Loading...';
+        buttonElement.textContent = 'Loading...';
         buttonElement.disabled = true;
         
         const data = await memeLoader.loadMemePage(page);
@@ -766,8 +870,12 @@ async function loadMoreMemes(page, buttonElement) {
             
             memeDiv.innerHTML = `
                 <div class="meme-actions">
-                    <button class="action-button" onclick="downloadMeme('${meme.filename}')" title="${window.translations.download_meme}">⬇️</button>
-                    <button class="action-button delete" onclick="showDeleteModal('${meme.filename}')" title="${window.translations.delete_meme}">🗑️</button>
+                    <button class="action-button" onclick="downloadMeme('${meme.filename}')" title="${window.translations?.download_meme || 'Download'}">
+                        <img src="/static/icons/download.svg" alt="Download" style="width: 16px; height: 16px; filter: brightness(0) invert(1);" />
+                    </button>
+                    <button class="action-button delete" onclick="showDeleteModal('${meme.filename}')" title="${window.translations?.delete_meme || 'Delete'}">
+                        <img src="/static/icons/delete.svg" alt="Delete" style="width: 16px; height: 16px; filter: brightness(0) invert(1);" />
+                    </button>
                 </div>
                 <div class="meme-filename">${meme.filename}</div>
             `;
@@ -779,7 +887,18 @@ async function loadMoreMemes(page, buttonElement) {
         // Update or remove the load more button
         if (data.has_next) {
             const remaining = data.total - (page * memeLoader.perPage);
-            buttonElement.textContent = `📥 Load More (${remaining} remaining)`;
+            
+            // Clear existing content and rebuild with icon
+            buttonElement.innerHTML = '';
+            buttonElement.style.cssText = 'grid-column: 1/-1; padding: 15px; margin: 10px; background: #667eea; color: white; border: none; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;';
+            
+            const iconImg = document.createElement('img');
+            iconImg.src = '/static/icons/unfold_more.svg';
+            iconImg.style.cssText = 'width: 20px; height: 20px; filter: brightness(0) invert(1);';
+            
+            buttonElement.appendChild(iconImg);
+            const loadMoreText = window.translations?.load_more_remaining || 'Load More ({remaining} remaining)';
+            buttonElement.appendChild(document.createTextNode(loadMoreText.replace('{remaining}', remaining)));
             buttonElement.onclick = () => loadMoreMemes(page + 1, buttonElement);
             buttonElement.disabled = false;
         } else {
@@ -788,7 +907,7 @@ async function loadMoreMemes(page, buttonElement) {
         
     } catch (error) {
         console.error('Failed to load more memes:', error);
-        buttonElement.textContent = '❌ Failed to load';
+        buttonElement.textContent = 'Failed to load';
         buttonElement.disabled = false;
     }
 }
@@ -799,14 +918,19 @@ function clearMemeCache() {
 }
 
 // Logout functionality
-document.getElementById('logout-button').addEventListener('click', async () => {
-    try {
-        await fetch('/api/logout', { method: 'POST' });
-        window.location.href = '/';
-    } catch (error) {
-        console.error('Logout failed:', error);
-    }
-});
+const logoutButton = document.getElementById('logout-button');
+if (logoutButton) {
+    logoutButton.addEventListener('click', async () => {
+        try {
+            await fetch('/api/logout', { method: 'POST' });
+            window.location.href = '/';
+        } catch (error) {
+            console.error('Logout failed:', error);
+        }
+    });
+} else if (isConfigPage) {
+    console.warn('Logout button not found in DOM - expected on config page');
+}
 
 async function loadConfiguration() {
     try {
@@ -878,13 +1002,18 @@ function renderConfigurationForm() {
         const section = document.createElement('div');
         section.className = 'config-section';
         
+        // Add special class for meme management section
+        if (category.id === 'meme_management') {
+            section.classList.add('meme-management-section');
+        }
+        
         const title = document.createElement('div');
         title.className = 'section-title';
         
         // Handle icon: if it's a path (starts with /), create an img tag, otherwise use as text
         let iconHtml;
         if (category.icon && category.icon.startsWith('/')) {
-            iconHtml = `<img src="${category.icon}" alt="${category.label}" style="width: 20px; height: 20px; margin-right: 8px; vertical-align: middle;">`;
+            iconHtml = `<img src="${category.icon}" alt="${category.label}" style="width: 24px; height: 24px; margin-right: 10px; vertical-align: middle; transform: translateY(-2px); filter: brightness(0) invert(1);">`;
         } else {
             iconHtml = category.icon || '';
         }
@@ -903,6 +1032,12 @@ function renderConfigurationForm() {
             const toggleSwitch = document.createElement('div');
             toggleSwitch.className = 'section-toggle-switch';
             toggleSwitch.setAttribute('data-toggle-key', enableToggleKey);
+            toggleSwitch.setAttribute('data-config-key', enableToggleKey);
+
+            // Add getValue method for compatibility with form collection
+            toggleSwitch.getValue = function() {
+                return toggleSwitch.classList.contains('enabled');
+            };
             
             // Set initial state
             const isEnabled = currentConfig[enableToggleKey];
@@ -921,11 +1056,6 @@ function renderConfigurationForm() {
                 // Update section disabled state
                 section.classList.toggle('section-disabled', !newValue);
                 
-                // Trigger save
-                const event = new CustomEvent('configChange', {
-                    detail: { key: enableToggleKey, value: newValue }
-                });
-                document.dispatchEvent(event);
             });
             
             toggleContainer.appendChild(toggleSwitch);
@@ -976,16 +1106,24 @@ function renderConfigurationForm() {
             loadCachedWalletBalances(walletTable);
         }
     }, 100); // Small delay to ensure DOM is fully updated
+    
+    // Diagnostic call to check boolean elements after form is rendered
+    setTimeout(() => {
+        diagnoseBooleanElements();
+    }, 200); // Ensure everything is fully loaded
 }
 
 function createFormField(key, field, value) {
     const formGroup = document.createElement('div');
     formGroup.className = 'form-group';
     
-    const label = document.createElement('label');
-    label.className = 'form-label';
-    label.textContent = field.label;
-    formGroup.appendChild(label);
+    // Skip adding label for meme_management since it manages its own interface
+    if (field.type !== 'meme_management') {
+        const label = document.createElement('label');
+        label.className = 'form-label';
+        label.textContent = field.label;
+        formGroup.appendChild(label);
+    }
     
     let input;
     
@@ -1081,18 +1219,23 @@ function createFormField(key, field, value) {
             break;
             
         case 'wallet_table':
-            console.log(`Creating wallet table for key ${key} with value:`, value);
+            console.log(`Creating wallet table for key ${key} (${(value || []).length} entries)`);
             input = createWalletTableInput(value || [], field);
             break;
             
         case 'bitaxe_table':
-            console.log(`Creating bitaxe table for key ${key} with value:`, value);
+            console.log(`Creating bitaxe table for key ${key} (${(value || []).length} entries)`);
             input = createBitaxeTableInput(value || [], field);
             break;
             
         case 'block_reward_table':
-            console.log(`Creating block reward table for key ${key} with value:`, value);
+            console.log(`Creating block reward table for key ${key} (${(value || []).length} entries)`);
             input = createBlockRewardTableInput(value || [], field);
+            break;
+            
+        case 'meme_management':
+            console.log(`Creating meme management interface for key ${key}`);
+            input = createMemeManagementInterface(field);
             break;
             
         case 'hidden':
@@ -1113,8 +1256,14 @@ function createFormField(key, field, value) {
             break;
     }
     
-    if (input && input.dataset !== undefined) {
-        input.dataset.configKey = key;
+    if (input) {
+        // Ensure the input has the data-config-key attribute for form collection
+        if (input.dataset) {
+            input.dataset.configKey = key;
+        } else {
+            // Fallback for elements that might not have dataset property
+            input.setAttribute('data-config-key', key);
+        }
     } else {
         console.warn(`Failed to create input for field ${key} of type ${field.type}`);
         // Create a fallback input
@@ -1340,30 +1489,68 @@ function createColorSelect(value) {
     return container;
 }
 
+// Diagnostic function to test boolean elements
+function diagnoseBooleanElements() {
+    console.log('🔍 [DIAGNOSTIC] Checking all boolean elements:');
+    const booleanFields = ['prioritize_large_scaled_meme', 'color_mode_dark', 'live_block_notifications_enabled', 'show_btc_price_block', 'show_bitaxe_block', 'show_wallet_balances_block', 'e-ink-display-connected'];
+    
+    booleanFields.forEach(fieldName => {
+        const element = document.querySelector(`[data-config-key="${fieldName}"]`);
+        if (element) {
+            // console.log(`✅ Found ${fieldName}:`, {
+            //     tagName: element.tagName,
+            //     className: element.className,
+            //     hasGetValue: typeof element.getValue === 'function',
+            //     dataConfigKey: element.dataset.configKey,
+            //     currentValue: element.getValue ? element.getValue() : 'N/A'
+            // });
+        } else {
+            console.log(`❌ Missing ${fieldName}`);
+        }
+    });
+}
+
 function createBooleanSwitch(value) {
     const container = document.createElement('div');
     container.className = 'boolean-switch';
     
+    // Ensure value is properly converted to boolean
+    const boolValue = typeof value === 'string' ? (value.toLowerCase() === 'true' || value === '1') : Boolean(value);
+    
     const switchEl = document.createElement('div');
-    switchEl.className = `switch ${value ? 'active' : ''}`;
+    switchEl.className = `switch ${boolValue ? 'active' : ''}`;
     
     const thumb = document.createElement('div');
     thumb.className = 'switch-thumb';
     switchEl.appendChild(thumb);
     
     const label = document.createElement('span');
-    label.textContent = value ? window.translations.enabled : window.translations.disabled;
+    label.textContent = boolValue ? (window.translations?.enabled || 'Enabled') : (window.translations?.disabled || 'Disabled');
     
     switchEl.addEventListener('click', () => {
         const isActive = switchEl.classList.toggle('active');
-        label.textContent = isActive ? window.translations.enabled : window.translations.disabled;
+        label.textContent = isActive ? (window.translations?.enabled || 'Enabled') : (window.translations?.disabled || 'Disabled');
     });
     
     container.appendChild(switchEl);
     container.appendChild(label);
     
     // Add getter for value
-    container.getValue = () => switchEl.classList.contains('active');
+    container.getValue = () => {
+        const active = switchEl.classList.contains('active');
+        return active;
+    };
+    
+    // Add setter for value (useful for programmatic updates)
+    container.setValue = (newValue) => {
+        const boolValue = Boolean(newValue);
+        if (boolValue) {
+            switchEl.classList.add('active');
+        } else {
+            switchEl.classList.remove('active');
+        }
+        label.textContent = boolValue ? (window.translations?.enabled || 'Enabled') : (window.translations?.disabled || 'Disabled');
+    };
     
     return container;
 }
@@ -1376,7 +1563,22 @@ function createToggleGroup(options, value) {
         const button = document.createElement('button');
         button.type = 'button';
         button.className = `toggle-option ${value === option.value ? 'active' : ''}`;
-        button.innerHTML = `${option.icon} ${option.label}`;
+        
+        // Create proper icon HTML if icon is provided
+        if (option.icon) {
+            const iconImg = document.createElement('img');
+            iconImg.src = option.icon;
+            iconImg.alt = option.label;
+            iconImg.style.width = '16px';
+            iconImg.style.height = '16px';
+            iconImg.style.marginRight = '8px';
+            iconImg.style.filter = 'brightness(0) invert(1)'; // Make icons white for dark theme
+            
+            button.appendChild(iconImg);
+            button.appendChild(document.createTextNode(option.label));
+        } else {
+            button.textContent = option.label;
+        }
         
         button.addEventListener('click', () => {
             container.querySelectorAll('.toggle-option').forEach(btn => 
@@ -1695,7 +1897,7 @@ function createWalletTableInput(values, field) {
             };
         }).filter(entry => entry !== null);
         
-        console.log('Wallet table getValue called, returning:', result);
+        console.log('Wallet table getValue called, returning:', result.length + ' entries (addresses masked)');
         return result;
     };
     
@@ -1703,7 +1905,7 @@ function createWalletTableInput(values, field) {
     Object.defineProperty(container, 'value', {
         get: () => container.getValue(),
         set: (newValues) => {
-            console.log('Wallet table setValue called with:', newValues);
+            console.log('Wallet table setValue called with:', (newValues || []).length + ' entries (addresses masked)');
             // Clear existing rows
             tbody.innerHTML = '';
             // Add new rows
@@ -1714,7 +1916,7 @@ function createWalletTableInput(values, field) {
                 // Load cached balances for the newly added entries
                 loadCachedWalletBalances(tbody);
             } else {
-                console.log('Invalid newValues for wallet table:', newValues);
+                console.log('Invalid newValues for wallet table:', typeof newValues + ' (content masked)');
             }
         }
     });
@@ -1789,7 +1991,7 @@ function addWalletTableRow(tbody, entry) {
     const removeButton = document.createElement('button');
     removeButton.type = 'button';
     removeButton.className = 'wallet-remove-icon';
-    removeButton.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3,6 5,6 21,6"></polyline><path d="m19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>';
+    removeButton.innerHTML = '<img src="/static/icons/delete.svg" alt="Delete" style="width: 16px; height: 16px; filter: brightness(0) invert(1);" />';
     removeButton.title = window.translations?.wallet_table_remove || 'Remove';
     removeButton.style.background = 'none';
     removeButton.style.border = 'none';
@@ -1946,7 +2148,7 @@ function createBitaxeTableInput(values, field) {
             };
         }).filter(entry => entry !== null);
         
-        console.log('Bitaxe table getValue called, returning:', result);
+        console.log('Bitaxe table getValue called, returning:', result.length + ' entries (IPs masked for privacy)');
         return result;
     };
     
@@ -1954,7 +2156,7 @@ function createBitaxeTableInput(values, field) {
     Object.defineProperty(container, 'value', {
         get: () => container.getValue(),
         set: (newValues) => {
-            console.log('Bitaxe table setValue called with:', newValues);
+            console.log('Bitaxe table setValue called with:', Array.isArray(newValues) ? newValues.length + ' entries (IPs masked for privacy)' : 'invalid data');
             // Clear existing rows
             tbody.innerHTML = '';
             // Add new rows
@@ -1962,7 +2164,7 @@ function createBitaxeTableInput(values, field) {
                 newValues.forEach(entry => addBitaxeTableRow(tbody, entry));
                 console.log(`Added ${newValues.length} bitaxe entries to table`);
             } else {
-                console.log('Invalid newValues for bitaxe table:', newValues);
+                console.log('Invalid newValues for bitaxe table: type =', typeof newValues, '(data masked for privacy)');
             }
         }
     });
@@ -2022,7 +2224,7 @@ function addBitaxeTableRow(tbody, entry) {
     const removeButton = document.createElement('button');
     removeButton.type = 'button';
     removeButton.className = 'bitaxe-remove-icon';
-    removeButton.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3,6 5,6 21,6"></polyline><path d="m19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>';
+    removeButton.innerHTML = '<img src="/static/icons/delete.svg" alt="Delete" style="width: 16px; height: 16px; filter: brightness(0) invert(1);" />';
     removeButton.title = window.translations?.bitaxe_table_remove || 'Remove';
     removeButton.style.background = 'none';
     removeButton.style.border = 'none';
@@ -2183,7 +2385,7 @@ function createBlockRewardTableInput(values, field) {
             return entries;
         },
         set: function(newValues) {
-            console.log('Setting block reward table values:', newValues);
+            console.log('Setting block reward table values:', Array.isArray(newValues) ? newValues.length + ' entries (addresses masked for privacy)' : 'invalid data');
             if (Array.isArray(newValues)) {
                 // Clear existing rows
                 tbody.innerHTML = '';
@@ -2195,7 +2397,7 @@ function createBlockRewardTableInput(values, field) {
                     }
                 });
             } else {
-                console.log('Invalid newValues for block reward table:', newValues);
+                console.log('Invalid newValues for block reward table: type =', typeof newValues, '(data masked for privacy)');
             }
         }
     });
@@ -2214,7 +2416,7 @@ function createBlockRewardTableInput(values, field) {
                 const address = addressInput.value.trim();
                 const comment = commentInput.value.trim();
                 
-                console.log(`Row ${index}: address="${address}", comment="${comment}"`);
+                console.log(`Row ${index}: address="${address ? '[MASKED]' : ''}", comment="${comment}"`);
                 
                 if (address) {
                     entries.push({
@@ -2225,7 +2427,7 @@ function createBlockRewardTableInput(values, field) {
             }
         });
         
-        console.log('Block reward table getValue returning:', entries);
+        console.log('Block reward table getValue returning:', entries.length, 'entries (addresses masked for privacy)');
         return entries;
     };
 
@@ -2290,7 +2492,7 @@ function addBlockRewardTableRow(tbody, entry) {
     const removeButton = document.createElement('button');
     removeButton.type = 'button';
     removeButton.className = 'block-reward-remove-icon';
-    removeButton.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3,6 5,6 21,6"></polyline><path d="m19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>';
+    removeButton.innerHTML = '<img src="/static/icons/delete.svg" alt="Delete" style="width: 16px; height: 16px; filter: brightness(0) invert(1);" />';
     removeButton.title = window.translations?.block_reward_table_remove || 'Remove';
     removeButton.style.background = 'none';
     removeButton.style.border = 'none';
@@ -2367,6 +2569,79 @@ async function fetchFoundBlocksCount(address, cell) {
     }
 }
 
+function createMemeManagementInterface(field) {
+    const container = document.createElement('div');
+    container.className = 'meme-management-container';
+    
+    // Upload section
+    const uploadSection = document.createElement('div');
+    uploadSection.className = 'form-group';
+    uploadSection.style.marginBottom = '30px';
+    
+    const uploadLabel = document.createElement('label');
+    uploadLabel.className = 'form-label';
+    uploadLabel.textContent = window.translations?.upload_new_meme || 'Upload New Meme';
+    uploadSection.appendChild(uploadLabel);
+    
+    const uploadArea = document.createElement('div');
+    uploadArea.className = 'upload-area';
+    uploadArea.id = 'upload-area';
+    uploadArea.innerHTML = `
+        <input type="file" id="file-input" accept="image/*" style="display: none;">
+        <div class="upload-placeholder">
+            <img src="/static/icons/add_meme.svg" alt="Add Meme" style="width: 2rem; height: 2rem; margin-bottom: 10px; filter: brightness(0) invert(1);" />
+            <p>${window.translations?.upload_placeholder || 'Click to select image or drag & drop'}</p>
+            <p style="font-size: 0.8rem; color: #667eea;">${window.translations?.upload_formats || 'Supported: PNG, JPG, JPEG, GIF, WebP'}</p>
+        </div>
+    `;
+    
+    const uploadProgress = document.createElement('div');
+    uploadProgress.id = 'upload-progress';
+    uploadProgress.style.display = 'none';
+    uploadProgress.style.marginTop = '10px';
+    uploadProgress.innerHTML = `
+        <div style="background: #f0f0f0; border-radius: 10px; overflow: hidden;">
+            <div id="progress-bar" style="height: 8px; background: #667eea; width: 0%; transition: width 0.3s;"></div>
+        </div>
+        <p id="upload-status" style="margin-top: 5px; font-size: 0.9rem;"></p>
+    `;
+    
+    uploadSection.appendChild(uploadArea);
+    uploadSection.appendChild(uploadProgress);
+    
+    // Current memes section
+    const memesSection = document.createElement('div');
+    memesSection.className = 'form-group';
+    
+    const memesLabel = document.createElement('label');
+    memesLabel.className = 'form-label';
+    memesLabel.textContent = window.translations?.current_memes || 'Current Memes';
+    memesSection.appendChild(memesLabel);
+    
+    const memesList = document.createElement('div');
+    memesList.id = 'memes-list';
+    memesList.style.display = 'grid';
+    memesList.style.gridTemplateColumns = 'repeat(auto-fill, minmax(100px, 1fr))';
+    memesList.style.gap = '10px';
+    memesList.style.marginTop = '10px';
+    memesSection.appendChild(memesList);
+    
+    container.appendChild(uploadSection);
+    container.appendChild(memesSection);
+    
+    // Initialize the meme management functionality
+    setTimeout(() => {
+        setupModals();
+        setupUpload();
+        loadMemes();
+    }, 100);
+    
+    // Return a dummy getValue function since this isn't a form input
+    container.getValue = () => null;
+    
+    return container;
+}
+
 
 
 // Silent configuration save (no user feedback)
@@ -2423,8 +2698,7 @@ window.saveConfigFromButton = async function(buttonId) {
 // Save configuration function that can be called from buttons
 async function saveConfiguration() {
     try {
-        const formConfig = {};
-        
+        const formConfig = {}; 
         // Collect all form values
         document.querySelectorAll('[data-config-key]').forEach(element => {
             const key = element.dataset.configKey;
@@ -2432,15 +2706,37 @@ async function saveConfiguration() {
             if (element.getValue) {
                 const value = element.getValue();
                 formConfig[key] = value;
-                if (key.includes('wallet')) {
-                    console.log(`Collected wallet config ${key}:`, value);
-                }
             } else if (element.type === 'checkbox') {
                 formConfig[key] = element.checked;
             } else if (element.type === 'number') {
                 formConfig[key] = parseInt(element.value) || 0;
             } else {
                 formConfig[key] = element.value;
+            }
+        });
+        
+        // Additional safety check: ensure all boolean fields are properly collected
+        // This is a fallback in case boolean switches weren't collected above
+        const expectedBooleanFields = ['prioritize_large_scaled_meme', 'color_mode_dark', 'live_block_notifications_enabled', 'show_btc_price_block', 'show_bitaxe_block', 'show_wallet_balances_block', 'e-ink-display-connected'];
+        expectedBooleanFields.forEach(fieldName => {
+            if (!(fieldName in formConfig)) {
+                console.log(`🚨 [FALLBACK] Missing boolean field ${fieldName} in form collection, attempting to recover...`);
+                const element = document.querySelector(`[data-config-key="${fieldName}"]`);
+                if (element && element.getValue) {
+                    const value = element.getValue();
+                    formConfig[fieldName] = value;
+                    console.log(`🔧 [FALLBACK] Recovered boolean field ${fieldName}: ${value}`);
+                } else if (element && element.classList && element.classList.contains('boolean-switch')) {
+                    // Direct fallback for boolean switches
+                    const switchEl = element.querySelector('.switch');
+                    if (switchEl) {
+                        const isActive = switchEl.classList.contains('active');
+                        formConfig[fieldName] = isActive;
+                        console.log(`🔧 [FALLBACK] Direct boolean recovery for ${fieldName}: ${isActive}`);
+                    }
+                } else {
+                    console.log(`❌ [FALLBACK] Could not recover boolean field ${fieldName}, element not found or invalid`);
+                }
             }
         });
         
@@ -2522,6 +2818,17 @@ async function saveConfiguration() {
                 }
             }
             
+            // Update block notification subscription if setting changed
+            console.log('[SAVE DEBUG] live_block_notifications_enabled after save:', formConfig['live_block_notifications_enabled']);
+            if (typeof formConfig['live_block_notifications_enabled'] !== 'undefined') {
+                if (formConfig['live_block_notifications_enabled']) {
+                    console.log('[SAVE DEBUG] Calling subscribeToBlockNotifications after save');
+                    subscribeToBlockNotifications();
+                } else {
+                    console.log('[SAVE DEBUG] Calling unsubscribeFromBlockNotifications after save');
+                    unsubscribeFromBlockNotifications();
+                }
+            }
             return true;
         } else {
             showNotification(result.message || 'Failed to save configuration', 'error');
@@ -2535,106 +2842,71 @@ async function saveConfiguration() {
 }
 
 // Save configuration
-document.getElementById('save-button').addEventListener('click', async () => {
-    const button = document.getElementById('save-button');
-    button.disabled = true;
-    button.textContent = '💾 Saving...';
-    
-    try {
-        const formConfig = {};
-        
-        // Collect all form values
-        document.querySelectorAll('[data-config-key]').forEach(element => {
-            const key = element.dataset.configKey;
-            
-            if (element.getValue) {
-                const value = element.getValue();
-                formConfig[key] = value;
-                if (key.includes('wallet')) {
-                    console.log(`Collected wallet config ${key}:`, value);
+const saveButton = document.getElementById('save-button');
+if (saveButton) {
+    saveButton.addEventListener('click', async () => {
+        saveButton.disabled = true;
+        saveButton.textContent = '';
+        try {
+            // Only show toast after save result, not before
+            const formConfig = {};
+            document.querySelectorAll('[data-config-key]').forEach(element => {
+                const key = element.dataset.configKey;
+                if (element.getValue) {
+                    const value = element.getValue();
+                    formConfig[key] = value;
+                } else if (element.type === 'checkbox') {
+                    formConfig[key] = element.checked;
+                } else if (element.type === 'number') {
+                    formConfig[key] = parseInt(element.value) || 0;
+                } else {
+                    formConfig[key] = element.value;
                 }
-            } else if (element.type === 'checkbox') {
-                formConfig[key] = element.checked;
-            } else if (element.type === 'number') {
-                formConfig[key] = parseInt(element.value) || 0;
-            } else {
-                formConfig[key] = element.value;
-            }
-        });
-        
-        // If we have a pending language change, make sure it's included in formConfig
-        if (pendingLanguageChange) {
-            formConfig.language = pendingLanguageChange;
-            console.log('Including pending language change in form config:', pendingLanguageChange);
-        }
-        
-        
-        const response = await fetch('/api/config', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(formConfig)
-        });
-        
-        const result = await response.json();
-        
-        if (result.success) {
-            // Check if language was changed using pendingLanguageChange
-            const oldLanguage = currentConfig.language;
-            const newLanguage = pendingLanguageChange || formConfig.language;
-            const languageChanged = pendingLanguageChange !== null || (newLanguage && newLanguage !== oldLanguage);
-            
-            console.log('🔍 Language change detection:', {
-                oldLanguage,
-                newLanguage,
-                pendingLanguageChange,
-                languageChanged,
-                'pendingLanguageChange !== null': pendingLanguageChange !== null,
-                'formConfig has language': !!formConfig.language
             });
-            
-            // Update current config
-            currentConfig = { ...currentConfig, ...formConfig };
-            
-            // Handle language change with new language success message
-            if (languageChanged) {
-                console.log('🔄 LANGUAGE CHANGE DETECTED! Processing language change from', oldLanguage, 'to', newLanguage);
-                
-                // Show notification and force page reload
-                showNotification('Language changed! Reloading page...', 'success');
-                
-                // Clear the pending change and reload page immediately
-                pendingLanguageChange = null;
-                setTimeout(() => {
-                    console.log('🔄 FORCING PAGE RELOAD for language change');
-                    window.location.reload(true); // Force reload from server
-                }, 1000); // Shorter timeout
-            } else {
-                // Fallback check: if language in formConfig is different from what was in currentConfig
-                if (formConfig.language && formConfig.language !== oldLanguage) {
-                    console.log('🔄 FALLBACK: Language difference detected via form config!', oldLanguage, '->', formConfig.language);
+            if (pendingLanguageChange) {
+                formConfig.language = pendingLanguageChange;
+            }
+            const response = await fetch('/api/config', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(formConfig)
+            });
+            const result = await response.json();
+            if (result.success) {
+                const oldLanguage = currentConfig.language;
+                const newLanguage = pendingLanguageChange || formConfig.language;
+                const languageChanged = pendingLanguageChange !== null || (newLanguage && newLanguage !== oldLanguage);
+                currentConfig = { ...currentConfig, ...formConfig };
+                if (languageChanged) {
+                    showNotification('Language changed! Reloading page...', 'success');
+                    pendingLanguageChange = null;
+                    setTimeout(() => {
+                        window.location.reload(true);
+                    }, 1000);
+                } else if (formConfig.language && formConfig.language !== oldLanguage) {
                     showNotification('Language changed! Reloading page...', 'success');
                     setTimeout(() => {
-                        console.log('🔄 FALLBACK PAGE RELOAD for language change');
                         window.location.reload(true);
                     }, 1000);
                 } else {
-                    console.log('ℹ️ No language change detected, showing normal success message');
                     showNotification(window.translations?.configuration_saved || 'Configuration saved successfully!', 'success');
                 }
+            } else {
+                showNotification(result.message || window.translations?.failed_to_save_configuration || 'Failed to save configuration', 'error');
             }
-        } else {
-            showNotification(result.message || window.translations?.failed_to_save_configuration || 'Failed to save configuration', 'error');
+        } catch (error) {
+            console.error('Error saving configuration:', error);
+            showNotification(window.translations?.failed_to_save_configuration || 'Failed to save configuration', 'error');
+        } finally {
+            saveButton.disabled = false;
+            saveButton.textContent = 'Save Configuration';
         }
-    } catch (error) {
-        console.error('Error saving configuration:', error);
-        showNotification(window.translations?.failed_to_save_configuration || 'Failed to save configuration', 'error');
-    } finally {
-        button.disabled = false;
-        button.textContent = '💾 Save Configuration';
-    }
-});
+    });
+} else if (isConfigPage) {
+    console.warn('Save button not found in DOM - expected on config page');
+}
 
 // Listen for config changes from header toggles
 document.addEventListener('configChange', async (event) => {
@@ -2667,53 +2939,32 @@ let notificationTimeout = null;
 function showNotification(message, type = 'success') {
     const notification = document.getElementById('notification');
     if (!notification) return;
-    // Clear any existing timeout
-    if (notificationTimeout) {
-        clearTimeout(notificationTimeout);
+    if (window.notificationTimeout) {
+        clearTimeout(window.notificationTimeout);
     }
-    // Content
     notification.textContent = message;
-    // Inline, centered, narrow styling
+    notification.style.background = type === 'success' ? '#38a169' : '#e53e3e';
+    notification.style.color = '#fff';
+    notification.style.borderRadius = '10px';
+    notification.style.padding = '10px 16px';
     notification.style.position = 'fixed';
     notification.style.top = '18px';
     notification.style.left = '50%';
     notification.style.transform = 'translateX(-50%)';
     notification.style.zIndex = '9999';
-    notification.style.padding = '10px 16px';
-    notification.style.borderRadius = '10px';
     notification.style.fontSize = '0.95rem';
-    notification.style.minWidth = '200px';
-    notification.style.maxWidth = '360px';
+    notification.style.minWidth = '240px';
+    notification.style.maxWidth = '420px';
     notification.style.width = 'auto';
     notification.style.textAlign = 'center';
-    notification.style.boxShadow = '0 8px 24px rgba(0,0,0,0.25)';
-    if (type === 'error') {
-        notification.style.background = '#e53e3e';
-        notification.style.color = '#fff';
-    } else if (type === 'warning') {
-        notification.style.background = '#d69e2e';
-        notification.style.color = '#1f1f1f';
-    } else if (type === 'info') {
-        notification.style.background = '#3182ce';
-        notification.style.color = '#fff';
-    } else {
-        notification.style.background = '#38a169';
-        notification.style.color = '#fff';
-    }
     notification.style.display = 'block';
-    // Auto-hide duration
-    let duration = type === 'error' ? 8000 : type === 'warning' ? 5000 : 2500;
-    notificationTimeout = setTimeout(() => { hideNotification(); }, duration);
+    window.notificationTimeout = setTimeout(hideNotification, 1000);
 }
 
 function hideNotification() {
     const notification = document.getElementById('notification');
     if (!notification) return;
     notification.style.display = 'none';
-    if (notificationTimeout) {
-        clearTimeout(notificationTimeout);
-        notificationTimeout = null;
-    }
 }
 
 // Meme Modal Functions
@@ -2722,67 +2973,55 @@ let currentModalMeme = null;
 function openMemeModal(filename, url) {
     currentModalMeme = { filename, url };
     
-    // Set basic info
-    document.getElementById('meme-modal-title').textContent = `Meme Preview - ${filename}`;
-    document.getElementById('meme-modal-filename').textContent = filename;
-    document.getElementById('meme-modal-image').src = url;
+    // Set basic info with null checks
+    const modalTitle = document.getElementById('meme-modal-title');
+    const modalFilename = document.getElementById('meme-modal-filename');
+    const modalImage = document.getElementById('meme-modal-image');
+    const modalDimensions = document.getElementById('meme-modal-dimensions');
+    const modalFilesize = document.getElementById('meme-modal-filesize');
+    const memeModal = document.getElementById('meme-modal');
     
-    // Reset dimensions and file size
-    document.getElementById('meme-modal-dimensions').textContent = 'Loading...';
-    document.getElementById('meme-modal-filesize').textContent = 'Loading...';
-    
-    // Show modal
-    document.getElementById('meme-modal').style.display = 'flex';
-    
-    // Load image info
-    loadMemeInfo(url, filename);
-    
-    // Add escape key listener
-    document.addEventListener('keydown', handleMemeModalKeydown);
-}
-
-function closeMemeModal() {
-    document.getElementById('meme-modal').style.display = 'none';
-    currentModalMeme = null;
-    
-    // Remove escape key listener
-    document.removeEventListener('keydown', handleMemeModalKeydown);
-}
-
-function handleMemeModalKeydown(event) {
-    if (event.key === 'Escape') {
-        closeMemeModal();
+    if (modalTitle) {
+        const previewText = window.translations?.meme_preview || 'Meme Preview';
+        modalTitle.textContent = `${previewText} - ${filename}`;
     }
-}
-
-function loadMemeInfo(url, filename) {
-    // Create temporary image to get dimensions
-    const img = new Image();
-    
-    img.onload = function() {
-        document.getElementById('meme-modal-dimensions').textContent = `${this.naturalWidth} × ${this.naturalHeight}px`;
-    };
-    
-    img.onerror = function() {
-        document.getElementById('meme-modal-dimensions').textContent = 'Unable to load';
-    };
-    
-    img.src = url;
+    if (modalImage) {
+        modalImage.src = url;
+    }
+    if (memeModal) {
+        memeModal.style.display = 'block';
+        // Center the modal horizontally and vertically
+        memeModal.style.position = 'fixed';
+        memeModal.style.top = '50%';
+        memeModal.style.left = '50%';
+        memeModal.style.transform = 'translate(-50%, -50%)';
+        memeModal.style.zIndex = '9999';
+        memeModal.style.margin = '0';
+        memeModal.style.maxWidth = '90vw';
+        memeModal.style.maxHeight = '90vh';
+        memeModal.style.overflow = 'auto';
+    }
     
     // Try to get file size via HEAD request
     fetch(url, { method: 'HEAD' })
         .then(response => {
             const contentLength = response.headers.get('content-length');
+            const modalFilesize = document.getElementById('meme-modal-filesize');
+            if (!modalFilesize) return;
+            
             if (contentLength) {
                 const bytes = parseInt(contentLength);
                 const size = formatFileSize(bytes);
-                document.getElementById('meme-modal-filesize').textContent = size;
+                modalFilesize.textContent = size;
             } else {
-                document.getElementById('meme-modal-filesize').textContent = 'Unknown';
+                modalFilesize.textContent = 'Unknown';
             }
         })
         .catch(() => {
-            document.getElementById('meme-modal-filesize').textContent = 'Unknown';
+            const modalFilesize = document.getElementById('meme-modal-filesize');
+            if (modalFilesize) {
+                modalFilesize.textContent = 'Unknown';
+            }
         });
 }
 
@@ -2810,29 +3049,26 @@ function deleteMemeFromModal() {
 }
 
 // Close modal when clicking outside of it
-document.getElementById('meme-modal').addEventListener('click', function(event) {
-    if (event.target === this) {
-        closeMemeModal();
-    }
-});
+const memeModal = document.getElementById('meme-modal');
+if (memeModal) {
+    memeModal.addEventListener('click', function(event) {
+        if (event.target === this) {
+            closeMemeModal();
+        }
+    });
+} else if (isConfigPage) {
+    console.warn('Meme modal not found in DOM');
+}
 
 // Load cached wallet balances for display in config table
 async function loadCachedWalletBalances(tbody) {
     try {
-        console.log('🔍 [DEBUG] loadCachedWalletBalances started');
-        console.log('🔍 [DEBUG] window.currentConfig exists:', !!window.currentConfig);
-        console.log('🔍 [DEBUG] currentConfig exists:', !!currentConfig);
-        
         let walletEntries = [];
         const rows = tbody.querySelectorAll('tr');
-        
-        console.log('🔍 [DEBUG] Found', rows.length, 'rows in table');
         
         // First check if we have config data with cached balances
         const configToUse = window.currentConfig || currentConfig;
         if (configToUse && configToUse.wallet_balance_addresses_with_comments) {
-            console.log('🔍 [DEBUG] Found wallet addresses in config:', configToUse.wallet_balance_addresses_with_comments);
-            
             const configEntries = configToUse.wallet_balance_addresses_with_comments;
             configEntries.forEach(entry => {
                 if (entry.address) {
@@ -2845,7 +3081,6 @@ async function loadCachedWalletBalances(tbody) {
                 }
             });
             
-            console.log('🔍 [DEBUG] Loaded wallet entries from config with balances:', walletEntries);
         } else {
             // Fallback: Try to get wallet entries from form inputs
             rows.forEach((row, index) => {
@@ -2853,9 +3088,7 @@ async function loadCachedWalletBalances(tbody) {
                 const commentInput = row.querySelector('.wallet-comment-input');
                 const address = addressInput ? addressInput.value.trim() : '';
                 const comment = commentInput ? commentInput.value.trim() : '';
-                
-                console.log(`🔍 [DEBUG] Row ${index}: address="${address}", comment="${comment}"`);
-                
+                 
                 if (address) {
                     walletEntries.push({
                         address: address,
@@ -2864,24 +3097,18 @@ async function loadCachedWalletBalances(tbody) {
                     });
                 }
             });
-            
-            console.log('🔍 [DEBUG] Wallet entries from form inputs:', walletEntries);
         }
         
         // If no entries from either source, try fallback API
         if (walletEntries.length === 0) {
-            console.log('🔍 [DEBUG] No wallet entries found, trying API fallback...');
             
             try {
                 const testResponse = await fetch('/api/test-wallet-config');
                 if (testResponse.ok) {
                     const testData = await testResponse.json();
-                    console.log('🔍 [DEBUG] Test API response:', testData);
                     
                     if (testData.success && testData.wallet_addresses_from_regular_config) {
                         const apiEntries = testData.wallet_addresses_from_regular_config;
-                        console.log('🔍 [DEBUG] Found wallet entries from test API:', apiEntries);
-                        
                         apiEntries.forEach(entry => {
                             if (entry.address) {
                                 walletEntries.push({
@@ -2894,32 +3121,27 @@ async function loadCachedWalletBalances(tbody) {
                     }
                 }
             } catch (apiError) {
-                console.log('🔍 [DEBUG] Test API error:', apiError);
+                console.log('Test API error:', apiError);
             }
         }
         
         if (walletEntries.length === 0) {
-            console.log('🔍 [DEBUG] No wallet entries to display');
             return;
         }
-        
-        console.log('🔍 [DEBUG] Processing', walletEntries.length, 'wallet entries');
-        
+         
         // Check if we already have cached balances in the config
         const hasBalancesInConfig = walletEntries.some(entry => entry.cached_balance !== undefined);
         
         if (hasBalancesInConfig) {
-            console.log('🔍 [DEBUG] Using cached balances from config');
             // Use cached balances directly from config
             await updateWalletTableWithEntries(tbody, walletEntries);
         } else {
-            console.log('🔍 [DEBUG] No cached balances in config, fetching from API...');
             // Fetch balances from API
             await fetchAndUpdateBalances(tbody, walletEntries);
         }
         
     } catch (error) {
-        console.error('🔍 [DEBUG] Error loading cached wallet balances:', error);
+        console.error('Error loading cached wallet balances:', error);
     }
 }
 
@@ -2929,8 +3151,7 @@ async function updateWalletTableWithEntries(tbody, walletEntries) {
     
     // Add more rows if needed
     while (currentRows.length < walletEntries.length) {
-        console.log('🔍 [DEBUG] Adding missing row for wallet entry');
-        addWalletTableRow(tbody, { address: '', comment: '', balance: 0 });
+                addWalletTableRow(tbody, { address: '', comment: '', balance: 0 });
         currentRows = tbody.querySelectorAll('tr');
     }
     
@@ -2944,21 +3165,17 @@ async function updateWalletTableWithEntries(tbody, walletEntries) {
             const commentInput = row.querySelector('.wallet-comment-input');
             if (addressInput && !addressInput.value) {
                 addressInput.value = entry.address;
-                console.log(`🔍 [DEBUG] Set address input ${index} to: ${entry.address}`);
-            }
+                            }
             if (commentInput && !commentInput.value) {
                 commentInput.value = entry.comment;
-                console.log(`🔍 [DEBUG] Set comment input ${index} to: ${entry.comment}`);
-            }
+                            }
             
             // Update the balance display
             const balanceDisplay = row.querySelector('.wallet-balance-display');
             if (balanceDisplay) {
                 const balance = entry.cached_balance || 0.0;
                 balanceDisplay.textContent = `${balance.toFixed(8)}`;
-                balanceDisplay.style.color = balance > 0 ? '#4FC3F7' : '#666';
-                console.log(`🔍 [DEBUG] Set balance display ${index} to: ${balance.toFixed(8)}`);
-                
+                balanceDisplay.style.color = balance > 0 ? '#4FC3F7' : '#666'; 
                 // Add styling to indicate cached data
                 if (balance > 0) {
                     balanceDisplay.style.opacity = '0.8';
@@ -2967,8 +3184,6 @@ async function updateWalletTableWithEntries(tbody, walletEntries) {
             }
         }
     });
-    
-    console.log('🔍 [DEBUG] Successfully updated wallet table with config data');
 }
 
 // Helper function to fetch balances from API and update table
@@ -2983,11 +3198,8 @@ async function fetchAndUpdateBalances(tbody, walletEntries) {
         body: JSON.stringify({ addresses: walletEntries })
     });
     
-    console.log('🔍 [DEBUG] Cached balance API response status:', response.status);
-    
     if (response.ok) {
         const balanceData = await response.json();
-        console.log('🔍 [DEBUG] Cached balance data received:', balanceData);
         
         // Add balances to entries
         if (balanceData.balances) {
@@ -3002,8 +3214,7 @@ async function fetchAndUpdateBalances(tbody, walletEntries) {
         await updateWalletTableWithEntries(tbody, walletEntries);
     } else {
         const errorText = await response.text();
-        console.log('🔍 [DEBUG] Could not load cached wallet balances:', response.status, errorText);
-        
+    
         // Still update table with entries (without balances)
         await updateWalletTableWithEntries(tbody, walletEntries);
     }
@@ -3083,34 +3294,124 @@ function showNotification(message, type = 'info', duration = 5000) {
 
 // WebSocket connection for real-time updates
 let configSocket = null;
+let reconnectingConfig = false;
+let reconnectTimeoutConfig = null;
 
-function initializeWebSocket() {
-    if (typeof io !== 'undefined') {
-        try {
-            configSocket = io();
-            
-            configSocket.on('connect', () => {
-                console.log('🔌 Config WebSocket connected');
-            });
-            
-            configSocket.on('disconnect', () => {
-                console.log('🔌 Config WebSocket disconnected');
-            });
-            
-            // Listen for wallet balance updates
-            configSocket.on('wallet_balance_updated', (data) => {
-                console.log('📊 Received wallet balance update:', data);
-                updateWalletBalancesFromWebSocket(data);
-                showNotification(window.translations?.wallet_balances_updated || 'Wallet balances updated automatically!', 'success');
-            });
-            
-        } catch (error) {
-            console.log('WebSocket not available or failed to connect:', error);
-        }
-    } else {
+function connectConfigSocket() {
+    if (typeof io === 'undefined') {
         console.log('Socket.IO not available');
+        return;
     }
+    configSocket = io();
+    setupConfigSocketHandlers();
 }
+
+function setupConfigSocketHandlers() {
+    configSocket.on('connect', () => {
+        console.log('🔌 Config WebSocket connected');
+        reconnectingConfig = false;
+        // Register this page for notifications
+        registerPageForNotifications('config');
+        // Check if live block notifications are enabled and subscribe
+        if (typeof live_block_notifications_enabled !== 'undefined' && live_block_notifications_enabled) {
+            subscribeToBlockNotifications();
+        }
+    });
+
+    configSocket.on('disconnect', () => {
+        console.log('🔌 Config WebSocket disconnected');
+        attemptConfigReconnect();
+    });
+
+    configSocket.on('connect_error', (error) => {
+        console.error('🚫 Config Socket.IO connection error:', error);
+        attemptConfigReconnect();
+    });
+
+    configSocket.on('error', (error) => {
+        console.error('⚠️ Config Socket.IO transport error:', error);
+        attemptConfigReconnect();
+    });
+
+    // Listen for wallet balance updates
+    configSocket.on('wallet_balance_updated', (data) => {
+        console.log('📊 Received wallet balance update:', data ? Object.keys(data).length + ' addresses (data masked for privacy)' : 'no data');
+        updateWalletBalancesFromWebSocket(data);
+        showNotification(window.translations?.wallet_balances_updated || 'Wallet balances updated automatically!', 'success');
+    });
+
+    // Listen for block notifications
+    configSocket.on('new_block_notification', (data) => {
+        console.log("🎯 New block notification received:", data && data.height ? 'block ' + data.height + ' (details masked for privacy)' : 'notification data');
+        // Store notification state to prevent duplicates
+        const state = getNotificationState();
+        const now = Date.now();
+        if (state.lastNotification && (now - state.lastNotification) < 10000) {
+            console.log("⚠️ Duplicate block notification detected, skipping");
+            return;
+        }
+        state.lastNotification = now;
+        setNotificationState(state);
+        showBlockToast(data);
+        try {
+            localStorage.setItem('mempaper_block_notification', JSON.stringify({
+                timestamp: now,
+                data: data
+            }));
+            setTimeout(() => {
+                localStorage.removeItem('mempaper_block_notification');
+            }, 1000);
+        } catch (e) {
+            console.warn('Could not broadcast notification to other pages:', e);
+        }
+    });
+
+    configSocket.on('block_notification_status', (data) => {
+        if (data.status === 'subscribed') {
+            console.log('🔔 [CONFIG] ' + (data.message || 'Subscribed to live block notifications'));
+        } else if (data.status === 'unsubscribed') {
+            console.log('🔕 [CONFIG] Unsubscribed from live block notifications');
+        }
+    });
+
+    configSocket.on('block_notification_error', (data) => {
+        console.error('❌ [CONFIG] Block notification error:', data.error);
+    });
+
+    // Listen for notifications from other pages
+    window.addEventListener('storage', function(e) {
+        if (e.key === 'mempaper_block_notification') {
+            try {
+                const notificationData = JSON.parse(e.newValue);
+                if (notificationData && notificationData.timestamp > Date.now() - 5000) {
+                    console.log('🔔 Received cross-page block notification');
+                    showBlockToast(notificationData.data);
+                }
+            } catch (error) {
+                console.warn('Error parsing cross-page notification:', error);
+            }
+        }
+    });
+
+    // Cleanup on page unload
+    window.addEventListener('beforeunload', function() {
+        unregisterPageForNotifications('config');
+    });
+}
+
+function attemptConfigReconnect() {
+    if (reconnectingConfig) return;
+    reconnectingConfig = true;
+    if (reconnectTimeoutConfig) clearTimeout(reconnectTimeoutConfig);
+    reconnectTimeoutConfig = setTimeout(() => {
+        console.log("🔄 Attempting Config WebSocket reconnect...");
+        if (configSocket) configSocket.connect();
+        reconnectingConfig = false;
+    }, 2000);
+}
+
+// Initial connection
+connectConfigSocket();
 
 function updateWalletBalancesFromWebSocket(balanceData) {
     // Find all wallet tables on the page
@@ -3187,32 +3488,46 @@ function setupNavigationButtons() {
         if (button) {
             button.addEventListener('click', async () => {
                 button.disabled = true;
-                const originalHTML = button.innerHTML;
-                // Show different saving text for mobile (icon only) vs desktop
-                if (button.id.includes('mobile')) {
-                    button.innerHTML = '<span style="font-size: 12px;">•••</span>';
-                } else {
-                    button.innerHTML = '<span>Saving5...</span>';
-                }
+                // Keep original content, just disable the button
                 
                 try {
                     const formConfig = {};
                     
-                    // Collect all form values
+                    console.log('🔍 [SAVE DEBUG] Starting form collection...');
+                    
+                    // Collect all form values using the proper method that handles custom getValue() functions
                     document.querySelectorAll('[data-config-key]').forEach(element => {
-                        const key = element.getAttribute('data-config-key');
-                        let value;
+                        const key = element.dataset.configKey;
                         
-                        if (element.type === 'checkbox') {
-                            value = element.checked;
+                        if (element.getValue) {
+                            // Use custom getValue method for boolean switches and other custom elements
+                            const value = element.getValue();
+                            formConfig[key] = value;
+                            console.log(`🔍 [SAVE DEBUG] Collected ${key} via getValue(): ${value} (type: ${typeof value})`);
+                        } else if (element.type === 'checkbox') {
+                            formConfig[key] = element.checked;
+                            console.log(`🔍 [SAVE DEBUG] Collected ${key} via checkbox: ${element.checked}`);
                         } else if (element.type === 'number') {
-                            value = parseFloat(element.value) || 0;
+                            formConfig[key] = parseFloat(element.value) || 0;
+                            console.log(`🔍 [SAVE DEBUG] Collected ${key} via number: ${formConfig[key]}`);
                         } else {
-                            value = element.value;
+                            formConfig[key] = element.value;
+                            console.log(`🔍 [SAVE DEBUG] Collected ${key} via value: ${element.value}`);
                         }
-                        
-                        formConfig[key] = value;
                     });
+                    
+                    console.log('🔍 [SAVE DEBUG] Final formConfig:', formConfig);
+                    
+                    // Temporary: Show what we collected for boolean fields
+                    const booleanFields = ['prioritize_large_scaled_meme', 'color_mode_dark', 'live_block_notifications_enabled', 'show_btc_price_block', 'show_bitaxe_block', 'show_wallet_balances_block', 'e-ink-display-connected'];
+                    const booleanData = {};
+                    booleanFields.forEach(field => {
+                        if (formConfig.hasOwnProperty(field)) {
+                            booleanData[field] = formConfig[field];
+                        }
+                    });
+                    console.log('🔍 [SAVE DEBUG] Boolean fields being saved:', booleanData);
+                    
                     
                     // If we have a pending language change, make sure it's included in formConfig
                     if (pendingLanguageChange) {
@@ -3220,12 +3535,12 @@ function setupNavigationButtons() {
                         console.log('Including pending language change in form config:', pendingLanguageChange);
                     }
                     
-                    console.log('Form config collected:', formConfig);
+                    console.log('Form config collected: object with', Object.keys(formConfig).length, 'fields (sensitive data masked)');
                     console.log('Current config language:', currentConfig.language);
                     console.log('Form config language:', formConfig.language);
                     console.log('Pending language change:', pendingLanguageChange);
                     
-                    console.log('Saving configuration:', formConfig);
+                    console.log('Saving configuration: object with', Object.keys(formConfig).length, 'fields (sensitive data masked)');
                     
                     const response = await fetch('/api/config', {
                         method: 'POST',
@@ -3289,7 +3604,6 @@ function setupNavigationButtons() {
                     showNotification(window.translations?.failed_to_save_configuration || 'Failed to save configuration', 'error');
                 } finally {
                     button.disabled = false;
-                    button.innerHTML = originalHTML;
                 }
             });
         }
@@ -3323,6 +3637,190 @@ function setupNavigationButtons() {
     setupLogoutButton('mobile-logout-button');
 }
 
+// Block notification subscription functions
+// Global notification state management (shared across tabs/pages)
+function getNotificationState() {
+    try {
+        const state = localStorage.getItem('mempaper_notification_state');
+        return state ? JSON.parse(state) : { lastNotification: 0, subscribedPages: [] };
+    } catch (e) {
+        return { lastNotification: 0, subscribedPages: [] };
+    }
+}
+
+function setNotificationState(state) {
+    try {
+        localStorage.setItem('mempaper_notification_state', JSON.stringify(state));
+    } catch (e) {
+        console.warn('Could not save notification state:', e);
+    }
+}
+
+function registerPageForNotifications(pageType) {
+    const state = getNotificationState();
+    if (!state.subscribedPages.includes(pageType)) {
+        state.subscribedPages.push(pageType);
+        setNotificationState(state);
+    }
+}
+
+function unregisterPageForNotifications(pageType) {
+    const state = getNotificationState();
+    state.subscribedPages = state.subscribedPages.filter(page => page !== pageType);
+    setNotificationState(state);
+}
+
+function subscribeToBlockNotifications() {
+    // Always subscribe for config page, even if other pages are subscribed
+    if (configSocket) {
+        console.log('🔔 Config page subscribing to live block notifications...');
+        configSocket.emit('subscribe_block_notifications', { page: 'config' });
+    }
+}
+
+function unsubscribeFromBlockNotifications() {
+    if (configSocket) {
+        console.log('🔕 Config page unsubscribing from live block notifications...');
+        configSocket.emit('unsubscribe_block_notifications');
+    }
+}
+
+// Show block notification toast (adapted for config page)
+function showBlockToast(blockData) {
+    // Create toast container if it doesn't exist
+    let toastContainer = document.getElementById('block-toast-container');
+    if (!toastContainer) {
+        toastContainer = document.createElement('div');
+        toastContainer.id = 'block-toast-container';
+        toastContainer.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 10000;
+            font-family: 'Roboto', Arial, sans-serif;
+        `;
+        document.body.appendChild(toastContainer);
+    }
+    
+    // Create toast element
+    const toast = document.createElement('div');
+    toast.style.cssText = `
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 16px 20px;
+        border-radius: 12px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        backdrop-filter: blur(15px);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        margin-bottom: 10px;
+        min-width: 320px;
+        max-width: 400px;
+        opacity: 0;
+        transform: translateX(100%);
+        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        position: relative;
+        font-size: 14px;
+        line-height: 1.4;
+    `;
+    
+    // Create close button
+    const closeBtn = document.createElement('button');
+    closeBtn.innerHTML = '×';
+    closeBtn.style.cssText = `
+        position: absolute;
+        top: 8px;
+        right: 12px;
+        background: none;
+        border: none;
+        color: white;
+        font-size: 24px;
+        cursor: pointer;
+        padding: 0;
+        width: 24px;
+        height: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        transition: background-color 0.2s;
+    `;
+    
+    // Format timestamp to local time
+    const timestamp = new Date(blockData.timestamp * 1000);
+    const timeString = timestamp.toLocaleTimeString();
+    
+    // Format numbers
+    const heightFormatted = blockData.block_height.toLocaleString().replace(/,/g, '.');
+    const rewardFormatted = blockData.total_reward_btc.toFixed(8);
+    const feesFormatted = blockData.total_fees_btc.toFixed(4);
+    const medianFeeFormatted = blockData.median_fee_sat_vb.toFixed(1);
+    
+    // Create toast content
+    toast.innerHTML = `
+        <div style="margin-right: 30px;">
+            <div style="font-weight: bold; font-size: 16px; margin-bottom: 8px; display: flex; align-items: center;">
+                🎯 New Bitcoin Block Found!
+            </div>
+            <div style="margin-bottom: 6px;">
+                <strong>Height:</strong> ${heightFormatted}
+            </div>
+            <div style="margin-bottom: 6px;">
+                <strong>Hash:</strong> ${blockData.block_hash}
+            </div>
+            <div style="margin-bottom: 6px;">
+                <strong>Time:</strong> ${timeString}
+            </div>
+            <div style="margin-bottom: 6px;">
+                <strong>Mining Pool:</strong> ${blockData.pool_name}
+            </div>
+            <div style="margin-bottom: 6px;">
+                <strong>Block Reward:</strong> ${rewardFormatted} BTC
+            </div>
+            <div style="margin-bottom: 6px;">
+                <strong>Total Fees:</strong> ${feesFormatted} BTC
+            </div>
+            <div>
+                <strong>Median Fee:</strong> ${medianFeeFormatted} sat/vB
+            </div>
+        </div>
+    `;
+    
+    // Add close button to toast
+    toast.appendChild(closeBtn);
+    
+    // Close toast function
+    function closeToast() {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(100%)';
+        setTimeout(() => {
+            if (toast.parentNode) {
+                toast.parentNode.removeChild(toast);
+            }
+        }, 400);
+    }
+    
+    // Close button event listener
+    closeBtn.addEventListener('click', closeToast);
+    closeBtn.addEventListener('mouseenter', () => {
+        closeBtn.style.backgroundColor = 'rgba(255, 255, 255, 0.2)';
+    });
+    closeBtn.addEventListener('mouseleave', () => {
+        closeBtn.style.backgroundColor = 'transparent';
+    });
+    
+    // Add toast to container
+    toastContainer.appendChild(toast);
+    
+    // Animate in
+    setTimeout(() => {
+        toast.style.opacity = '1';
+        toast.style.transform = 'translateX(0)';
+    }, 10);
+    
+    // Auto-close after 30 seconds
+    setTimeout(closeToast, 30000);
+}
+
 // Initialize WebSocket when page loads
 document.addEventListener('DOMContentLoaded', () => {
     // Setup navigation buttons
@@ -3331,3 +3829,27 @@ document.addEventListener('DOMContentLoaded', () => {
     // Delay WebSocket initialization to ensure everything is loaded
     setTimeout(initializeWebSocket, 1000);
 });
+
+// Testing function that can be called from browser console
+window.testConfigSave = function() {
+    console.log('🧪 Starting config save test...');
+    
+    // Test current boolean values
+    const booleanFields = ['prioritize_large_scaled_meme', 'color_mode_dark', 'live_block_notifications_enabled', 'show_btc_price_block', 'show_bitaxe_block', 'show_wallet_balances_block', 'e-ink-display-connected'];
+    
+    console.log('📊 Current boolean values:');
+    booleanFields.forEach(fieldName => {
+        const element = document.querySelector(`[data-config-key="${fieldName}"]`);
+        if (element && element.getValue) {
+            console.log(`  ${fieldName}: ${element.getValue()}`);
+        } else {
+            console.log(`  ${fieldName}: NOT FOUND or no getValue method`);
+        }
+    });
+    
+    // Trigger save
+    console.log('💾 Triggering save configuration...');
+    saveConfiguration();
+    
+    return 'Test initiated - check console for results';
+};

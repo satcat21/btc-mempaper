@@ -86,7 +86,7 @@ class ConfigManager:
         if enable_secure_config and SECURE_CONFIG_AVAILABLE:
             try:
                 self.secure_manager = SecureConfigManager(self.config_path)
-                print("🔐 Secure configuration manager initialized")
+                # print("🔐 Secure configuration manager initialized")
             except Exception as e:
                 print(f"⚠️ Failed to initialize secure config manager: {e}")
                 self.secure_manager = None
@@ -144,7 +144,7 @@ class ConfigManager:
             self.file_observer.schedule(event_handler, watch_dir, recursive=False)
             self.file_observer.start()
             
-            print(f"👁 Watching config file for changes: {self.config_path}")
+            # print(f"👁 Watching config file for changes: {self.config_path}")
         except Exception as e:
             print(f"⚠ Could not start file watching: {e}")
             self.file_observer = None
@@ -294,27 +294,40 @@ class ConfigManager:
         Returns:
             Dict containing configuration settings
         """
-        # Try secure config first if available
-        if self.secure_manager:
-            config = self.secure_manager.load_secure_config()
-            if config is not None:
-                print(f"✓ Secure configuration loaded from encrypted files")
-                return config
-            else:
-                print(f"⚠️ Failed to load secure config, falling back to plain config")
+        # Start with default config as base
+        merged_config = self.get_default_config()
         
-        # Fallback to plain config
+        # Load plain config (contains non-sensitive fields)
+        plain_config = None
         try:
             with open(self.config_path, 'r', encoding='utf-8') as f:
-                config = json.load(f)
-            print(f"✓ Configuration loaded from {self.config_path}")
-            return config
+                plain_config = json.load(f)
+            # print(f"✓ Plain configuration loaded from {self.config_path}")
         except FileNotFoundError:
-            print(f"⚠ Config file not found, creating default: {self.config_path}")
-            return self.get_default_config()
+            print(f"⚠ Config file not found: {self.config_path}")
         except json.JSONDecodeError as e:
             print(f"❌ Invalid JSON in config file: {e}")
-            return self.get_default_config()
+        
+        # Update with plain config values
+        if plain_config:
+            merged_config.update(plain_config)
+        
+        # Try secure config for sensitive fields only
+        if self.secure_manager:
+            secure_config = self.secure_manager.load_secure_config()
+            if secure_config is not None:
+                # print(f"✓ Secure configuration loaded from encrypted files")
+                # Only update with sensitive fields from secure config
+                sensitive_fields = {'wallet_balance_addresses', 'wallet_balance_addresses_with_comments', 
+                                  'block_reward_addresses_table', 'admin_password_hash', 'secret_key'}
+                for key, value in secure_config.items():
+                    if key in sensitive_fields:
+                        merged_config[key] = value
+                # print(f"🔄 Added sensitive fields from secure configuration")
+                return merged_config
+        
+        print(f"📝 Configuration loaded: {len(merged_config)} fields")
+        return merged_config
     
     def get_default_config(self) -> Dict[str, Any]:
         """
@@ -349,7 +362,8 @@ class ConfigManager:
             "wallet_balance_unit": "sats",  # "btc" or "sats"
             "wallet_balance_currency": "EUR",  # USD, EUR, GBP, CAD, CHF, AUD, JPY - fiat currency for wallet balance display
             "prioritize_large_scaled_meme": False,
-            "color_mode_dark": True
+            "color_mode_dark": True,
+            "live_block_notifications_enabled": True  # Enable live block notifications by default
         }
     
     def save_config(self, config: Dict[str, Any] = None) -> bool:
@@ -366,6 +380,10 @@ class ConfigManager:
         config_to_save = config if config is not None else self.config
         
         try:
+            # Temporarily disable file watching during save to prevent reload race condition
+            file_watching_was_enabled = self.watching_enabled
+            self.watching_enabled = False
+            
             # Validate configuration
             validated_config = self.validate_config(config_to_save)
             
@@ -374,9 +392,15 @@ class ConfigManager:
                 success = self.secure_manager.save_secure_config(validated_config)
                 if success:
                     with self.config_lock:
-                        if config is None:
-                            self.config = validated_config
+                        # Update in-memory config directly instead of reloading
+                        self.config = validated_config
                     print(f"✓ Secure configuration saved")
+                    
+                    # Re-enable file watching after a delay to avoid immediate reload
+                    if file_watching_was_enabled:
+                        threading.Timer(2.0, lambda: setattr(self, 'watching_enabled', True)).start()
+                        print(f"⏰ File watching will be re-enabled in 2 seconds")
+                    
                     return True
                 else:
                     print(f"⚠️ Failed to save secure config, falling back to plain config")
@@ -436,7 +460,8 @@ class ConfigManager:
             "show_btc_price_block",
             "show_bitaxe_block",
             "show_wallet_balances_block",
-            "color_mode_dark"
+            "color_mode_dark",
+            "live_block_notifications_enabled"
         ]
         for setting in bool_settings:
             if setting in config:
@@ -570,16 +595,50 @@ class ConfigManager:
                 validated[setting] = config[setting].strip()
         
         # Special handling for secure password system
-        # If admin_password_hash exists, use secure password system
-        # If admin_password_hash exists, remove admin_password from defaults
+        # Check if we currently have a hashed password (from stored config)
+        current_config = self.get_current_config()
+        has_password_hash = current_config and "admin_password_hash" in current_config
+        
+        # If admin_password_hash exists in incoming config, preserve it
         if "admin_password_hash" in config:
             validated["admin_password_hash"] = config["admin_password_hash"]
             # Remove default cleartext password when using secure hash
             if "admin_password" in validated:
                 del validated["admin_password"]
         
-        # Handle cleartext admin_password only if no hash exists
-        if "admin_password" in config and "admin_password_hash" not in config:
+        # If we have an existing password hash, preserve it and handle new password changes
+        elif has_password_hash:
+            # If incoming config has a new plaintext password, hash it
+            if "admin_password" in config and isinstance(config["admin_password"], str):
+                new_password = config["admin_password"].strip()
+                if new_password and new_password != "mempaper2025":  # Don't hash default password
+                    # Hash the new password and update
+                    try:
+                        from argon2 import PasswordHasher
+                        ph = PasswordHasher()
+                        new_hash = ph.hash(new_password)
+                        
+                        # Verify the hash works correctly
+                        ph.verify(new_hash, new_password)
+                        validated["admin_password_hash"] = new_hash
+                        print(f"� Admin password updated and hashed securely")
+                    except Exception as e:
+                        print(f"⚠️ Failed to hash new password: {e}")
+                        # Keep existing hash if hashing fails
+                        validated["admin_password_hash"] = current_config["admin_password_hash"]
+                else:
+                    # Keep existing hash if no new password or default password
+                    validated["admin_password_hash"] = current_config["admin_password_hash"]
+            else:
+                # No new password provided, preserve existing hash
+                validated["admin_password_hash"] = current_config["admin_password_hash"]
+            
+            # Remove cleartext password when using secure hash
+            if "admin_password" in validated:
+                del validated["admin_password"]
+        
+        # Handle cleartext admin_password only if no hash exists anywhere
+        elif "admin_password" in config:
             if isinstance(config["admin_password"], str):
                 validated["admin_password"] = config["admin_password"].strip()
         
@@ -745,8 +804,8 @@ class ConfigManager:
                 "type": "toggle",
                 "label": t.get("display_orientation", "Display Orientation"),
                 "options": [
-                    {"value": "vertical", "label": t.get("vertical", "Portrait"), "icon": "⬆️"},
-                    {"value": "horizontal", "label": t.get("horizontal", "Landscape"), "icon": "↔️"}
+                    {"value": "vertical", "label": t.get("vertical", "Portrait"), "icon": "/static/icons/vertical.svg"},
+                    {"value": "horizontal", "label": t.get("horizontal", "Landscape"), "icon": "/static/icons/horizontal.svg"}
                 ],
                 "category": "eink_display"
             },
@@ -798,7 +857,7 @@ class ConfigManager:
                 "label": t.get("prioritize_large_scaled_meme", "Prioritize Large Scaled Memes"),
                 "description": t.get("prioritize_large_scaled_meme_desc", "When enabled, maximize meme display space by hiding holiday info and stats if necessary. Holiday takes priority over stats when both can't fit."),
                 "default": False,
-                "category": "colors_design"
+                "category": "general"
             },
             "omni_device_name": {
                 "type": "select",
@@ -921,14 +980,19 @@ class ConfigManager:
                 "label":  t.get("color_mode_dark", "Dark Mode"),
                 "description":  t.get("color_mode_dark_desc", "Enable dark mode for the webinterface."),
                 "default": True,
-                "category": "colors_design"
-            },
-            "enable_browser_console_logging": {
-                "type": "boolean",
-                "label": t.get("enable_browser_console_logging", "Enable Browser Console Logging"),
-                "description": t.get("enable_browser_console_logging_desc", "Stream real-time application logs to browser developer console. Useful for debugging but may impact performance on mobile devices."),
-                "default": False,
                 "category": "general"
+            },
+            "live_block_notifications_enabled": {
+                "type": "boolean",
+                "label": t.get("enable_live_block_notifications", "Enable Live Block Notifications"),
+                "description": t.get("enable_live_block_notifications_desc", "Show real-time toast notifications when new Bitcoin blocks are found. Provides immediate feedback on block discovery with mining pool and reward information."),
+                "default": True,
+                "category": "general"
+            },
+            "meme_management": {
+                "type": "meme_management",
+                "label": t.get("meme_management", "Meme Management"),
+                "category": "meme_management"
             }
         }
     
@@ -945,13 +1009,13 @@ class ConfigManager:
         # Use English as fallback if no translations provided
         t = translations or {}
         return [
-            {"id": "general", "label": t.get("general_settings", "General Settings"), "icon": "⚙️"},
-            {"id": "colors_design", "label": t.get("colors_design", "Colors & Design"), "icon": "🎨"},
-            {"id": "eink_display", "label": t.get("eink_display", "E-Ink Display"), "icon": "🖼️"},
-            {"id": "mempool", "label": t.get("mempool_settings", "Mempool"), "icon": "/static/icons/mempool.png"},
-            {"id": "bitaxe_stats", "label": t.get("bitaxe_stats", "Bitaxe Stats"), "icon": "⛏️"},
-            {"id": "price_stats", "label": t.get("price_stats", "Price Stats"), "icon": "💰"},
-            {"id": "wallet_monitoring", "label": t.get("wallet_monitoring", "Wallet Monitoring"), "icon": "💳"}
+            {"id": "general", "label": t.get("general_settings", "General Settings"), "icon": "/static/icons/settings.svg"},
+            {"id": "mempool", "label": t.get("mempool_settings", "Mempool"), "icon": "/static/icons/bottom_drawer.svg"},
+            {"id": "eink_display", "label": t.get("eink_display", "E-Ink Display"), "icon": "/static/icons/photo_frame.svg"},
+            {"id": "price_stats", "label": t.get("price_stats", "Price Stats"), "icon": "/static/icons/price_change.svg"},
+            {"id": "wallet_monitoring", "label": t.get("wallet_monitoring", "Wallet Monitoring"), "icon": "/static/icons/wallet.svg"},
+            {"id": "bitaxe_stats", "label": t.get("bitaxe_stats", "Bitaxe Stats"), "icon": "/static/icons/calculate.svg"},
+            {"id": "meme_management", "label": t.get("meme_management", "Meme Management"), "icon": "/static/icons/mood.svg"}
         ]
     
     def get_current_config(self) -> Dict[str, Any]:

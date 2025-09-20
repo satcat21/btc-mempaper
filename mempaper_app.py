@@ -1,3 +1,4 @@
+import time
 """
 Main Application Module - Mempaper Bitcoin Dashboard
 
@@ -18,6 +19,9 @@ import multiprocessing
 import urllib3
 import os
 import time
+import logging
+import requests
+from datetime import datetime
 from werkzeug.utils import secure_filename
 from flask import Flask, send_file, render_template, request, jsonify, session, redirect, url_for
 from flask_socketio import SocketIO
@@ -30,7 +34,9 @@ from translations import translations
 from config_manager import ConfigManager
 from technical_config import TechnicalConfig
 from security_config import SecurityConfig
-from auth_manager import AuthManager, require_auth, require_web_auth, require_rate_limit
+from secure_cache_manager import SecureCacheManager
+from auth_manager import AuthManager, require_auth, require_web_auth, require_rate_limit, require_mobile_auth
+from mobile_token_manager import MobileTokenManager
 
 # Privacy utilities for secure logging
 try:
@@ -73,6 +79,16 @@ class MempaperApp:
         self._init_app_components()
         
         # Note: Callback registration moved to end of __init__ to avoid issues during initialization
+
+        # --- FORCE IMAGE REGENERATION ON STARTUP IF BLOCK HEIGHT CHANGED ---
+        try:
+            block_info = self.mempool_api.get_current_block_info()
+            if (hasattr(self, 'current_block_height') and hasattr(self, 'current_block_hash') and hasattr(self, 'image_is_current')):
+                if (self.current_block_height != block_info['block_height'] or self.current_block_hash != block_info['block_hash'] or not self.image_is_current):
+                    print(f"🔄 [STARTUP] Cached image is outdated or block changed: cached_height={getattr(self, 'current_block_height', None)}, current_height={block_info['block_height']}, is_current={getattr(self, 'image_is_current', None)}")
+                    self._generate_new_image(block_info['block_height'], block_info['block_hash'], skip_epaper=False)
+        except Exception as e:
+            print(f"⚠️ [STARTUP] Failed to force image regeneration: {e}")
     
     @staticmethod
     def mask_wallet_data_for_logging(wallet_data):
@@ -140,24 +156,23 @@ class MempaperApp:
             async_mode = "gevent" if (is_production and gevent_available) else "threading"
             
             # Raspberry Pi Zero WH optimizations (512MB RAM, single core)
-            is_pi_zero = os.path.exists('/proc/device-tree/model') and 'Zero' in open('/proc/device-tree/model', 'rb').read().decode('utf-8', errors='ignore')
+            # is_pi_zero = os.path.exists('/proc/device-tree/model') and 'Zero' in open('/proc/device-tree/model', 'rb').read().decode('utf-8', errors='ignore')
             
             socketio_config = {
                 'cors_allowed_origins': '*', 
                 'async_mode': async_mode,  # Auto-detect: gevent for production, threading for development
-                'transports': ['polling'],  # Use polling only to avoid transport negotiation issues
-                'ping_timeout': 90 if is_pi_zero else 60,      # Longer timeout for Pi Zero
-                'ping_interval': 30 if is_pi_zero else 25,     # Longer interval for Pi Zero
-                'max_http_buffer_size': 5000000 if is_pi_zero else 10000000,  # 5MB for Pi Zero, 10MB for others
-                'engineio_logger': False,  # Reduce log noise
-                'allow_upgrades': False,   # Disable transport upgrades to prevent negotiation issues
-                'cookie': False,           # Disable cookies for better compatibility
+                'ping_timeout': 120,       # Increase timeout to 2 minutes
+                'ping_interval': 45,       # Increase ping interval  
+                'max_http_buffer_size': 10000000,  # 10MB buffer
+                'engineio_logger': True if not is_production else False,  # Enable logging in development
+                'logger': True if not is_production else False,  # Enable SocketIO logger in development
                 'always_connect': True,    # Force connection acceptance
-                'cors_credentials': False  # Disable credentials for CORS
+                'manage_session': False,   # Don't manage Flask sessions for SocketIO
+                'cors_credentials': False  # Disable credentials for CORS to simplify
             }
             print(f"⚡ SocketIO async mode: {async_mode} ({'production' if is_production else 'development'})")
-            if is_pi_zero:
-                print("🍓 Raspberry Pi Zero detected - using optimized settings")
+            # if is_pi_zero:
+            #     print("🍓 Raspberry Pi Zero detected - using optimized settings")
             self.socketio = SocketIO(self.app, **socketio_config)
     
     def _init_app_components(self):
@@ -171,16 +186,14 @@ class MempaperApp:
         # Initialize authentication manager with config_manager for secure password handling
         self.auth_manager = AuthManager(self.config_manager)
         
-        # Initialize browser console log streaming for authenticated users
-        from browser_console_logger import LogStreamManager
-        self.log_stream_manager = LogStreamManager(self.socketio, self.auth_manager)
+        # Initialize secure cache manager for mobile token storage
+        self.secure_cache_manager = SecureCacheManager("cache/mobile_tokens.json")
         
-        # Enable console log streaming if configured (default: disabled for performance)
-        console_logging_enabled = self.config.get("enable_browser_console_logging", False)
-        if console_logging_enabled:
-            import logging
-            log_level = getattr(logging, self.config.get("browser_console_log_level", "INFO").upper(), logging.INFO)
-            self.log_stream_manager.setup_log_streaming(enable=True, log_level=log_level)
+        # Initialize mobile token manager for Flutter app authentication
+        self.mobile_token_manager = MobileTokenManager(self.secure_cache_manager)
+        
+        # Initialize block notification subscription tracking
+        self.block_notification_subscribers = set()  # Track clients subscribed to block notifications
         
         # Get translations for configured language
         lang = self.config.get("language", "en")
@@ -194,31 +207,33 @@ class MempaperApp:
         
         # Initialize block reward monitor
         from block_monitor import initialize_block_monitor
-        self.block_monitor = initialize_block_monitor(self.config_manager)
+        self.block_monitor = initialize_block_monitor(
+            self.config_manager, 
+            self.on_new_block_received,
+            self.on_new_block_notification
+        )
         
         # Sync cache to current blockchain height (important for recovery after downtime)
         if self.block_monitor:
             print("🔄 Performing cache sync to current blockchain height...")
             try:
                 self.block_monitor.sync_cache_to_current()
-                print("✅ Cache sync completed successfully")
+                # print("✅ Cache sync completed successfully")
             except Exception as e:
                 print(f"⚠️ Cache sync failed: {e}")
         
         # Start block monitoring if addresses are configured and not skipped for fast startup
-        block_table_addresses = self.config.get("block_reward_addresses_table", [])
-        has_addresses = bool(block_table_addresses)
-        
         skip_block_monitoring = self.config.get("skip_block_monitoring_on_startup", False)
-        
-        if has_addresses and not skip_block_monitoring:
+        if not skip_block_monitoring:
             self.block_monitor.start_monitoring()
+            block_table_addresses = self.config.get("block_reward_addresses_table", [])
             total_addresses = len(block_table_addresses)
-            print(f"📡 Block reward monitoring started for {total_addresses} addresses")
-        elif skip_block_monitoring:
+            if total_addresses > 0:
+                print(f"📡 Block reward monitoring started for {total_addresses} addresses")
+            # else:
+            #     print("📡 Block monitoring started (no reward addresses configured, will still trigger updates on new blocks)")
+        else:
             print("⚡ Skipping block monitoring for faster startup")
-        elif not has_addresses:
-            print("ⓘ No block reward addresses configured")
         
         # Check e-Paper display configuration
         self.e_ink_enabled = self.config.get("e-ink-display-connected", True)
@@ -518,7 +533,7 @@ class MempaperApp:
             
             # Try to use the configured font, fallback to default
             try:
-                font_path = self.config.get("font_bold", "fonts/Roboto-Bold.ttf")
+                font_path = self.config.get("font_bold", "static/fonts/Roboto-Bold.ttf")
                 font = ImageFont.truetype(font_path, 48)
                 medium_font = ImageFont.truetype(font_path, 32)
                 small_font = ImageFont.truetype(font_path, 24)
@@ -639,11 +654,12 @@ class MempaperApp:
                 print(f"🔄 Starting e-paper display for: {image_path} at {time.strftime('%H:%M:%S', time.localtime(display_start))}")
                 if block_height:
                     print(f"   Block: {block_height} | Hash: {block_hash}")
-                    # Check if we already have a newer or equal block in tracking
-                    current_height = self.block_tracker.get('block_height', 0)
-                    if current_height and int(block_height) < int(current_height):
-                        print(f"⚠️  SKIPPING older block display: {block_height} < current {current_height}")
-                        return
+                    # Always update display when block height differs from what's shown on e-ink
+                    current_eink_height = getattr(self, 'last_eink_block_height', 0) or 0
+                    if current_eink_height != int(block_height):
+                        print(f"📋 E-ink display needs update: showing {current_eink_height}, new block {block_height}")
+                    else:
+                        print(f"📋 E-ink display block height matches: {block_height}")
                 
                 # Use subprocess to avoid GPIO conflicts between threads
                 script_path = os.path.join(os.path.dirname(__file__), "display_subprocess.py")
@@ -796,7 +812,7 @@ class MempaperApp:
                     # Still remove from tracking even if cancellation failed
                     self.active_display_processes.pop(block_height, None)
     
-    def _reinitialize_after_config_change(self):
+    def _reinitialize_after_config_change(self, old_config=None):
         """Reinitialize components after configuration changes."""
         # Update translations
         lang = self.config.get("language", "en")
@@ -811,9 +827,30 @@ class MempaperApp:
         # Reinitialize API clients
         self._init_api_clients()
         
-        # Invalidate cached image since config changed (especially language)
-        self.image_is_current = False
-        print("🔄 Image cache invalidated due to configuration change")
+        # Only invalidate cached image if the config actually affects image generation
+        # Language changes, orientation changes, etc. need image regeneration
+        # But other changes like API settings don't require image invalidation
+        image_affecting_changes = False
+        if old_config and self.config:
+            image_affecting_settings = [
+                'language', 'display_orientation', 'prioritize_large_scaled_meme',
+                'display_width', 'display_height', 'show_btc_price_block',
+                'btc_price_currency', 'show_bitaxe_block', 'show_wallet_balances_block',
+                'wallet_balance_unit', 'wallet_balance_currency', 'color_mode_dark',
+                'moscow_time_unit'
+            ]
+            
+            for setting in image_affecting_settings:
+                if old_config.get(setting) != self.config.get(setting):
+                    image_affecting_changes = True
+                    print(f"🎨 Image-affecting setting changed: {setting}")
+                    break
+        
+        if image_affecting_changes:
+            self.image_is_current = False
+            print("🔄 Image cache invalidated due to configuration change")
+        else:
+            print("✓ Configuration reloaded without affecting image cache")
         
         # Note: Image regeneration is handled by _on_config_change() callback
         # to avoid duplicate generation processes
@@ -824,6 +861,9 @@ class MempaperApp:
         """Handle configuration file changes (external edits)."""
         print("📝 Configuration file changed externally - reloading...")
         
+        # Store old config for comparison
+        old_config = dict(self.config) if hasattr(self, 'config') else None
+        
         # Update local config reference
         self.config = self.config_manager.get_current_config()
         
@@ -831,7 +871,7 @@ class MempaperApp:
         self.auth_manager.config = self.config
         
         # Reinitialize components
-        self._reinitialize_after_config_change()
+        self._reinitialize_after_config_change(old_config)
         
         # Notify connected web clients of config change
         try:
@@ -908,7 +948,7 @@ class MempaperApp:
         
         # Simple text
         try:
-            font = ImageFont.truetype(self.config.get("font_bold", "fonts/Roboto-Bold.ttf"), 48)
+            font = ImageFont.truetype(self.config.get("font_bold", "static/fonts/Roboto-Bold.ttf"), 48)
         except:
             font = ImageFont.load_default()
             
@@ -1192,16 +1232,16 @@ class MempaperApp:
             fresh_wallet_data = self.image_renderer.wallet_api.fetch_wallet_balances(startup_mode=startup_mode)
             
             # Log wallet data with privacy masking
-            masked_fresh_data = MempaperApp.mask_wallet_data_for_logging(fresh_wallet_data)
-            print(f"✅ [WALLET] Fresh wallet data: {masked_fresh_data}")
+            # masked_fresh_data = MempaperApp.mask_wallet_data_for_logging(fresh_wallet_data)
+            # print(f"✅ [WALLET] Fresh wallet data: {masked_fresh_data}")
             
             # Get cached wallet data
             print("📖 [WALLET] Loading cached wallet data...")
             cached_wallet_data = self.image_renderer.wallet_api.get_cached_wallet_balances()
             
             # Log cached data with privacy masking
-            masked_cached_data = MempaperApp.mask_wallet_data_for_logging(cached_wallet_data)
-            print(f"📋 [WALLET] Cached wallet data: {masked_cached_data}")
+            # masked_cached_data = MempaperApp.mask_wallet_data_for_logging(cached_wallet_data)
+            # print(f"📋 [WALLET] Cached wallet data: {masked_cached_data}")
             
             # Ensure both are dicts before accessing .get()
             if not isinstance(fresh_wallet_data, dict):
@@ -1284,16 +1324,16 @@ class MempaperApp:
             fresh_wallet_data = image_renderer.wallet_api.fetch_wallet_balances(startup_mode=startup_mode)
             
             # Log wallet data with privacy masking
-            masked_fresh_data = MempaperApp.mask_wallet_data_for_logging(fresh_wallet_data)
-            print(f"✅ [PROCESS] Fresh wallet data: {masked_fresh_data}")
+            # masked_fresh_data = MempaperApp.mask_wallet_data_for_logging(fresh_wallet_data)
+            # print(f"✅ [PROCESS] Fresh wallet data: {masked_fresh_data}")
             
             # Get cached wallet data
             print("📖 [PROCESS] Loading cached wallet data...")
             cached_wallet_data = image_renderer.wallet_api.get_cached_wallet_balances()
             
             # Log cached data with privacy masking  
-            masked_cached_data = MempaperApp.mask_wallet_data_for_logging(cached_wallet_data)
-            print(f"📋 [PROCESS] Cached wallet data: {masked_cached_data}")
+            # masked_cached_data = MempaperApp.mask_wallet_data_for_logging(cached_wallet_data)
+            # print(f"📋 [PROCESS] Cached wallet data: {masked_cached_data}")
             
             # Ensure both are dicts before accessing .get()
             if not isinstance(fresh_wallet_data, dict):
@@ -1361,12 +1401,12 @@ class MempaperApp:
         ).start()
         print("✅ Async wallet refresh thread started")
         
-        # Display on e-Paper (only if enabled, not skipped, and actually new content)
+        # Display on e-Paper (only if enabled, not skipped, and block height differs)
         if self.e_ink_enabled and not skip_epaper:
-            # Check if this block is actually new for the e-ink display
-            if (self.last_eink_block_height != block_height or 
-                self.last_eink_block_hash != block_hash):
-                print(f"🖥️ New block for e-ink: {block_height} (was: {self.last_eink_block_height})")
+            # Always update if block height is different from what's shown on e-ink
+            current_eink_height = getattr(self, 'last_eink_block_height', 0) or 0
+            if int(block_height or 0) != int(current_eink_height):
+                print(f"🖥️ Block height changed for e-ink: {block_height} (was: {current_eink_height})")
                 # Run e-Paper display in background to not block the response
                 threading.Thread(
                     target=self._display_on_epaper_async,
@@ -1375,7 +1415,7 @@ class MempaperApp:
                 ).start()
                 print("🖥️ E-Paper display started in background")
             else:
-                print(f"✅ E-ink already shows block {block_height}, skipping display update")
+                print(f"✅ E-ink already shows correct block height {block_height}, skipping display update")
         elif skip_epaper:
             print("ⓘ Skipping e-Paper display (skip_epaper=True)")
         else:
@@ -1399,9 +1439,108 @@ class MempaperApp:
             block_height (str): New block height
             block_hash (str): New block hash
         """
+        print(f"🟠 [DEBUG] Entered on_new_block_received for block {block_height}, hash: {block_hash}")
         print(f"🎯 WebSocket: New block received - Height: {block_height}")
         print(f"📦 Block hash: {block_hash}")
+        
+        # Trigger live block notifications to web clients (if enabled)
+        if self.config.get('live_block_notifications_enabled', False):
+            print(f"📡 Live notifications enabled - sending notification for block {block_height}")
+            self.on_new_block_notification(block_height, block_hash)
+        else:
+            print(f"📡 Live notifications disabled - skipping notification for block {block_height}")
+        
+        # Always regenerate dashboard and update e-ink display immediately after new block
+        self.image_is_current = False  # Invalidate cache to force regeneration
         self.regenerate_dashboard(block_height, block_hash)
+    
+    def on_new_block_notification(self, block_height, block_hash):
+        """
+        Handle new block notification to web clients (immediate, before image generation).
+        
+        Args:
+            block_height (int): New block height
+            block_hash (str): New block hash
+        """
+        try:
+            print(f"📡 Fetching detailed block information for notification...")
+            
+            # Fetch detailed block information from mempool API
+            base_url = self._get_mempool_base_url()
+            block_response = requests.get(f"{base_url}/block/{block_hash}", timeout=10, verify=False)
+            
+            if not block_response.ok:
+                print(f"⚠️ Failed to fetch block details for notification")
+                return
+            
+            block_data = block_response.json()
+            
+            # Extract block information
+            timestamp = block_data.get('timestamp', 0)
+            total_fees = block_data.get('extras', {}).get('totalFees', 0)
+            subsidy = block_data.get('extras', {}).get('reward', 6.25 * 100000000)  # Default to current subsidy
+            pool_name = block_data.get('extras', {}).get('pool', {}).get('name', 'Unknown Pool')
+            median_fee = block_data.get('extras', {}).get('medianFee', 0)
+            
+            # Calculate total reward (subsidy + fees)
+            total_reward = subsidy + total_fees
+            
+            # Prepare notification data
+            notification_data = {
+                'block_height': block_height,
+                'block_hash': self._format_block_hash_for_display(block_hash),  # Use formatted hash
+                'timestamp': timestamp,
+                'pool_name': pool_name,
+                'total_reward_btc': total_reward / 100000000,  # Convert to BTC
+                'total_fees_btc': total_fees / 100000000,
+                'subsidy_btc': subsidy / 100000000,
+                'median_fee_sat_vb': median_fee
+            }
+            
+            print(f"📡 Sending block notification: Block {block_height} by {pool_name}")
+            
+            # Send notification only to subscribed clients
+            with self.app.app_context():
+                if self.block_notification_subscribers:
+                    for client_id in self.block_notification_subscribers.copy():  # Use copy to avoid modification during iteration
+                        self.socketio.emit('new_block_notification', notification_data, room=client_id)
+                    print(f"📡 Block notification sent to {len(self.block_notification_subscribers)} subscribed clients")
+                else:
+                    print(f"📡 No clients subscribed to block notifications")
+                
+        except Exception as e:
+            print(f"⚠️ Error sending new block notification: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def _get_mempool_base_url(self):
+        """Get mempool API base URL from configuration."""
+        mempool_ip = self.config.get("mempool_ip", "127.0.0.1")
+        mempool_rest_port = self.config.get("mempool_rest_port", "8080")
+        return f"https://{mempool_ip}:{mempool_rest_port}/api"
+    
+    def _format_block_hash_for_display(self, block_hash):
+        """
+        Format block hash for display: first 6 and last 6 characters, grouped in pairs.
+        
+        Args:
+            block_hash (str): Full block hash
+            
+        Returns:
+            str: Formatted hash like "00 00 00 ... ea 1f 0c"
+        """
+        if len(block_hash) < 12:
+            return block_hash  # Return as-is if too short
+        
+        # Get first 6 and last 6 characters
+        first_six = block_hash[:6]
+        last_six = block_hash[-6:]
+        
+        # Group in pairs with spaces
+        first_formatted = ' '.join([first_six[i:i+2] for i in range(0, 6, 2)])
+        last_formatted = ' '.join([last_six[i:i+2] for i in range(0, 6, 2)])
+        
+        return f"{first_formatted} ... {last_formatted}"
     
     def regenerate_dashboard(self, block_height, block_hash):
         """
@@ -1554,7 +1693,7 @@ class MempaperApp:
                                  display_icon=display_icon,
                                  e_ink_enabled=self.e_ink_enabled,
                                  orientation=orientation,
-                                 console_logging_enabled=self.config.get('enable_browser_console_logging', False))
+                                 live_block_notifications_enabled=self.config.get('live_block_notifications_enabled', False))
         
         @self.app.route('/config')
         @require_web_auth(self.auth_manager)
@@ -1564,7 +1703,9 @@ class MempaperApp:
             lang = self.config.get("language", "en")
             current_translations = translations.get(lang, translations["en"])
             
-            return render_template('config.html', translations=current_translations)
+            return render_template('config.html', 
+                                 translations=current_translations,
+                                 live_block_notifications_enabled=self.config.get('live_block_notifications_enabled', False))
         
         @self.app.route('/login')
         def login_page():
@@ -1596,6 +1737,267 @@ class MempaperApp:
             """Handle logout requests."""
             self.auth_manager.logout()
             return jsonify({'success': True, 'message': 'Logout successful'})
+
+        # Mobile API Token Endpoints
+        @self.app.route('/api/mobile/token/generate', methods=['POST'])
+        @require_auth(self.auth_manager)
+        def generate_mobile_token():
+            """Generate a new API token for mobile app authentication."""
+            try:
+                data = request.json or {}
+                device_name = data.get('device_name', 'Unknown Device')
+                validity_days = data.get('validity_days', 90)
+                
+                # Validate input
+                if not device_name or len(device_name.strip()) == 0:
+                    return jsonify({'success': False, 'message': 'Device name is required'}), 400
+                
+                if not isinstance(validity_days, int) or validity_days < 1 or validity_days > 365:
+                    return jsonify({'success': False, 'message': 'Validity days must be between 1 and 365'}), 400
+                
+                token = self.mobile_token_manager.generate_token(device_name.strip(), validity_days)
+                
+                if token:
+                    return jsonify({
+                        'success': True,
+                        'token': token,
+                        'device_name': device_name.strip(),
+                        'validity_days': validity_days,
+                        'message': f'Token generated for {device_name.strip()}'
+                    })
+                else:
+                    return jsonify({'success': False, 'message': 'Failed to generate token'}), 500
+                    
+            except Exception as e:
+                return jsonify({'success': False, 'message': str(e)}), 400
+
+        @self.app.route('/api/mobile/token/validate', methods=['POST'])
+        def validate_mobile_token():
+            """Validate a mobile API token."""
+            try:
+                data = request.json or {}
+                token = data.get('token', '')
+                
+                if not token:
+                    return jsonify({'success': False, 'message': 'Token is required'}), 400
+                
+                is_valid = self.mobile_token_manager.validate_token(token)
+                
+                if is_valid:
+                    return jsonify({
+                        'success': True,
+                        'valid': True,
+                        'message': 'Token is valid'
+                    })
+                else:
+                    return jsonify({
+                        'success': True,
+                        'valid': False,
+                        'message': 'Token is invalid or expired'
+                    })
+                    
+            except Exception as e:
+                return jsonify({'success': False, 'message': str(e)}), 400
+
+        @self.app.route('/api/mobile/token/list', methods=['GET'])
+        @require_auth(self.auth_manager)
+        def list_mobile_tokens():
+            """List all active mobile tokens."""
+            try:
+                tokens = self.mobile_token_manager.list_tokens()
+                return jsonify({
+                    'success': True,
+                    'tokens': tokens,
+                    'count': len(tokens)
+                })
+            except Exception as e:
+                return jsonify({'success': False, 'message': str(e)}), 500
+
+        @self.app.route('/api/mobile/token/revoke', methods=['POST'])
+        @require_auth(self.auth_manager)
+        def revoke_mobile_token():
+            """Revoke a specific mobile token."""
+            try:
+                data = request.json or {}
+                token_preview = data.get('token_preview', '')
+                
+                if not token_preview:
+                    return jsonify({'success': False, 'message': 'Token preview is required'}), 400
+                
+                # Find the full token by preview
+                tokens = self.mobile_token_manager.tokens
+                target_token = None
+                
+                for token in tokens:
+                    preview = token[:8] + '...' + token[-4:]
+                    if preview == token_preview:
+                        target_token = token
+                        break
+                
+                if target_token:
+                    revoked = self.mobile_token_manager.revoke_token(target_token)
+                    if revoked:
+                        return jsonify({
+                            'success': True,
+                            'message': 'Token revoked successfully'
+                        })
+                    else:
+                        return jsonify({'success': False, 'message': 'Failed to revoke token'}), 500
+                else:
+                    return jsonify({'success': False, 'message': 'Token not found'}), 404
+                    
+            except Exception as e:
+                return jsonify({'success': False, 'message': str(e)}), 400
+
+        @self.app.route('/api/mobile/auth', methods=['POST'])
+        def mobile_authenticate():
+            """Authenticate using mobile API token and return session info."""
+            try:
+                data = request.json or {}
+                token = data.get('token', '')
+                
+                if not token:
+                    return jsonify({'success': False, 'message': 'Token is required'}), 400
+                
+                is_valid = self.mobile_token_manager.validate_token(token)
+                
+                if is_valid:
+                    # Create a temporary session for mobile access
+                    session['mobile_authenticated'] = True
+                    session['mobile_token'] = token
+                    session['authentication_time'] = time.time()
+                    
+                    return jsonify({
+                        'success': True,
+                        'message': 'Mobile authentication successful',
+                        'session_info': {
+                            'authenticated': True,
+                            'mobile': True,
+                            'timestamp': time.time()
+                        }
+                    })
+                else:
+                    return jsonify({
+                        'success': False,
+                        'message': 'Invalid or expired token'
+                    }), 401
+                    
+            except Exception as e:
+                return jsonify({'success': False, 'message': str(e)}), 400
+
+        # Mobile Block Data API Endpoints
+        @self.app.route('/api/mobile/block/current', methods=['GET'])
+        @require_mobile_auth(self.mobile_token_manager)
+        def get_current_block_mobile():
+            """Get current block information for mobile widget."""
+            try:
+                # Get current block data from mempool
+                if hasattr(self, 'mempool_websocket') and self.mempool_websocket:
+                    current_block = self.mempool_websocket.get_current_block()
+                else:
+                    # Fallback to API
+                    current_block = self.mempool_api.get_latest_block()
+                
+                if current_block:
+                    # Format for mobile widget
+                    mobile_data = {
+                        'block_height': current_block.get('height'),
+                        'block_hash': current_block.get('id', '')[:16] + '...',  # Truncated for mobile
+                        'timestamp': current_block.get('timestamp'),
+                        'total_fees_btc': current_block.get('extras', {}).get('totalFees', 0) / 100000000,  # Convert sats to BTC
+                        'median_fee_sat_vb': current_block.get('extras', {}).get('medianFee', 0),
+                        'tx_count': current_block.get('tx_count', 0),
+                        'size': current_block.get('size', 0),
+                        'weight': current_block.get('weight', 0)
+                    }
+                    
+                    return jsonify({
+                        'success': True,
+                        'block': mobile_data,
+                        'timestamp': time.time()
+                    })
+                else:
+                    return jsonify({'success': False, 'message': 'Block data not available'}), 503
+                    
+            except Exception as e:
+                return jsonify({'success': False, 'message': str(e)}), 500
+
+        @self.app.route('/api/mobile/price/current', methods=['GET'])
+        @require_mobile_auth(self.mobile_token_manager)
+        def get_current_price_mobile():
+            """Get current Bitcoin price for mobile widget."""
+            try:
+                # Get price data from BTC price API
+                price_data = self.btc_price_api.get_bitcoin_price()
+                
+                if price_data:
+                    mobile_price_data = {
+                        'usd_price': price_data.get('usd_price'),
+                        'price_in_selected_currency': price_data.get('price_in_selected_currency'),
+                        'currency': price_data.get('currency', 'USD'),
+                        'moscow_time': price_data.get('moscow_time'),
+                        'timestamp': time.time()
+                    }
+                    
+                    return jsonify({
+                        'success': True,
+                        'price': mobile_price_data
+                    })
+                else:
+                    return jsonify({'success': False, 'message': 'Price data not available'}), 503
+                    
+            except Exception as e:
+                return jsonify({'success': False, 'message': str(e)}), 500
+
+        @self.app.route('/api/mobile/widget/data', methods=['GET'])
+        @require_mobile_auth(self.mobile_token_manager)
+        def get_widget_data_mobile():
+            """Get all widget data in one request for mobile efficiency."""
+            try:
+                widget_data = {
+                    'success': True,
+                    'timestamp': time.time(),
+                    'block': None,
+                    'price': None,
+                    'status': 'ok'
+                }
+                
+                # Get block data
+                try:
+                    if hasattr(self, 'mempool_websocket') and self.mempool_websocket:
+                        current_block = self.mempool_websocket.get_current_block()
+                    else:
+                        current_block = self.mempool_api.get_latest_block()
+                    
+                    if current_block:
+                        widget_data['block'] = {
+                            'height': current_block.get('height'),
+                            'hash': current_block.get('id', '')[:16] + '...',
+                            'timestamp': current_block.get('timestamp'),
+                            'total_fees_btc': current_block.get('extras', {}).get('totalFees', 0) / 100000000,
+                            'median_fee_sat_vb': current_block.get('extras', {}).get('medianFee', 0),
+                            'tx_count': current_block.get('tx_count', 0)
+                        }
+                except Exception as e:
+                    print(f"Failed to get block data for widget: {e}")
+                
+                # Get price data
+                try:
+                    price_data = self.btc_price_api.get_bitcoin_price()
+                    if price_data:
+                        widget_data['price'] = {
+                            'usd_price': price_data.get('usd_price'),
+                            'price_in_selected_currency': price_data.get('price_in_selected_currency'),
+                            'currency': price_data.get('currency', 'USD'),
+                            'moscow_time': price_data.get('moscow_time')
+                        }
+                except Exception as e:
+                    print(f"Failed to get price data for widget: {e}")
+                
+                return jsonify(widget_data)
+                
+            except Exception as e:
+                return jsonify({'success': False, 'message': str(e)}), 500
         
         @self.app.route('/api/session/status', methods=['GET'])
         def session_status():
@@ -1631,134 +2033,6 @@ class MempaperApp:
                     'success': False,
                     'message': 'Session could not be refreshed'
                 }), 401
-        @self.app.route('/api/test-wallet-config', methods=['GET'])
-        def test_wallet_config():
-            """Test endpoint to check wallet configuration (no auth required for debugging)"""
-            try:
-                print("🧪 [DEBUG] Test wallet config endpoint called")
-                
-                # Get regular configuration
-                config_data = self.config_manager.get_current_config()
-                print(f"🧪 [DEBUG] Regular config has {len(config_data)} keys")
-                
-                wallet_addresses = config_data.get('wallet_balance_addresses_with_comments', [])
-                print(f"🧪 [DEBUG] Found {len(wallet_addresses)} wallet addresses in regular config")
-                
-                # Also try secure config directly
-                secure_addresses = None
-                if hasattr(self.image_renderer, 'wallet_api') and self.image_renderer.wallet_api.secure_config_manager:
-                    secure_config = self.image_renderer.wallet_api.secure_config_manager.load_secure_config()
-                    if secure_config and 'wallet_balance_addresses_with_comments' in secure_config:
-                        secure_addresses = secure_config['wallet_balance_addresses_with_comments']
-                        print(f"🧪 [DEBUG] Found {len(secure_addresses)} wallet addresses in secure config")
-
-                # Try to get cached balances if wallet API is available
-                balances_result = None
-                if hasattr(self.image_renderer, 'wallet_api') and self.image_renderer.wallet_api:
-                    try:
-                        print("🧪 [DEBUG] Attempting to get cached wallet balances...")
-                        
-                        # Use the wallet API to get cached data directly
-                        cached_data = self.image_renderer.wallet_api.get_cached_wallet_data()
-                        print(f"🧪 [DEBUG] Cached wallet data: {cached_data}")
-                        
-                        balances_result = cached_data
-                    except Exception as balance_error:
-                        print(f"🧪 [DEBUG] Error getting cached balances: {balance_error}")
-                        balances_result = {'error': str(balance_error)}
-
-                return jsonify({
-                    'success': True,
-                    'wallet_addresses_from_regular_config': wallet_addresses,
-                    'wallet_addresses_from_secure_config': secure_addresses,
-                    'cached_balances': balances_result,
-                    'regular_config_keys': list(config_data.keys()),
-                    'message': f'Found {len(wallet_addresses)} wallet addresses'
-                })
-            except Exception as e:
-                print(f"🧪 [DEBUG] Error in test endpoint: {e}")
-                import traceback
-                traceback.print_exc()
-                return jsonify({
-                    'success': False,
-                    'error': str(e)
-                })
-
-        @self.app.route('/api/test-wallet-balance', methods=['GET'])
-        def test_wallet_balance():
-            """Test endpoint to get wallet balances (no auth required for debugging)"""
-            try:
-                print("🧪 [DEBUG] Test wallet balance endpoint called")
-                
-                # Get wallet addresses from config
-                config_data = self.config_manager.get_current_config()
-                wallet_addresses = config_data.get('wallet_balance_addresses_with_comments', [])
-                
-                if not wallet_addresses:
-                    return jsonify({
-                        'success': False,
-                        'message': 'No wallet addresses found in configuration'
-                    })
-                
-                print(f"🧪 [DEBUG] Testing balances for {len(wallet_addresses)} addresses")
-                
-                # Use the wallet API to get balances directly
-                if hasattr(self.image_renderer, 'wallet_api') and self.image_renderer.wallet_api:
-                    try:
-                        # Extract just the address strings
-                        address_list = []
-                        for addr_entry in wallet_addresses:
-                            if isinstance(addr_entry, dict) and 'address' in addr_entry:
-                                address_list.append(addr_entry['address'])
-                            elif isinstance(addr_entry, str):
-                                address_list.append(addr_entry)
-                        
-                        print(f"🧪 [DEBUG] Address list for balance lookup: {address_list}")
-                        
-                        # Get balances using the wallet API
-                        balances = []
-                        for address in address_list:
-                            try:
-                                balance = self.image_renderer.wallet_api.get_address_balance(address)
-                                balances.append(balance)
-                                print(f"🧪 [DEBUG] Balance for {address[:10]}...: {balance}")
-                            except Exception as addr_error:
-                                print(f"🧪 [DEBUG] Error getting balance for {address}: {addr_error}")
-                                balances.append(0.0)
-                        
-                        # Also get cached data
-                        cached_data = self.image_renderer.wallet_api.get_cached_wallet_data()
-                        
-                        return jsonify({
-                            'success': True,
-                            'addresses': wallet_addresses,
-                            'balances': balances,
-                            'cached_data': cached_data,
-                            'message': f'Retrieved balances for {len(address_list)} addresses'
-                        })
-                        
-                    except Exception as api_error:
-                        print(f"🧪 [DEBUG] Error using wallet API: {api_error}")
-                        return jsonify({
-                            'success': False,
-                            'error': str(api_error),
-                            'addresses': wallet_addresses
-                        })
-                else:
-                    return jsonify({
-                        'success': False,
-                        'message': 'Wallet API not available',
-                        'addresses': wallet_addresses
-                    })
-                    
-            except Exception as e:
-                print(f"🧪 [DEBUG] Error in test balance endpoint: {e}")
-                import traceback
-                traceback.print_exc()
-                return jsonify({
-                    'success': False,
-                    'error': str(e)
-                })
 
         @self.app.route('/api/config', methods=['GET'])
         @require_auth(self.auth_manager)
@@ -1778,8 +2052,8 @@ class MempaperApp:
                 if hasattr(self.image_renderer, 'wallet_api') and self.image_renderer.wallet_api.secure_config_manager:
                     secure_config = self.image_renderer.wallet_api.secure_config_manager.load_secure_config()
                     print(f"📋 [DEBUG] Secure config loaded: {secure_config is not None}")
-                    if secure_config:
-                        print(f"📋 [DEBUG] Secure config keys: {list(secure_config.keys())}")
+                    # if secure_config:
+                    #     print(f"📋 [DEBUG] Secure config keys: {list(secure_config.keys())}")
                     if secure_config and 'wallet_balance_addresses_with_comments' in secure_config:
                         wallet_addresses = secure_config['wallet_balance_addresses_with_comments']
                         config_data['wallet_balance_addresses_with_comments'] = wallet_addresses
@@ -1790,7 +2064,7 @@ class MempaperApp:
                             if hasattr(self.image_renderer, 'wallet_api') and self.image_renderer.wallet_api:
                                 print("📋 [DEBUG] Attempting to include cached balances in config...")
                                 cached_data = self.image_renderer.wallet_api.get_cached_wallet_balances()
-                                print(f"📋 [DEBUG] Cached wallet data: {cached_data}")
+                                # print(f"📋 [DEBUG] Cached wallet data: {cached_data}")
                                 
                                 # Merge balances into wallet addresses
                                 if cached_data and 'addresses' in cached_data:
@@ -1806,7 +2080,7 @@ class MempaperApp:
                                             if 'xpub' in xpub_info and 'balance_btc' in xpub_info:
                                                 address_balances[xpub_info['xpub']] = xpub_info['balance_btc']
                                     
-                                    print(f"📋 [DEBUG] Address balance lookup: {address_balances}")
+                                    # print(f"📋 [DEBUG] Address balance lookup: {address_balances}")
                                     
                                     # Add balances to wallet addresses
                                     for addr_entry in wallet_addresses:
@@ -1870,6 +2144,9 @@ class MempaperApp:
                 # Refresh session on any authenticated activity
                 self.auth_manager.refresh_session()
                 
+                # Store old config for comparison
+                old_config = dict(self.config) if hasattr(self, 'config') else None
+                
                 new_config = request.json
                 if self.config_manager.save_config(new_config):
                     # Update local config reference
@@ -1879,7 +2156,7 @@ class MempaperApp:
                     self.auth_manager.config = self.config
                     
                     # Reinitialize components if needed
-                    self._reinitialize_after_config_change()
+                    self._reinitialize_after_config_change(old_config)
                     
                     return jsonify({'success': True, 'message': 'Configuration 2 saved successfully'})
                 else:
@@ -2222,26 +2499,16 @@ class MempaperApp:
                 """Handle client connection."""
                 print("🔌 Client connected to WebSocket")
                 
-                # Auto-enable console logging for authenticated clients if configured
-                try:
-                    if self.log_stream_manager and self.config.get('enable_browser_console_logging', False):
-                        # Check if client is authenticated
-                        from flask import session
-                        if session.get('authenticated', False):
-                            client_id = request.sid
-                            print(f"🛠️ Auto-enabling console logging for authenticated client: {client_id}")
-                            self.log_stream_manager.handle_client_connect(client_id)
-                            self.socketio.emit('console_log_enabled', {
-                                'message': 'Console logging automatically enabled'
-                            }, room=client_id)
-                        else:
-                            print("🔒 Console logging disabled - client not authenticated")
-                except Exception as e:
-                    print(f"⚠️ Error in auto-console logging setup: {e}")
+                print("🔌 Client connected to WebSocket")
             
             @self.socketio.on('disconnect')
-            def handle_disconnect():
+            def handle_disconnect(*args):
                 """Handle client disconnection."""
+                print("� Client disconnected from WebSocket")
+                
+                # Remove client from block notification subscribers
+                client_id = request.sid
+                self.block_notification_subscribers.discard(client_id)
                 print("🔌 Client disconnected from WebSocket")
                 
                 # Clean up console log streaming for disconnected client
@@ -2294,57 +2561,52 @@ class MempaperApp:
                     print(f"❌ Error handling latest image request: {e}")
                     # Don't send invalid data to client
             
-            @self.socketio.on('enable_console_logs')
-            def handle_enable_console_logs():
-                """Handle client request to enable console log streaming (now automatic when configured)."""
-                print("🔌 Client requested console log streaming (automatic when configured)")
+            @self.socketio.on('subscribe_block_notifications')
+            def handle_subscribe_block_notifications(data):
+                """Handle client request to subscribe to live block notifications."""
+                print("� Client requested to subscribe to block notifications")
                 try:
                     # Check if user is authenticated
                     if not self.auth_manager.is_authenticated():
-                        print("⚠️ Unauthorized attempt to enable console logs")
-                        self.socketio.emit('console_log_error', {'error': 'Authentication required'})
+                        print("⚠️ Unauthorized attempt to subscribe to block notifications")
+                        self.socketio.emit('block_notification_error', {'error': 'Authentication required'})
                         return
                     
-                    # Check if console logging is enabled in config
-                    config = self.config_manager.get_current_config()
-                    if not config.get('enable_browser_console_logging', False):
-                        print("⚠️ Browser console logging is disabled in configuration")
-                        self.socketio.emit('console_log_error', {'error': 'Console logging disabled in configuration - enable it in Settings'})
-                        return
-                    
-                    # Console logging should already be enabled automatically on connect
-                    # Just confirm the status
-                    if self.log_stream_manager:
-                        client_id = request.sid
-                        # Re-enable in case it was missed during connection
-                        self.log_stream_manager.handle_client_connect(client_id)
-                        print(f"✅ Console log streaming confirmed for client {client_id}")
-                        self.socketio.emit('console_log_status', {'status': 'enabled', 'message': 'Console logging is automatic when enabled in Settings'})
-                    else:
-                        print("❌ Log stream manager not available")
-                        self.socketio.emit('console_log_error', {'error': 'Log streaming not available'})
+                    # Add client to subscribers
+                    client_id = request.sid
+                    self.block_notification_subscribers.add(client_id)
+                    print(f"✅ Client {client_id} subscribed to block notifications")
+                    self.socketio.emit('block_notification_status', {'status': 'subscribed', 'message': 'Subscribed to live block notifications'})
                         
                 except Exception as e:
-                    print(f"❌ Error confirming console logs: {e}")
-                    self.socketio.emit('console_log_error', {'error': 'Failed to confirm console logging'})
+                    print(f"❌ Error subscribing to block notifications: {e}")
+                    self.socketio.emit('block_notification_error', {'error': 'Failed to subscribe to block notifications'})
             
-            @self.socketio.on('disable_console_logs')
-            def handle_disable_console_logs():
-                """Handle client request to disable console log streaming."""
-                print("🔌 Client requested to disable console log streaming")
+            @self.socketio.on('unsubscribe_block_notifications')
+            def handle_unsubscribe_block_notifications():
+                """Handle client request to unsubscribe from live block notifications."""
+                print("� Client requested to unsubscribe from block notifications")
                 try:
-                    # Remove client from log streaming
-                    if self.log_stream_manager:
-                        client_id = request.sid
-                        self.log_stream_manager.handle_client_disconnect(client_id)
-                        print(f"✅ Console log streaming disabled for client {client_id}")
-                        self.socketio.emit('console_log_status', {'status': 'disabled'})
-                    else:
-                        print("❌ Log stream manager not available")
+                    # Remove client from subscribers
+                    client_id = request.sid
+                    self.block_notification_subscribers.discard(client_id)
+                    print(f"✅ Client {client_id} unsubscribed from block notifications")
+                    self.socketio.emit('block_notification_status', {'status': 'unsubscribed'})
                         
                 except Exception as e:
-                    print(f"❌ Error disabling console logs: {e}")
-                    self.socketio.emit('console_log_error', {'error': 'Failed to disable console logging'})
+                    print(f"❌ Error unsubscribing from block notifications: {e}")
+                    self.socketio.emit('block_notification_error', {'error': 'Failed to unsubscribe from block notifications'})
+                    
+            @self.socketio.on_error_default
+            def default_error_handler(e):
+                """Handle SocketIO errors."""
+                print(f"⚠️ SocketIO error: {e}")
+                
+            @self.socketio.on('connect_error')
+            def handle_connect_error(data):
+                """Handle connection errors."""
+                print(f"🚫 SocketIO connection error: {data}")
+                
         else:
             print("⚡ SocketIO event handlers skipped (SocketIO disabled)")
     

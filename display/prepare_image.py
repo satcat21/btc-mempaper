@@ -198,7 +198,7 @@ class Processor():
     def add_text(self, img):
         try:
             # Try to use the project's font first
-            font_path = os.path.join("..", "fonts", "Roboto-Regular.ttf")
+            font_path = os.path.join("..", "static", "fonts", "Roboto-Regular.ttf")
             if not os.path.exists(font_path):
                 # Fallback to a system font or Pillow default
                 try:
