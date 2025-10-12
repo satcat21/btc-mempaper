@@ -106,30 +106,69 @@ class BlockRewardMonitor:
             self.blocks_by_address = {}
     
     def _get_mempool_base_url(self) -> str:
-        """Get mempool API base URL from configuration."""
+        """Get mempool API base URL from configuration with domain and HTTPS support."""
         if self.config_manager:
             config = self.config_manager.get_current_config()
-            mempool_ip = config.get("mempool_ip") if isinstance(config, dict) else None
+            mempool_host = config.get("mempool_host", "127.0.0.1") if isinstance(config, dict) else "127.0.0.1"
             mempool_rest_port = config.get("mempool_rest_port") if isinstance(config, dict) else None
+            mempool_use_https = config.get("mempool_use_https", False) if isinstance(config, dict) else False
             
-            if not mempool_ip or not mempool_rest_port:
-                raise ValueError("❌ Mempool configuration missing. Please configure mempool_ip and mempool_rest_port.")
+            if not mempool_rest_port:
+                raise ValueError("❌ Mempool configuration missing. Please configure mempool_rest_port.")
             
-            return f"https://{mempool_ip}:{mempool_rest_port}/api"
+            if not mempool_host:
+                raise ValueError("❌ Mempool configuration missing. Please configure mempool_host.")
+            
+            # Build URL with proper protocol
+            protocol = "https" if mempool_use_https else "http"
+            
+            # Check if host looks like a domain (contains dots but not just IP)
+            # Skip port for domains using standard ports (80/443)
+            is_domain = "." in mempool_host and not mempool_host.replace(".", "").isdigit()
+            
+            if is_domain:
+                if (mempool_use_https and mempool_rest_port in ["443", "80"]) or \
+                   (not mempool_use_https and mempool_rest_port in ["80", "443"]):
+                    return f"{protocol}://{mempool_host}/api"
+                else:
+                    return f"{protocol}://{mempool_host}:{mempool_rest_port}/api"
+            else:
+                # Always include port for IP addresses
+                return f"{protocol}://{mempool_host}:{mempool_rest_port}/api"
         else:
             raise ValueError("❌ No configuration manager available. Cannot connect to mempool without configuration.")
     
     def _get_mempool_ws_url(self) -> str:
-        """Get mempool WebSocket URL from configuration."""
+        """Get mempool WebSocket URL from configuration with WSS support."""
         if self.config_manager:
             config = self.config_manager.get_current_config()
-            mempool_ip = config.get("mempool_ip") if isinstance(config, dict) else None
+            mempool_host = config.get("mempool_host", "127.0.0.1") if isinstance(config, dict) else "127.0.0.1"
             mempool_ws_port = config.get("mempool_ws_port") if isinstance(config, dict) else None
+            mempool_ws_path = config.get("mempool_ws_path", "/api/v1/ws") if isinstance(config, dict) else "/api/v1/ws"
+            mempool_use_https = config.get("mempool_use_https", False) if isinstance(config, dict) else False
             
-            if not mempool_ip or not mempool_ws_port:
-                raise ValueError("❌ Mempool WebSocket configuration missing. Please configure mempool_ip and mempool_ws_port.")
+            if not mempool_ws_port:
+                raise ValueError("❌ Mempool WebSocket configuration missing. Please configure mempool_ws_port.")
             
-            return f"ws://{mempool_ip}:{mempool_ws_port}/api/v1/ws"
+            if not mempool_host:
+                raise ValueError("❌ Mempool configuration missing. Please configure mempool_host.")
+            
+            # Build WebSocket URL with proper protocol
+            protocol = "wss" if mempool_use_https else "ws"
+            
+            # Check if host looks like a domain (contains dots but not just IP)
+            # Skip port for domains using standard ports (80/443)
+            is_domain = "." in mempool_host and not mempool_host.replace(".", "").isdigit()
+            
+            if is_domain:
+                if (mempool_use_https and mempool_ws_port in ["443", "80"]) or \
+                   (not mempool_use_https and mempool_ws_port in ["80", "443"]):
+                    return f"{protocol}://{mempool_host}{mempool_ws_path}"
+                else:
+                    return f"{protocol}://{mempool_host}:{mempool_ws_port}{mempool_ws_path}"
+            else:
+                # Always include port for IP addresses
+                return f"{protocol}://{mempool_host}:{mempool_ws_port}{mempool_ws_path}"
         else:
             raise ValueError("❌ No configuration manager available. Cannot connect to mempool WebSocket without configuration.")
     

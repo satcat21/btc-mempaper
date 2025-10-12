@@ -170,7 +170,7 @@ Below are all allowed and supported settings in `config.json`:
 - `language`: Interface language (`en`, `de`, `es`, `fr`)
 - `display_orientation`: `vertical` or `horizontal`
 - `prioritize_large_scaled_meme`: Show large memes first (true/false)
-- `mempool_ip`: IP address of your mempool instance
+- `mempool_host`: IP address or domain name of your mempool instance
 - `mempool_rest_port`: REST API port
 - `mempool_ws_port`: WebSocket port
 - `fee_parameter`: Fee estimation mode (e.g. `fastestFee`)

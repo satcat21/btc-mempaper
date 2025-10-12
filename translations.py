@@ -5,7 +5,7 @@ translations = {
         "no_meme": "No meme found",
         "meme_error": "Error loading meme",
         "holiday_title": "SegWit Lock-in Day",
-        "holiday_desc": "Segregated Witness is officially locked in by the UASF client on the Bitcoin network.",
+        "holiday_desc": "Segregated Witness is officially locked in by the UASF on the Bitcoin network.",
         
         # Web Interface
         "dashboard_title": "Mempaper - Bitcoin Dashboard",
@@ -56,12 +56,19 @@ translations = {
         "date_font_min_size_desc": "Minimum font size for date text. Date will never be smaller than this size.",
         
         # Bitcoin Settings
-        "mempool_ip": "Mempool Server IP",
-        "mempool_ip_desc": "IP address of your mempool server",
+        "mempool_host": "Mempool Server Host",
+        "mempool_host_desc": "IP address or domain name of your mempool server (e.g., 192.168.0.119 or mempool.mydomain.com)",
         "mempool_rest_port": "Mempool REST Port",
         "mempool_rest_port_desc": "Port for mempool REST API",
         "mempool_ws_port": "Mempool WebSocket Port",
         "mempool_ws_port_desc": "Port for real-time mempool updates",
+        "mempool_use_https": "Use HTTPS/WSS",
+        "mempool_use_https_desc": "Use secure HTTPS for REST API and WSS for WebSocket connections",
+        "mempool_verify_ssl": "Verify SSL Certificates",
+        "mempool_verify_ssl_desc": "Verify SSL certificates when using HTTPS (disable for self-signed certificates)",
+        "mempool_ws_path": "WebSocket Path",
+        "mempool_ws_path_desc": "WebSocket endpoint path for real-time updates",
+        "mempool_settings": "Mempool Settings",
         
         # Security Settings
         "admin_username": "Admin Username",
@@ -296,12 +303,19 @@ translations = {
         "date_font_min_size_desc": "Minimale Schriftgröße für den Datumstext. Das Datum wird niemals kleiner als diese Größe.",
         
         # Bitcoin Settings
-        "mempool_ip": "Mempool-Server IP",
-        "mempool_ip_desc": "IP-Adresse Ihres Mempool-Servers",
+        "mempool_host": "Mempool-Server Host",
+        "mempool_host_desc": "IP-Adresse oder Domain-Name Ihres Mempool-Servers (z.B. 192.168.0.119 oder mempool.meinedomain.com)",
         "mempool_rest_port": "Mempool REST-Port",
         "mempool_rest_port_desc": "Port für Mempool REST API",
         "mempool_ws_port": "Mempool WebSocket-Port",
         "mempool_ws_port_desc": "Port für Echtzeit-Mempool-Updates",
+        "mempool_use_https": "HTTPS/WSS verwenden",
+        "mempool_use_https_desc": "Sichere HTTPS für REST API und WSS für WebSocket-Verbindungen verwenden",
+        "mempool_verify_ssl": "SSL-Zertifikate prüfen",
+        "mempool_verify_ssl_desc": "SSL-Zertifikate bei HTTPS prüfen (für selbstsignierte Zertifikate deaktivieren)",
+        "mempool_ws_path": "WebSocket-Pfad",
+        "mempool_ws_path_desc": "WebSocket-Endpunkt-Pfad für Echtzeit-Updates",
+        "mempool_settings": "Mempool-Einstellungen",
         
         # Security Settings
         "admin_username": "Administrator-Benutzername",
@@ -540,12 +554,19 @@ translations = {
         "date_font_min_size_desc": "Tamaño mínimo de fuente para el texto de fecha. La fecha nunca será más pequeña que este tamaño.",
         
         # Bitcoin Settings
-        "mempool_ip": "IP del Servidor Mempool",
-        "mempool_ip_desc": "Dirección IP de su servidor mempool",
+        "mempool_host": "Host del Servidor Mempool",
+        "mempool_host_desc": "Dirección IP o nombre de dominio de su servidor mempool",
         "mempool_rest_port": "Puerto REST de Mempool",
         "mempool_rest_port_desc": "Puerto para la API REST de mempool",
         "mempool_ws_port": "Puerto WebSocket de Mempool",
         "mempool_ws_port_desc": "Puerto para actualizaciones en tiempo real de mempool",
+        "mempool_use_https": "Usar HTTPS/WSS",
+        "mempool_use_https_desc": "Usar HTTPS seguro para la API REST y WSS para conexiones WebSocket",
+        "mempool_verify_ssl": "Verificar Certificados SSL",
+        "mempool_verify_ssl_desc": "Verificar certificados SSL al usar HTTPS (desactivar para certificados autofirmados)",
+        "mempool_ws_path": "Ruta WebSocket",
+        "mempool_ws_path_desc": "Ruta del endpoint WebSocket para actualizaciones en tiempo real",
+        "mempool_settings": "Configuración de Mempool",
         
         # Security Settings
         "admin_username": "Usuario Administrador",
@@ -770,12 +791,19 @@ translations = {
         "date_font_min_size_desc": "Taille minimale de police pour le texte de date. La date ne sera jamais plus petite que cette taille.",
         
         # Bitcoin Settings
-        "mempool_ip": "IP du Serveur Mempool",
-        "mempool_ip_desc": "Adresse IP de votre serveur mempool",
+        "mempool_host": "Hôte du Serveur Mempool",
+        "mempool_host_desc": "Adresse IP ou nom de domaine de votre serveur mempool (ex. 192.168.0.119 ou mempool.mondomaine.com)",
         "mempool_rest_port": "Port REST Mempool",
         "mempool_rest_port_desc": "Port pour l'API REST mempool",
         "mempool_ws_port": "Port WebSocket Mempool",
         "mempool_ws_port_desc": "Port pour les mises à jour en temps réel du mempool",
+        "mempool_use_https": "Utiliser HTTPS/WSS",
+        "mempool_use_https_desc": "Utiliser HTTPS sécurisé pour l'API REST et WSS pour les connexions WebSocket",
+        "mempool_verify_ssl": "Vérifier les Certificats SSL",
+        "mempool_verify_ssl_desc": "Vérifier les certificats SSL lors de l'utilisation d'HTTPS (désactiver pour les certificats auto-signés)",
+        "mempool_ws_path": "Chemin WebSocket",
+        "mempool_ws_path_desc": "Chemin de l'endpoint WebSocket pour les mises à jour en temps réel",
+        "mempool_settings": "Paramètres Mempool",
         
         # Security Settings
         "admin_username": "Nom d'Utilisateur Admin",

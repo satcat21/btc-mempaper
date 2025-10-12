@@ -906,7 +906,10 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 2000;
+    z-index: 100002;
+    margin: 0;
+    padding: 20px;
+    box-sizing: border-box;
 }
 
 .modal-content {
@@ -947,6 +950,11 @@ body {
     background: #2e324e;
     border-radius: 12px;
     padding: 24px;
+    margin: auto;
+    position: relative;
+    top: auto;
+    left: auto;
+    transform: none;
 }
 
 .modal-header {

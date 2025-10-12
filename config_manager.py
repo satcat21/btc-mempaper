@@ -318,7 +318,7 @@ class ConfigManager:
             if secure_config is not None:
                 # print(f"✓ Secure configuration loaded from encrypted files")
                 # Only update with sensitive fields from secure config
-                sensitive_fields = {'wallet_balance_addresses', 'wallet_balance_addresses_with_comments', 
+                sensitive_fields = {'wallet_balance_addresses_with_comments', 
                                   'block_reward_addresses_table', 'admin_password_hash', 'secret_key'}
                 for key, value in secure_config.items():
                     if key in sensitive_fields:
@@ -340,9 +340,12 @@ class ConfigManager:
             "language": "en",
             "display_orientation": "vertical",
             "prioritize_large_scaled_meme": False,
-            "mempool_ip": "127.0.0.1",
+            "mempool_host": "127.0.0.1",
             "mempool_rest_port": 4081,
             "mempool_ws_port": 8999,
+            "mempool_ws_path": "/api/v1/ws",
+            "mempool_use_https": False,
+            "mempool_verify_ssl": True,
             "fee_parameter": "minimumFee",
             "display_width": 800,
             "display_height": 480,
@@ -357,7 +360,6 @@ class ConfigManager:
             "bitaxe_miner_table": [],  # List of {address, comment} objects for table view
             "block_reward_addresses_table": [],  # List of {address, comment} objects for block reward monitoring
             "show_wallet_balances_block": True,
-            "wallet_balance_addresses": [],  # List of addresses/xpubs/zpubs to show
             "wallet_balance_addresses_with_comments": [],  # List of {address, comment, type} objects for table view
             "wallet_balance_unit": "sats",  # "btc" or "sats"
             "wallet_balance_currency": "EUR",  # USD, EUR, GBP, CAD, CHF, AUD, JPY - fiat currency for wallet balance display
@@ -461,17 +463,15 @@ class ConfigManager:
             "show_bitaxe_block",
             "show_wallet_balances_block",
             "color_mode_dark",
-            "live_block_notifications_enabled"
+            "live_block_notifications_enabled",
+            "mempool_use_https",
+            "mempool_verify_ssl"
         ]
         for setting in bool_settings:
             if setting in config:
                 validated[setting] = bool(config[setting])
 
-        # List settings (simple string lists)
-        simple_list_settings = ["wallet_balance_addresses"]
-        for setting in simple_list_settings:
-            if setting in config and isinstance(config[setting], list):
-                validated[setting] = [str(item).strip() for item in config[setting] if str(item).strip()]
+        # Note: Removed simple list settings - wallet addresses now use table format only
         
         # Special handling for wallet_balance_addresses_with_comments (list of objects)
         if "wallet_balance_addresses_with_comments" in config:
@@ -539,7 +539,8 @@ class ConfigManager:
 
         # String settings
         string_settings = [
-            "mempool_ip",
+            "mempool_host",
+            "mempool_ws_path",
             "omni_device_name",
             "admin_username",
             "admin_password"
@@ -584,7 +585,6 @@ class ConfigManager:
         
         # String settings
         string_settings = [
-            "mempool_ip",
             "omni_device_name", 
             "admin_username",
             "font_regular",
@@ -758,10 +758,6 @@ class ConfigManager:
                 "description": t.get("wallet_balance_addresses_table_desc", "Manage your wallet addresses, XPUBs, and ZPUBs with comments and balance monitoring."),
                 "category": "wallet_monitoring"
             },
-            "wallet_balance_addresses": {
-                "type": "hidden",
-                "category": "wallet_monitoring"
-            },
             "wallet_balance_unit": {
                 "type": "select",
                 "label": t.get("wallet_balance_unit", "Balance Display Unit"),
@@ -809,11 +805,11 @@ class ConfigManager:
                 ],
                 "category": "eink_display"
             },
-            "mempool_ip": {
+            "mempool_host": {
                 "type": "text",
-                "label": t.get("mempool_ip", "Mempool Server IP"),
-                "placeholder": "192.168.0.119",
-                "description": t.get("mempool_ip_desc", "IP address of your mempool server"),
+                "label": t.get("mempool_host", "Mempool Server Host"),
+                "placeholder": "192.168.0.119 or mempool.mydomain.com",
+                "description": t.get("mempool_host_desc", "IP address or domain name of your mempool server"),
                 "category": "mempool"
             },
             "mempool_rest_port": {
@@ -844,6 +840,28 @@ class ConfigManager:
                     {"value": "economyFee", "label": t.get("economy", "Economy (~1 day)")},
                     {"value": "minimumFee", "label": t.get("minimum", "Minimum")}
                 ],
+                "category": "mempool"
+            },
+            "mempool_use_https": {
+                "type": "boolean",
+                "label": t.get("mempool_use_https", "Use HTTPS/WSS"),
+                "description": t.get("mempool_use_https_desc", "Use secure HTTPS for REST API and WSS for WebSocket connections"),
+                "default": False,
+                "category": "mempool"
+            },
+            "mempool_verify_ssl": {
+                "type": "boolean",
+                "label": t.get("mempool_verify_ssl", "Verify SSL Certificates"),
+                "description": t.get("mempool_verify_ssl_desc", "Verify SSL certificates when using HTTPS (disable for self-signed certificates)"),
+                "default": True,
+                "category": "mempool"
+            },
+            "mempool_ws_path": {
+                "type": "text",
+                "label": t.get("mempool_ws_path", "WebSocket Path"),
+                "placeholder": "/api/v1/ws",
+                "description": t.get("mempool_ws_path_desc", "WebSocket endpoint path for real-time updates"),
+                "default": "/api/v1/ws",
                 "category": "mempool"
             },
             "e-ink-display-connected": {

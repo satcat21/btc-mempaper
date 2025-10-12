@@ -30,7 +30,7 @@ def create_backup_aware_websocket(config):
     
     # Create WebSocket with extended settings for backup scenarios
     ws_client = MempoolWebSocket(
-        ip=config.get("mempool_ip"),
+        ip=config.get("mempool_host"),
         ws_port=config.get("mempool_ws_port"),
         on_new_block_callback=on_block_callback
     )
@@ -56,7 +56,7 @@ def monitor_backup_window():
         print("❌ Cannot create WebSocket client")
         return
     
-    print(f"📡 Connecting to mempool at {config['mempool_ip']}:{config['mempool_ws_port']}")
+    print(f"📡 Connecting to mempool at {config['mempool_host']}:{config['mempool_ws_port']}")
     
     # Start connection in thread
     thread = ws_client.start_listener_thread()

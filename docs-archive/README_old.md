@@ -107,7 +107,7 @@ Alternatively, edit `config.json` directly:
   "e-ink-display-connected": true,
   "omni_device_name": "waveshare_epd7in5_V2",
   
-  "mempool_ip": "127.0.0.1",
+  "mempool_host": "127.0.0.1",
   "mempool_rest_port": "8999",
   "mempool_ws_port": "8999",
   
@@ -125,7 +125,7 @@ Alternatively, edit `config.json` directly:
 |---------|-------------|---------|
 | `e-ink-display-connected` | Enable/disable e-Paper display | `true` |
 | `omni_device_name` | E-Paper display model | `"mock"` |
-| `mempool_ip` | Mempool server IP address | `"127.0.0.1"` |
+| `mempool_host` | Mempool server host (IP or domain) | `"127.0.0.1"` |
 | `admin_username` | Admin panel username | `"admin"` |
 | `language` | Interface language (en/de/es/fr) | `"en"` |
 

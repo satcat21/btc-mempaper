@@ -81,14 +81,32 @@ class BlockRewardCache:
             print(f"📊 Global sync height: {self.cache_data['global_sync_height']}")
     
     def _get_mempool_base_url(self) -> str:
-        """Get mempool API base URL from configuration."""
+        """Get mempool API base URL with unified host field and HTTPS support."""
         if self.config_manager:
             config = self.config_manager.get_current_config()
-            mempool_ip = config.get("mempool_ip", "127.0.0.1")
+            mempool_host = config.get("mempool_host", "127.0.0.1")
             mempool_rest_port = config.get("mempool_rest_port", 4081)
-            return f"https://{mempool_ip}:{mempool_rest_port}/api"
-        else:
-            return "https://127.0.0.1:4081/api"
+            mempool_use_https = config.get("mempool_use_https", False)
+            
+            # Build URL with proper protocol
+            protocol = "https" if mempool_use_https else "http"
+            
+            # Don't include port in URL if using standard ports with domain/hostname
+            if (mempool_use_https and str(mempool_rest_port) in ["443", "80"]) or \
+               (not mempool_use_https and str(mempool_rest_port) in ["80", "443"]):
+                return f"{protocol}://{mempool_host}/api"
+            else:
+                return f"{protocol}://{mempool_host}:{mempool_rest_port}/api"
+        
+        # Fallback
+        return "http://127.0.0.1:4081/api"
+    
+    def _get_mempool_verify_ssl(self) -> bool:
+        """Get SSL verification setting from configuration."""
+        if self.config_manager:
+            config = self.config_manager.get_current_config()
+            return config.get("mempool_verify_ssl", True)
+        return True
     
     def _crop_address_for_log(self, address: str) -> str:
         """
@@ -184,7 +202,8 @@ class BlockRewardCache:
         """Get current blockchain height from mempool API."""
         try:
             base_url = self._get_mempool_base_url()
-            response = requests.get(f"{base_url}/blocks/tip/height", timeout=10, verify=False)
+            verify_ssl = self._get_mempool_verify_ssl()
+            response = requests.get(f"{base_url}/blocks/tip/height", timeout=10, verify=verify_ssl)
             response.raise_for_status()
             return int(response.text.strip())
         except Exception as e:
@@ -280,13 +299,14 @@ class BlockRewardCache:
         """
         coinbase_count = 0
         base_url = self._get_mempool_base_url()
+        verify_ssl = self._get_mempool_verify_ssl()
         
         print(f"🔍 Scanning transaction history for address {self._crop_address_for_log(address)}")
         
         try:
             # Get all transactions for this address
             # Use the address API endpoint to get transaction history
-            tx_response = requests.get(f"{base_url}/address/{address}/txs", timeout=30, verify=False)
+            tx_response = requests.get(f"{base_url}/address/{address}/txs", timeout=30, verify=verify_ssl)
             
             if not tx_response.ok:
                 print(f"⚠️ Failed to get transactions for address {self._crop_address_for_log(address)}: {tx_response.status_code}")
@@ -392,7 +412,7 @@ class BlockRewardCache:
             
             for pagination_url in pagination_urls:
                 try:
-                    response = requests.get(pagination_url, timeout=30, verify=False)
+                    response = requests.get(pagination_url, timeout=30, verify=self._get_mempool_verify_ssl())
                     if response.ok:
                         transactions = response.json()
                         if transactions:
@@ -458,9 +478,10 @@ class BlockRewardCache:
         """
         try:
             base_url = self._get_mempool_base_url()
+            verify_ssl = self._get_mempool_verify_ssl()
             
             # Get block transactions
-            txids_response = requests.get(f"{base_url}/block/{block_hash}/txids", timeout=10, verify=False)
+            txids_response = requests.get(f"{base_url}/block/{block_hash}/txids", timeout=10, verify=verify_ssl)
             if not txids_response.ok:
                 return False
             
@@ -472,7 +493,7 @@ class BlockRewardCache:
             coinbase_txid = txids[0]
             
             # Get coinbase transaction details
-            tx_response = requests.get(f"{base_url}/tx/{coinbase_txid}", timeout=10, verify=False)
+            tx_response = requests.get(f"{base_url}/tx/{coinbase_txid}", timeout=10, verify=verify_ssl)
             if not tx_response.ok:
                 return False
             
@@ -550,12 +571,13 @@ class BlockRewardCache:
             new_coinbase_count = 0
             
             # Use different strategies based on gap size
-            if blocks_to_sync <= 1000:
+            # Transaction history is much more efficient for gaps larger than 50 blocks
+            if blocks_to_sync <= 50:
                 # Small gap: use block scanning (more efficient for recent blocks)
                 print(f"📊 Using block scanning for {blocks_to_sync} blocks")
                 new_coinbase_count = self._scan_blocks_for_address(address, synced_height + 1, current_height)
             else:
-                # Large gap: use transaction history and filter by height
+                # Large gap: use transaction history and filter by height (much faster)
                 print(f"📊 Using transaction history scanning for {blocks_to_sync} blocks")
                 new_coinbase_count = self._scan_address_history(address, synced_height + 1, current_height)
             
@@ -572,7 +594,7 @@ class BlockRewardCache:
     def _scan_blocks_for_address(self, address: str, start_height: int, end_height: int) -> int:
         """
         Scan specific block range for coinbase transactions to an address.
-        This is more efficient for small ranges (recent blocks).
+        Optimized with batch processing and progress reporting.
         
         Args:
             address: Bitcoin address to scan for
@@ -584,56 +606,74 @@ class BlockRewardCache:
         """
         coinbase_count = 0
         base_url = self._get_mempool_base_url()
+        verify_ssl = self._get_mempool_verify_ssl()
+        total_blocks = end_height - start_height + 1
+        batch_size = 10  # Process in smaller batches for better progress reporting
         
-        print(f"🔍 Block scanning {end_height - start_height + 1} blocks for address {self._crop_address_for_log(address)}")
+        print(f"🔍 Block scanning {total_blocks} blocks for address {self._crop_address_for_log(address)}")
         
-        for height in range(start_height, end_height + 1):
-            try:
-                # Get block hash
-                block_response = requests.get(f"{base_url}/block-height/{height}", timeout=10, verify=False)
-                if not block_response.ok:
-                    continue
-                
-                block_hash = block_response.text.strip()
-                
-                # Get coinbase transaction directly
-                txids_response = requests.get(f"{base_url}/block/{block_hash}/txids", timeout=10, verify=False)
-                if not txids_response.ok:
-                    continue
-                
-                txids = txids_response.json()
-                if not txids:
-                    continue
-                
-                # Check coinbase transaction (first in list)
-                coinbase_txid = txids[0]
-                
-                # Get coinbase transaction details
-                tx_response = requests.get(f"{base_url}/tx/{coinbase_txid}", timeout=10, verify=False)
-                if not tx_response.ok:
-                    continue
-                
-                tx_data = tx_response.json()
-                
-                # Check if any output goes to our address
-                for vout in tx_data.get('vout', []):
-                    if vout.get('scriptpubkey_address') == address:
-                        coinbase_count += 1
-                        print(f"🎯 Found coinbase transaction at height {height}: {coinbase_txid}")
+        start_time = time.time()
+        processed_blocks = 0
+        
+        for batch_start in range(start_height, end_height + 1, batch_size):
+            batch_end = min(batch_start + batch_size - 1, end_height)
+            
+            # Progress reporting
+            progress_pct = (processed_blocks / total_blocks) * 100
+            elapsed_time = time.time() - start_time
+            if processed_blocks > 0:
+                eta = (elapsed_time / processed_blocks) * (total_blocks - processed_blocks)
+                print(f"📊 Scanning progress: {processed_blocks}/{total_blocks} blocks ({progress_pct:.1f}%) - ETA: {eta:.1f}s")
+            
+            # Process batch
+            for height in range(batch_start, batch_end + 1):
+                try:
+                    # Get block hash
+                    block_response = requests.get(f"{base_url}/block-height/{height}", timeout=10, verify=verify_ssl)
+                    if not block_response.ok:
+                        processed_blocks += 1
+                        continue
+                    
+                    block_hash = block_response.text.strip()
+                    
+                    # Get coinbase transaction directly using block info endpoint (more efficient)
+                    block_response = requests.get(f"{base_url}/block/{block_hash}", timeout=10, verify=verify_ssl)
+                    if not block_response.ok:
+                        processed_blocks += 1
+                        continue
+                    
+                    block_data = block_response.json()
+                    
+                    # Get the first transaction (coinbase) directly from block data
+                    if 'tx' in block_data and len(block_data['tx']) > 0:
+                        coinbase_tx = block_data['tx'][0]
                         
-                        # Update latest block found
-                        with self.cache_lock:
-                            addr_data = self.cache_data["addresses"].get(address, {})
-                            if addr_data.get("latest_block_found") is None or height > addr_data.get("latest_block_found", 0):
-                                addr_data["latest_block_found"] = height
-                        break
-                
-                # Small delay to avoid overwhelming the API
-                time.sleep(0.01)
-                
-            except Exception as e:
-                print(f"⚠️ Error scanning block {height}: {e}")
-                continue
+                        # Check if any output goes to our address
+                        for vout in coinbase_tx.get('vout', []):
+                            if vout.get('scriptpubkey_address') == address:
+                                coinbase_count += 1
+                                print(f"🎯 Found coinbase transaction at height {height}: {coinbase_tx.get('txid', 'unknown')}")
+                                
+                                # Update latest block found
+                                with self.cache_lock:
+                                    addr_data = self.cache_data["addresses"].get(address, {})
+                                    if addr_data.get("latest_block_found") is None or height > addr_data.get("latest_block_found", 0):
+                                        addr_data["latest_block_found"] = height
+                                break
+                    
+                    processed_blocks += 1
+                    
+                    # Reduced delay (was 0.01s, now 0.005s)
+                    time.sleep(0.005)
+                    
+                except Exception as e:
+                    print(f"⚠️ Error scanning block {height}: {e}")
+                    processed_blocks += 1
+                    continue
+        
+        # Final progress report
+        elapsed_time = time.time() - start_time
+        print(f"✅ Block scanning complete: {total_blocks} blocks in {elapsed_time:.2f}s ({total_blocks/elapsed_time:.1f} blocks/sec)")
         
         return coinbase_count
     

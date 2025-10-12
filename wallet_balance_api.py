@@ -45,6 +45,13 @@ import time
 # Disable SSL warnings for self-signed certificates
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+# XPUB Derivation Constants - Technical parameters that rarely need changing
+XPUB_GAP_LIMIT = 20                    # Number of consecutive unused addresses to stop derivation
+XPUB_ENABLE_BOOTSTRAP_SEARCH = True    # Enable enhanced bootstrap search for used addresses
+XPUB_BOOTSTRAP_INCREMENT = 20          # How many addresses to add per bootstrap iteration
+XPUB_BOOTSTRAP_MAX_ADDRESSES = 1000    # Maximum addresses to scan during bootstrap (increased for comprehensive search)
+XPUB_DERIVATION_INCREMENT = 20         # How many addresses to add per standard iteration
+
 # Optional import for async cache - graceful fallback if not available
 try:
     from config_observer import AsyncAddressCacheManager
@@ -65,6 +72,9 @@ try:
     UNIFIED_CACHE_AVAILABLE = True
 except ImportError:
     UNIFIED_CACHE_AVAILABLE = False
+
+# Import mempool API for address stats
+from mempool_api import MempoolAPI
 
 
 class WalletBalanceAPI:
@@ -103,14 +113,38 @@ class WalletBalanceAPI:
             self.secure_config_manager = None
             print(f"⚠️ Secure configuration unavailable - using fallback mode")
         
-        # Get mempool configuration
-        mempool_ip = self.config.get("mempool_ip", "127.0.0.1")
+        # Get mempool configuration with HTTPS support
+        mempool_host = self.config.get("mempool_host", "127.0.0.1")
         mempool_port = self.config.get("mempool_rest_port", 443)
+        mempool_use_https = self.config.get("mempool_use_https", False)
+        self.mempool_verify_ssl = self.config.get("mempool_verify_ssl", True)
         
-        # Build API URL
-        self.base_url = f"https://{mempool_ip}:{mempool_port}/api"
+        # Build API URL with proper protocol
+        protocol = "https" if mempool_use_https else "http"
+        
+        # Check if host looks like a domain (contains dots but not just IP)
+        # Skip port for domains using standard ports (80/443)
+        is_domain = "." in mempool_host and not mempool_host.replace(".", "").isdigit()
+        
+        if is_domain:
+            if (mempool_use_https and str(mempool_port) in ["443", "80"]) or \
+               (not mempool_use_https and str(mempool_port) in ["80", "443"]):
+                self.base_url = f"{protocol}://{mempool_host}/api"
+            else:
+                self.base_url = f"{protocol}://{mempool_host}:{mempool_port}/api"
+        else:
+            # Always include port for IP addresses
+            self.base_url = f"{protocol}://{mempool_host}:{mempool_port}/api"
         
         # print(f"🔒 Using private mempool instance: {self.base_url}")
+        
+        # Initialize mempool API client
+        self.mempool_api = MempoolAPI(
+            host=mempool_host, 
+            port=str(mempool_port), 
+            use_https=mempool_use_https, 
+            verify_ssl=self.mempool_verify_ssl
+        )
         
         # Initialize address derivation with caching
         self.address_derivation = AddressDerivation()
@@ -128,18 +162,18 @@ class WalletBalanceAPI:
         self._balance_cache = {}
         self._balance_cache_timeout = 60  # Cache balance for 60 seconds by default
         
-        # Initialize gap limit detection
+        # Initialize gap limit detection using constants
         self.enable_gap_limit = True
-        self.gap_limit = 20
-        self.derivation_increment = 20
+        self.gap_limit = XPUB_GAP_LIMIT
+        self.derivation_increment = XPUB_DERIVATION_INCREMENT
         self.address_ignore_interval_hours = 72
         
-        # Enhanced gap limit detection parameters
-        self.enable_bootstrap_search = True
-        self.bootstrap_increment = 20
-        self.bootstrap_max_addresses = 200
+        # Enhanced gap limit detection parameters using constants
+        self.enable_bootstrap_search = XPUB_ENABLE_BOOTSTRAP_SEARCH
+        self.bootstrap_increment = XPUB_BOOTSTRAP_INCREMENT
+        self.bootstrap_max_addresses = XPUB_BOOTSTRAP_MAX_ADDRESSES
         
-        # Debug gap limit settings
+        # Debug gap limit settings (using constants defined at top of file)
         print(f"🔍 Gap limit detection enabled (last {self.gap_limit} addresses, +{self.derivation_increment} increment)")
         if self.enable_bootstrap_search:
             print(f"🚀 Bootstrap search enabled (max {self.bootstrap_max_addresses} addresses, +{self.bootstrap_increment} increment)")
@@ -164,7 +198,9 @@ class WalletBalanceAPI:
             # Use async cache manager for optimal performance (address derivation)
             self.async_cache_manager = AsyncAddressCacheManager()
             # print(f"🚀 Using async address cache for optimal performance")
-        elif not self.use_unified_cache:
+        
+        # Always initialize fallback cache (needed for _get_cached_addresses method)
+        if not self.use_async_cache:
             # Fallback to individual secure cache or empty cache for address data
             self.cache_file = "cache/wallet_address_cache.json"
             
@@ -175,6 +211,10 @@ class WalletBalanceAPI:
             else:
                 print(f"❌ Secure cache unavailable - using empty cache")
                 self.address_cache = {}
+        else:
+            # Initialize empty fallback cache for compatibility
+            self.address_cache = {}
+            self.cache_file = "cache/wallet_address_cache.json"
 
     def _convert_to_fiat(self, btc_amount, fiat_currency):
         """
@@ -334,49 +374,111 @@ class WalletBalanceAPI:
             current_time = time.time()
             cache_valid_seconds = cache_days * 24 * 60 * 60  # Convert days to seconds
             
+            # Initialize fresh_addresses_found flag
+            fresh_addresses_found = False
+            
             # Check if we have a valid full scan cache
             if cache_data and (current_time - cache_data.get('last_full_scan', 0)) < cache_valid_seconds:
                 # cache_age_days = (current_time - cache_data['last_full_scan']) / (24 * 60 * 60)
                 # print(f"🕐 [OPTIMIZED] Using cached scan from {datetime.fromtimestamp(cache_data['last_full_scan']).strftime('%Y-%m-%d %H:%M:%S')} ({cache_age_days:.1f} days ago)")
                 
-                # In startup mode, always use cached data to avoid delays
+                # In startup mode, check if cache is still valid for balance calculation
                 if startup_mode:
                     total_balance = cache_data.get('total_balance', 0.0)
-                    print(f"🚀 [STARTUP] Using cached balance for {xpub[:20]}...: {total_balance:.8f} BTC (optimized cache)")
-                    return total_balance
+                    
+                    # Debug: Check what cache data we have
+                    print(f"🔍 [DEBUG] Cache data keys: {list(cache_data.keys())}")
+                    print(f"🔍 [DEBUG] final_address_count: {cache_data.get('final_address_count', 'NOT_SET')}")
+                    
+                    # Check if we have fresh address data from bootstrap that might invalidate balance cache
+                    # Try different cache count possibilities
+                    test_counts = [20, 40, 60, 80, 100, 120, 140, 160, 180, 200]
+                    
+                    if hasattr(self, 'async_cache_manager') and self.async_cache_manager:
+                        for test_count in test_counts:
+                            cache_key = f"{xpub}:gap_limit:{test_count}"
+                            cached_addresses = self.async_cache_manager.get_addresses(cache_key)
+                            if cached_addresses and len(cached_addresses) > 0:
+                                print(f"🔄 [STARTUP] Fresh address data detected ({len(cached_addresses)} addresses, key: {test_count}) - forcing balance recalculation...")
+                                fresh_addresses_found = True
+                                break
+                    
+                    if not fresh_addresses_found:
+                        print(f"� [DEBUG] No fresh address cache found, checking async cache keys...")
+                        # Check what keys exist in async cache
+                        if hasattr(self, 'async_cache_manager') and hasattr(self.async_cache_manager, 'cache'):
+                            async_keys = [k for k in self.async_cache_manager.cache.keys() if xpub[:20] in k]
+                            print(f"🔍 [DEBUG] Async cache keys for xpub: {async_keys}")
+                    
+                    # TEMPORARY FIX: Always force recalculation in startup mode until cache detection is fixed
+                    if total_balance == 0.0:
+                        print(f"🔄 [STARTUP] Cached balance is 0.0 - forcing fresh calculation to find real balance...")
+                        fresh_addresses_found = True
+                    
+                    # Only use cached balance if NO fresh address data found AND balance > 0
+                    if not fresh_addresses_found:
+                        print(f"🚀 [STARTUP] Using cached balance for {xpub[:20]}...: {total_balance:.8f} BTC (optimized cache)")
+                        return total_balance
+                    else:
+                        # Fresh addresses found - skip optimized monitoring and force full recalculation
+                        print(f"⚡ [STARTUP] Skipping optimized monitoring due to fresh address data - proceeding to full balance calculation...")
+                        # Fall through to full scan section
                 
-                # Get monitoring addresses (funded + next N)
+                # Get monitoring addresses (funded + next N) and cached balances
                 monitoring_addresses = cache_data.get('monitoring_addresses', [])
                 cached_balances = cache_data.get('address_balances', {})
                 
-                if monitoring_addresses:
-                    # print(f"👁️ [OPTIMIZED] Monitoring {len(monitoring_addresses)} critical addresses (cached full scan has {cache_data.get('funded_address_count', 0)} funded addresses)")
+                # Only do optimized monitoring if NOT in startup mode with fresh addresses
+                if not (startup_mode and fresh_addresses_found) and monitoring_addresses:
+                    cache_age_hours = (current_time - cache_data['last_full_scan']) / 3600
+                    print(f"👁️ [OPTIMIZED] Using optimized monitoring for {xpub[:20]}... (cache age: {cache_age_hours:.1f}h)")
+                    print(f"   📊 Monitoring {len(monitoring_addresses)} critical addresses (cached full scan has {cache_data.get('funded_address_count', 0)} funded addresses)")
                     
                     # Check if any monitored address balance has changed
                     balance_changed = False
+                    bootstrap_expansion_needed = False
                     current_monitored_balances = {}
                     
-                    for addr in monitoring_addresses:
+                    # Get the current address range info for expansion detection
+                    total_derived = cache_data.get('final_address_count', len(monitoring_addresses))
+                    last_batch_start = max(0, ((total_derived - 1) // 20) * 20)  # Start of last batch
+                    
+                    for i, addr in enumerate(monitoring_addresses):
                         current_balance = self.get_address_balance(addr)
                         current_monitored_balances[addr] = current_balance
                         cached_balance = cached_balances.get(addr, 0.0)
                         
                         if abs(current_balance - cached_balance) > 0.00000001:  # 1 satoshi precision
-                            # print(f"💥 [OPTIMIZED] Balance change detected on {addr}: {cached_balance:.8f} → {current_balance:.8f} BTC")
+                            print(f"💥 [EXTENDED] Balance change detected on {addr[:10]}...{addr[-10:]}: {cached_balance:.8f} → {current_balance:.8f} BTC")
                             balance_changed = True
+                            
+                            # Check if this address is in the last batch (trigger bootstrap expansion)
+                            address_index = i  # This is approximate, we might need more precise index calculation
+                            if address_index >= last_batch_start:
+                                print(f"🚀 [EXPANSION] Transaction detected in last batch (index ~{address_index}) - bootstrap expansion needed!")
+                                bootstrap_expansion_needed = True
                             break
                     
                     if not balance_changed:
                         # All monitored addresses unchanged - return cached total
                         total_balance = cache_data.get('total_balance', 0.0)
-                        # print(f"✅ [OPTIMIZED] No changes detected, using cached balance: {total_balance:.8f} BTC")
-                        # print(f"🕐 [OPTIMIZED] Cache expires in {((cache_valid_seconds - (current_time - cache_data['last_full_scan'])) / (24 * 60 * 60)):.1f} days")
+                        print(f"✅ [EXTENDED] No changes detected, using cached balance: {total_balance:.8f} BTC")
+                        cache_days_remaining = ((cache_valid_seconds - (current_time - cache_data['last_full_scan'])) / (24 * 60 * 60))
+                        print(f"🕐 [EXTENDED] Cache expires in {cache_days_remaining:.1f} days")
                         return total_balance
                     else:
-                        print(f"🔄 Balance change detected - triggering full rescan")
+                        if bootstrap_expansion_needed:
+                            print(f"� [EXPANSION] Transaction in last batch detected - triggering bootstrap expansion!")
+                            # Clear gap limit cache to force new bootstrap with extended range
+                            if hasattr(self, 'async_cache_manager') and self.async_cache_manager:
+                                # Clear existing gap limit cache entries for this xpub
+                                cache_pattern = f"{xpub}:gap_limit"
+                                self.async_cache_manager.invalidate_cache(cache_pattern)
+                                print(f"🗑️ [EXPANSION] Cleared gap limit caches to trigger bootstrap expansion")
+                        print(f"🔄 [EXTENDED] Balance change detected - triggering full rescan")
             
-            # If in startup mode and no valid cache, return 0 to avoid blocking startup
-            if startup_mode:
+            # If in startup mode and no valid cache AND no fresh addresses, return 0 to avoid blocking startup
+            if startup_mode and not fresh_addresses_found:
                 print(f"🚀 [STARTUP] No cached balance available for {xpub[:20]}... - returning 0 to avoid blocking startup")
                 return 0.0
                 
@@ -386,15 +488,24 @@ class WalletBalanceAPI:
             
             # Get all addresses using gap limit detection - force gap limit for comprehensive scanning
             if self.enable_gap_limit:
-                # Use get_xpub_addresses() which properly checks cached results before expensive detection
-                # print(f"🔍 [OPTIMIZED] Using gap limit detection for comprehensive scan...")
+                print(f"🔍 [BALANCE] Using gap limit detection for comprehensive balance scan...")
                 start_time = time.time()
                 addresses = self.get_xpub_addresses(xpub, startup_mode=False)
                 scan_time = time.time() - start_time
-                # print(f"🔍 [OPTIMIZED] Gap limit scan completed in {scan_time:.1f}s → {len(addresses)} addresses")
+                print(f"🔍 [BALANCE] Gap limit scan completed in {scan_time:.1f}s → {len(addresses)} addresses")
+                
+                # DEBUG: Check if addresses include the ones we know have balances
+                print(f"🔍 [BALANCE] DEBUG - Checking for known balance addresses...")
+                known_balance_indices = [31, 32, 33, 34, 38, 39, 40, 42, 43, 44]  # From bootstrap logs
+                address_list = list(addresses)
+                for idx in known_balance_indices[:3]:  # Check first 3 known addresses
+                    if idx < len(address_list):
+                        addr = address_list[idx]
+                        print(f"   [DEBUG] Address {idx}: {addr[:10]}...{addr[-10:]} (should have balance)")
+                    else:
+                        print(f"   [DEBUG] Address {idx}: NOT DERIVED (missing from address list)")
             else:
-                # Fallback to regular address derivation
-                # print(f"🔍 [OPTIMIZED] Using regular address derivation (gap limit disabled)")
+                print(f"🔍 [BALANCE] Using regular address derivation (gap limit disabled)")
                 addresses = self.get_xpub_addresses(xpub, startup_mode=False)
             if not addresses:
                 print(f"⚠️ No addresses derived for {xpub[:20]}...")
@@ -405,16 +516,25 @@ class WalletBalanceAPI:
             funded_addresses = []
             total_balance = 0.0
             
-            print(f"🚀 Scanning {len(addresses)} addresses...")
+            print(f"🚀 [BALANCE] Scanning {len(addresses)} addresses for XPUB balance calculation...")
+            print(f"🔍 [BALANCE] Address samples (first 5):")
+            for i, addr in enumerate(list(addresses)[:5]):
+                print(f"   [{i}]: {addr[:10]}...{addr[-10:]}")
             
             # Use parallel processing for better performance
             import concurrent.futures
             def fetch_address_balance(address):
                 try:
                     balance = self.get_address_balance(address)
+                    if balance > 0:
+                        print(f"💰 [BALANCE] Found balance: {address[:10]}...{address[-10:]} = {balance:.8f} BTC")
+                    else:
+                        # Debug: show zero balance addresses too (first few)
+                        if list(addresses).index(address) < 3:
+                            print(f"⚪ [BALANCE] Zero balance: {address[:10]}...{address[-10:]} = 0.00000000 BTC")
                     return address, balance
                 except Exception as e:
-                    print(f"⚠️ Error fetching balance for {address}: {e}")
+                    print(f"⚠️ [BALANCE] Error fetching balance for {address}: {e}")
                     return address, 0.0
             
             with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(addresses), 10)) as executor:
@@ -441,36 +561,76 @@ class WalletBalanceAPI:
                 if cached_addresses_with_indices:
                     address_list = [addr for addr, idx in sorted(cached_addresses_with_indices, key=lambda x: x[1])]
             
-            # Determine monitoring addresses: funded addresses + next N after highest funded
+            # Extended monitoring: all derived addresses EXCEPT spent addresses (used in past, 0 balance now)
             monitoring_addresses = []
             if funded_addresses:
-                # Find indices of funded addresses
+                # Categorize addresses to determine monitoring strategy
                 funded_indices = []
-                for funded_addr in funded_addresses:
-                    try:
-                        idx = address_list.index(funded_addr)
-                        funded_indices.append(idx)
-                    except ValueError:
-                        pass
+                spent_indices = []  # Used in past but 0 balance now (avoid reuse)
+                never_used_indices = []
                 
-                if funded_indices:
-                    max_funded_index = max(funded_indices)
+                # Collect address categories
+                for i, address in enumerate(address_list):
+                    try:
+                        balance = self.get_address_balance(address)
+                        # Check if address was ever used (has transaction history)
+                        addr_usage_info = self.get_address_usage_info(address)
+                        tx_count = addr_usage_info.get('tx_count', 0)
+                        
+                        if balance > 0:
+                            funded_indices.append(i)
+                        elif tx_count > 0 and balance == 0:
+                            # Spent address (used in past but empty now) - EXCLUDE from monitoring
+                            spent_indices.append(i)
+                        else:
+                            # Never used address - include in monitoring
+                            never_used_indices.append(i)
+                            
+                    except Exception as e:
+                        print(f"⚠️ Error checking address {address[:10]}...{address[-10:]}: {e}")
+                        # If we can't check, assume never used (safer for monitoring)
+                        never_used_indices.append(i)
+                        continue
+                
+                if funded_indices or never_used_indices:
+                    all_active_indices = sorted(set(funded_indices + never_used_indices))
+                    max_active_index = max(all_active_indices) if all_active_indices else 0
                     
-                    # Include all funded addresses
-                    monitoring_addresses.extend(funded_addresses)
+                    # Enhanced monitoring strategy (privacy-aware):
+                    # 1. Monitor ALL funded addresses (positive balance)
+                    # 2. Monitor ALL never-used addresses up to max derived
+                    # 3. EXCLUDE spent addresses (used in past, 0 balance) to avoid reuse
+                    # 4. Monitor complete last batch from bootstrap for new transactions
                     
-                    # Add next N addresses after the highest funded address
-                    for i in range(max_funded_index + 1, min(max_funded_index + 1 + buffer_addresses, len(address_list))):
-                        if address_list[i] not in monitoring_addresses:
-                            monitoring_addresses.append(address_list[i])
+                    total_derived = len(address_list)
+                    last_batch_start = max(0, ((total_derived - 1) // 20) * 20)  # Start of last batch
                     
-                    # print(f"📍 [OPTIMIZED] Will monitor {len(funded_addresses)} funded + {len(monitoring_addresses) - len(funded_addresses)} buffer addresses")
+                    # Add all non-spent addresses to monitoring
+                    for i in range(total_derived):
+                        if i < len(address_list):
+                            if i in funded_indices:
+                                # Always monitor funded addresses
+                                monitoring_addresses.append(address_list[i])
+                            elif i in never_used_indices:
+                                # Monitor never-used addresses (potential future use)
+                                monitoring_addresses.append(address_list[i])
+                            # Skip spent addresses (i in spent_indices) - privacy protection
+                    
+                    print(f"📍 [PRIVACY] Monitoring {len(monitoring_addresses)} addresses (excluding {len(spent_indices)} spent addresses)")
+                    print(f"   💰 Active addresses: {len(funded_indices)} (with positive balance)")
+                    print(f"   ⭕ Never used addresses: {len(never_used_indices)} (available for future use)")
+                    print(f"   🚫 Spent addresses: {len(spent_indices)} (excluded to prevent reuse)")
+                    print(f"   🎯 Last batch: indices {last_batch_start}-{total_derived-1} (monitoring for new transactions)")
+                else:
+                    # No active addresses found - monitor first batch
+                    monitoring_addresses = address_list[:20]  # Monitor first 20 addresses
+                    print(f"📍 [PRIVACY] No active addresses - monitoring first 20 addresses")
             else:
-                # No funded addresses - monitor first N addresses
-                monitoring_addresses = address_list[:buffer_addresses]
-                print(f"📍 [OPTIMIZED] No funded addresses - monitoring first {buffer_addresses} addresses")
+                # No funded addresses - monitor first batch
+                monitoring_addresses = address_list[:20]  # Monitor first 20 addresses  
+                print(f"📍 [PRIVACY] No funded addresses - monitoring first 20 addresses")
             
-            # Save optimized cache
+            # Save optimized cache with extended monitoring info
             cache_data = {
                 'last_full_scan': current_time,
                 'total_balance': total_balance,
@@ -479,13 +639,25 @@ class WalletBalanceAPI:
                 'scan_address_count': len(addresses),
                 'funded_address_count': len(funded_addresses),
                 'cache_days': cache_days,
-                'buffer_addresses': buffer_addresses
+                'buffer_addresses': buffer_addresses,
+                'final_address_count': len(addresses),  # Total derived addresses from bootstrap
+                'extended_monitoring': True,  # Flag indicating extended monitoring is active
+                'monitoring_strategy': 'extended_with_last_batch'  # Strategy description
             }
             
             self._save_optimized_balance_cache(xpub, cache_data)
             
-            # print(f"✅ [OPTIMIZED] Full scan complete: {total_balance:.8f} BTC from {len(funded_addresses)}/{len(addresses)} addresses")
-            # print(f"🕐 [OPTIMIZED] Cache valid until {datetime.fromtimestamp(current_time + cache_valid_seconds).strftime('%Y-%m-%d %H:%M:%S')} ({cache_days} days)")
+            print(f"✅ [BALANCE] Final balance calculation complete for {xpub[:20]}...")
+            print(f"   📊 Total addresses scanned: {len(addresses)}")
+            print(f"   💰 Addresses with balance: {len(funded_addresses)}")
+            print(f"   � Total balance found: {total_balance:.8f} BTC")
+            if funded_addresses:
+                print(f"   🏆 Funded addresses:")
+                for addr in funded_addresses[:5]:  # Show first 5
+                    balance = address_balances.get(addr, 0)
+                    print(f"      {addr[:10]}...{addr[-10:]} = {balance:.8f} BTC")
+                if len(funded_addresses) > 5:
+                    print(f"      ... and {len(funded_addresses) - 5} more")
             
             return total_balance
             
@@ -867,7 +1039,7 @@ class WalletBalanceAPI:
             
         try:
             url = f"{self.base_url}/address/{address}"
-            response = requests.get(url, timeout=10, verify=False)
+            response = requests.get(url, timeout=10, verify=self.mempool_verify_ssl)
             response.raise_for_status()
             data = response.json()
             
@@ -890,7 +1062,7 @@ class WalletBalanceAPI:
         """
         try:
             url = f"{self.base_url}/address/{address}"
-            response = requests.get(url, timeout=10, verify=False)
+            response = requests.get(url, timeout=10, verify=self.mempool_verify_ssl)
             response.raise_for_status()
             data = response.json()
             
@@ -1009,16 +1181,28 @@ class WalletBalanceAPI:
         
         # Store all address information across iterations
         all_addresses_info = {}  # address -> (index, usage_info)
+        addresses_with_indices = []  # Accumulated addresses across iterations
+        last_derived_count = 0  # Track how many addresses we've already derived
         
         if self.enable_bootstrap_search:
             print(f"🚀 Phase 1: Bootstrap search - continue until gap limit satisfied")
             print(f"   📋 Will expand until {self.gap_limit} consecutive unused addresses found")
             
             while not bootstrap_complete:
-                # Derive addresses for current count
-                addresses_with_indices = self.address_derivation.derive_addresses(xpub, current_count)
+                # Only derive NEW addresses that we haven't derived yet
+                if current_count > last_derived_count:
+                    if last_derived_count == 0:
+                        # First iteration - derive initial batch
+                        new_addresses_batch = self.address_derivation.derive_addresses(xpub, current_count)
+                        addresses_with_indices = new_addresses_batch
+                    else:
+                        # Subsequent iterations - derive only the additional addresses needed
+                        increment_needed = current_count - last_derived_count
+                        new_addresses_batch = self.address_derivation.derive_addresses_range(xpub, last_derived_count, current_count)
+                        addresses_with_indices.extend(new_addresses_batch)
+                    last_derived_count = current_count
                 
-                # Only check NEW addresses that haven't been processed yet
+                # Extract NEW addresses that were just derived (only the ones not yet processed)
                 new_addresses = []
                 for address, index in addresses_with_indices:
                     if address not in all_addresses_info:
@@ -1104,6 +1288,22 @@ class WalletBalanceAPI:
                                 used_in_last_batch += 1
                     
                     print(f"   📊 Gap analysis: {used_in_last_batch}/{self.gap_limit} of last {self.gap_limit} addresses were ever used")
+                    
+                    # Debug: Show which addresses in the last batch were considered used
+                    if used_in_last_batch > 0:
+                        print(f"   🔍 Used addresses in last batch:")
+                        for address, index in last_addresses:
+                            if address in all_addresses_info:
+                                _, usage_info = all_addresses_info[address]
+                                ever_used = usage_info.get('was_ever_used', False) or usage_info.get('total_received', 0) > 0
+                                if ever_used:
+                                    total_received = usage_info.get('total_received', 0)
+                                    current_balance = usage_info.get('current_balance', 0)
+                                    if PRIVACY_UTILS_AVAILABLE:
+                                        masked_address = BitcoinPrivacyMasker.mask_address(address)
+                                        print(f"       Index {index}: {masked_address} (received: {total_received:.8f}, balance: {current_balance:.8f})")
+                                    else:
+                                        print(f"       Index {index}: {address[:20]}... (received: {total_received:.8f}, balance: {current_balance:.8f})")
                     print(f"   📊 Total summary: {positive_balance_count} active, {ever_used_count} used in past, {positive_balance_count + ever_used_count} total used")
                     
                     total_used_addresses = positive_balance_count + ever_used_count
@@ -1173,7 +1373,9 @@ class WalletBalanceAPI:
                     for address, index in last_addresses:
                         if address in all_addresses_info:
                             _, usage_info = all_addresses_info[address]
-                            if usage_info['was_ever_used']:
+                            # Use consistent logic: check both was_ever_used and total_received
+                            ever_used = usage_info.get('was_ever_used', False) or usage_info.get('total_received', 0) > 0
+                            if ever_used:
                                 used_in_last_batch += 1
                     
                     if used_in_last_batch > 0:
@@ -1199,12 +1401,28 @@ class WalletBalanceAPI:
         for address, (index, usage_info) in sorted(all_addresses_info.items(), key=lambda x: x[1][0]):
             final_addresses.append((address, index))
         
-        # Report results
+        # Warn if no addresses were derived (shouldn't happen)
+        if not final_addresses:
+            print(f"⚠️ WARNING: No addresses were derived from XPUB - this might indicate a problem")
+            # Fallback to basic derivation
+            final_addresses = self.address_derivation.derive_addresses(xpub, 20)
+            current_count = 20
+        
+        # Report final results with detailed summary
+        total_addresses = len(final_addresses)
+        positive_balance_addresses = sum(1 for _, (_, info) in all_addresses_info.items() if info.get('current_balance', 0) > 0)
+        used_addresses = sum(1 for _, (_, info) in all_addresses_info.items() if info.get('was_ever_used', False) or info.get('total_received', 0) > 0)
+        
         if current_count != initial_count:
             expansion_reason = "bootstrap + gap limit" if self.enable_bootstrap_search else "gap limit"
             print(f"📝 Enhanced gap limit expanded derivation: {initial_count} → {current_count} ({expansion_reason})")
         else:
             print(f"📝 Enhanced gap limit result: {current_count} addresses (no expansion needed)")
+        
+        print(f"📊 Final summary: {total_addresses} total addresses, {positive_balance_addresses} with balance, {used_addresses} ever used")
+        
+        if used_addresses > 0 and positive_balance_addresses == 0:
+            print(f"⚠️ NOTE: Found {used_addresses} used addresses but all have zero balance - this is normal if funds were moved")
         
         return final_addresses, current_count
     
@@ -1234,19 +1452,9 @@ class WalletBalanceAPI:
                 print(f"🔐 Loaded {len(wallet_entries_with_comments)} wallet entries with comments from secure configuration")
                 return wallet_entries_with_comments
             
-            # Fallback to old format (simple strings)
-            wallet_entries = secure_config.get("wallet_balance_addresses", [])
-            
-            if wallet_entries:
-                print(f"🔐 Loaded {len(wallet_entries)} wallet entries (old format) from secure configuration")
-                return wallet_entries
-            else:
-                # Fallback to regular config if no secure entries found
-                fallback_entries = []
-                if fallback_entries:
-                    print("⚠️ No entries in secure config, using fallback from regular config")
-                    print("💡 Consider migrating sensitive data to secure config")
-                return fallback_entries
+            # No fallback - only use modern table format
+            print("🔐 No wallet entries found in secure configuration")
+            return []
                 
         except Exception as e:
             print(f"❌ Error loading secure wallet config: {e}")

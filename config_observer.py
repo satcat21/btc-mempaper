@@ -55,7 +55,7 @@ class ConfigurationObserver:
     def _calculate_wallet_config_hash(self, config: Dict) -> str:
         """Calculate hash of wallet-specific configuration."""
         wallet_config = {
-            "wallet_balance_addresses": config.get("wallet_balance_addresses", []),
+            # Legacy field removed - now using wallet_balance_addresses_with_comments only
             "xpub_derivation_count": config.get("xpub_derivation_count", 20)
         }
         config_str = json.dumps(wallet_config, sort_keys=True)
@@ -207,7 +207,7 @@ class AsyncAddressCacheManager:
     def _calculate_cache_key(self, config: Dict) -> str:
         """Calculate cache key for configuration."""
         wallet_config = {
-            "wallet_balance_addresses": sorted(config.get("wallet_balance_addresses", [])),
+            # Legacy field removed - now using wallet_balance_addresses_with_comments only
             "xpub_derivation_count": config.get("xpub_derivation_count", 20)
         }
         config_str = json.dumps(wallet_config, sort_keys=True)
@@ -367,7 +367,8 @@ class AsyncAddressCacheManager:
         try:
             start_time = time.time()
             
-            wallet_entries = config.get("wallet_balance_addresses", [])
+            # Get wallet entries from modern table format
+            wallet_entries = config.get("wallet_balance_addresses_with_comments", [])
             derivation_count = config.get("xpub_derivation_count", 20)
             
             if not wallet_entries:
@@ -587,3 +588,46 @@ class WalletConfigurationManager:
             "queue_size": cache_stats["queue_size"],
             "cache_file_size": cache_stats["cache_file_size"]
         }
+    
+    def clear_cache_pattern(self, pattern: str, cache_type: str = "both") -> bool:
+        """
+        Clear cache entries matching a specific pattern.
+        
+        Args:
+            pattern: String pattern to match (e.g., address or XPUB prefix)
+            cache_type: Type of cache to clear ("address", "secure", or "both")
+            
+        Returns:
+            bool: True if entries were cleared, False otherwise
+        """
+        cleared = False
+        
+        try:
+            # Clear from address derivation cache
+            if cache_type in ["address", "both"]:
+                if hasattr(self.cache_manager, 'clear_pattern'):
+                    cleared = self.cache_manager.clear_pattern(pattern) or cleared
+                else:
+                    print(f"⚠️ Address cache manager does not support pattern clearing")
+            
+            # Clear from secure cache
+            if cache_type in ["secure", "both"] and SECURE_CACHE_AVAILABLE:
+                try:
+                    secure_cache = SecureCacheManager()
+                    if hasattr(secure_cache, 'clear_pattern'):
+                        cleared = secure_cache.clear_pattern(pattern) or cleared
+                    else:
+                        print(f"⚠️ Secure cache manager does not support pattern clearing")
+                except Exception as e:
+                    print(f"⚠️ Failed to clear secure cache pattern {pattern}: {e}")
+            
+            if cleared:
+                print(f"🧹 Cleared cache entries matching pattern: {pattern}")
+            else:
+                print(f"⚠️ No cache entries found matching pattern: {pattern}")
+                
+            return cleared
+            
+        except Exception as e:
+            print(f"❌ Error clearing cache pattern {pattern}: {e}")
+            return False

@@ -317,7 +317,7 @@ class AddressDerivation:
                         continue
 
                     addresses.append((address, i))
-                    print(f"[DEBUG] Derived address {i}: {address}")
+                    print(f"[DEBUG] Derived address {i}: {address[:10]}...")
 
                 except Exception as e:
                     print(f"[ERROR] Failed to derive address at index {i}: {e}")
@@ -333,3 +333,21 @@ class AddressDerivation:
             import traceback
             traceback.print_exc()
             return []
+    
+    def derive_addresses_range(self, extended_key: str, start_index: int, end_index: int) -> List[Tuple[str, int]]:
+        """
+        Derive addresses from extended public key for a specific range.
+        
+        Args:
+            extended_key: Extended public key (xpub/zpub)
+            start_index: Starting derivation index (inclusive)
+            end_index: Ending derivation index (exclusive)
+            
+        Returns:
+            List of (address, index) tuples for the range
+        """
+        if end_index <= start_index:
+            return []
+        
+        count = end_index - start_index
+        return self.derive_addresses(extended_key, count, start_index)

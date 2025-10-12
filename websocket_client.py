@@ -18,19 +18,38 @@ from datetime import datetime
 class MempoolWebSocket:
     """Handles WebSocket connection to mempool for real-time block updates with auto-reconnection."""
     
-    def __init__(self, ip, ws_port, on_new_block_callback=None):
+    def __init__(self, host, port, path="/api/v1/ws", use_wss=False, on_new_block_callback=None):
         """
         Initialize WebSocket connection.
         
         Args:
-            ip (str): IP address of the mempool instance
-            ws_port (str): WebSocket port
+            host (str): IP address or domain of the mempool instance
+            port (str): WebSocket port
+            path (str): WebSocket path
+            use_wss (bool): Whether to use WSS (secure) protocol
             on_new_block_callback (callable): Function to call when new block received
         """
-        self.ip = ip
-        self.ws_port = ws_port
-        self.ws_url = f"ws://{ip}:{ws_port}/api/v1/ws"
+        self.host = host
+        self.port = port
+        self.path = path
+        self.use_wss = use_wss
         self.on_new_block_callback = on_new_block_callback
+        
+        # Build WebSocket URL
+        protocol = "wss" if use_wss else "ws"
+        
+        # Handle standard ports for domains
+        if not host.replace('.', '').replace('-', '').isalnum():  # It's likely a domain, not an IP
+            if (use_wss and port in ["443", "80"]) or \
+               (not use_wss and port in ["80", "443"]):
+                self.ws_url = f"{protocol}://{host}{path}"
+            else:
+                self.ws_url = f"{protocol}://{host}:{port}{path}"
+        else:
+            # Always include port for IP addresses
+            self.ws_url = f"{protocol}://{host}:{port}{path}"
+        
+        print(f"🔗 WebSocket URL: {self.ws_url}")
         self.ws = None
         self.is_connected = False
         self.should_reconnect = True

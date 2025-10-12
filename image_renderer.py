@@ -969,26 +969,36 @@ class ImageRenderer:
             bitaxe_data = self.bitaxe_api.fetch_bitaxe_stats()
             info_blocks.append((self.render_bitaxe_block, bitaxe_data))
         if config.get("show_wallet_balances_block", True):
-            print("🔍 [IMG] Loading cached wallet data...")
-            wallet_data = self.wallet_api.get_cached_wallet_balances()
-            # Import privacy utils if available
-            # try:
-                # from privacy_utils import mask_bitcoin_data
-                # masked_wallet_data = mask_bitcoin_data(wallet_data)
-                # print(f"📋 [IMG] Cached wallet data result: {masked_wallet_data}")
-            # except ImportError:
-                # print(f"📋 [IMG] Cached wallet data result: {wallet_data}")
-            if wallet_data is None or wallet_data.get("error"):
-                print("⚠️ [IMG] No cached wallet data available or error occurred, using default values")
-                wallet_data = {
-                    "total_btc": 0,
-                    "total_fiat": 0,
-                    "fiat_currency": "USD",
-                    "addresses": [],
-                    "xpubs": [],
-                }
+            if startup_mode:
+                print("� [STARTUP-IMG] Loading cached wallet data for immediate display...")
+                wallet_data = self.wallet_api.get_cached_wallet_balances()
+                if wallet_data is None or wallet_data.get("error"):
+                    print("⚠️ [STARTUP-IMG] No cached wallet data available, using default values for immediate display")
+                    wallet_data = {
+                        "total_btc": 0,
+                        "total_fiat": 0,
+                        "fiat_currency": config.get("fiat_currency", "USD"),
+                        "unit": config.get("btc_unit", "BTC"),
+                        "show_fiat": config.get("show_fiat_balance", False),
+                        "addresses": [],
+                        "xpubs": [],
+                    }
+                else:
+                    print(f"✅ [STARTUP-IMG] Using cached wallet data: {wallet_data.get('total_btc', 0):.8f} BTC")
             else:
-                print(f"✅ [IMG] Using cached wallet data: {wallet_data.get('total_btc', 0)} BTC")
+                print("� [IMG] Loading cached wallet data...")
+                wallet_data = self.wallet_api.get_cached_wallet_balances()
+                if wallet_data is None or wallet_data.get("error"):
+                    print("⚠️ [IMG] No cached wallet data available or error occurred, using default values")
+                    wallet_data = {
+                        "total_btc": 0,
+                        "total_fiat": 0,
+                        "fiat_currency": "USD",
+                        "addresses": [],
+                        "xpubs": [],
+                    }
+                else:
+                    print(f"✅ [IMG] Using cached wallet data: {wallet_data.get('total_btc', 0)} BTC")
             
             # Only try to convert to fiat if we have valid wallet data
             if wallet_data.get("total_btc") is not None and not wallet_data.get("error"):

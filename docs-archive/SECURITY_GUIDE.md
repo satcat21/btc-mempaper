@@ -28,7 +28,7 @@ This guide provides lightweight but effective protection for sensitive Bitcoin d
 {
   "language": "en",
   "display_orientation": "vertical",
-  "mempool_ip": "192.168.1.100",
+  "mempool_host": "192.168.1.100",
   "btc_price_currency": "USD"
 }
 ```

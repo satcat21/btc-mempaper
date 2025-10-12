@@ -35,16 +35,16 @@ def register_mempool_config_routes(app, config_manager):
         """Validate mempool instance configuration."""
         try:
             data = request.get_json()
-            mempool_ip = data.get('mempool_ip', '')
+            mempool_host = data.get('mempool_host', '')
             mempool_port = int(data.get('mempool_port', 0))
             
-            if not mempool_ip or not mempool_port:
+            if not mempool_host or not mempool_port:
                 return jsonify({
                     'success': False,
-                    'error': 'Missing mempool IP or port'
+                    'error': 'Missing mempool host or port'
                 }), 400
             
-            validation = mempool_manager.validate_mempool_instance(mempool_ip, mempool_port)
+            validation = mempool_manager.validate_mempool_instance(mempool_host, mempool_port)
             
             return jsonify({
                 'success': True,

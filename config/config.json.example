@@ -2,9 +2,13 @@
   "language": "en",
   "admin_username": "admin",
 
-  "mempool_ip": "192.168.0.119",
-  "mempool_rest_port": 4081,
-  "mempool_ws_port": 8999,
+  "mempool_use_https": true,
+  "mempool_host": "mempool.mydomain",
+  "mempool_rest_port": "443",
+  "mempool_ws_port": "443",
+  "mempool_ws_path": "/api/v1/ws",
+  "mempool_verify_ssl": false,
+
   "fee_parameter": "fastestFee",
 
   "live_block_notifications_enabled": false,

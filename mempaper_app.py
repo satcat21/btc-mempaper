@@ -80,15 +80,19 @@ class MempaperApp:
         
         # Note: Callback registration moved to end of __init__ to avoid issues during initialization
 
-        # --- FORCE IMAGE REGENERATION ON STARTUP IF BLOCK HEIGHT CHANGED ---
+        # --- CHECK BLOCK HEIGHT ON STARTUP BUT DON'T FORCE REGENERATION ---
+        # Let _generate_initial_image handle this logic properly
         try:
             block_info = self.mempool_api.get_current_block_info()
-            if (hasattr(self, 'current_block_height') and hasattr(self, 'current_block_hash') and hasattr(self, 'image_is_current')):
-                if (self.current_block_height != block_info['block_height'] or self.current_block_hash != block_info['block_hash'] or not self.image_is_current):
-                    print(f"🔄 [STARTUP] Cached image is outdated or block changed: cached_height={getattr(self, 'current_block_height', None)}, current_height={block_info['block_height']}, is_current={getattr(self, 'image_is_current', None)}")
-                    self._generate_new_image(block_info['block_height'], block_info['block_hash'], skip_epaper=False)
+            if (hasattr(self, 'current_block_height') and self.current_block_height and 
+                self.current_block_height != block_info['block_height']):
+                print(f"🔄 [STARTUP] Block changed since last run: {self.current_block_height} → {block_info['block_height']}")
+                self.image_is_current = False  # Mark as outdated for _generate_initial_image to handle
+            elif hasattr(self, 'current_block_height') and self.current_block_height == block_info['block_height']:
+                print(f"📸 [STARTUP] Block unchanged: {block_info['block_height']} - cache may be valid")
         except Exception as e:
-            print(f"⚠️ [STARTUP] Failed to force image regeneration: {e}")
+            print(f"⚠️ [STARTUP] Failed to check current block: {e}")
+            self.image_is_current = False  # Mark as outdated if we can't verify
     
     @staticmethod
     def mask_wallet_data_for_logging(wallet_data):
@@ -205,12 +209,12 @@ class MempaperApp:
         # Initialize image renderer
         self.image_renderer = ImageRenderer(self.config, self.translations)
         
-        # Initialize block reward monitor
+        # Initialize block reward monitor (with block callbacks as backup to WebSocket)
         from block_monitor import initialize_block_monitor
         self.block_monitor = initialize_block_monitor(
             self.config_manager, 
-            self.on_new_block_received,
-            self.on_new_block_notification
+            self.on_new_block_received,  # Use same callback as WebSocket for consistency
+            self.on_new_block_notification if hasattr(self, 'on_new_block_notification') else None
         )
         
         # Sync cache to current blockchain height (important for recovery after downtime)
@@ -286,6 +290,14 @@ class MempaperApp:
             # Traditional startup process
             self._init_websocket()
             
+            # Start WebSocket listener now that client is initialized
+            if hasattr(self, 'websocket_client') and self.websocket_client:
+                print("🚀 Starting WebSocket listener (traditional startup)")
+                print(f"🔗 WebSocket URL: {self.websocket_client.ws_url}")
+                self.websocket_client.start_listener_thread()
+            else:
+                print("⚠️ WebSocket client not available - using block monitor for updates")
+            
             # Generate initial image on startup (skip for faster PC testing if disabled)
             skip_initial_image = self.config.get("skip_initial_image_generation", False)
             if skip_initial_image:
@@ -304,11 +316,21 @@ class MempaperApp:
         print("✓ Mempaper application initialized successfully")
     
     def _init_api_clients(self):
-        # Mempool API setup
-        mempool_ip = self.config.get("mempool_ip", "127.0.0.1")
+        # Mempool API setup with HTTPS support
+        mempool_host = self.config.get("mempool_host", "127.0.0.1")
         mempool_rest_port = self.config.get("mempool_rest_port", "4081")
-        self.mempool_api = MempoolAPI(mempool_ip, mempool_rest_port)
-        print("✓ Mempool API client initialized")
+        mempool_use_https = self.config.get("mempool_use_https", False)
+        mempool_verify_ssl = self.config.get("mempool_verify_ssl", True)
+        
+        print(f"✓ Using mempool host: {mempool_host}")
+        
+        self.mempool_api = MempoolAPI(
+            host=mempool_host,
+            port=mempool_rest_port,
+            use_https=mempool_use_https,
+            verify_ssl=mempool_verify_ssl
+        )
+        print(f"✓ Mempool API client initialized ({'HTTPS' if mempool_use_https else 'HTTP'})")
     
     def _init_websocket(self):
         """Initialize WebSocket connection for real-time updates."""
@@ -319,13 +341,20 @@ class MempaperApp:
             self.websocket_client = None
             return
             
-        mempool_ip = self.config.get("mempool_ip", "127.0.0.1")
+        # Get WebSocket configuration
+        mempool_host = self.config.get("mempool_host", "127.0.0.1")
         mempool_ws_port = self.config.get("mempool_ws_port", "8999")
+        mempool_ws_path = self.config.get("mempool_ws_path", "/api/v1/ws")
+        mempool_use_https = self.config.get("mempool_use_https", False)
         
-        # Create WebSocket client with callback
+        print(f"✓ Using mempool host for WebSocket: {mempool_host}")
+        
+        # Create WebSocket client with proper protocol and path
         self.websocket_client = MempoolWebSocket(
-            mempool_ip, 
-            mempool_ws_port, 
+            host=mempool_host,
+            port=mempool_ws_port,
+            path=mempool_ws_path,
+            use_wss=mempool_use_https,  # Use WSS if HTTPS is enabled
             on_new_block_callback=self.on_new_block_received
         )
         
@@ -333,30 +362,166 @@ class MempaperApp:
         backup_duration_minutes = self.config.get("backup_duration_minutes", 45)  # Default 45 minutes
         self.websocket_client.set_backup_schedule(max_backup_duration_minutes=backup_duration_minutes)
         
-        print("✓ WebSocket client initialized with backup-aware reconnection")
+        protocol = "WSS" if mempool_use_https else "WS"
+        print(f"✓ WebSocket client initialized with backup-aware reconnection ({protocol})")
         print(f"  📋 Max backup duration: {backup_duration_minutes} minutes")
     
     def _generate_initial_image(self):
         """Generate initial dashboard image on startup - optimized for fast start."""
-        # If we already have cache metadata loaded, verify it's still current
+        
+        # FIRST: Check if wallet bootstrap is needed at startup - smart cache-based decision
+        print("🔍 Checking if wallet bootstrap is needed at startup...")
+        try:
+            # Check configuration for extended keys (XPUB/ZPUB)
+            from config_manager import ConfigManager
+            config_manager = ConfigManager()
+            
+            # Get wallet addresses from config - use correct config keys
+            wallet_addresses = []
+            
+            # Try the correct wallet balance config keys from the debug output
+            # Get wallet addresses from modern table format only
+            wallet_addresses = config_manager.get("wallet_balance_addresses_with_comments", [])
+            if wallet_addresses:
+                print(f"🔍 [DEBUG] Found {len(wallet_addresses)} wallet entries in 'wallet_balance_addresses_with_comments'")
+            else:
+                # Fallback check for any legacy configurations (just for debugging)
+                legacy_addresses = config_manager.get("wallet_balance_addresses", [])
+                if legacy_addresses:
+                    print(f"⚠️ [DEBUG] Found {len(legacy_addresses)} entries in legacy 'wallet_balance_addresses' field - these should be migrated to the table format")
+                    wallet_addresses = legacy_addresses
+            
+            if not wallet_addresses:
+                print(f"🔍 [DEBUG] No wallet addresses found in configuration")
+            
+            # Debug: show what we found
+            if wallet_addresses:
+                for i, entry in enumerate(wallet_addresses[:3]):  # Show first 3
+                    if isinstance(entry, dict):
+                        address = entry.get("address", "")
+                        comment = entry.get("comment", "")
+                        print(f"   [DEBUG] Entry {i}: {address[:20]}... ({comment})")
+                    else:
+                        print(f"   [DEBUG] Entry {i}: {str(entry)[:20]}...")
+            else:
+                print(f"🔍 [DEBUG] No wallet addresses found in any config source")
+            
+            extended_keys = []
+            
+            for entry in wallet_addresses:
+                if isinstance(entry, dict):
+                    address = entry.get("address", "")
+                else:
+                    address = str(entry)
+                
+                # Check if it's an extended key (XPUB/ZPUB are typically 100+ characters)
+                if len(address) > 50 and (address.lower().startswith(('xpub', 'zpub', 'ypub'))):
+                    extended_keys.append(address)
+            
+            if not wallet_addresses:
+                print("📋 No wallet addresses configured - skipping bootstrap")
+            elif not extended_keys:
+                # For regular addresses, try to get cached data
+                try:
+                    wallet_data = self.wallet_balance_api.get_cached_wallet_balances()
+                    if wallet_data and 'addresses' in wallet_data:
+                        total_balance = wallet_data.get('total_btc', 0)
+                        print(f"✓ [STARTUP] Regular addresses only: {len(wallet_data.get('addresses', []))} addresses, {total_balance} BTC total")
+                    else:
+                        print(f"✓ [STARTUP] Regular addresses configured but no cached balance data")
+                except Exception as cache_e:
+                    print(f"✓ [STARTUP] Regular addresses configured (cache check failed: {cache_e})")
+            else:
+                # Extended keys found - check if we have valid cached address derivation
+                print(f"🔑 [STARTUP] Found {len(extended_keys)} extended key(s) - checking cache status...")
+                
+                bootstrap_needed = False
+                current_height = 0
+                current_hash = "unknown"
+                
+                # Get current block info for cache validation
+                try:
+                    current_block_info = self.mempool_api.get_current_block_info()
+                    current_height = current_block_info['block_height']
+                    current_hash = current_block_info['block_hash']
+                except Exception as e:
+                    print(f"⚠️ Could not get current block info: {e}")
+                
+                # Check async wallet address cache for each extended key
+                for xpub in extended_keys:
+                    cache_status = self._check_async_wallet_cache_status(xpub, current_height)
+                    
+                    if cache_status == "missing":
+                        print(f"🚀 [STARTUP] No cached addresses found for {xpub[:20]}... - bootstrap needed")
+                        bootstrap_needed = True
+                        break
+                    elif cache_status == "outdated":
+                        print(f"🔄 [STARTUP] Cached addresses outdated for {xpub[:20]}... - bootstrap needed")
+                        bootstrap_needed = True
+                        break
+                    elif cache_status == "valid":
+                        print(f"✅ [STARTUP] Valid cached addresses found for {xpub[:20]}... - bootstrap not needed")
+                    else:
+                        print(f"⚠️ [STARTUP] Unknown cache status for {xpub[:20]}... - bootstrap needed as fallback")
+                        bootstrap_needed = True
+                        break
+                
+                if bootstrap_needed:
+                    print("🚀 [STARTUP] Triggering bootstrap detection for extended keys...")
+                    threading.Thread(
+                        target=self._safe_wallet_refresh_thread,
+                        args=(current_height, current_hash, True),  # True for startup_mode
+                        daemon=True
+                    ).start()
+                    print("✅ [STARTUP] Bootstrap detection started in background")
+                else:
+                    print("✅ [STARTUP] All extended keys have valid cached data - skipping bootstrap")
+        except Exception as e:
+            print(f"⚠️ Could not check wallet status: {e}")
+        
+        # Get current block info for image cache comparison
+        try:
+            current_block_info = self.mempool_api.get_current_block_info()
+            current_height = current_block_info['block_height']
+            current_hash = current_block_info['block_hash']
+        except Exception as e:
+            print(f"⚠️ Could not get current block info: {e}")
+            # Proceed with generation if we can't get block info
+            current_height = None
+            current_hash = None
+        
+        # If we have valid cache metadata and current block info
         if (self.current_block_height is not None and 
             self.image_is_current and 
-            os.path.exists(self.current_image_path)):
+            os.path.exists(self.current_image_path) and
+            os.path.exists(self.current_eink_image_path) and
+            current_height is not None):
             
-            try:
-                block_info = self.mempool_api.get_current_block_info()
-                
-                if (self.current_block_height == block_info['block_height'] and
-                    self.current_block_hash == block_info['block_hash']):
-                    print(f"📸 Cache metadata restored: Block {self.current_block_height} is still current")
-                    print("✓ Skipping initial image generation (cache is up-to-date)")
-                    return
-                else:
-                    print(f"📊 Block changed since cache: {self.current_block_height} → {block_info['block_height']}")
-                    self.image_is_current = False
-            except Exception as e:
-                print(f"⚠️ Could not verify current block, will regenerate: {e}")
+            # Check if cache is for the current block
+            if (self.current_block_height == current_height and
+                self.current_block_hash == current_hash):
+                print(f"📸 Cache is current for block {current_height} - skipping generation")
+                return
+            else:
+                print(f"📊 Block changed: {self.current_block_height} → {current_height}")
                 self.image_is_current = False
+        
+        # Check for recent cached image as fallback
+        elif os.path.exists(self.current_image_path) and current_height is not None:
+            file_age = time.time() - os.path.getmtime(self.current_image_path)
+            if file_age < 3600:  # Less than 1 hour old
+                # If we don't know what block our cached image is for, mark as outdated
+                if (self.current_block_height is None or 
+                    self.current_block_height != current_height):
+                    print(f"📸 Cached image exists but for unknown/different block - will refresh")
+                    self.image_is_current = False
+                else:
+                    print(f"📸 Using cached image for current block {current_height}")
+                    self.current_block_height = current_height
+                    self.current_block_hash = current_hash
+                    self.image_is_current = True
+                    self._save_cache_metadata()
+                return
         
         # Check if we have a recent cached image first
         if os.path.exists(self.current_image_path):
@@ -387,24 +552,20 @@ class MempaperApp:
                     return
         
         try:
-            print("🎨 Generating initial dashboard image...")
-            
-            # Warm up APIs before generating the first image to ensure complete data
-            self._warm_up_apis()
+            print("🎨 Generating initial dashboard image with cached data...")
             
             # Get current block info from mempool API
             block_info = self.mempool_api.get_current_block_info()
             
-            # Generate image but skip e-Paper display for faster startup
-            print(f"🎨 Generating new dashboard image for block {block_info['block_height']}...")
+            # IMMEDIATE IMAGE GENERATION: Use cached wallet data for instant startup
+            print(f"⚡ [IMMEDIATE] Generating dashboard with cached data for block {block_info['block_height']}...")
             
-            # Render both web and e-ink images 
-            # Note: Address derivation is complete, so balance calculation should work normally
+            # Render both web and e-ink images using cached data (startup_mode=True)
             web_img, eink_img, meme_path = self.image_renderer.render_dual_images(
                 block_info['block_height'], 
-                block_info['block_hash'], 
+                block_info['block_hash'],
                 mempool_api=self.mempool_api,
-                startup_mode=False  # Address derivation complete - calculate real balances
+                startup_mode=True  # This forces use of cached data only
             )
             
             # Save both images for caching
@@ -424,7 +585,16 @@ class MempaperApp:
             # Save persistent cache metadata
             self._save_cache_metadata()
             
-            print("✓ Initial dashboard image generated and cached")
+            print("✓ Initial dashboard image generated and cached with existing data")
+            
+            # ASYNC WALLET REFRESH: Update wallet balances in background and regenerate if changed
+            print("🔄 [ASYNC] Starting background wallet balance refresh...")
+            threading.Thread(
+                target=self._async_wallet_refresh_and_regenerate,
+                args=(block_info['block_height'], block_info['block_hash']),
+                daemon=True
+            ).start()
+            print("✅ [ASYNC] Background wallet refresh started - will regenerate image if balance changed")
             
             # Display on e-Paper in background thread (don't block startup)
             if self.e_ink_enabled:
@@ -440,6 +610,130 @@ class MempaperApp:
         except Exception as e:
             print(f"⚠️ Failed to generate initial image: {e}")
             print("   Image will be generated on first user request")
+    
+    def _async_wallet_refresh_and_regenerate(self, block_height: int, block_hash: str):
+        """
+        Async method to refresh wallet balances and regenerate image if balance changed.
+        This provides optimal UX by serving cached data immediately, then updating if needed.
+        """
+        try:
+            print(f"🔄 [ASYNC-REFRESH] Starting wallet balance refresh for block {block_height}")
+            
+            # Get cached wallet data for comparison
+            cached_wallet_data = self.image_renderer.wallet_api.get_cached_wallet_balances()
+            cached_balance = cached_wallet_data.get('total_btc', 0) if cached_wallet_data else 0
+            
+            print(f"📊 [ASYNC-REFRESH] Cached balance: {cached_balance:.8f} BTC")
+            
+            # Fetch fresh wallet balances (this might take time for XPUB derivation)
+            print("🔍 [ASYNC-REFRESH] Fetching fresh wallet balances...")
+            fresh_wallet_data = self.image_renderer.wallet_api.fetch_wallet_balances(startup_mode=False)
+            
+            if fresh_wallet_data and not fresh_wallet_data.get('error'):
+                fresh_balance = fresh_wallet_data.get('total_btc', 0)
+                print(f"📊 [ASYNC-REFRESH] Fresh balance: {fresh_balance:.8f} BTC")
+                
+                # Compare balances (use small epsilon for floating point comparison)
+                balance_changed = abs(fresh_balance - cached_balance) > 0.00000001  # 1 satoshi precision
+                
+                if balance_changed:
+                    print(f"💥 [ASYNC-REFRESH] Balance changed: {cached_balance:.8f} → {fresh_balance:.8f} BTC")
+                    print("🎨 [ASYNC-REFRESH] Regenerating image with updated balance...")
+                    
+                    # Regenerate image with fresh data
+                    self._generate_new_image(
+                        block_height, 
+                        block_hash, 
+                        skip_epaper=False,  # Update e-Paper with new balance
+                        use_new_meme=False  # Keep same meme to minimize change
+                    )
+                    
+                    print("✅ [ASYNC-REFRESH] Image regenerated with updated wallet balance")
+                else:
+                    print("✅ [ASYNC-REFRESH] Balance unchanged - no image regeneration needed")
+                    
+                # Update cache with fresh data regardless
+                self.image_renderer.wallet_api.update_cache(fresh_wallet_data)
+                
+            else:
+                error_msg = fresh_wallet_data.get('error', 'Unknown error') if fresh_wallet_data else 'No data returned'
+                print(f"⚠️ [ASYNC-REFRESH] Failed to fetch fresh wallet data: {error_msg}")
+                print("📸 [ASYNC-REFRESH] Keeping existing cached image")
+                
+        except Exception as e:
+            print(f"❌ [ASYNC-REFRESH] Error during async wallet refresh: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def _check_async_wallet_cache_status(self, xpub: str, current_block_height: int) -> str:
+        """
+        Check the status of async wallet address cache for an extended key.
+        
+        Args:
+            xpub: Extended public key (xpub/zpub)
+            current_block_height: Current blockchain height
+            
+        Returns:
+            "missing": No cache file exists
+            "outdated": Cache exists but is outdated (>24 hours or different block context)
+            "valid": Cache exists and is current
+            "error": Could not determine status
+        """
+        try:
+            # Check if async cache manager is available
+            if not hasattr(self.image_renderer, 'wallet_api') or not hasattr(self.image_renderer.wallet_api, 'async_cache_manager'):
+                return "missing"
+            
+            cache_manager = self.image_renderer.wallet_api.async_cache_manager
+            
+            # Check if cache file exists
+            cache_file_path = "cache/async_wallet_address_cache.secure.json"
+            if not os.path.exists(cache_file_path):
+                return "missing"
+            
+            # Try different gap limit cache keys (addresses derived during bootstrap)
+            cached_addresses = None
+            final_count = 0
+            
+            for test_count in [20, 40, 60, 80, 100, 120, 140, 160, 180, 200]:
+                cache_key = f"{xpub}:gap_limit:{test_count}"
+                test_addresses = cache_manager.get_addresses(cache_key)
+                if test_addresses:
+                    cached_addresses = test_addresses
+                    final_count = test_count
+                    break
+            
+            if not cached_addresses:
+                # Try regular derivation cache keys as fallback
+                for test_count in [20, 40, 60, 80, 100]:
+                    cache_key = f"{xpub}:{test_count}"
+                    test_addresses = cache_manager.get_addresses(cache_key)
+                    if test_addresses:
+                        cached_addresses = test_addresses
+                        final_count = test_count
+                        break
+            
+            if not cached_addresses:
+                return "missing"
+            
+            # Check cache age (consider outdated if >24 hours)
+            try:
+                cache_mtime = os.path.getmtime(cache_file_path)
+                cache_age_hours = (time.time() - cache_mtime) / 3600
+                
+                if cache_age_hours > 24:
+                    return "outdated"
+            except Exception:
+                # If we can't check age, consider it potentially outdated
+                return "outdated"
+            
+            # Cache exists and is recent
+            print(f"   📊 Found {final_count} cached addresses (age: {cache_age_hours:.1f}h)")
+            return "valid"
+            
+        except Exception as e:
+            print(f"⚠️ Error checking cache status for {xpub[:20]}...: {e}")
+            return "error"
     
     def _warm_up_apis(self):
         """
@@ -459,8 +753,17 @@ class MempaperApp:
             print(f"⚠️ BTC price API warm-up failed: {e}")
         
         # Warm up wallet balance API (if configured)
-        wallet_entries = self.config.get("wallet_balance_addresses", [])
-        if wallet_entries:
+        # Get wallet entries from modern table format  
+        wallet_entries = self.config.get("wallet_balance_addresses_with_comments", [])
+        # Extract actual addresses from table format for validation
+        wallet_addresses = []
+        for entry in wallet_entries:
+            if isinstance(entry, dict) and entry.get("address"):
+                wallet_addresses.append(entry["address"].strip())
+            elif isinstance(entry, str):
+                wallet_addresses.append(entry.strip())
+        
+        if wallet_addresses:
             try:
                 # Use startup_mode=True to utilize cached data from address derivation phase
                 print("🚀 [WARMUP] Using cached wallet data from address derivation...")
@@ -606,15 +909,21 @@ class MempaperApp:
             # Start WebSocket listener now that client is initialized
             if hasattr(self, 'websocket_client') and self.websocket_client:
                 print("🚀 Starting WebSocket listener (background initialization)")
+                print(f"🔗 WebSocket URL: {self.websocket_client.ws_url}")
                 self.websocket_client.start_listener_thread()
+            else:
+                print("⚠️ WebSocket client not available - using block monitor for updates")
             
             # Warm up APIs
             print("🔄 Warming up API clients...")
             self._warm_up_apis()
             
-            # Generate fresh image
-            print("🔄 Generating fresh dashboard image...")
-            self._generate_initial_image()
+            # Only generate image if not already current
+            if not self.image_is_current or not os.path.exists(self.current_image_path):
+                print("🔄 Generating fresh dashboard image...")
+                self._generate_initial_image()
+            else:
+                print("📸 Dashboard image already current - skipping generation")
             
             # Notify web clients that fresh content is available
             if hasattr(self, 'socketio') and self.socketio:
@@ -812,6 +1121,180 @@ class MempaperApp:
                     # Still remove from tracking even if cancellation failed
                     self.active_display_processes.pop(block_height, None)
     
+    def _extract_wallet_addresses_from_config(self, config):
+        """
+        Extract all wallet addresses from configuration.
+        
+        Args:
+            config: Configuration dictionary
+            
+        Returns:
+            Set of addresses and XPUB keys
+        """
+        wallet_addresses = set()
+        
+        # Get wallet balance addresses from modern table format (primary and only source)
+        wallet_table = config.get("wallet_balance_addresses_with_comments", [])
+        for entry in wallet_table:
+            if isinstance(entry, dict):
+                address = entry.get("address", "")
+                if address:
+                    wallet_addresses.add(address.strip())
+            elif isinstance(entry, str):
+                wallet_addresses.add(entry.strip())
+        
+        return wallet_addresses
+    
+    def _cleanup_removed_wallet_caches(self, old_config, new_config):
+        """
+        Clean up cache entries for wallet addresses that were removed from configuration.
+        
+        Args:
+            old_config: Previous configuration
+            new_config: New configuration
+        """
+        try:
+            # Extract wallet addresses from both configs
+            old_addresses = self._extract_wallet_addresses_from_config(old_config)
+            new_addresses = self._extract_wallet_addresses_from_config(new_config)
+            
+            # Find addresses that were removed
+            removed_addresses = old_addresses - new_addresses
+            
+            if not removed_addresses:
+                print("🧹 No removed wallet addresses - cache cleanup not needed")
+                return
+            
+            print(f"🧹 Cleaning up cache for {len(removed_addresses)} removed wallet address(es)")
+            
+            # Initialize cache managers for comprehensive cleanup
+            async_cache_cleared = False
+            unified_cache_cleared = False
+            
+            # 1. Clear async address cache manager
+            try:
+                from config_observer import AsyncAddressCacheManager
+                async_cache = AsyncAddressCacheManager()
+                
+                # Clear cache entries for each removed address
+                for address in removed_addresses:
+                    print(f"   🗑️ Cleaning cache for: {address[:20]}...")
+                    
+                    # Clear patterns for the removed address/XPUB (async cache)
+                    if hasattr(async_cache, 'invalidate_cache'):
+                        # Use the actual method name from AsyncAddressCacheManager
+                        async_cache.invalidate_cache(address[:20])
+                        print(f"      ✅ Cleared async cache patterns for: {address[:20]}...")
+                        async_cache_cleared = True
+                    else:
+                        print(f"      ⚠️ Async cache manager does not support pattern clearing")
+                        
+            except ImportError:
+                print("   ⚠️ Async cache manager not available - skipping async cache cleanup")
+            except Exception as e:
+                print(f"   ⚠️ Error during async cache cleanup: {e}")
+            
+            # 2. Clear unified secure cache for XPUBs/ZPUBs and addresses
+            try:
+                from unified_secure_cache import get_unified_cache
+                unified_cache = get_unified_cache()
+                
+                for address in removed_addresses:
+                    # Clear optimized balance cache for XPUBs/ZPUBs
+                    if address.startswith(('xpub', 'zpub')) and hasattr(self, 'wallet_api'):
+                        try:
+                            if hasattr(self.wallet_api, 'unified_cache'):
+                                # Clear optimized balance cache
+                                optimized_cache = self.wallet_api.unified_cache.get_cache("optimized_balance_cache")
+                                if optimized_cache:
+                                    cache_key = self.wallet_api._get_optimized_balance_cache_key(address)
+                                    if cache_key in optimized_cache:
+                                        del optimized_cache[cache_key]
+                                        self.wallet_api.unified_cache.save_cache("optimized_balance_cache", optimized_cache)
+                                        print(f"      ✅ Cleared optimized balance cache for: {address[:20]}...")
+                                        unified_cache_cleared = True
+                                
+                                # Clear address derivation cache for XPUBs/ZPUBs
+                                address_cache = self.wallet_api.unified_cache.get_cache("address_derivation_cache")
+                                if address_cache:
+                                    keys_to_remove = [key for key in address_cache.keys() if address[:20] in key]
+                                    for key in keys_to_remove:
+                                        del address_cache[key]
+                                        print(f"      ✅ Cleared address derivation cache entry: {key[:50]}...")
+                                        unified_cache_cleared = True
+                                    if keys_to_remove:
+                                        self.wallet_api.unified_cache.save_cache("address_derivation_cache", address_cache)
+                                
+                                # Clear general wallet cache entries
+                                wallet_cache = self.wallet_api.unified_cache.get_cache("wallet_cache")
+                                if wallet_cache:
+                                    keys_to_remove = [key for key in wallet_cache.keys() if address[:20] in key]
+                                    for key in keys_to_remove:
+                                        del wallet_cache[key]
+                                        print(f"      ✅ Cleared wallet cache entry: {key[:50]}...")
+                                        unified_cache_cleared = True
+                                    if keys_to_remove:
+                                        self.wallet_api.unified_cache.save_cache("wallet_cache", wallet_cache)
+                                        
+                        except Exception as e:
+                            print(f"      ⚠️ Could not clear unified cache for XPUB/ZPUB: {e}")
+                    
+                    # For regular addresses, clear any cache entries containing the address
+                    else:
+                        try:
+                            # Check all cache types for entries containing this address
+                            cache_types = ["address_derivation_cache", "wallet_cache", "balance_cache"]
+                            for cache_type in cache_types:
+                                try:
+                                    cache_data = unified_cache.get_cache(cache_type)
+                                    if cache_data:
+                                        keys_to_remove = [key for key in cache_data.keys() if address in key]
+                                        for key in keys_to_remove:
+                                            del cache_data[key]
+                                            print(f"      ✅ Cleared {cache_type} entry: {key[:50]}...")
+                                            unified_cache_cleared = True
+                                        if keys_to_remove:
+                                            unified_cache.save_cache(cache_type, cache_data)
+                                except Exception as cache_e:
+                                    print(f"      ⚠️ Could not clear {cache_type}: {cache_e}")
+                                    
+                        except Exception as e:
+                            print(f"      ⚠️ Could not clear unified cache for address: {e}")
+                
+                # 3. Force wallet API to refresh derived addresses for any remaining XPUBs/ZPUBs
+                try:
+                    if hasattr(self, 'wallet_api') and removed_addresses:
+                        # Check if any of the removed addresses were XPUBs/ZPUBs
+                        removed_xpubs = [addr for addr in removed_addresses if addr.startswith(('xpub', 'zpub'))]
+                        if removed_xpubs:
+                            print(f"   🔄 Triggering wallet API refresh for remaining addresses...")
+                            # This will force re-derivation of addresses for remaining XPUBs
+                            if hasattr(self.wallet_api, '_reinitialize_cache'):
+                                self.wallet_api._reinitialize_cache()
+                                unified_cache_cleared = True
+                except Exception as e:
+                    print(f"   ⚠️ Could not trigger wallet API refresh: {e}")
+                
+                # Report cleanup results
+                cleanup_status = []
+                if async_cache_cleared:
+                    cleanup_status.append("async cache")
+                if unified_cache_cleared:
+                    cleanup_status.append("unified cache")
+                
+                if cleanup_status:
+                    print(f"✅ Cache cleanup completed for removed addresses ({', '.join(cleanup_status)} cleared)")
+                else:
+                    print(f"⚠️ No cache entries found for removed addresses (cache may already be clean)")
+                
+            except ImportError:
+                print("   ⚠️ Unified cache not available - skipping unified cache cleanup")
+            except Exception as e:
+                print(f"   ⚠️ Error during unified cache cleanup: {e}")
+                
+        except Exception as e:
+            print(f"❌ Failed to cleanup removed wallet caches: {e}")
+    
     def _reinitialize_after_config_change(self, old_config=None):
         """Reinitialize components after configuration changes."""
         # Update translations
@@ -870,6 +1353,10 @@ class MempaperApp:
         # Update auth manager config
         self.auth_manager.config = self.config
         
+        # Clean up cache for removed wallet addresses before reinitializing
+        if old_config:
+            self._cleanup_removed_wallet_caches(old_config, self.config)
+        
         # Reinitialize components
         self._reinitialize_after_config_change(old_config)
         
@@ -905,11 +1392,19 @@ class MempaperApp:
                 return
             
             print(f"🔄 Need to generate: cached_height={self.current_block_height}, current_height={block_info['block_height']}, is_current={self.image_is_current}")
+            
+            # Use new meme if block height changed, keep existing if same block
+            use_new_meme = (self.current_block_height != block_info['block_height'])
+            if use_new_meme:
+                print(f"🎭 Block changed ({self.current_block_height} → {block_info['block_height']}) - will select new meme")
+            else:
+                print(f"🎭 Same block ({block_info['block_height']}) - will keep existing meme if available")
                 
             self._generate_new_image(
                 block_info['block_height'],
                 block_info['block_hash'],
-                skip_epaper=False  # Allow e-Paper update in background
+                skip_epaper=False,  # Allow e-Paper update in background
+                use_new_meme=use_new_meme
             )
             print("✅ Background image generation completed")
             
@@ -994,9 +1489,11 @@ class MempaperApp:
                     cache_time = metadata.get('timestamp', 0)
                     age_hours = (time.time() - cache_time) / 3600
                     
+                    # Only mark as current if age is reasonable - we'll validate block height later
                     if age_hours < 2 and self.current_block_height:
-                        self.image_is_current = True
-                        print(f"📸 Restored cache state: Block {self.current_block_height} (age: {age_hours:.1f}h)")
+                        # Don't mark as current yet - let _generate_initial_image validate block height
+                        self.image_is_current = False  # Will be validated against current block
+                        print(f"📸 Cache metadata loaded: Block {self.current_block_height} (age: {age_hours:.1f}h) - will validate")
                     else:
                         print(f"⏰ Cache metadata too old ({age_hours:.1f}h), will refresh")
                         self.image_is_current = False
@@ -1153,7 +1650,7 @@ class MempaperApp:
                     print(f"⚠️ Cached meme {self.current_meme_path} no longer exists, will select new one")
                     self.current_meme_path = None
                     # Fall back to normal generation
-                    self._generate_new_image(self.current_block_height, self.current_block_hash, skip_epaper=False)
+                    self._generate_new_image(self.current_block_height, self.current_block_hash, skip_epaper=False, use_new_meme=False)
                     return
                 
                 # Generate images with the cached meme
@@ -1221,7 +1718,7 @@ class MempaperApp:
         except Exception as e:
             print(f"❌ Error regenerating image with cached meme: {e}")
             # Fall back to normal generation
-            self._generate_new_image(self.current_block_height, self.current_block_hash, skip_epaper=False)
+            self._generate_new_image(self.current_block_height, self.current_block_hash, skip_epaper=False, use_new_meme=False)
     
     def async_wallet_refresh(self, block_height, block_hash, startup_mode=False):
         """Fetch fresh wallet data and regenerate image if balance changed."""
@@ -1363,16 +1860,28 @@ class MempaperApp:
             import traceback
             traceback.print_exc()
 
-    def _generate_new_image(self, block_height: int, block_hash: str, skip_epaper: bool = False):
+    def _generate_new_image(self, block_height: int, block_hash: str, skip_epaper: bool = False, use_new_meme: bool = True):
         """Generate a new dashboard image and cache it."""
         print(f"🎨 Generating new dashboard image for block {block_height}...")
         
-        # Render both web and e-ink images
-        web_img, eink_img, content_path = self.image_renderer.render_dual_images(
-            block_height, 
-            block_hash, 
-            mempool_api=self.mempool_api
-        )
+        # Decide whether to use cached meme or pick a new one
+        if use_new_meme or not hasattr(self, 'current_meme_path') or not self.current_meme_path or not os.path.exists(self.current_meme_path):
+            print("🎭 Selecting new random meme for this block...")
+            web_img, eink_img, content_path = self.image_renderer.render_dual_images(
+                block_height,
+                block_hash,
+                mempool_api=self.mempool_api
+            )
+            # Cache the selected meme for this block so both web and e-ink use the same image
+            self.current_meme_path = content_path
+        else:
+            print(f"🎭 Using cached meme for consistency: {os.path.basename(self.current_meme_path)}")
+            web_img, eink_img, content_path = self.image_renderer.render_dual_images_with_cached_meme(
+                block_height,
+                block_hash,
+                self.current_meme_path,
+                mempool_api=self.mempool_api
+            )
         
         # Save both images for caching
         if web_img is not None:
@@ -1385,43 +1894,51 @@ class MempaperApp:
         # Update cache state
         self.current_block_height = block_height
         self.current_block_hash = block_hash
-        self.current_meme_path = content_path  # Cache the selected content path (meme)
         self.image_is_current = True
         
         # Save persistent cache metadata to survive app restarts
         self._save_cache_metadata()
         
-        # Start async wallet refresh in background for all image generations
-        print("🔄 Starting async wallet refresh in background...")
-        # Use threading approach to avoid multiprocessing pickle issues
-        threading.Thread(
-            target=self._safe_wallet_refresh_thread,
-            args=(block_height, block_hash, False),  # False for startup_mode
-            daemon=True
-        ).start()
-        print("✅ Async wallet refresh thread started")
+        # 🚀 PERFORMANCE FIX: Return web image IMMEDIATELY, then start background tasks
+        # This ensures web clients get instant response (~3 seconds) instead of waiting for e-ink display (~25 seconds)
+        print("🚀 Returning web image immediately for fast web response")
         
-        # Display on e-Paper (only if enabled, not skipped, and block height differs)
-        if self.e_ink_enabled and not skip_epaper:
-            # Always update if block height is different from what's shown on e-ink
-            current_eink_height = getattr(self, 'last_eink_block_height', 0) or 0
-            if int(block_height or 0) != int(current_eink_height):
-                print(f"🖥️ Block height changed for e-ink: {block_height} (was: {current_eink_height})")
-                # Run e-Paper display in background to not block the response
-                threading.Thread(
-                    target=self._display_on_epaper_async,
-                    args=(self.current_eink_image_path, block_height, block_hash),
-                    daemon=True
-                ).start()
-                print("🖥️ E-Paper display started in background")
+        # Start all background tasks AFTER returning web image
+        def start_background_tasks():
+            """Start background tasks after web image is served."""
+            # Start async wallet refresh in background for all image generations
+            print("🔄 Starting async wallet refresh in background...")
+            threading.Thread(
+                target=self._safe_wallet_refresh_thread,
+                args=(block_height, block_hash, False),  # False for startup_mode
+                daemon=True
+            ).start()
+            print("✅ Async wallet refresh thread started")
+            
+            # Display on e-Paper (only if enabled, not skipped, and block height differs)
+            if self.e_ink_enabled and not skip_epaper:
+                # Always update if block height is different from what's shown on e-ink
+                current_eink_height = getattr(self, 'last_eink_block_height', 0) or 0
+                if int(block_height or 0) != int(current_eink_height):
+                    print(f"🖥️ Block height changed for e-ink: {block_height} (was: {current_eink_height})")
+                    # Run e-Paper display in background to not block the response
+                    threading.Thread(
+                        target=self._display_on_epaper_async,
+                        args=(self.current_eink_image_path, block_height, block_hash),
+                        daemon=True
+                    ).start()
+                    print("🖥️ E-Paper display started in background")
+                else:
+                    print(f"✅ E-ink already shows correct block height {block_height}, skipping display update")
+            elif skip_epaper:
+                print("ⓘ Skipping e-Paper display (skip_epaper=True)")
             else:
-                print(f"✅ E-ink already shows correct block height {block_height}, skipping display update")
-        elif skip_epaper:
-            print("ⓘ Skipping e-Paper display (skip_epaper=True)")
-        else:
-            print("ⓘ Skipping e-Paper display (disabled in config)")
+                print("ⓘ Skipping e-Paper display (disabled in config)")
         
-        return web_img  # Return web image for web clients
+        # Schedule background tasks to run immediately after this function returns
+        threading.Thread(target=start_background_tasks, daemon=True).start()
+        
+        return web_img  # Return web image for web clients IMMEDIATELY
     
     def get_prioritized_content_path(self):
         """
@@ -1440,19 +1957,35 @@ class MempaperApp:
             block_hash (str): New block hash
         """
         print(f"🟠 [DEBUG] Entered on_new_block_received for block {block_height}, hash: {block_hash}")
-        print(f"🎯 WebSocket: New block received - Height: {block_height}")
+        print(f"🎯 WebSocket: New block received - Height: {block_height} (type: {type(block_height)})")
         print(f"📦 Block hash: {block_hash}")
+        
+        # Convert block_height to integer if it's a string
+        try:
+            if isinstance(block_height, str):
+                # Handle potential decimal notation like "918.724"
+                if '.' in block_height:
+                    block_height_int = int(float(block_height))
+                    print(f"🔄 [DEBUG] Converted block height from {block_height} to {block_height_int}")
+                else:
+                    block_height_int = int(block_height)
+            else:
+                block_height_int = int(block_height)
+        except (ValueError, TypeError) as e:
+            print(f"❌ [DEBUG] Failed to convert block height {block_height}: {e}")
+            return
         
         # Trigger live block notifications to web clients (if enabled)
         if self.config.get('live_block_notifications_enabled', False):
-            print(f"📡 Live notifications enabled - sending notification for block {block_height}")
-            self.on_new_block_notification(block_height, block_hash)
+            print(f"📡 Live notifications enabled - sending notification for block {block_height_int}")
+            self.on_new_block_notification(block_height_int, block_hash)
         else:
-            print(f"📡 Live notifications disabled - skipping notification for block {block_height}")
+            print(f"📡 Live notifications disabled - skipping notification for block {block_height_int}")
         
         # Always regenerate dashboard and update e-ink display immediately after new block
         self.image_is_current = False  # Invalidate cache to force regeneration
-        self.regenerate_dashboard(block_height, block_hash)
+        print(f"🚀 [DEBUG] Calling regenerate_dashboard with height {block_height_int}")
+        self.regenerate_dashboard(block_height_int, block_hash)
     
     def on_new_block_notification(self, block_height, block_hash):
         """
@@ -1514,10 +2047,27 @@ class MempaperApp:
             traceback.print_exc()
     
     def _get_mempool_base_url(self):
-        """Get mempool API base URL from configuration."""
-        mempool_ip = self.config.get("mempool_ip", "127.0.0.1")
+        """Get mempool API base URL from configuration with HTTPS support."""
+        mempool_host = self.config.get("mempool_host", "127.0.0.1")
         mempool_rest_port = self.config.get("mempool_rest_port", "8080")
-        return f"https://{mempool_ip}:{mempool_rest_port}/api"
+        mempool_use_https = self.config.get("mempool_use_https", False)
+        
+        # Build URL with proper protocol
+        protocol = "https" if mempool_use_https else "http"
+        
+        # Check if host looks like a domain (contains dots but not just IP)
+        # Skip port for domains using standard ports (80/443)
+        is_domain = "." in mempool_host and not mempool_host.replace(".", "").isdigit()
+        
+        if is_domain:
+            if (mempool_use_https and mempool_rest_port in ["443", "80"]) or \
+               (not mempool_use_https and mempool_rest_port in ["80", "443"]):
+                return f"{protocol}://{mempool_host}/api"
+            else:
+                return f"{protocol}://{mempool_host}:{mempool_rest_port}/api"
+        else:
+            # Always include port for IP addresses
+            return f"{protocol}://{mempool_host}:{mempool_rest_port}/api"
     
     def _format_block_hash_for_display(self, block_hash):
         """
@@ -1550,11 +2100,34 @@ class MempaperApp:
             block_height (str): Bitcoin block height
             block_hash (str): Bitcoin block hash
         """
+        print(f"🔄 [DEBUG] Starting regenerate_dashboard for block {block_height}")
+        print(f"🔍 [DEBUG] Current cache state: height={self.current_block_height}, hash={self.current_block_hash[:20]}..., is_current={self.image_is_current}")
+        
+        # Check if we already have this block cached to avoid unnecessary regeneration
+        if (self.current_block_height == block_height and 
+            self.current_block_hash == block_hash and 
+            self.image_is_current and 
+            os.path.exists(self.current_image_path) and
+            os.path.exists(self.current_eink_image_path)):
+            print(f"📸 Dashboard already current for block {block_height} - no regeneration needed")
+            return
+        
+        print(f"🎨 [DEBUG] Cache invalidated, proceeding with image generation...")
+        
         max_retries = 3
         for attempt in range(1, max_retries + 1):
             try:
-                print(f"⚡ Generating dashboard image with cached wallet data... (attempt {attempt})")
-                img = self._generate_new_image(block_height, block_hash)
+                # Check if any gap limit detection is currently running
+                active_bootstrap = False
+                if hasattr(self, 'wallet_api') and hasattr(self.wallet_api, '_active_gap_limit_detection'):
+                    active_bootstrap = len(self.wallet_api._active_gap_limit_detection) > 0
+                
+                if active_bootstrap:
+                    print(f"⏳ Bootstrap detection running - using cached wallet data for immediate display... (attempt {attempt})")
+                else:
+                    print(f"⚡ Generating dashboard image with cached wallet data... (attempt {attempt})")
+                    
+                img = self._generate_new_image(block_height, block_hash, use_new_meme=True)  # New block = new meme
                 if img:
                     buf = io.BytesIO()
                     img.save(buf, format='PNG')
@@ -1569,13 +2142,8 @@ class MempaperApp:
                                 print("⚠️ Invalid image data generated, not sending to clients")
                         except Exception as e:
                             print(f"⚠️ Failed to encode image for WebSocket: {e}")
-                    print("🔄 Starting async wallet refresh in background...")
-                    threading.Thread(
-                        target=self._safe_wallet_refresh_thread,
-                        args=(block_height, block_hash, False),
-                        daemon=True
-                    ).start()
-                    print("✅ Async wallet refresh thread started")
+                    # ✅ Background tasks (wallet refresh + e-ink display) are already started in _generate_new_image
+                    print("✅ Image generated and background tasks started automatically")
                     break
                 else:
                     print(f"❌ Image generation returned None (attempt {attempt})")
@@ -2154,6 +2722,10 @@ class MempaperApp:
                     
                     # Update auth manager config
                     self.auth_manager.config = self.config
+                    
+                    # Clean up cache for removed wallet addresses before reinitializing
+                    if old_config:
+                        self._cleanup_removed_wallet_caches(old_config, new_config)
                     
                     # Reinitialize components if needed
                     self._reinitialize_after_config_change(old_config)

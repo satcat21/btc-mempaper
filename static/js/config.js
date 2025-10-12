@@ -3,6 +3,12 @@ function closeMemeModal() {
     const memeModal = document.getElementById('meme-modal');
     if (memeModal) {
         memeModal.style.display = 'none';
+        // Clear any inline styles that might interfere with centering
+        memeModal.style.position = '';
+        memeModal.style.top = '';
+        memeModal.style.left = '';
+        memeModal.style.transform = '';
+        memeModal.style.margin = '';
     }
     window.currentModalMeme = null;
 }
@@ -2985,24 +2991,48 @@ function openMemeModal(filename, url) {
         const previewText = window.translations?.meme_preview || 'Meme Preview';
         modalTitle.textContent = `${previewText} - ${filename}`;
     }
-    if (modalImage) {
-        modalImage.src = url;
-    }
-    if (memeModal) {
-        memeModal.style.display = 'block';
-        // Center the modal horizontally and vertically
-        memeModal.style.position = 'fixed';
-        memeModal.style.top = '50%';
-        memeModal.style.left = '50%';
-        memeModal.style.transform = 'translate(-50%, -50%)';
-        memeModal.style.zIndex = '9999';
-        memeModal.style.margin = '0';
-        memeModal.style.maxWidth = '90vw';
-        memeModal.style.maxHeight = '90vh';
-        memeModal.style.overflow = 'auto';
+    
+    // Set filename
+    if (modalFilename) {
+        modalFilename.textContent = filename;
     }
     
-    // Try to get file size via HEAD request
+    // Set loading state for dimensions
+    if (modalDimensions) {
+        const loadingText = window.translations?.loading || 'Loading...';
+        modalDimensions.textContent = loadingText;
+    }
+    
+    // Set loading state for filesize
+    if (modalFilesize) {
+        const loadingText = window.translations?.loading || 'Loading...';
+        modalFilesize.textContent = loadingText;
+    }
+    
+    if (modalImage) {
+        // Set up image load handler to get dimensions
+        modalImage.onload = function() {
+            if (modalDimensions) {
+                modalDimensions.textContent = `${this.naturalWidth} × ${this.naturalHeight} px`;
+            }
+        };
+        
+        // Set up error handler
+        modalImage.onerror = function() {
+            if (modalDimensions) {
+                modalDimensions.textContent = 'Error loading image';
+            }
+        };
+        
+        modalImage.src = url;
+    }
+    
+    if (memeModal) {
+        memeModal.style.display = 'flex';
+        // Remove conflicting positioning - let CSS flexbox handle centering
+    }
+    
+    // Try to get file size via HEAD request first, then fall back to GET
     fetch(url, { method: 'HEAD' })
         .then(response => {
             const contentLength = response.headers.get('content-length');
@@ -3014,7 +3044,24 @@ function openMemeModal(filename, url) {
                 const size = formatFileSize(bytes);
                 modalFilesize.textContent = size;
             } else {
-                modalFilesize.textContent = 'Unknown';
+                // Fallback: try to estimate size from a partial fetch
+                return fetch(url, { method: 'GET', headers: { 'Range': 'bytes=0-1' } })
+                    .then(response => {
+                        const contentRange = response.headers.get('content-range');
+                        if (contentRange) {
+                            const match = contentRange.match(/\/(\d+)$/);
+                            if (match) {
+                                const bytes = parseInt(match[1]);
+                                const size = formatFileSize(bytes);
+                                modalFilesize.textContent = size;
+                                return;
+                            }
+                        }
+                        modalFilesize.textContent = 'Unknown';
+                    })
+                    .catch(() => {
+                        modalFilesize.textContent = 'Unknown';
+                    });
             }
         })
         .catch(() => {

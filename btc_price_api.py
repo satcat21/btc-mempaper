@@ -23,13 +23,23 @@ class BitcoinPriceAPI:
         """
         self.config = config or {}
         self.base_url = self._build_base_url()
+        self.mempool_verify_ssl = self.config.get("mempool_verify_ssl", True)
     
     def _build_base_url(self) -> str:
-        """Build the base URL for price API from configuration."""
-        # Use the same pattern as the main app for consistency
-        mempool_ip = self.config.get("mempool_ip", "127.0.0.1")
+        """Build the base URL for price API from configuration with unified host field and HTTPS support."""
+        mempool_host = self.config.get("mempool_host", "127.0.0.1")
         mempool_rest_port = self.config.get("mempool_rest_port", "8080")
-        return f"https://{mempool_ip}:{mempool_rest_port}/api"
+        mempool_use_https = self.config.get("mempool_use_https", False)
+        
+        # Build URL with proper protocol
+        protocol = "https" if mempool_use_https else "http"
+        
+        # Don't include port in URL if using standard ports with domain/hostname
+        if (mempool_use_https and mempool_rest_port in ["443", "80"]) or \
+           (not mempool_use_https and mempool_rest_port in ["80", "443"]):
+            return f"{protocol}://{mempool_host}/api"
+        else:
+            return f"{protocol}://{mempool_host}:{mempool_rest_port}/api"
     
     def fetch_btc_price(self) -> Optional[Dict[str, Union[str, float, int]]]:
         """
@@ -45,9 +55,8 @@ class BitcoinPriceAPI:
         """
         try:
             # Get Bitcoin price in USD
-            # Use verify=False for self-hosted instances (consistent with rest of codebase)
             print(f"💱 Fetching price data from: {self.base_url}/v1/prices")
-            response = requests.get(f"{self.base_url}/v1/prices", timeout=10, verify=False)
+            response = requests.get(f"{self.base_url}/v1/prices", timeout=10, verify=self.mempool_verify_ssl)
             response.raise_for_status()
             price_data = response.json()
             print(f"💱 Successfully fetched price data from configured mempool instance")

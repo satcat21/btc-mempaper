@@ -50,22 +50,22 @@ class LocalMempoolManager:
             # If we can't resolve, assume it's external
             return False
     
-    def validate_local_mempool(self, mempool_ip: str, mempool_port: int) -> Dict:
+    def validate_local_mempool(self, mempool_host: str, mempool_port: int) -> Dict:
         """
         Validate connection to local mempool instance.
         
         Args:
-            mempool_ip: Mempool IP address or domain
+            mempool_host: Mempool host (IP address or domain name)
             mempool_port: Mempool port
             
         Returns:
             Validation result dictionary
         """
         # Build API URL
-        base_url = f"https://{mempool_ip}:{mempool_port}/api"
+        base_url = f"https://{mempool_host}:{mempool_port}/api"
         
         result = {
-            "is_local": self.is_local_ip(mempool_ip),
+            "is_local": self.is_local_ip(mempool_host),
             "is_reachable": False,
             "is_valid_mempool": False,
             "base_url": base_url,
@@ -116,11 +116,11 @@ class LocalMempoolManager:
         Returns:
             Dictionary with mempool status and recommendations
         """
-        mempool_ip = config.get("mempool_ip", "127.0.0.1")
+        mempool_host = config.get("mempool_host", "127.0.0.1")
         mempool_port = config.get("mempool_rest_port", 4081)
         
         # Validate mempool connection
-        validation = self.validate_local_mempool(mempool_ip, mempool_port)
+        validation = self.validate_local_mempool(mempool_host, mempool_port)
         
         # Generate simple status
         if validation["is_reachable"] and validation["is_valid_mempool"]:

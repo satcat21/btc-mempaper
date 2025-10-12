@@ -68,9 +68,8 @@ def main():
     print(f"   📝 Total fields: {len(plain_config) + (len(decrypted_data) if decrypted_data else 0)}")
     
     # Verify sensitive fields are encrypted
-    sensitive_fields = {'wallet_balance_addresses', 'wallet_balance_addresses_with_comments', 
-                       'block_reward_addresses_table', 'admin_password_hash', 'secret_key'}
-    
+    sensitive_fields = {'wallet_balance_addresses_with_comments', 
+                        'block_reward_addresses_table', 'admin_password_hash', 'secret_key'}
     print(f"\n🔒 Sensitive field verification:")
     for field in sensitive_fields:
         in_plain = field in plain_config
