@@ -270,6 +270,9 @@ class MempaperApp:
         # Image generation lock to prevent concurrent generation
         self.generation_lock = threading.Lock()
         
+        # Block processing lock to prevent duplicate block processing
+        self._block_processing_lock = threading.Lock()
+        
         # Load persistent cache state from file
         self._load_cache_metadata()
         
@@ -1921,13 +1924,20 @@ class MempaperApp:
                 current_eink_height = getattr(self, 'last_eink_block_height', 0) or 0
                 if int(block_height or 0) != int(current_eink_height):
                     print(f"🖥️ Block height changed for e-ink: {block_height} (was: {current_eink_height})")
-                    # Run e-Paper display in background to not block the response
-                    threading.Thread(
-                        target=self._display_on_epaper_async,
-                        args=(self.current_eink_image_path, block_height, block_hash),
-                        daemon=True
-                    ).start()
-                    print("🖥️ E-Paper display started in background")
+                    
+                    # 🔧 FIX: Check if there's already a display process running for a newer or same block
+                    with self.display_process_lock:
+                        active_blocks = list(self.active_display_processes.keys())
+                        if any(active_block >= block_height for active_block in active_blocks):
+                            print(f"⏳ E-ink display already in progress for block >= {block_height}, skipping")
+                        else:
+                            # Run e-Paper display in background to not block the response
+                            threading.Thread(
+                                target=self._display_on_epaper_async,
+                                args=(self.current_eink_image_path, block_height, block_hash),
+                                daemon=True
+                            ).start()
+                            print("🖥️ E-Paper display started in background")
                 else:
                     print(f"✅ E-ink already shows correct block height {block_height}, skipping display update")
             elif skip_epaper:
@@ -1975,17 +1985,38 @@ class MempaperApp:
             print(f"❌ [DEBUG] Failed to convert block height {block_height}: {e}")
             return
         
-        # Trigger live block notifications to web clients (if enabled)
-        if self.config.get('live_block_notifications_enabled', False):
-            print(f"📡 Live notifications enabled - sending notification for block {block_height_int}")
-            self.on_new_block_notification(block_height_int, block_hash)
-        else:
-            print(f"📡 Live notifications disabled - skipping notification for block {block_height_int}")
+        # 🔧 FIX: Prevent duplicate block processing and race conditions
+        current_height = getattr(self, 'current_block_height', None)
+        if current_height is not None and block_height_int <= current_height:
+            print(f"🔄 [DEBUG] Skipping duplicate/old block {block_height_int} (current: {current_height})")
+            return
         
-        # Always regenerate dashboard and update e-ink display immediately after new block
-        self.image_is_current = False  # Invalidate cache to force regeneration
-        print(f"🚀 [DEBUG] Calling regenerate_dashboard with height {block_height_int}")
-        self.regenerate_dashboard(block_height_int, block_hash)
+        # Acquire lock to prevent concurrent block processing
+        if not self._block_processing_lock.acquire(blocking=False):
+            print(f"⏳ [DEBUG] Block processing already in progress, skipping block {block_height_int}")
+            return
+        
+        try:
+            # Double-check after acquiring lock
+            current_height = getattr(self, 'current_block_height', None)
+            if current_height is not None and block_height_int <= current_height:
+                print(f"🔄 [DEBUG] Skipping duplicate/old block {block_height_int} after lock (current: {current_height})")
+                return
+            
+            # Trigger live block notifications to web clients (if enabled)
+            if self.config.get('live_block_notifications_enabled', False):
+                print(f"📡 Live notifications enabled - sending notification for block {block_height_int}")
+                self.on_new_block_notification(block_height_int, block_hash)
+            else:
+                print(f"📡 Live notifications disabled - skipping notification for block {block_height_int}")
+            
+            # Always regenerate dashboard and update e-ink display immediately after new block
+            self.image_is_current = False  # Invalidate cache to force regeneration
+            print(f"🚀 [DEBUG] Calling regenerate_dashboard with height {block_height_int}")
+            self.regenerate_dashboard(block_height_int, block_hash)
+            
+        finally:
+            self._block_processing_lock.release()
     
     def on_new_block_notification(self, block_height, block_hash):
         """
@@ -2103,59 +2134,69 @@ class MempaperApp:
         print(f"🔄 [DEBUG] Starting regenerate_dashboard for block {block_height}")
         print(f"🔍 [DEBUG] Current cache state: height={self.current_block_height}, hash={self.current_block_hash[:20]}..., is_current={self.image_is_current}")
         
-        # Check if we already have this block cached to avoid unnecessary regeneration
-        if (self.current_block_height == block_height and 
-            self.current_block_hash == block_hash and 
-            self.image_is_current and 
-            os.path.exists(self.current_image_path) and
-            os.path.exists(self.current_eink_image_path)):
-            print(f"📸 Dashboard already current for block {block_height} - no regeneration needed")
+        # 🔧 FIX: Prevent concurrent regeneration calls
+        if not self.generation_lock.acquire(blocking=False):
+            print(f"⏳ [DEBUG] Image generation already in progress, skipping regeneration for block {block_height}")
             return
+            
+        try:
+            # Check if we already have this block cached to avoid unnecessary regeneration
+            if (self.current_block_height == block_height and 
+                self.current_block_hash == block_hash and 
+                self.image_is_current and 
+                os.path.exists(self.current_image_path) and
+                os.path.exists(self.current_eink_image_path)):
+                print(f"📸 Dashboard already current for block {block_height} - no regeneration needed")
+                return
+            
+            print(f"🎨 [DEBUG] Cache invalidated, proceeding with image generation...")
         
-        print(f"🎨 [DEBUG] Cache invalidated, proceeding with image generation...")
-        
-        max_retries = 3
-        for attempt in range(1, max_retries + 1):
-            try:
-                # Check if any gap limit detection is currently running
-                active_bootstrap = False
-                if hasattr(self, 'wallet_api') and hasattr(self.wallet_api, '_active_gap_limit_detection'):
-                    active_bootstrap = len(self.wallet_api._active_gap_limit_detection) > 0
-                
-                if active_bootstrap:
-                    print(f"⏳ Bootstrap detection running - using cached wallet data for immediate display... (attempt {attempt})")
-                else:
-                    print(f"⚡ Generating dashboard image with cached wallet data... (attempt {attempt})")
+            max_retries = 3
+            for attempt in range(1, max_retries + 1):
+                try:
+                    # Check if any gap limit detection is currently running
+                    active_bootstrap = False
+                    if hasattr(self, 'wallet_api') and hasattr(self.wallet_api, '_active_gap_limit_detection'):
+                        active_bootstrap = len(self.wallet_api._active_gap_limit_detection) > 0
                     
-                img = self._generate_new_image(block_height, block_hash, use_new_meme=True)  # New block = new meme
-                if img:
-                    buf = io.BytesIO()
-                    img.save(buf, format='PNG')
-                    buf.seek(0)
-                    with self.app.app_context():
-                        try:
-                            image_data = 'data:image/png;base64,' + base64.b64encode(buf.read()).decode()
-                            if len(image_data) > 50 and image_data.startswith('data:image/png;base64,'):
-                                self.socketio.emit('new_image', {'image': image_data})
-                                print("📡 New image sent to web clients via WebSocket")
-                            else:
-                                print("⚠️ Invalid image data generated, not sending to clients")
-                        except Exception as e:
-                            print(f"⚠️ Failed to encode image for WebSocket: {e}")
-                    # ✅ Background tasks (wallet refresh + e-ink display) are already started in _generate_new_image
-                    print("✅ Image generated and background tasks started automatically")
-                    break
+                    if active_bootstrap:
+                        print(f"⏳ Bootstrap detection running - using cached wallet data for immediate display... (attempt {attempt})")
+                    else:
+                        print(f"⚡ Generating dashboard image with cached wallet data... (attempt {attempt})")
+                        
+                    img = self._generate_new_image(block_height, block_hash, use_new_meme=True)  # New block = new meme
+                    if img:
+                        buf = io.BytesIO()
+                        img.save(buf, format='PNG')
+                        buf.seek(0)
+                        with self.app.app_context():
+                            try:
+                                image_data = 'data:image/png;base64,' + base64.b64encode(buf.read()).decode()
+                                if len(image_data) > 50 and image_data.startswith('data:image/png;base64,'):
+                                    self.socketio.emit('new_image', {'image': image_data})
+                                    print("📡 New image sent to web clients via WebSocket")
+                                else:
+                                    print("⚠️ Invalid image data generated, not sending to clients")
+                            except Exception as e:
+                                print(f"⚠️ Failed to encode image for WebSocket: {e}")
+                        # ✅ Background tasks (wallet refresh + e-ink display) are already started in _generate_new_image
+                        print("✅ Image generated and background tasks started automatically")
+                        break
+                    else:
+                        print(f"❌ Image generation returned None (attempt {attempt})")
+                except Exception as e:
+                    print(f"❌ Error regenerating dashboard for block {block_height} (attempt {attempt}): {e}")
+                    import traceback
+                    traceback.print_exc()
+                if attempt < max_retries:
+                    print(f"🔁 Retrying image generation in 2 seconds...")
+                    time.sleep(2)
                 else:
-                    print(f"❌ Image generation returned None (attempt {attempt})")
-            except Exception as e:
-                print(f"❌ Error regenerating dashboard for block {block_height} (attempt {attempt}): {e}")
-                import traceback
-                traceback.print_exc()
-            if attempt < max_retries:
-                print(f"🔁 Retrying image generation in 2 seconds...")
-                time.sleep(2)
-            else:
-                print(f"❌ All {max_retries} attempts to generate dashboard image failed for block {block_height}")
+                    print(f"❌ All {max_retries} attempts to generate dashboard image failed for block {block_height}")
+                
+        finally:
+            # Always release the generation lock
+            self.generation_lock.release()
     
     def _setup_routes(self):
         """Setup Flask routes."""
