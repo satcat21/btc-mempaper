@@ -198,7 +198,13 @@ class ImageRenderer:
         """
         fee_param = fee_param or self.fee_param
         block_entry = self.block_fee_cache.get(block_height, {})
+        if block_entry is None:
+            block_entry = {}
+            
         fee_data = block_entry.get('fee_data', {})
+        if fee_data is None:
+            fee_data = {}
+            
         return fee_data.get(fee_param, None)
 
     def _update_block_fee_cache(self, block_height, fee_data, fee_color):
@@ -210,6 +216,11 @@ class ImageRenderer:
         # Ensure block_height is always a string (hashable)
         if isinstance(block_height, dict):
             block_height = str(block_height)
+            
+        # Ensure fee_data is a dict
+        if fee_data is None:
+            fee_data = {}
+            
         if block_height != self.last_block_height:
             # New block detected, update cache
             self.block_fee_cache[block_height] = {
@@ -550,7 +561,7 @@ class ImageRenderer:
         For web images, uses COLOR_SETS for light/dark mode.
         For e-ink, uses ColorLUT and EPD color mapping.
         """
-        # Only use COLOR_SETS for web images
+        # Use COLOR_SETS for web images
         if web_quality and isinstance(color_name, str) and color_name in COLOR_SETS["light"]:
             mode = "dark" if self.config.get("color_mode_dark", True) else "light"
             hex_color = COLOR_SETS[mode].get(color_name, "#ffffff")
@@ -558,9 +569,18 @@ class ImageRenderer:
             rgb = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
             return rgb
 
-        # For e-ink images, always use light mode colors or EPD mapping
+        # For e-ink images, use dark mode if enabled
         if not web_quality and isinstance(color_name, str) and color_name in COLOR_SETS["light"]:
-            hex_color = COLOR_SETS["light"].get(color_name, "#ffffff")
+            mode = "dark" if self.config.get("eink_dark_mode", False) else "light"
+            hex_color = COLOR_SETS[mode].get(color_name, "#ffffff")
+            
+            # For e-ink dark mode, override most text to white for readability
+            # Exceptions: date colors and fee-based colors (green/yellow/orange/red/blue/black)
+            if mode == "dark" and color_name not in ["date_normal", "date_holiday", "background", 
+                                                       "info_bg", "info_outline", "hash_start", "hash_end",
+                                                       "green", "yellow", "orange", "red", "blue", "black"]:
+                hex_color = "#ffffff"
+            
             hex_color = hex_color.lstrip("#")
             rgb = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
             return rgb
@@ -685,6 +705,43 @@ class ImageRenderer:
         except Exception as e:
             print(f"Error selecting meme: {e}")
             return None
+    
+    def _wrap_text_at_chars(self, text, max_chars=50):
+        """
+        Wrap text to multiple lines, breaking at word boundaries.
+        Ensures no word is split and each line stays within max_chars limit.
+        
+        Args:
+            text (str): Text to wrap
+            max_chars (int): Maximum characters per line
+            
+        Returns:
+            list: List of text lines
+        """
+        if len(text) <= max_chars:
+            return [text]
+        
+        lines = []
+        current_line = ""
+        words = text.split()
+        
+        for word in words:
+            # Check if adding this word would exceed the limit
+            test_line = current_line + (" " if current_line else "") + word
+            
+            if len(test_line) <= max_chars:
+                current_line = test_line
+            else:
+                # Current line is full, start a new line
+                if current_line:
+                    lines.append(current_line)
+                current_line = word
+        
+        # Add the last line if there's any content
+        if current_line:
+            lines.append(current_line)
+        
+        return lines
     
     def get_today_btc_holiday(self):
         """
@@ -1230,22 +1287,45 @@ class ImageRenderer:
             draw.text((x, y), char, font=font_date, fill=color)
             x += char_width
 
-        # Draw info block background after date rendering if holiday_info
+        # Define constants needed for calculations
+        BLOCK_MARGIN = 15
+        HOLIDAY_HEIGHT = 0
         if holiday_info:
-            draw.rounded_rectangle(
-                [(SECTION_SIDE_PADDING + BLOCK_INNER_MARGIN, y + 60),
-                 (self.width - SECTION_SIDE_PADDING - BLOCK_INNER_MARGIN, y + 60 + INFO_BLOCK_HEIGHT)],
-                radius=BLOCK_RADIUS,
-                fill=self.get_color("info_bg", web_quality),
-                outline=self.get_color("info_outline", web_quality),
-                width=4
-            )
+            # Calculate exact height needed based on text content
+            title_text = holiday_info.get("title", "Bitcoin Holiday")
+            desc_text = holiday_info.get("description", "")
+            
+            # Title height
+            title_bbox = font_holiday_title.getbbox(title_text)
+            title_height = title_bbox[3] - title_bbox[1]
+            
+            # Description height (with word wrapping at 50 characters)
+            desc_lines = self._wrap_text_at_chars(desc_text, max_chars=50)
+            
+            desc_bbox = font_holiday_desc.getbbox("Ay")
+            line_height = desc_bbox[3] - desc_bbox[1]
+            desc_total_height = len(desc_lines) * line_height + (len(desc_lines) - 1) * 4
+            
+            print(f"   🎄 Holiday '{title_text}' needs {len(desc_lines)} line(s) for description")
+            
+            # Total height: Title + Gap(3) + Description + Padding(24)
+            # 12px top + 12px bottom = 24px total padding for balanced spacing
+            HOLIDAY_HEIGHT = title_height + 3 + desc_total_height + 24
 
-        meme_bottom_y = self.height - self.block_height_area
+        print("HOLIDAY HEIGHT:", HOLIDAY_HEIGHT)
+        # Reserve extra space for hash frame that extends beyond block height number
+        # The hash extends upward, so we need minimal or no bottom margin
+        HASH_FRAME_MARGIN = 0  # Minimal margin for hash frame
+        meme_bottom_y = self.height - self.block_height_area - HASH_FRAME_MARGIN
+        # Content starts after the date. Holiday is part of the content flow.
         content_top_y = date_bottom_y
         available_content_height = meme_bottom_y - content_top_y
 
         prioritize_large_meme = self.config.get("prioritize_large_scaled_meme", False)
+
+        # Define standard spacing unit for balanced layout
+        # Increase spacing when holiday is present to ensure visual separation
+        STANDARD_SPACING = 25 if holiday_info else 20  # Base spacing between major elements
 
         # Info blocks setup - moved after data initialization
         # info_blocks = []
@@ -1256,11 +1336,6 @@ class ImageRenderer:
         #     info_blocks.append((self.render_bitaxe_block, bitaxe_data))
         # if config.get("show_wallet_balances_block", True):
         #     info_blocks.append((self.render_wallet_balances_block, wallet_data))
-
-        # Define constants needed for calculations
-        #INFO_BLOCK_HEIGHT = 60
-        HOLIDAY_HEIGHT = 70 if holiday_info else 0
-        BLOCK_MARGIN = 15
 
         # Calculate space required for info blocks
         def calculate_info_blocks_space(config_ref):
@@ -1304,7 +1379,7 @@ class ImageRenderer:
                     print(f"⚠️ Error loading meme for scaling: {e}")
 
             # --- Step 2: Calculate remaining height for info blocks ---
-            remaining_height = available_content_height - meme_height - 20
+            remaining_height = available_content_height - meme_height - STANDARD_SPACING
             blocks_y = content_top_y
 
             # --- Step 3: Assign space for holiday ---
@@ -1319,22 +1394,54 @@ class ImageRenderer:
                     info_blocks_to_render = random.sample(info_blocks, int(max_blocks))
                 else:
                     info_blocks_to_render = info_blocks
-            # --- Step 5: Calculate vertical layout ---
-            # Total assigned height for all elements
-            total_assigned_height = meme_height + holiday_space + len(info_blocks_to_render) * INFO_BLOCK_HEIGHT + (len(info_blocks_to_render) + 1) * BLOCK_MARGIN
-            vertical_offset = content_top_y + (available_content_height - total_assigned_height) // 2
-            current_y = vertical_offset
+            
+            # --- Step 5: Calculate balanced vertical spacing ---
+            # When no holiday and no info blocks, center the meme vertically
+            if not holiday_space and len(info_blocks_to_render) == 0:
+                # Center meme between date and hash frame
+                center_point = content_top_y + (available_content_height // 2)
+                current_y = center_point - (meme_height // 2) if meme_height > 0 else center_point
+            else:
+                # Calculate total content height
+                total_content_height = 0
+                if holiday_space:
+                    total_content_height += holiday_space
+                total_content_height += meme_height
+                if len(info_blocks_to_render):
+                    total_content_height += len(info_blocks_to_render) * INFO_BLOCK_HEIGHT + (len(info_blocks_to_render) + 1) * BLOCK_MARGIN
+                
+                # Calculate remaining space to distribute
+                remaining_space = available_content_height - total_content_height
+                
+                # Calculate number of gaps between elements (not after last)
+                num_gaps = 1  # gap after date (before first element)
+                if holiday_space: num_gaps += 1  # gap between holiday and meme
+                if len(info_blocks_to_render): num_gaps += 1  # gap between meme and info blocks
+                
+                # Distribute spacing evenly across all gaps
+                gap_size = max(STANDARD_SPACING, remaining_space // num_gaps) if num_gaps > 0 else STANDARD_SPACING
+                
+                # Start positioning elements with balanced spacing
+                current_y = content_top_y + gap_size
                     
             # Render holiday (centered in assigned space)
             if holiday_space:
-                holiday_vertical_offset = content_top_y + 10 #(holiday_space - HOLIDAY_HEIGHT) // 2
+                # Draw background
+                draw.rounded_rectangle(
+                    [(SECTION_SIDE_PADDING + BLOCK_INNER_MARGIN, current_y),
+                     (self.width - SECTION_SIDE_PADDING - BLOCK_INNER_MARGIN, current_y + HOLIDAY_HEIGHT)],
+                    radius=BLOCK_RADIUS,
+                    fill=self.get_color("info_bg", web_quality),
+                    outline=self.get_color("info_outline", web_quality),
+                    width=4
+                )
+                
                 self._render_holiday_info(draw, holiday_info, font_holiday_title, font_holiday_desc,
-                                        holiday_vertical_offset, HOLIDAY_HEIGHT, web_quality)
-                current_y += holiday_space
+                                        current_y, HOLIDAY_HEIGHT, web_quality)
+                current_y += holiday_space + gap_size  # Add gap after holiday
 
             # Render meme (centered horizontally)
             if meme_img:
-                current_y += 10
                 meme_x = (self.width - meme_width) // 2
                 meme_img = meme_img.convert("RGBA")
                 meme_img = self.add_rounded_corners(meme_img, radius=20)  
@@ -1344,11 +1451,16 @@ class ImageRenderer:
                 self._render_fallback_content(img, draw, current_y, meme_height,
                                             font_holiday_title, web_quality)
                 current_y += meme_height
+            
+            # Add gap before info blocks for even distribution
+            if len(info_blocks_to_render):
+                current_y += gap_size
+                
             if len(info_blocks_to_render):
                 # Render info blocks (each centered in assigned space)
                 section_left = BLOCK_MARGIN
                 section_right = self.width - BLOCK_MARGIN
-                section_top = current_y #+ BLOCK_MARGIN # slightly above first block
+                section_top = current_y
                 section_bottom = current_y + len(info_blocks_to_render) * INFO_BLOCK_HEIGHT + (len(info_blocks_to_render) + 1) * BLOCK_MARGIN
 
                 bg_color = (255, 250, 200)  # pale yellow
@@ -1359,7 +1471,7 @@ class ImageRenderer:
                 #     radius=radius,
                 #     fill=bg_color
                 # )
-                blocks_y += BLOCK_MARGIN
+                current_y += BLOCK_MARGIN
 
             for block_fn, block_data in info_blocks_to_render:
                 info_vertical_offset = current_y + (INFO_BLOCK_HEIGHT + BLOCK_MARGIN - INFO_BLOCK_HEIGHT) // 2 + 10
@@ -1374,14 +1486,14 @@ class ImageRenderer:
 
         else:
             # --- prioritize_large_scaled_meme == False ---
-            # Render holiday first
-            blocks_y = content_top_y
+            # Calculate total content height first
+            total_content_height = 0
+            
+            # Add holiday height
             if holiday_info:
-                self._render_holiday_info(draw, holiday_info, font_holiday_title, font_holiday_desc,
-                                        blocks_y, HOLIDAY_HEIGHT, web_quality)
-                blocks_y += HOLIDAY_HEIGHT
-
-            # Render meme (centered horizontally)
+                total_content_height += HOLIDAY_HEIGHT
+            
+            # Calculate meme height
             meme_img = None
             meme_height = 0
             meme_width = 0
@@ -1390,9 +1502,11 @@ class ImageRenderer:
                     meme_img = Image.open(meme_path)
                     aspect_ratio = meme_img.width / meme_img.height
                     max_width = self.width - 40
-                    # Reserve space for info blocks that will be rendered below the meme
-                    max_height = available_content_height - info_blocks_space - 20
+                    # Reserve space for info blocks and holiday
+                    holiday_reserved = HOLIDAY_HEIGHT if holiday_info else 0
+                    max_height = available_content_height - info_blocks_space - holiday_reserved - STANDARD_SPACING
                     print(f"🔧 [SCALING] Available content height: {available_content_height}px")
+                    print(f"🔧 [SCALING] Holiday reserved: {holiday_reserved}px")
                     print(f"🔧 [SCALING] Info blocks space: {info_blocks_space}px")
                     print(f"🔧 [SCALING] Max meme height (non-prioritize): {max_height}px")
                     
@@ -1411,25 +1525,76 @@ class ImageRenderer:
                     meme_width = scaled_width
                 except Exception as e:
                     print(f"⚠️ Error loading meme for scaling: {e}")
+            
             if meme_img:
-                blocks_y += 10
+                total_content_height += meme_height
+            else:
+                # Calculate fallback height
+                fallback_height = available_content_height - info_blocks_space - (HOLIDAY_HEIGHT if holiday_info else 0) - (3 * STANDARD_SPACING)
+                fallback_height = max(50, fallback_height)
+                total_content_height += fallback_height
+            
+            # Add info blocks height
+            total_content_height += info_blocks_space
+            
+            # Calculate remaining space and balanced spacing
+            remaining_space = available_content_height - total_content_height
+            
+            # When no holiday and no info blocks, center the meme vertically
+            if not holiday_info and info_blocks_space == 0:
+                # Center meme between date and hash frame
+                # Calculate true center: start after date, use all available space
+                center_point = content_top_y + (available_content_height // 2)
+                blocks_y = center_point - (meme_height // 2) if meme_height > 0 else center_point
+                gap_size = 0  # Not used in this case
+            else:
+                # Calculate balanced spacing between elements (not after last)
+                num_gaps = 1  # After date
+                if holiday_info: num_gaps += 1  # Between holiday and meme
+                if info_blocks_space > 0: num_gaps += 1  # Between meme and info blocks
+                
+                gap_size = max(STANDARD_SPACING, remaining_space // num_gaps) if num_gaps > 0 else STANDARD_SPACING
+                
+                # Start positioning with balanced spacing
+                blocks_y = content_top_y + gap_size
+            
+            # Render holiday
+            if holiday_info:
+                # Draw background
+                draw.rounded_rectangle(
+                    [(SECTION_SIDE_PADDING + BLOCK_INNER_MARGIN, blocks_y),
+                     (self.width - SECTION_SIDE_PADDING - BLOCK_INNER_MARGIN, blocks_y + HOLIDAY_HEIGHT)],
+                    radius=BLOCK_RADIUS,
+                    fill=self.get_color("info_bg", web_quality),
+                    outline=self.get_color("info_outline", web_quality),
+                    width=4
+                )
+
+                self._render_holiday_info(draw, holiday_info, font_holiday_title, font_holiday_desc,
+                                        blocks_y, HOLIDAY_HEIGHT, web_quality)
+                blocks_y += HOLIDAY_HEIGHT + gap_size
+
+            # Render meme
+            # Render meme
+            if meme_img:
                 meme_x = (self.width - meme_width) // 2
                 meme_img = meme_img.convert("RGBA")
                 meme_img = self.add_rounded_corners(meme_img, radius=20)
                 img.paste(meme_img, (meme_x, blocks_y), meme_img)
                 blocks_y += meme_height
             else:
-                # Calculate available height for fallback content (reserve space for info blocks)
-                fallback_available_height = available_content_height - info_blocks_space - 20
-                print(f"🔧 [SCALING] Fallback content height: {fallback_available_height}px")
+                # Use pre-calculated fallback height
+                fallback_height = available_content_height - info_blocks_space - (HOLIDAY_HEIGHT if holiday_info else 0) - (3 * STANDARD_SPACING)
+                fallback_height = max(50, fallback_height)
+                print(f"🔧 [SCALING] Fallback content height: {fallback_height}px")
                 
-                # Ensure positive height
-                if fallback_available_height <= 0:
-                    fallback_available_height = 50  # Minimum height
-                
-                self._render_fallback_content(img, draw, blocks_y, fallback_available_height,
+                self._render_fallback_content(img, draw, blocks_y, fallback_height,
                                             font_holiday_title, web_quality)
-                blocks_y += fallback_available_height
+                blocks_y += fallback_height
+            
+            # Add gap before info blocks for even distribution
+            if len(info_blocks):
+                blocks_y += gap_size
 
             # Render info blocks below meme, with dark style
             if len(info_blocks):
@@ -1440,21 +1605,26 @@ class ImageRenderer:
                 # Use theme background color for info block area
                 bg_color = self.get_color("info_bg", web_quality)
                 radius = 15
-                draw.rounded_rectangle(
-                    [(section_left, section_top), (section_right, section_bottom)],
-                    radius=radius,
-                    fill=bg_color
-                )
+                # draw.rounded_rectangle(
+                #     [(section_left, section_top), (section_right, section_bottom)],
+                #     radius=radius,
+                #     fill=bg_color
+                # )
                 blocks_y += BLOCK_MARGIN
-                for block_fn, block_data in info_blocks:
+                for i, (block_fn, block_data) in enumerate(info_blocks):
                     try:
                         if block_fn == self.render_wallet_balances_block:
-                            blocks_y = block_fn(draw, blocks_y, font_block_label, font_block_value, block_data, web_quality, startup_mode=startup_mode)
+                            # Render functions return next Y position, but we manage spacing here
+                            block_fn(draw, blocks_y, font_block_label, font_block_value, block_data, web_quality, startup_mode=startup_mode)
                         else:
-                            blocks_y = block_fn(draw, blocks_y, font_block_label, font_block_value, block_data, web_quality)
+                            block_fn(draw, blocks_y, font_block_label, font_block_value, block_data, web_quality)
+                        
+                        # Move to next block position
+                        blocks_y += INFO_BLOCK_HEIGHT
+                        if i < len(info_blocks) - 1:  # Add margin between blocks, but not after last one
+                            blocks_y += BLOCK_MARGIN
                     except Exception as e:
                         print(f"⚠️ Error rendering info block {block_fn.__name__}: {e}")
-                    blocks_y += BLOCK_MARGIN
 
             # Calculate remaining space for meme (not needed, meme is already rendered above info blocks)
             # meme_top_y = blocks_y + BLOCK_MARGIN
@@ -1764,7 +1934,7 @@ class ImageRenderer:
     
 
     def _render_holiday_info(self, draw, holiday_info, font_title, font_desc, 
-                           date_bottom_y, holiday_height, web_quality=False):
+                           holiday_box_top_y, holiday_height, web_quality=False):
         """
         Render Bitcoin holiday information dynamically centered in available space.
         
@@ -1773,14 +1943,10 @@ class ImageRenderer:
             holiday_info (dict): Holiday information
             font_title (ImageFont): Font for holiday title
             font_desc (ImageFont): Font for holiday description
-            date_bottom_y (int): Bottom Y position of date text
+            holiday_box_top_y (int): Top Y position of the holiday box
             holiday_height (int): Reserved height for holiday content
             web_quality (bool): True for web display, False for e-ink
         """
-        # Check if holiday should be displayed (this method only called when not prioritizing large meme)
-        #prioritize_large_meme = self.config.get("prioritize_large_scaled_meme", False)
-        
-        #if not prioritize_large_meme:
         # Get configurable colors using color LUT
         title_color = self.get_color("holiday_title", web_quality)
         desc_color = self.get_color("holiday_desc", web_quality)
@@ -1795,28 +1961,9 @@ class ImageRenderer:
         title_bbox = font_title.getbbox(title_text)
         title_height = title_bbox[3] - title_bbox[1]
             
-        # Calculate description height (with text wrapping)
-        max_text_width = int(self.width * 0.9)
-        words = desc_text.split()
-        desc_lines = []
-        current_line = ""
-            
-        for word in words:
-            test_line = current_line + (" " if current_line else "") + word
-            bbox = font_desc.getbbox(test_line)
-            test_width = bbox[2] - bbox[0]
-                
-            if test_width <= max_text_width:
-                current_line = test_line
-            else:
-                if current_line:
-                    desc_lines.append(current_line)
-                    current_line = word
-                else:
-                    desc_lines.append(word)
-            
-        if current_line:
-            desc_lines.append(current_line)
+        # Calculate description lines with word wrapping at 50 characters
+        desc_lines = self._wrap_text_at_chars(desc_text, max_chars=50)
+        print(f"   📝 Holiday description wrapped into {len(desc_lines)} line(s)")
             
         # Calculate total description height
         desc_bbox = font_desc.getbbox("Ay")  # Sample text for line height
@@ -1824,24 +1971,24 @@ class ImageRenderer:
         desc_total_height = len(desc_lines) * line_height + (len(desc_lines) - 1) * 4  # 4px line spacing
             
         # Calculate total holiday content height
-        total_holiday_height = title_height + 10 + desc_total_height  # 10px gap between title and desc
+        total_holiday_height = title_height + 3 + desc_total_height  # 3px gap between title and desc
             
-        # Calculate available space for holiday (between date and meme area)
-        holiday_start = date_bottom_y + 10  # Reduced gap from 30px to 20px
-        meme_area_start = date_bottom_y + 20 + holiday_height
-        available_space = holiday_height
-            
-        # Center the holiday content vertically in available space
-        vertical_center = holiday_start + (available_space - total_holiday_height) // 2
-        # Move holiday title 10px higher
-        y = max(holiday_start, vertical_center - 10)  # Ensure we don't go above minimum position
+        # Calculate equal top and bottom padding
+        vertical_padding = (holiday_height - total_holiday_height) // 2
+        y = holiday_box_top_y + vertical_padding  # Equal spacing top and bottom
             
         # Render the holiday title
         y = self.draw_centered(draw, title_text, y, font_title, fill=title_color)
             
-        # Render the holiday description with text wrapping
-        y = self.draw_multiline_centered(draw, desc_text, y + 5, font_desc, 
-                                           max_text_width, fill=desc_color)
+        # Render the holiday description lines (3px gap already in padding calculation)
+        y += 3  # Gap after title (matches the 3px in total_holiday_height calculation)
+        for line in desc_lines:
+            bbox = font_desc.getbbox(line)
+            text_width = bbox[2] - bbox[0]
+            text_height = bbox[3] - bbox[1]
+            x = (self.width - text_width) // 2
+            draw.text((x, y), line, font=font_desc, fill=desc_color)
+            y += text_height + 4 # 4px spacing
         #else:
         #    print(f"🚫 Holiday hidden due to prioritize_large_scaled_meme=True")
     

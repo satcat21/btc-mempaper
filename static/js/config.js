@@ -449,7 +449,11 @@ function setupModals() {
     const cancelDeleteBtn = document.getElementById('cancel-delete');
     
     if (confirmDeleteBtn) {
-        confirmDeleteBtn.addEventListener('click', async () => {
+        // Remove existing listener if any to prevent duplicates
+        confirmDeleteBtn.replaceWith(confirmDeleteBtn.cloneNode(true));
+        const newConfirmBtn = document.getElementById('confirm-delete');
+        
+        newConfirmBtn.addEventListener('click', async () => {
             if (memeToDelete) {
                 await deleteMeme(memeToDelete);
                 hideDeleteModal();
@@ -458,7 +462,11 @@ function setupModals() {
     }
     
     if (cancelDeleteBtn) {
-        cancelDeleteBtn.addEventListener('click', () => {
+        // Remove existing listener if any to prevent duplicates
+        cancelDeleteBtn.replaceWith(cancelDeleteBtn.cloneNode(true));
+        const newCancelBtn = document.getElementById('cancel-delete');
+        
+        newCancelBtn.addEventListener('click', () => {
             hideDeleteModal();
         });
     }
@@ -471,7 +479,7 @@ function showDeleteModal(filename) {
     if (deleteModal) {
         deleteModal.style.display = 'flex';
     } else if (isConfigPage) {
-        console.warn('Delete modal not found');
+        console.warn('Delete modal not found in DOM');
     }
 }
 

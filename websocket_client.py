@@ -12,13 +12,14 @@ import json
 import threading
 import websocket
 import time
+import ssl
 from datetime import datetime
 
 
 class MempoolWebSocket:
     """Handles WebSocket connection to mempool for real-time block updates with auto-reconnection."""
     
-    def __init__(self, host, port, path="/api/v1/ws", use_wss=False, on_new_block_callback=None):
+    def __init__(self, host, port, path="/api/v1/ws", use_wss=False, on_new_block_callback=None, verify_ssl=True):
         """
         Initialize WebSocket connection.
         
@@ -28,12 +29,14 @@ class MempoolWebSocket:
             path (str): WebSocket path
             use_wss (bool): Whether to use WSS (secure) protocol
             on_new_block_callback (callable): Function to call when new block received
+            verify_ssl (bool): Whether to verify SSL certificates
         """
         self.host = host
         self.port = port
         self.path = path
         self.use_wss = use_wss
         self.on_new_block_callback = on_new_block_callback
+        self.verify_ssl = verify_ssl
         
         # Build WebSocket URL
         protocol = "wss" if use_wss else "ws"
@@ -207,8 +210,15 @@ class MempoolWebSocket:
             on_open=self.on_open
         )
         
+        # Configure SSL options
+        sslopt = {}
+        if self.use_wss:
+            if not self.verify_ssl:
+                print("⚠️ SSL verification disabled for WebSocket")
+                sslopt = {"cert_reqs": ssl.CERT_NONE, "check_hostname": False}
+            
         # Run forever (blocking call)
-        self.ws.run_forever()
+        self.ws.run_forever(sslopt=sslopt)
     
     def start_listener_thread(self):
         """Start WebSocket listener in a separate daemon thread."""

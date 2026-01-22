@@ -697,6 +697,11 @@ class BlockRewardCache:
             if self.sync_address_to_current(address):
                 success_count += 1
         
+        # Update global sync height to current blockchain height after sync
+        with self.cache_lock:
+            self.cache_data["global_sync_height"] = current_height
+            self._save_cache()
+        
         print(f"📊 Sync complete: {success_count}/{len(addresses)} addresses synced successfully")
         return success_count == len(addresses)
     

@@ -463,6 +463,7 @@ class ConfigManager:
             "show_bitaxe_block",
             "show_wallet_balances_block",
             "color_mode_dark",
+            "eink_dark_mode",
             "live_block_notifications_enabled",
             "mempool_use_https",
             "mempool_verify_ssl"
@@ -977,6 +978,13 @@ class ConfigManager:
                 "description": t.get("height_desc", "Display height in pixels"),
                 "min": 100,
                 "max": 2000,
+                "category": "eink_display"
+            },
+            "eink_dark_mode": {
+                "type": "boolean",
+                "label": t.get("eink_dark_mode", "Dark Mode E-Ink"),
+                "description": t.get("eink_dark_mode_desc", "Enable dark mode for the e-ink display."),
+                "default": False,
                 "category": "eink_display"
             },
             "admin_username": {

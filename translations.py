@@ -209,6 +209,8 @@ translations = {
         "configure_dashboard": "Configure your mempaper dashboard",
         "colors_design": "Colors & Design",
         "color_mode_dark_desc": "Enable dark mode for the webinterface.",
+        "eink_dark_mode": "Dark Mode E-Ink",
+        "eink_dark_mode_desc": "Enable dark mode for the e-ink display.",
         "bitaxe_stats": "Bitaxe Stats",
         "bitaxe_table_address": "IP Address",
         "bitaxe_table_comment": "Comment/Label",

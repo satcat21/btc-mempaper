@@ -1,3 +1,48 @@
+<<<<<<< HEAD
+stages:
+  - test
+  - security
+
+variables:
+  GITLEAKS_VERSION: "latest"
+  CI_DEBUG_TRACE: "false"
+
+include:
+  # GitLab's built-in Secret Detection template
+  - template: Security/Secret-Detection.gitlab-ci.yml
+
+# Run Gitleaks on new commits (merge request pipelines)
+gitleaks_scan:
+  stage: security
+  image: zricethezav/gitleaks:${GITLEAKS_VERSION}
+  script:
+    # Scan only the latest commit range to keep it fast
+    - echo "Running Gitleaks on new changes..."
+    - gitleaks detect --source . --report-format json --report-path gitleaks-report.json --verbose
+  artifacts:
+    paths:
+      - gitleaks-report.json
+    reports:
+      secret_detection: gitleaks-report.json
+  allow_failure: false  # Block merge if secrets are found
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+# Optional: Full history scan (run nightly or weekly)
+gitleaks_full_history:
+  stage: security
+  image: zricethezav/gitleaks:${GITLEAKS_VERSION}
+  script:
+    - echo "Running full Gitleaks scan on repo history..."
+    - gitleaks detect --source . --report-format json --report-path gitleaks-history.json --verbose --log-opts="--all"
+  artifacts:
+    paths:
+      - gitleaks-history.json
+  allow_failure: true  # Do not block main pipeline, just report
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+
+=======
 stages:
   - test
   - security
@@ -41,3 +86,4 @@ gitleaks_full_history:
   rules:
     - if: $CI_PIPELINE_SOURCE == "schedule"
 
+>>>>>>> 7e6e0be1d7601a9ada4ea2b942dd558800dd09ff

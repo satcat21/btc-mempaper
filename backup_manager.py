@@ -30,9 +30,12 @@ def create_backup_aware_websocket(config):
     
     # Create WebSocket with extended settings for backup scenarios
     ws_client = MempoolWebSocket(
-        ip=config.get("mempool_host"),
-        ws_port=config.get("mempool_ws_port"),
-        on_new_block_callback=on_block_callback
+        host=config.get("mempool_host"),
+        port=config.get("mempool_ws_port"),
+        path=config.get("mempool_ws_path", "/api/v1/ws"),
+        use_wss=config.get("mempool_use_https", False),
+        on_new_block_callback=on_block_callback,
+        verify_ssl=config.get("mempool_verify_ssl", True)
     )
     
     # Override settings for backup-aware operation

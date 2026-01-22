@@ -349,6 +349,7 @@ class MempaperApp:
         mempool_ws_port = self.config.get("mempool_ws_port", "8999")
         mempool_ws_path = self.config.get("mempool_ws_path", "/api/v1/ws")
         mempool_use_https = self.config.get("mempool_use_https", False)
+        mempool_verify_ssl = self.config.get("mempool_verify_ssl", True)
         
         print(f"✓ Using mempool host for WebSocket: {mempool_host}")
         
@@ -358,7 +359,8 @@ class MempaperApp:
             port=mempool_ws_port,
             path=mempool_ws_path,
             use_wss=mempool_use_https,  # Use WSS if HTTPS is enabled
-            on_new_block_callback=self.on_new_block_received
+            on_new_block_callback=self.on_new_block_received,
+            verify_ssl=mempool_verify_ssl
         )
         
         # Configure backup-aware settings (adjust duration based on your backup schedule)
@@ -372,115 +374,120 @@ class MempaperApp:
     def _generate_initial_image(self):
         """Generate initial dashboard image on startup - optimized for fast start."""
         
-        # FIRST: Check if wallet bootstrap is needed at startup - smart cache-based decision
-        print("🔍 Checking if wallet bootstrap is needed at startup...")
-        try:
-            # Check configuration for extended keys (XPUB/ZPUB)
-            from config_manager import ConfigManager
-            config_manager = ConfigManager()
-            
-            # Get wallet addresses from config - use correct config keys
-            wallet_addresses = []
-            
-            # Try the correct wallet balance config keys from the debug output
-            # Get wallet addresses from modern table format only
-            wallet_addresses = config_manager.get("wallet_balance_addresses_with_comments", [])
-            if wallet_addresses:
-                print(f"🔍 [DEBUG] Found {len(wallet_addresses)} wallet entries in 'wallet_balance_addresses_with_comments'")
-            else:
-                # Fallback check for any legacy configurations (just for debugging)
-                legacy_addresses = config_manager.get("wallet_balance_addresses", [])
-                if legacy_addresses:
-                    print(f"⚠️ [DEBUG] Found {len(legacy_addresses)} entries in legacy 'wallet_balance_addresses' field - these should be migrated to the table format")
-                    wallet_addresses = legacy_addresses
-            
-            if not wallet_addresses:
-                print(f"🔍 [DEBUG] No wallet addresses found in configuration")
-            
-            # Debug: show what we found
-            if wallet_addresses:
-                for i, entry in enumerate(wallet_addresses[:3]):  # Show first 3
+        # FIRST: Check if wallet monitoring is enabled
+        from config_manager import ConfigManager
+        config_manager = ConfigManager()
+        
+        wallet_monitoring_enabled = config_manager.get("show_wallet_balances_block", True)
+        
+        if not wallet_monitoring_enabled:
+            print("🚫 Wallet monitoring disabled - skipping bootstrap check")
+        else:
+            # Check if wallet bootstrap is needed at startup - smart cache-based decision
+            print("🔍 Checking if wallet bootstrap is needed at startup...")
+            try:
+                # Get wallet addresses from config - use correct config keys
+                wallet_addresses = []
+                
+                # Try the correct wallet balance config keys from the debug output
+                # Get wallet addresses from modern table format only
+                wallet_addresses = config_manager.get("wallet_balance_addresses_with_comments", [])
+                if wallet_addresses:
+                    print(f"🔍 [DEBUG] Found {len(wallet_addresses)} wallet entries in 'wallet_balance_addresses_with_comments'")
+                else:
+                    # Fallback check for any legacy configurations (just for debugging)
+                    legacy_addresses = config_manager.get("wallet_balance_addresses", [])
+                    if legacy_addresses:
+                        print(f"⚠️ [DEBUG] Found {len(legacy_addresses)} entries in legacy 'wallet_balance_addresses' field - these should be migrated to the table format")
+                        wallet_addresses = legacy_addresses
+                
+                if not wallet_addresses:
+                    print(f"🔍 [DEBUG] No wallet addresses found in configuration")
+                
+                # Debug: show what we found
+                if wallet_addresses:
+                    for i, entry in enumerate(wallet_addresses[:3]):  # Show first 3
+                        if isinstance(entry, dict):
+                            address = entry.get("address", "")
+                            comment = entry.get("comment", "")
+                            print(f"   [DEBUG] Entry {i}: {address[:20]}... ({comment})")
+                        else:
+                            print(f"   [DEBUG] Entry {i}: {str(entry)[:20]}...")
+                else:
+                    print(f"🔍 [DEBUG] No wallet addresses found in any config source")
+                
+                extended_keys = []
+                
+                for entry in wallet_addresses:
                     if isinstance(entry, dict):
                         address = entry.get("address", "")
-                        comment = entry.get("comment", "")
-                        print(f"   [DEBUG] Entry {i}: {address[:20]}... ({comment})")
                     else:
-                        print(f"   [DEBUG] Entry {i}: {str(entry)[:20]}...")
-            else:
-                print(f"🔍 [DEBUG] No wallet addresses found in any config source")
-            
-            extended_keys = []
-            
-            for entry in wallet_addresses:
-                if isinstance(entry, dict):
-                    address = entry.get("address", "")
-                else:
-                    address = str(entry)
-                
-                # Check if it's an extended key (XPUB/ZPUB are typically 100+ characters)
-                if len(address) > 50 and (address.lower().startswith(('xpub', 'zpub', 'ypub'))):
-                    extended_keys.append(address)
-            
-            if not wallet_addresses:
-                print("📋 No wallet addresses configured - skipping bootstrap")
-            elif not extended_keys:
-                # For regular addresses, try to get cached data
-                try:
-                    wallet_data = self.wallet_balance_api.get_cached_wallet_balances()
-                    if wallet_data and 'addresses' in wallet_data:
-                        total_balance = wallet_data.get('total_btc', 0)
-                        print(f"✓ [STARTUP] Regular addresses only: {len(wallet_data.get('addresses', []))} addresses, {total_balance} BTC total")
-                    else:
-                        print(f"✓ [STARTUP] Regular addresses configured but no cached balance data")
-                except Exception as cache_e:
-                    print(f"✓ [STARTUP] Regular addresses configured (cache check failed: {cache_e})")
-            else:
-                # Extended keys found - check if we have valid cached address derivation
-                print(f"🔑 [STARTUP] Found {len(extended_keys)} extended key(s) - checking cache status...")
-                
-                bootstrap_needed = False
-                current_height = 0
-                current_hash = "unknown"
-                
-                # Get current block info for cache validation
-                try:
-                    current_block_info = self.mempool_api.get_current_block_info()
-                    current_height = current_block_info['block_height']
-                    current_hash = current_block_info['block_hash']
-                except Exception as e:
-                    print(f"⚠️ Could not get current block info: {e}")
-                
-                # Check async wallet address cache for each extended key
-                for xpub in extended_keys:
-                    cache_status = self._check_async_wallet_cache_status(xpub, current_height)
+                        address = str(entry)
                     
-                    if cache_status == "missing":
-                        print(f"🚀 [STARTUP] No cached addresses found for {xpub[:20]}... - bootstrap needed")
-                        bootstrap_needed = True
-                        break
-                    elif cache_status == "outdated":
-                        print(f"🔄 [STARTUP] Cached addresses outdated for {xpub[:20]}... - bootstrap needed")
-                        bootstrap_needed = True
-                        break
-                    elif cache_status == "valid":
-                        print(f"✅ [STARTUP] Valid cached addresses found for {xpub[:20]}... - bootstrap not needed")
-                    else:
-                        print(f"⚠️ [STARTUP] Unknown cache status for {xpub[:20]}... - bootstrap needed as fallback")
-                        bootstrap_needed = True
-                        break
+                    # Check if it's an extended key (XPUB/ZPUB are typically 100+ characters)
+                    if len(address) > 50 and (address.lower().startswith(('xpub', 'zpub', 'ypub'))):
+                        extended_keys.append(address)
                 
-                if bootstrap_needed:
-                    print("🚀 [STARTUP] Triggering bootstrap detection for extended keys...")
-                    threading.Thread(
-                        target=self._safe_wallet_refresh_thread,
-                        args=(current_height, current_hash, True),  # True for startup_mode
-                        daemon=True
-                    ).start()
-                    print("✅ [STARTUP] Bootstrap detection started in background")
+                if not wallet_addresses:
+                    print("📋 No wallet addresses configured - skipping bootstrap")
+                elif not extended_keys:
+                    # For regular addresses, try to get cached data
+                    try:
+                        wallet_data = self.wallet_balance_api.get_cached_wallet_balances()
+                        if wallet_data and 'addresses' in wallet_data:
+                            total_balance = wallet_data.get('total_btc', 0)
+                            print(f"✓ [STARTUP] Regular addresses only: {len(wallet_data.get('addresses', []))} addresses, {total_balance} BTC total")
+                        else:
+                            print(f"✓ [STARTUP] Regular addresses configured but no cached balance data")
+                    except Exception as cache_e:
+                        print(f"✓ [STARTUP] Regular addresses configured (cache check failed: {cache_e})")
                 else:
-                    print("✅ [STARTUP] All extended keys have valid cached data - skipping bootstrap")
-        except Exception as e:
-            print(f"⚠️ Could not check wallet status: {e}")
+                    # Extended keys found - check if we have valid cached address derivation
+                    print(f"🔑 [STARTUP] Found {len(extended_keys)} extended key(s) - checking cache status...")
+                    
+                    bootstrap_needed = False
+                    current_height = 0
+                    current_hash = "unknown"
+                    
+                    # Get current block info for cache validation
+                    try:
+                        current_block_info = self.mempool_api.get_current_block_info()
+                        current_height = current_block_info['block_height']
+                        current_hash = current_block_info['block_hash']
+                    except Exception as e:
+                        print(f"⚠️ Could not get current block info: {e}")
+                    
+                    # Check async wallet address cache for each extended key
+                    for xpub in extended_keys:
+                        cache_status = self._check_async_wallet_cache_status(xpub, current_height)
+                        
+                        if cache_status == "missing":
+                            print(f"🚀 [STARTUP] No cached addresses found for {xpub[:20]}... - bootstrap needed")
+                            bootstrap_needed = True
+                            break
+                        elif cache_status == "outdated":
+                            print(f"🔄 [STARTUP] Cached addresses outdated for {xpub[:20]}... - bootstrap needed")
+                            bootstrap_needed = True
+                            break
+                        elif cache_status == "valid":
+                            print(f"✅ [STARTUP] Valid cached addresses found for {xpub[:20]}... - bootstrap not needed")
+                        else:
+                            print(f"⚠️ [STARTUP] Unknown cache status for {xpub[:20]}... - bootstrap needed as fallback")
+                            bootstrap_needed = True
+                            break
+                    
+                    if bootstrap_needed:
+                        print("🚀 [STARTUP] Triggering bootstrap detection for extended keys...")
+                        threading.Thread(
+                            target=self._safe_wallet_refresh_thread,
+                            args=(current_height, current_hash, True),  # True for startup_mode
+                            daemon=True
+                        ).start()
+                        print("✅ [STARTUP] Bootstrap detection started in background")
+                    else:
+                        print("✅ [STARTUP] All extended keys have valid cached data - skipping bootstrap")
+            except Exception as e:
+                print(f"⚠️ Could not check wallet status: {e}")
         
         # Get current block info for image cache comparison
         try:
@@ -1487,6 +1494,14 @@ class MempaperApp:
                     self.current_block_height = metadata.get('block_height')
                     self.current_block_hash = metadata.get('block_hash')
                     self.current_meme_path = metadata.get('current_meme_path')  # Restore meme cache
+                    self.last_eink_block_height = metadata.get('last_eink_block_height')  # Restore e-ink display state
+                    self.last_eink_block_hash = metadata.get('last_eink_block_hash')  # Restore e-ink display hash
+                    
+                    # For smooth transition, if e-ink tracking fields are missing, initialize them from cache
+                    if self.last_eink_block_height is None and self.current_block_height:
+                        self.last_eink_block_height = self.current_block_height
+                        self.last_eink_block_hash = self.current_block_hash
+                        print(f"📋 Initialized e-ink tracking from cache: Block {self.last_eink_block_height}")
                     
                     # Check if cached images are recent (within 2 hours)
                     cache_time = metadata.get('timestamp', 0)
@@ -1520,7 +1535,9 @@ class MempaperApp:
                 'timestamp': time.time(),
                 'image_path': self.current_image_path,
                 'eink_image_path': self.current_eink_image_path,
-                'current_meme_path': getattr(self, 'current_meme_path', None)  # Add meme caching
+                'current_meme_path': getattr(self, 'current_meme_path', None),  # Add meme caching
+                'last_eink_block_height': self.last_eink_block_height,  # Persist e-ink display state
+                'last_eink_block_hash': self.last_eink_block_hash  # Persist e-ink display hash
             }
             
             with open(self.cache_metadata_path, 'w') as f:
@@ -1705,18 +1722,22 @@ class MempaperApp:
                     "info_blocks": [],       # or build as needed
                 }
                 # Now, start async wallet refresh in background using threading (no multiprocessing issues)
-                print("🔄 Starting async wallet refresh in background...")
-                try:
-                    # Use a simple approach that avoids multiprocessing issues
-                    # This runs in a thread but the actual work happens in subprocess via image_renderer
-                    threading.Thread(
-                        target=self._safe_wallet_refresh_thread,
-                        args=(self.current_block_height, self.current_block_hash, False),
-                        daemon=True
-                    ).start()
-                    print("✅ Wallet refresh thread started")
-                except Exception as proc_e:
-                    print(f"❌ Failed to start wallet refresh thread: {proc_e}")
+                # Skip if wallet monitoring is disabled
+                if self.config.get("show_wallet_balances_block", True):
+                    print("🔄 Starting async wallet refresh in background...")
+                    try:
+                        # Use a simple approach that avoids multiprocessing issues
+                        # This runs in a thread but the actual work happens in subprocess via image_renderer
+                        threading.Thread(
+                            target=self._safe_wallet_refresh_thread,
+                            args=(self.current_block_height, self.current_block_hash, False),
+                            daemon=True
+                        ).start()
+                        print("✅ Wallet refresh thread started")
+                    except Exception as proc_e:
+                        print(f"❌ Failed to start wallet refresh thread: {proc_e}")
+                else:
+                    print("🚫 Wallet monitoring disabled - skipping async wallet refresh")
 
         except Exception as e:
             print(f"❌ Error regenerating image with cached meme: {e}")
@@ -1910,13 +1931,17 @@ class MempaperApp:
         def start_background_tasks():
             """Start background tasks after web image is served."""
             # Start async wallet refresh in background for all image generations
-            print("🔄 Starting async wallet refresh in background...")
-            threading.Thread(
-                target=self._safe_wallet_refresh_thread,
-                args=(block_height, block_hash, False),  # False for startup_mode
-                daemon=True
-            ).start()
-            print("✅ Async wallet refresh thread started")
+            # Skip if wallet monitoring is disabled
+            if self.config.get("show_wallet_balances_block", True):
+                print("🔄 Starting async wallet refresh in background...")
+                threading.Thread(
+                    target=self._safe_wallet_refresh_thread,
+                    args=(block_height, block_hash, False),  # False for startup_mode
+                    daemon=True
+                ).start()
+                print("✅ Async wallet refresh thread started")
+            else:
+                print("🚫 Wallet monitoring disabled - skipping async wallet refresh")
             
             # Display on e-Paper (only if enabled, not skipped, and block height differs)
             if self.e_ink_enabled and not skip_epaper:
@@ -1987,7 +2012,12 @@ class MempaperApp:
         
         # 🔧 FIX: Prevent duplicate block processing and race conditions
         current_height = getattr(self, 'current_block_height', None)
-        if current_height is not None and block_height_int <= current_height:
+        try:
+            current_height_int = int(current_height) if current_height is not None else None
+        except (ValueError, TypeError):
+            current_height_int = None
+
+        if current_height_int is not None and block_height_int <= current_height_int:
             print(f"🔄 [DEBUG] Skipping duplicate/old block {block_height_int} (current: {current_height})")
             return
         
@@ -1999,7 +2029,12 @@ class MempaperApp:
         try:
             # Double-check after acquiring lock
             current_height = getattr(self, 'current_block_height', None)
-            if current_height is not None and block_height_int <= current_height:
+            try:
+                current_height_int = int(current_height) if current_height is not None else None
+            except (ValueError, TypeError):
+                current_height_int = None
+
+            if current_height_int is not None and block_height_int <= current_height_int:
                 print(f"🔄 [DEBUG] Skipping duplicate/old block {block_height_int} after lock (current: {current_height})")
                 return
             

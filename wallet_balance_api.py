@@ -9,6 +9,8 @@ Uses local address derivation from XPUB/ZPUB keys for better control.
 
 import requests
 import urllib3
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 import hashlib
 import json
 import time
@@ -88,9 +90,12 @@ class WalletBalanceAPI:
             List of usage info dicts for each address
         """
         results = []
-        for address in addresses:
+        for i, address in enumerate(addresses):
             info = self.get_address_usage_info(address)
             results.append(info)
+            # Add a small delay between requests to avoid overwhelming the server/proxy
+            if i < len(addresses) - 1:
+                time.sleep(0.05)
         return results
     """API client for Bitcoin wallet balance monitoring with deduplication and address caching."""
     
@@ -145,6 +150,19 @@ class WalletBalanceAPI:
             use_https=mempool_use_https, 
             verify_ssl=self.mempool_verify_ssl
         )
+        
+        # Initialize requests session with robust retry logic
+        self.session = requests.Session()
+        # print("🔧 WalletBalanceAPI: Initializing session with robust timeout")
+        retry_strategy = Retry(
+            total=3,  # Increase retries to handle transient failures
+            backoff_factor=1,  # Increase backoff
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["HEAD", "GET", "OPTIONS"]
+        )
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+        self.session.mount("https://", adapter)
+        self.session.mount("http://", adapter)
         
         # Initialize address derivation with caching
         self.address_derivation = AddressDerivation()
@@ -585,6 +603,9 @@ class WalletBalanceAPI:
                         else:
                             # Never used address - include in monitoring
                             never_used_indices.append(i)
+                        
+                        # Add a small delay to avoid overwhelming the server
+                        time.sleep(0.05)
                             
                     except Exception as e:
                         print(f"⚠️ Error checking address {address[:10]}...{address[-10:]}: {e}")
@@ -1037,17 +1058,33 @@ class WalletBalanceAPI:
             print(f"🚨 ERROR: get_address_balance received non-string type {type(address)}: {address}")
             return 0.0
             
+        # Validate address format before making request
+        if not self.address_derivation.validate_address(address):
+            print(f"⚠️ Invalid address format detected: {address} - skipping network request")
+            return 0.0
+
         try:
             url = f"{self.base_url}/address/{address}"
-            response = requests.get(url, timeout=10, verify=self.mempool_verify_ssl)
+            # Use reasonable timeout (30s) to allow for server load
+            response = self.session.get(url, timeout=30, verify=self.mempool_verify_ssl)
             response.raise_for_status()
             data = response.json()
             
             funded = data['chain_stats']['funded_txo_sum']
             spent = data['chain_stats']['spent_txo_sum']
             return (funded - spent) / 1e8
+        except requests.exceptions.ReadTimeout:
+            print(f"⚠️ Timeout fetching balance for {address[:10]}... - skipping")
+            return 0.0
         except Exception as e:
-            print(f"⚠️ Error fetching balance for address {address}: {e}")
+            if isinstance(e, requests.exceptions.HTTPError) and e.response.status_code == 504:
+                print(f"🚨 SERVER ERROR 504: Gateway Timeout for {address[:10]}... - Your Mempool server is overloaded or unreachable.")
+            else:
+                print(f"⚠️ Error fetching balance for address {address}: {e}")
+            
+            if isinstance(e, requests.exceptions.HTTPError):
+                print(f"   Status Code: {e.response.status_code}")
+                print(f"   Response: {e.response.text[:200]}")
             return 0.0
     
     def get_address_usage_info(self, address: str) -> Dict:
@@ -1060,9 +1097,24 @@ class WalletBalanceAPI:
         Returns:
             Dict with usage information
         """
+        # Validate address format before making request
+        if not self.address_derivation.validate_address(address):
+            print(f"⚠️ Invalid address format detected: {address} - skipping network request")
+            return {
+                'address': address,
+                'current_balance': 0,
+                'total_received': 0,
+                'total_spent': 0,
+                'tx_count': 0,
+                'was_ever_used': False,
+                'is_spent_address': False
+            }
+
         try:
+            # print(f"🔍 Fetching usage info for {address[:10]}...")
             url = f"{self.base_url}/address/{address}"
-            response = requests.get(url, timeout=10, verify=self.mempool_verify_ssl)
+            # Use reasonable timeout (30s) to allow for server load
+            response = self.session.get(url, timeout=30, verify=self.mempool_verify_ssl)
             response.raise_for_status()
             data = response.json()
             
@@ -1081,8 +1133,28 @@ class WalletBalanceAPI:
                 'was_ever_used': total_received > 0 or tx_count > 0,
                 'is_spent_address': total_received > 0 and current_balance == 0
             }
+        except requests.exceptions.ReadTimeout:
+            print(f"⚠️ Timeout fetching usage for {address[:10]}... - skipping (likely invalid/unused)")
+            return {
+                'address': address,
+                'current_balance': 0,
+                'total_received': 0,
+                'total_spent': 0,
+                'tx_count': 0,
+                'was_ever_used': False,
+                'is_spent_address': False
+            }
         except Exception as e:
-            print(f"⚠️ Error fetching usage info for address {address}: {e}")
+            if isinstance(e, requests.exceptions.HTTPError) and e.response.status_code == 504:
+                print(f"🚨 SERVER ERROR 504: Gateway Timeout for {address[:10]}... - Your Mempool server is overloaded or unreachable.")
+            else:
+                print(f"⚠️ Error fetching usage info for address {address}: {e}")
+            
+            if isinstance(e, requests.exceptions.HTTPError):
+                print(f"   Status Code: {e.response.status_code}")
+                print(f"   Response: {e.response.text[:200]}")
+            elif isinstance(e, requests.exceptions.SSLError):
+                print(f"   🔐 SSL Error: Try setting 'mempool_verify_ssl': false in config.json")
             return {
                 'address': address,
                 'current_balance': 0,
@@ -1363,6 +1435,8 @@ class WalletBalanceAPI:
                     for address, index in new_addresses:
                         usage_info = self.get_address_usage_info(address)
                         all_addresses_info[address] = (index, usage_info)
+                        # Add a small delay to avoid overwhelming the server
+                        time.sleep(0.05)
                 
                 # Check gap limit: Are any of the last [gap_limit] addresses used?
                 if len(addresses_with_indices) >= self.gap_limit:

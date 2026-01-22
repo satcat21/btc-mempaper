@@ -351,3 +351,60 @@ class AddressDerivation:
         
         count = end_index - start_index
         return self.derive_addresses(extended_key, count, start_index)
+
+    def validate_address(self, address: str) -> bool:
+        """
+        Validate a Bitcoin address (P2PKH or P2WPKH).
+        
+        Args:
+            address: Bitcoin address string
+            
+        Returns:
+            True if valid, False otherwise
+        """
+        if not address:
+            return False
+            
+        # Check P2WPKH (Bech32)
+        if address.startswith('bc1'):
+            try:
+                # Find separator '1'
+                pos = address.rfind('1')
+                if pos == -1:
+                    return False
+                    
+                hrp = address[:pos]
+                data_part = address[pos+1:]
+                
+                if hrp != 'bc':
+                    return False
+                
+                # Decode data part
+                decoded_data = []
+                BECH32_ALPHABET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
+                
+                for char in data_part:
+                    index = BECH32_ALPHABET.find(char)
+                    if index == -1:
+                        return False
+                    decoded_data.append(index)
+                
+                return self._bech32_verify_checksum(hrp, decoded_data)
+            except Exception:
+                return False
+                
+        # Check P2PKH (Base58)
+        else:
+            try:
+                # Decode base58check
+                decoded = self._base58_decode(address)
+                
+                # Verify checksum
+                payload = decoded[:-4]
+                checksum = decoded[-4:]
+                if self._checksum(payload) != checksum:
+                    return False
+                    
+                return True
+            except Exception:
+                return False
