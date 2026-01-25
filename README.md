@@ -248,6 +248,37 @@ These settings are defined in `security_config.py` and cannot be modified throug
 #### **Inky Displays (Pimoroni)**
 - **Inky Impression 7-color**
 - **Inky pHAT** (Red/Yellow/Black variants)
+
+### 🛠️ Hardware Installation (e-Paper)
+
+If you are using a Waveshare e-Paper display (e.g. 7.3" F 7-color), you need to install the Waveshare library manually:
+
+1.  **Clone the Waveshare repository into the project:**
+    ```bash
+    cd btc-mempaper
+    mkdir -p lib
+    git clone https://github.com/waveshare/e-Paper.git lib/waveshare
+    ```
+
+2.  **Install the library:**
+    ```bash
+    source .venv/bin/activate
+    cd lib/waveshare/RaspberryPi_JetsonNano/python/
+    pip install .
+    # Return to project root
+    cd ~/btc-mempaper
+    ```
+
+3.  **Enable SPI interface on Raspberry Pi:**
+    ```bash
+    sudo raspi-config
+    # Navigate to: 3 Interface Options -> I4 SPI -> Yes
+    ```
+
+4.  **Restart the service:**
+    ```bash
+    sudo systemctl restart mempaper.service
+    ```
 - **Inky wHAT** series
 - **Auto-detection** support
 
