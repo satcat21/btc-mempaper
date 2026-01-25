@@ -33,7 +33,7 @@ source .venv/bin/activate
 
 # Remove eventlet and install optimized gevent
 pip uninstall -y eventlet
-pip install gevent==24.2.1 gevent-websocket==0.10.1
+pip install gevent==24.11.1 gevent-websocket==0.10.1
 
 # Install all dependencies
 pip install -r requirements.txt

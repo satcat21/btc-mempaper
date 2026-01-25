@@ -118,7 +118,7 @@ Mempaper is a modern Bitcoin dashboard that combines live blockchain data, custo
 
 1. **Clone the repository**
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/satcat21/btc-mempaper.git
    cd btc-mempaper
    ```
 
@@ -296,11 +296,17 @@ These settings are defined in `security_config.py` and cannot be modified throug
 3. **Install dependencies**:
    ```bash
    sudo apt update
-   sudo apt install python3-pip python3-venv git
+   sudo apt install -y \
+     libffi-dev \
+     build-essential \
+     python3-dev \
+     pkg-configpython3-pip \
+     python3-venv \
+     git
    ```
 4. **Clone and setup**:
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/satcat21/btc-mempaper.git
    cd btc-mempaper
    python -m venv .venv
    source .venv/bin/activate

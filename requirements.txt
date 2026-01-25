@@ -13,7 +13,7 @@ schedule==1.2.2  # For daily XPUB optimization scheduling
 
 # Production WSGI server
 gunicorn==23.0.0  # Production WSGI server for Flask apps
-gevent==24.2.1  # Async networking library for SocketIO (replaces eventlet)
+gevent==24.11.1  # Async networking library for SocketIO (replaces eventlet)
 gevent-websocket==0.10.1  # WebSocket support for gevent
 
 # Security dependencies for configuration encryption
