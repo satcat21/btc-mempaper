@@ -29,7 +29,7 @@ source .venv/bin/activate
 # Check if gunicorn is installed
 if ! command -v gunicorn &> /dev/null; then
     echo -e "${RED}❌ Gunicorn not found. Installing...${NC}"
-    pip install gunicorn eventlet
+    pip install gunicorn gevent gevent-websocket
 fi
 
 # Ensure required directories exist

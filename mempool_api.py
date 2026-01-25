@@ -59,7 +59,18 @@ class MempoolAPI:
             url = f"{self.base_url}/blocks/tip/height"
             response = requests.get(url, timeout=5, verify=self.verify_ssl)
             response.raise_for_status()
-            return response.text.strip()
+            height = response.text.strip()
+            
+            # If height is 0, try to recover using tip hash
+            if str(height) == "0":
+                 print("⚠️ Tip height is 0, attempting recovery via tip hash...")
+                 tip_hash = self.get_tip_hash()
+                 if tip_hash and tip_hash != self.fallback_data["block_hash"]:
+                     recovered_height = self.get_height_from_hash(tip_hash)
+                     if str(recovered_height) != "0":
+                         return recovered_height
+            
+            return height
         except requests.RequestException as e:
             print(f"Error fetching block height: {e}")
             return self.fallback_data["block_height"]
@@ -80,6 +91,26 @@ class MempoolAPI:
             print(f"Error fetching block hash: {e}")
             return self.fallback_data["block_hash"]
     
+    def get_height_from_hash(self, block_hash):
+        """
+        Get block height for a specific block hash.
+        
+        Args:
+            block_hash (str): The hash of the block to query
+            
+        Returns:
+            str: Block height as string, or "0" if failed
+        """
+        try:
+            url = f"{self.base_url}/block/{block_hash}"
+            response = requests.get(url, timeout=5, verify=self.verify_ssl)
+            response.raise_for_status()
+            data = response.json()
+            return str(data.get("height", 0))
+        except Exception as e:
+            print(f"Error fetching block details for hash {block_hash}: {e}")
+            return "0"
+
     def get_current_block_info(self):
         """
         Get both current block height and hash.
@@ -90,6 +121,16 @@ class MempoolAPI:
         try:
             height = self.get_tip_height()
             block_hash = self.get_tip_hash()
+            
+            # Correction logic: If height is 0 but hash is valid (not genesis/fallback),
+            # assume height fetch failed and try to look it up via hash
+            fallback_hash = self.fallback_data["block_hash"]
+            if (str(height) == "0" or height is None) and block_hash and block_hash != fallback_hash and block_hash != "0":
+                 print(f"⚠️ Height is 0 but have valid hash {block_hash[:8]}... - Attempting recovery via block details")
+                 recovered_height = self.get_height_from_hash(block_hash)
+                 if str(recovered_height) != "0":
+                     print(f"✅ Recovered block height: {recovered_height}")
+                     height = recovered_height
             
             # Format hash for display: first 6 + last 6 characters with grouping
             hash_first = block_hash[:6]

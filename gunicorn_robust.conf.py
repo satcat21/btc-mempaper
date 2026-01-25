@@ -1,7 +1,8 @@
 # Gunicorn Configuration for Mempaper Bitcoin Dashboard
 # This configuration is optimized for production deployment on Raspberry Pi
 
-import eventlet
+import gevent
+import gevent.monkey
 import multiprocessing
 import os
 
@@ -12,7 +13,7 @@ backlog = 2048
 # Worker processes
 # Using 2 workers for Raspberry Pi (4 cores * 0.5 + 1)
 workers = 2
-worker_class = "eventlet"
+worker_class = "geventwebsocket.gunicorn.workers.GeventWebSocketWorker"
 worker_connections = 500
 
 # Worker process management

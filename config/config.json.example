@@ -3,11 +3,11 @@
   "admin_username": "admin",
 
   "mempool_use_https": true,
-  "mempool_host": "mempool.mydomain",
+  "mempool_host": "mempool.space",
   "mempool_rest_port": "443",
   "mempool_ws_port": "443",
   "mempool_ws_path": "/api/v1/ws",
-  "mempool_verify_ssl": false,
+  "mempool_verify_ssl": true,
 
   "fee_parameter": "fastestFee",
 
@@ -25,7 +25,7 @@
   "btc_price_currency": "USD",
   "moscow_time_unit": "hour",
 
-  "show_bitaxe_block": true,
+  "show_bitaxe_block": false,
   "bitaxe_miner_table": [],
 
   "show_wallet_balances_block": false,

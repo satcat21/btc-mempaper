@@ -15,7 +15,7 @@ backlog = 2048
 
 # Worker processes - optimized for Raspberry Pi Zero WH
 workers = 1
-worker_class = "gevent"
+worker_class = "geventwebsocket.gunicorn.workers.GeventWebSocketWorker"
 worker_connections = 100
 timeout = 600
 keepalive = 2
