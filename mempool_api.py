@@ -42,8 +42,6 @@ class MempoolAPI:
             # Always include port for IP addresses
             self.base_url = f"{protocol}://{host}:{port}/api"
         
-        print(f"🔗 Mempool API URL: {self.base_url}")
-        
         # Fallback values for when API is unavailable
         self.fallback_data = {
             "block_height": "0",
@@ -100,8 +98,6 @@ class MempoolAPI:
             hash_first_grouped = ' '.join([hash_first[i:i+2] for i in range(0, len(hash_first), 2)])
             hash_last_grouped = ' '.join([hash_last[i:i+2] for i in range(0, len(hash_last), 2)])
             hash_display = f"{hash_first_grouped} ... {hash_last_grouped}"
-            
-            print(f"Current block - Height: {height}, Hash: {hash_display}")
             
             return {
                 "block_height": height,

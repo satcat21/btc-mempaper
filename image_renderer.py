@@ -381,9 +381,30 @@ class ImageRenderer:
         online_devices = bitaxe_data.get("miners_online", 0)
         total_devices = bitaxe_data.get("miners_total", 0)
         valid_blocks = bitaxe_data.get("valid_blocks", 0)
+        best_difficulty = bitaxe_data.get("best_difficulty", 0)
 
         header_left_text = self.t.get("total_hashrate", f"Total hashrate ({online_devices}/{total_devices})")
-        header_right_text = self.t.get("valid_blocks", "Valid blocks found")
+        
+        # Determine what to show on the right side based on config
+        display_mode = self.config.get("bitaxe_display_mode", "blocks")
+        
+        if display_mode == "difficulty":
+            header_right_text = self.t.get("best_difficulty", "Best Difficulty")
+            
+            # Format difficulty
+            if best_difficulty >= 1e12:
+                blocks_value_text = f"{best_difficulty / 1e12:.2f}T"
+            elif best_difficulty >= 1e9:
+                blocks_value_text = f"{best_difficulty / 1e9:.2f}G"
+            elif best_difficulty >= 1e6:
+                blocks_value_text = f"{best_difficulty / 1e6:.2f}M"
+            elif best_difficulty >= 1e3:
+                blocks_value_text = f"{best_difficulty / 1e3:.2f}k"
+            else:
+                blocks_value_text = f"{best_difficulty:.0f}"
+        else:
+            header_right_text = self.t.get("valid_blocks", "Valid blocks found")
+            blocks_value_text = str(valid_blocks)
 
         col_width = self.width // 2
         left_col_center_x = col_width // 2
@@ -421,7 +442,7 @@ class ImageRenderer:
             font_large_value = font_value
 
         hashrate_value_text = f"{total_ths:.2f} TH/s"
-        blocks_value_text = str(valid_blocks)
+        # blocks_value_text is already set above based on mode
 
         bbox_hashrate = font_large_value.getbbox(hashrate_value_text)
         bbox_blocks = font_large_value.getbbox(blocks_value_text)
@@ -992,16 +1013,9 @@ class ImageRenderer:
         Returns:
             tuple: (web_image, eink_image, content_path) - Both PIL.Image objects and source content path
         """
-        if startup_mode:
-            print("🚀 [STARTUP] Generating dual images with minimal processing...")
-        else:
-            print("🎨 Generating dual images with shared processing...")
-        
         # === SHARED DATA COLLECTION (done once) ===
         # Get holiday info once
         holiday_info = self.get_today_btc_holiday()
-        if holiday_info:
-            print(f"🎄 Holiday detected: {holiday_info.get('title', 'No title')}")
         
         # Get fee info once
         configured_fee, api_block_height = self.get_fee_and_block_info(mempool_api)
@@ -1011,7 +1025,6 @@ class ImageRenderer:
         # Fallback to random meme
         if not content_path:
             content_path = self.pick_random_meme()
-            print(f"🎭 Selected meme: {os.path.basename(content_path) if content_path else 'None'}")
         
         # Randomly select info blocks ONCE
         info_blocks = []
@@ -1027,7 +1040,6 @@ class ImageRenderer:
             info_blocks.append((self.render_bitaxe_block, bitaxe_data))
         if config.get("show_wallet_balances_block", True):
             if startup_mode:
-                print("� [STARTUP-IMG] Loading cached wallet data for immediate display...")
                 wallet_data = self.wallet_api.get_cached_wallet_balances()
                 if wallet_data is None or wallet_data.get("error"):
                     print("⚠️ [STARTUP-IMG] No cached wallet data available, using default values for immediate display")
@@ -1043,7 +1055,6 @@ class ImageRenderer:
                 else:
                     print(f"✅ [STARTUP-IMG] Using cached wallet data: {wallet_data.get('total_btc', 0):.8f} BTC")
             else:
-                print("� [IMG] Loading cached wallet data...")
                 wallet_data = self.wallet_api.get_cached_wallet_balances()
                 if wallet_data is None or wallet_data.get("error"):
                     print("⚠️ [IMG] No cached wallet data available or error occurred, using default values")
@@ -1055,7 +1066,7 @@ class ImageRenderer:
                         "xpubs": [],
                     }
                 else:
-                    print(f"✅ [IMG] Using cached wallet data: {wallet_data.get('total_btc', 0)} BTC")
+                    pass
             
             # Only try to convert to fiat if we have valid wallet data
             if wallet_data.get("total_btc") is not None and not wallet_data.get("error"):
@@ -1084,20 +1095,12 @@ class ImageRenderer:
         }
 
         # === GENERATE WEB IMAGE ===
-        if startup_mode:
-            print("🚀 [STARTUP] Generating web-quality image with cached data...")
-        else:
-            print("🌐 Generating web-quality image...")
         web_img = self._render_image_with_shared_data(
             block_height, block_hash, mempool_api,
             shared_data, web_quality=True, startup_mode=startup_mode
         )
         
         # === GENERATE E-INK IMAGE ===
-        if startup_mode:
-            print("🚀 [STARTUP] Generating e-ink optimized image with cached data...")
-        else:
-            print("🖥️ Generating e-ink optimized image...")
         eink_img = None
         if self.e_ink_enabled:
             eink_img = self._render_image_with_shared_data(
@@ -1105,7 +1108,7 @@ class ImageRenderer:
                 shared_data, web_quality=False, startup_mode=startup_mode
             )
         
-        print("✅ Dual image generation completed efficiently")
+        print(f"✅ Image generated for block {block_height}")
         return web_img, eink_img, content_path  # Return selected content path for caching
     
     def render_dual_images_with_cached_meme(self, block_height, block_hash, cached_meme_path, mempool_api=None):
@@ -1122,20 +1125,15 @@ class ImageRenderer:
         Returns:
             tuple: (web_image, eink_image, meme_path) - Both PIL.Image objects and used meme path
         """
-        print(f"🎨 Regenerating images with cached meme: {os.path.basename(cached_meme_path) if cached_meme_path else 'None'}")
-        
         # === SHARED DATA COLLECTION (done once) ===
         # Get holiday info once
         holiday_info = self.get_today_btc_holiday()
-        if holiday_info:
-            print(f"🎄 Holiday detected: {holiday_info.get('title', 'No title')}")
         
         # Get fee info once
         configured_fee, api_block_height = self.get_fee_and_block_info(mempool_api)
         
         # Use the provided cached meme path
         meme_path = cached_meme_path
-        print(f"📦 Using cached meme: {os.path.basename(meme_path) if meme_path else 'None'}")
         
         # Fetch info block data ONCE
         btc_price_data = None
@@ -1152,7 +1150,6 @@ class ImageRenderer:
             bitaxe_data = self.bitaxe_api.fetch_bitaxe_stats()
             info_blocks.append((self.render_bitaxe_block, bitaxe_data))
         if config.get("show_wallet_balances_block", True):
-            print("🔍 [CACHE_IMG] Loading cached wallet data...")
             wallet_data = self.wallet_api.get_cached_wallet_balances()
             # Import privacy utils if available
             # try:
@@ -1162,7 +1159,6 @@ class ImageRenderer:
             # except ImportError:
                 # print(f"📋 [CACHE_IMG] Cached wallet data result: {wallet_data}")
             if wallet_data is None or wallet_data.get("error"):
-                print("⚠️ [CACHE_IMG] No cached wallet data available or error occurred, using default values")
                 wallet_data = {
                     "total_btc": 0,
                     "total_fiat": 0,
@@ -1171,7 +1167,7 @@ class ImageRenderer:
                     "xpubs": [],
                 }
             else:
-                print(f"✅ [CACHE_IMG] Using cached wallet data: {wallet_data.get('total_btc', 0)} BTC")
+                pass
             
             # Only try to convert to fiat if we have valid wallet data
             if wallet_data.get("total_btc") is not None and not wallet_data.get("error"):
@@ -1200,20 +1196,17 @@ class ImageRenderer:
         }
 
         # === GENERATE WEB IMAGE ===
-        print("🌐 Regenerating web-quality image...")
         web_img = self._render_image_with_shared_data(
             block_height, block_hash, mempool_api,
             shared_data, web_quality=True
         )
         
         # === GENERATE E-INK IMAGE ===
-        print("🖥️ Regenerating e-ink optimized image...")
         eink_img = self._render_image_with_shared_data(
             block_height, block_hash, mempool_api,
             shared_data, web_quality=False
         )
         
-        print("✅ Image regeneration with cached meme completed")
         return web_img, eink_img, meme_path
     
     def _render_image_with_shared_data(self, block_height, block_hash, mempool_api,
@@ -1306,13 +1299,9 @@ class ImageRenderer:
             line_height = desc_bbox[3] - desc_bbox[1]
             desc_total_height = len(desc_lines) * line_height + (len(desc_lines) - 1) * 4
             
-            print(f"   🎄 Holiday '{title_text}' needs {len(desc_lines)} line(s) for description")
-            
             # Total height: Title + Gap(3) + Description + Padding(24)
             # 12px top + 12px bottom = 24px total padding for balanced spacing
             HOLIDAY_HEIGHT = title_height + 3 + desc_total_height + 24
-
-        print("HOLIDAY HEIGHT:", HOLIDAY_HEIGHT)
         # Reserve extra space for hash frame that extends beyond block height number
         # The hash extends upward, so we need minimal or no bottom margin
         HASH_FRAME_MARGIN = 0  # Minimal margin for hash frame
@@ -1413,10 +1402,12 @@ class ImageRenderer:
                 # Calculate remaining space to distribute
                 remaining_space = available_content_height - total_content_height
                 
-                # Calculate number of gaps between elements (not after last)
+                # Calculate number of gaps between elements
                 num_gaps = 1  # gap after date (before first element)
                 if holiday_space: num_gaps += 1  # gap between holiday and meme
-                if len(info_blocks_to_render): num_gaps += 1  # gap between meme and info blocks
+                if len(info_blocks_to_render):
+                    num_gaps += 1  # gap between meme and info blocks
+                    num_gaps += 1  # gap after info blocks (before hash frame)
                 
                 # Distribute spacing evenly across all gaps
                 gap_size = max(STANDARD_SPACING, remaining_space // num_gaps) if num_gaps > 0 else STANDARD_SPACING
@@ -1486,13 +1477,22 @@ class ImageRenderer:
 
         else:
             # --- prioritize_large_scaled_meme == False ---
-            # Calculate total content height first
-            total_content_height = 0
+            # Calculate number of gaps first to ensure correct vertical distribution
+            num_gaps = 1  # After date
+            if holiday_info: num_gaps += 1  # Between holiday and meme
+            if info_blocks_space > 0: 
+                num_gaps += 1  # Between meme and info blocks
+                num_gaps += 1  # After info blocks (before hash frame)
             
-            # Add holiday height
-            if holiday_info:
-                total_content_height += HOLIDAY_HEIGHT
+            # Calculate reserved vertical space (gaps + fixed content)
+            gaps_height = num_gaps * STANDARD_SPACING
+            fixed_content_height = (HOLIDAY_HEIGHT if holiday_info else 0) + info_blocks_space
             
+            # Calculate max available height for meme
+            max_meme_height = available_content_height - fixed_content_height - gaps_height
+            if max_meme_height < 50: 
+                max_meme_height = 50  # Minimum height constraint
+
             # Calculate meme height
             meme_img = None
             meme_height = 0
@@ -1502,23 +1502,11 @@ class ImageRenderer:
                     meme_img = Image.open(meme_path)
                     aspect_ratio = meme_img.width / meme_img.height
                     max_width = self.width - 40
-                    # Reserve space for info blocks and holiday
-                    holiday_reserved = HOLIDAY_HEIGHT if holiday_info else 0
-                    max_height = available_content_height - info_blocks_space - holiday_reserved - STANDARD_SPACING
-                    print(f"🔧 [SCALING] Available content height: {available_content_height}px")
-                    print(f"🔧 [SCALING] Holiday reserved: {holiday_reserved}px")
-                    print(f"🔧 [SCALING] Info blocks space: {info_blocks_space}px")
-                    print(f"🔧 [SCALING] Max meme height (non-prioritize): {max_height}px")
                     
-                    # Ensure we have positive height for scaling
-                    if max_height <= 0:
-                        print(f"⚠️ [SCALING] Not enough space for meme, info blocks need {info_blocks_space}px")
-                        max_height = 50  # Minimum height
-                    
-                    scaled_width = min(max_width, int(max_height * aspect_ratio))
+                    scaled_width = min(max_width, int(max_meme_height * aspect_ratio))
                     scaled_height = int(scaled_width / aspect_ratio)
-                    if scaled_height > max_height:
-                        scaled_height = max_height
+                    if scaled_height > max_meme_height:
+                        scaled_height = max_meme_height
                         scaled_width = int(scaled_height * aspect_ratio)
                     meme_img = meme_img.resize((scaled_width, scaled_height), Image.Resampling.LANCZOS)
                     meme_height = scaled_height
@@ -1526,16 +1514,12 @@ class ImageRenderer:
                 except Exception as e:
                     print(f"⚠️ Error loading meme for scaling: {e}")
             
-            if meme_img:
-                total_content_height += meme_height
-            else:
-                # Calculate fallback height
-                fallback_height = available_content_height - info_blocks_space - (HOLIDAY_HEIGHT if holiday_info else 0) - (3 * STANDARD_SPACING)
-                fallback_height = max(50, fallback_height)
-                total_content_height += fallback_height
+            if not meme_img:
+                # Fallback height if no meme
+                meme_height = max(50, max_meme_height)
             
-            # Add info blocks height
-            total_content_height += info_blocks_space
+            # Calculate total actual content height
+            total_content_height = fixed_content_height + meme_height
             
             # Calculate remaining space and balanced spacing
             remaining_space = available_content_height - total_content_height
@@ -1548,11 +1532,7 @@ class ImageRenderer:
                 blocks_y = center_point - (meme_height // 2) if meme_height > 0 else center_point
                 gap_size = 0  # Not used in this case
             else:
-                # Calculate balanced spacing between elements (not after last)
-                num_gaps = 1  # After date
-                if holiday_info: num_gaps += 1  # Between holiday and meme
-                if info_blocks_space > 0: num_gaps += 1  # Between meme and info blocks
-                
+                # Distribute spacing evenly
                 gap_size = max(STANDARD_SPACING, remaining_space // num_gaps) if num_gaps > 0 else STANDARD_SPACING
                 
                 # Start positioning with balanced spacing
@@ -1586,7 +1566,6 @@ class ImageRenderer:
                 # Use pre-calculated fallback height
                 fallback_height = available_content_height - info_blocks_space - (HOLIDAY_HEIGHT if holiday_info else 0) - (3 * STANDARD_SPACING)
                 fallback_height = max(50, fallback_height)
-                print(f"🔧 [SCALING] Fallback content height: {fallback_height}px")
                 
                 self._render_fallback_content(img, draw, blocks_y, fallback_height,
                                             font_holiday_title, web_quality)

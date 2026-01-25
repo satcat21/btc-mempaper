@@ -219,10 +219,8 @@ class MempaperApp:
         
         # Sync cache to current blockchain height (important for recovery after downtime)
         if self.block_monitor:
-            print("🔄 Performing cache sync to current blockchain height...")
             try:
                 self.block_monitor.sync_cache_to_current()
-                # print("✅ Cache sync completed successfully")
             except Exception as e:
                 print(f"⚠️ Cache sync failed: {e}")
         
@@ -295,8 +293,6 @@ class MempaperApp:
             
             # Start WebSocket listener now that client is initialized
             if hasattr(self, 'websocket_client') and self.websocket_client:
-                print("🚀 Starting WebSocket listener (traditional startup)")
-                print(f"🔗 WebSocket URL: {self.websocket_client.ws_url}")
                 self.websocket_client.start_listener_thread()
             else:
                 print("⚠️ WebSocket client not available - using block monitor for updates")
@@ -918,8 +914,6 @@ class MempaperApp:
             
             # Start WebSocket listener now that client is initialized
             if hasattr(self, 'websocket_client') and self.websocket_client:
-                print("🚀 Starting WebSocket listener (background initialization)")
-                print(f"🔗 WebSocket URL: {self.websocket_client.ws_url}")
                 self.websocket_client.start_listener_thread()
             else:
                 print("⚠️ WebSocket client not available - using block monitor for updates")
@@ -1081,7 +1075,6 @@ class MempaperApp:
             # Run display in single background thread to avoid conflicts
             display_thread = threading.Thread(target=display_in_subprocess, daemon=True)
             display_thread.start()
-            print(f"🖥️ E-paper display started in background")
             
         except Exception as e:
             print(f"❌ Error starting e-paper display: {e}")
@@ -1962,7 +1955,6 @@ class MempaperApp:
                                 args=(self.current_eink_image_path, block_height, block_hash),
                                 daemon=True
                             ).start()
-                            print("🖥️ E-Paper display started in background")
                 else:
                     print(f"✅ E-ink already shows correct block height {block_height}, skipping display update")
             elif skip_epaper:
@@ -3145,9 +3137,7 @@ class MempaperApp:
             @self.socketio.on('connect')
             def handle_connect():
                 """Handle client connection."""
-                print("🔌 Client connected to WebSocket")
-                
-                print("🔌 Client connected to WebSocket")
+                pass
             
             @self.socketio.on('disconnect')
             def handle_disconnect(*args):

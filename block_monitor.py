@@ -335,7 +335,6 @@ class BlockRewardMonitor:
         Returns:
             True if sync completed successfully
         """
-        print(f"🔄 Starting cache sync to current blockchain height...")
         return self.cache.sync_all_addresses()
     
     def check_coinbase_for_addresses(self, tx: Dict[str, Any]) -> List[Dict[str, Any]]:

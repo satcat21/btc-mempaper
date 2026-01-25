@@ -121,13 +121,11 @@ class ConfigManager:
             callback: Function that accepts the new config dict as parameter
         """
         self.change_callbacks.append(callback)
-        print(f"✓ Config change callback registered: {callback.__name__}")
     
     def remove_change_callback(self, callback: Callable[[Dict[str, Any]], None]):
         """Remove a previously registered change callback."""
         if callback in self.change_callbacks:
             self.change_callbacks.remove(callback)
-            print(f"✓ Config change callback removed: {callback.__name__}")
     
     def _start_file_watching(self):
         """Start watching the config file for changes."""
@@ -357,6 +355,7 @@ class ConfigManager:
             "show_btc_price_block": True,
             "btc_price_currency": "USD",  # USD, EUR, GBP, CAD, CHF, AUD, JPY
             "show_bitaxe_block": True,
+            "bitaxe_display_mode": "blocks",  # "blocks" or "difficulty"
             "bitaxe_miner_table": [],  # List of {address, comment} objects for table view
             "block_reward_addresses_table": [],  # List of {address, comment} objects for block reward monitoring
             "show_wallet_balances_block": True,
@@ -644,7 +643,7 @@ class ConfigManager:
                 validated["admin_password"] = config["admin_password"].strip()
         
         # Single value settings that should be passed through directly
-        passthrough_settings = ["language", "display_orientation", "fee_parameter", "moscow_time_unit"]
+        passthrough_settings = ["language", "display_orientation", "fee_parameter", "moscow_time_unit", "bitaxe_display_mode"]
         for setting in passthrough_settings:
             if setting in config:
                 validated[setting] = config[setting]
@@ -731,7 +730,17 @@ class ConfigManager:
                 "default": True,
                 "category": "bitaxe_stats"
             },
-
+            "bitaxe_display_mode": {
+                "type": "select",
+                "label": t.get("bitaxe_display_mode", "Bitaxe Display Mode"),
+                "description": t.get("bitaxe_display_mode_desc", "Choose what to display on the right side of the Bitaxe info block"),
+                "default": "blocks",
+                "options": [
+                    {"value": "blocks", "label": t.get("bitaxe_mode_blocks", "Found Blocks")},
+                    {"value": "difficulty", "label": t.get("bitaxe_mode_difficulty", "Best Difficulty")}
+                ],
+                "category": "bitaxe_stats"
+            },
             "bitaxe_miner_table": {
                 "type": "bitaxe_table",
                 "label": t.get("bitaxe_miner_table", "Bitaxe Monitoring Table"),

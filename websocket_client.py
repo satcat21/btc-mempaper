@@ -52,7 +52,6 @@ class MempoolWebSocket:
             # Always include port for IP addresses
             self.ws_url = f"{protocol}://{host}:{port}{path}"
         
-        print(f"🔗 WebSocket URL: {self.ws_url}")
         self.ws = None
         self.is_connected = False
         self.should_reconnect = True

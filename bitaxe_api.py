@@ -75,6 +75,7 @@ class BitaxeAPI:
                 "fan_speed": data.get("fanSpeed", 0),
                 "frequency": data.get("frequency", 0),
                 "voltage": data.get("voltage", 0),
+                "best_diff": data.get("bestDiff", 0),
                 "online": True
             }
         except Exception as e:
@@ -87,6 +88,7 @@ class BitaxeAPI:
                 "fan_speed": 0,
                 "frequency": 0,
                 "voltage": 0,
+                "best_diff": 0,
                 "online": False,
                 "error": str(e)
             }
@@ -112,6 +114,7 @@ class BitaxeAPI:
             miners = []
             total_hashrate_ghs = 0
             miners_online = 0
+            max_best_difficulty = 0.0
             
             # Fetch stats from each miner
             for ip in self.miner_ips:
@@ -121,6 +124,9 @@ class BitaxeAPI:
                 if miner_info["online"]:
                     miners_online += 1
                     total_hashrate_ghs += miner_info["hashrate_ghs"]
+                    current_diff = float(miner_info.get("best_diff", 0))
+                    if current_diff > max_best_difficulty:
+                        max_best_difficulty = current_diff
             
             # Convert to TH/s
             total_hashrate_ths = total_hashrate_ghs / 1000
@@ -134,7 +140,8 @@ class BitaxeAPI:
                 "miners_online": miners_online,
                 "miners_total": len(self.miner_ips),
                 "miners": miners,
-                "valid_blocks": valid_blocks
+                "valid_blocks": valid_blocks,
+                "best_difficulty": max_best_difficulty
             }
             
         except Exception as e:
