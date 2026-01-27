@@ -58,7 +58,7 @@ current_eink.png
 *.log
 
 # User uploaded content
-static/memes/*
+# static/memes/*
 
 # generated images
 current_processed.png
