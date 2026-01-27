@@ -16,16 +16,11 @@ import threading
 import queue
 from PIL import Image, ImageDraw
 
-# Add the Waveshare library path
-# Check for parallel directory (standard manual install)
+# Add the Waveshare library path to sys.path
 epaper_lib_path_parallel = os.path.join(os.path.dirname(__file__), '..', '..', 'e-Paper', 'RaspberryPi_JetsonNano', 'python', 'lib')
-# Check for local lib directory (project-contained install)
-epaper_lib_path_local = os.path.join(os.path.dirname(__file__), '..', 'lib', 'waveshare', 'RaspberryPi_JetsonNano', 'python', 'lib')
 
 if os.path.exists(epaper_lib_path_parallel):
     sys.path.append(epaper_lib_path_parallel)
-elif os.path.exists(epaper_lib_path_local):
-    sys.path.append(epaper_lib_path_local)
 
 try:
     from waveshare_epd import epd7in3f

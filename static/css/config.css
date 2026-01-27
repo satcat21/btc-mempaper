@@ -6,9 +6,9 @@
 
 body {
     font-family: 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif;
-    background: #1d1f31; /*linear-gradient(180deg, #6610f2 0%, #6610f2 20%, #007bff 80%, #007bff 100%);*/
+    background: #F5F7FA; /*linear-gradient(180deg, #6610f2 0%, #6610f2 20%, #007bff 80%, #007bff 100%);*/
     min-height: 100vh;
-    color: white; /*#333;*/
+    color: #333;
 }
 
 .container {
@@ -27,7 +27,7 @@ body {
 .header {
     text-align: center;
     margin-bottom: 30px;
-    color: white;
+    color: #333;
 }
 
 .header h1 {
@@ -40,7 +40,7 @@ body {
     position: fixed;
     top: 20px;
     left: 20px;
-    background: #5d6182;
+    background: rgba(46, 50, 78, 0.9);
     color: white;
     border: none;
     border-radius: 50px;
@@ -56,9 +56,9 @@ body {
 }
 
 .back-button:hover {
-    background: rgba(255,255,255,0.3);
+    background: rgba(46, 50, 78, 1);
     transform: translateY(-2px);
-    box-shadow: 0 6px 25px rgba(0,0,0,0.3);
+    box-shadow: 0 6px 25px rgba(0,0,0,0.2);
 }
 
 /* Responsive Design für Smartphones */
@@ -144,10 +144,10 @@ body {
 }
 
 .config-section {
-    background: #2e324e; /*rgba(255,255,255,0.95);*/
+    background: rgba(255,255,255,0.95);
     border-radius: 15px;
     padding: 25px;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.08);
     /* Remove backdrop-filter to prevent stacking context issues */
     position: relative;
     z-index: 1; /* Explicitly set low z-index for config sections */
@@ -167,10 +167,14 @@ body {
     font-size: 1.3rem;
     font-weight: 600;
     margin-bottom: 20px;
-    color: white; /*#333;*/
-    border-bottom: 2px solid rgba(255, 255, 255, 0.3);
+    color: #2e324e;
+    border-bottom: 2px solid rgba(46, 50, 78, 0.2);
     padding-bottom: 10px;
-    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+    text-shadow: none;
+}
+
+.section-title svg {
+    fill: #2e324e !important;
 }
 
 .form-group {
@@ -181,23 +185,23 @@ body {
     display: block;
     margin-bottom: 8px;
     font-weight: 500;
-    color: white; /*#555;*/
+    color: #555;
 }
 
 .form-description {
     font-size: 0.85rem;
-    color: white; /*#666;*/
+    color: #666;
     margin-top: 4px;
 }
 
 .form-input {
     width: 100%;
     padding: 12px 16px;
-    border: 2px solid rgba(255, 255, 255, 0.3);
+    border: 2px solid #e1e5e9;
     border-radius: 8px;
     font-size: 14px;
-    background: #2a2d3e;
-    color: #ffffff;
+    background: white;
+    color: #333;
     transition: border-color 0.3s ease;
 }
 
@@ -210,11 +214,11 @@ body {
 .form-select {
     width: 100%;
     padding: 12px 16px;
-    border: 2px solid rgba(255, 255, 255, 0.3);
+    border: 2px solid #e1e5e9;
     border-radius: 8px;
     font-size: 14px;
-    background: #2a2d3e;
-    color: #ffffff;
+    background: white;
+    color: #333;
     cursor: pointer;
 }
 
@@ -227,11 +231,11 @@ body {
 .color-select-trigger {
     width: 100%;
     padding: 12px 16px;
-    border: 2px solid rgba(255, 255, 255, 0.3);
+    border: 2px solid #e1e5e9;
     border-radius: 8px;
     font-size: 14px;
-    background: #2a2d3e;
-    color: #ffffff;
+    background: white;
+    color: #333;
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -253,11 +257,11 @@ body {
     top: 100%;
     left: 0;
     right: 0;
-    background: #2a2d3e;
-    color: #ffffff;
-    border: 2px solid rgba(255, 255, 255, 0.3);
+    background: white;
+    color: #333;
+    border: 2px solid #e1e5e9;
     border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
     z-index: 1000;
     max-height: 300px;
     overflow-y: auto;
@@ -268,7 +272,7 @@ body {
     padding: 8px 12px;
     font-weight: bold;
     font-size: 0.9em;
-    color: white; /*#666;*/
+    color: #666;
     background-color: #f8f9fa;
     border-bottom: 1px solid #eee;
     text-transform: uppercase;
@@ -598,74 +602,74 @@ body {
 
 /* Bitaxe Table Styling */
 .bitaxe-table-container {
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(46, 50, 78, 0.05);
     border-radius: 8px;
     padding: 15px;
-    backdrop-filter: blur(10px);
+    border: 1px solid rgba(46, 50, 78, 0.1);
 }
 
 .bitaxe-address-input,
 .bitaxe-comment-input {
     width: 100%;
     padding: 6px;
-    border: 1px solid rgba(255, 255, 255, 0.3);
-    background: rgba(255, 255, 255, 0.1);
-    color: #ffffff;
+    border: 1px solid #e1e5e9;
+    background: white;
+    color: #333;
     border-radius: 4px;
     font-size: 0.9em;
 }
 
 .bitaxe-address-input::placeholder,
 .bitaxe-comment-input::placeholder {
-    color: rgba(255, 255, 255, 0.8) !important;
+    color: #999 !important;
     font-style: italic;
 }
 
 .bitaxe-address-input:focus,
 .bitaxe-comment-input:focus {
     outline: none;
-    background: rgba(255, 255, 255, 0.2) !important;
-    border-color: rgba(255, 255, 255, 0.6) !important;
-    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.1);
+    background: white !important;
+    border-color: #667eea !important;
+    box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.1);
 }
 
 /* Block Reward Table Styling */
 .block-reward-table-container {
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(46, 50, 78, 0.05);
     border-radius: 8px;
     padding: 15px;
-    backdrop-filter: blur(10px);
+    border: 1px solid rgba(46, 50, 78, 0.1);
 }
 
 .block-reward-address-input,
 .block-reward-comment-input {
     width: 100%;
     padding: 6px;
-    border: 1px solid rgba(255, 255, 255, 0.3);
-    background: rgba(255, 255, 255, 0.1);
-    color: #ffffff;
+    border: 1px solid #e1e5e9;
+    background: white;
+    color: #333;
     border-radius: 4px;
     font-size: 0.9em;
 }
 
 .block-reward-address-input::placeholder,
 .block-reward-comment-input::placeholder {
-    color: rgba(255, 255, 255, 0.8) !important;
+    color: #999 !important;
     font-style: italic;
 }
 
 .block-reward-address-input:focus,
 .block-reward-comment-input:focus {
     outline: none;
-    background: rgba(255, 255, 255, 0.2) !important;
-    border-color: rgba(255, 255, 255, 0.6) !important;
-    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.1);
+    background: white !important;
+    border-color: #667eea !important;
+    box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.1);
 }
 
 .wallet-add-btn {
-    background: rgba(255, 255, 255, 0.15);
-    border: 1px solid rgba(255, 255, 255, 0.4);
-    color: #ffffff;
+    background: rgba(46, 50, 78, 0.1);
+    border: 1px solid rgba(46, 50, 78, 0.3);
+    color: #2e324e;
     padding: 8px 16px;
     border-radius: 6px;
     cursor: pointer;
@@ -673,26 +677,26 @@ body {
     font-weight: 500;
     transition: all 0.2s ease;
     margin-right: 10px;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    text-shadow: none;
 }
 
 .wallet-add-btn:hover {
-    background: rgba(255, 255, 255, 0.25);
-    border-color: rgba(255, 255, 255, 0.6);
+    background: rgba(46, 50, 78, 0.15);
+    border-color: rgba(46, 50, 78, 0.5);
     transform: translateY(-1px);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .wallet-add-btn:active {
     transform: translateY(0);
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(46, 50, 78, 0.08);
 }
 
 /* Bitaxe Table Button Styling */
 .bitaxe-add-btn {
-    background: rgba(255, 255, 255, 0.15);
-    border: 1px solid rgba(255, 255, 255, 0.4);
-    color: #ffffff;
+    background: rgba(46, 50, 78, 0.1);
+    border: 1px solid rgba(46, 50, 78, 0.3);
+    color: #2e324e;
     padding: 8px 16px;
     border-radius: 6px;
     cursor: pointer;
@@ -700,26 +704,26 @@ body {
     font-weight: 500;
     transition: all 0.2s ease;
     margin-right: 10px;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    text-shadow: none;
 }
 
 .bitaxe-add-btn:hover {
-    background: rgba(255, 255, 255, 0.25);
-    border-color: rgba(255, 255, 255, 0.6);
+    background: rgba(46, 50, 78, 0.15);
+    border-color: rgba(46, 50, 78, 0.5);
     transform: translateY(-1px);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .bitaxe-add-btn:active {
     transform: translateY(0);
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(46, 50, 78, 0.08);
 }
 
 /* Block Reward Table Button Styling */
 .block-reward-add-btn {
-    background: rgba(255, 255, 255, 0.15);
-    border: 1px solid rgba(255, 255, 255, 0.4);
-    color: #ffffff;
+    background: rgba(46, 50, 78, 0.1);
+    border: 1px solid rgba(46, 50, 78, 0.3);
+    color: #2e324e;
     padding: 8px 16px;
     border-radius: 6px;
     cursor: pointer;
@@ -728,19 +732,19 @@ body {
     transition: all 0.2s ease;
     margin-top: 10px;
     margin-right: 10px;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    text-shadow: none;
 }
 
 .block-reward-add-btn:hover {
-    background: rgba(255, 255, 255, 0.25);
-    border-color: rgba(255, 255, 255, 0.6);
+    background: rgba(46, 50, 78, 0.15);
+    border-color: rgba(46, 50, 78, 0.5);
     transform: translateY(-1px);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .block-reward-add-btn:active {
     transform: translateY(0);
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(46, 50, 78, 0.08);
 }
 
 /* Mobile optimizations for wallet table */
@@ -930,7 +934,7 @@ body {
 
 .modal-content p {
     margin-bottom: 25px;
-    color: white; /*#666;*/
+    color: #666;
     line-height: 1.5;
 }
 
@@ -947,7 +951,7 @@ body {
     max-height: 90vh;
     overflow-y: auto;
     text-align: left;
-    background: #2e324e;
+    background: white;
     border-radius: 12px;
     padding: 24px;
     margin: auto;
@@ -963,12 +967,12 @@ body {
     align-items: center;
     margin-bottom: 20px;
     padding-bottom: 15px;
-    border-bottom: 1px solid #4a5069;
+    border-bottom: 1px solid #e1e5e9;
 }
 
 .modal-header h3 {
     margin: 0;
-    color: white;
+    color: #2e324e;
 }
 
 .modal-close {
@@ -976,7 +980,7 @@ body {
     border: none;
     font-size: 24px;
     cursor: pointer;
-    color: #9ca3af;
+    color: #6c757d;
     width: 30px;
     height: 30px;
     display: flex;
@@ -987,8 +991,8 @@ body {
 }
 
 .modal-close:hover {
-    background: #4a5069;
-    color: white;
+    background: #f8f9fa;
+    color: #333;
 }
 
 .modal-body {
@@ -1152,20 +1156,20 @@ body {
     text-align: center;
     cursor: pointer;
     transition: all 0.3s ease;
-    background: #2a2d3e;
-    color: #ffffff;
+    background: #f8f9fa;
+    color: #333;
 }
 
 .upload-area:hover {
     border-color: #5a67d8;
-    background: #353850;
-    color: #ffffff;
+    background: #e9ecef;
+    color: #333;
 }
 
 .upload-area.dragover {
     border-color: #4c51bf;
-    background: #3d4157;
-    color: #ffffff;
+    background: #dee2e6;
+    color: #333;
 }
 
 .meme-thumbnail {
@@ -1932,4 +1936,151 @@ button svg * {
         fill: white !important;
         color: white !important;
     }
+}
+
+/* ========================================
+   DARK MODE STYLES
+   ======================================== */
+
+body.dark-mode {
+    background: #1d1f31;
+    color: white;
+}
+
+body.dark-mode .header {
+    color: white;
+}
+
+body.dark-mode .config-section {
+    background: #2e324e;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+}
+
+body.dark-mode .section-title {
+    color: white;
+    border-bottom: 2px solid rgba(255, 255, 255, 0.3);
+}
+
+body.dark-mode .section-title svg {
+    fill: white !important;
+}
+
+body.dark-mode .form-label {
+    color: white;
+}
+
+body.dark-mode .form-description {
+    color: rgba(255, 255, 255, 0.8);
+}
+
+body.dark-mode .form-input,
+body.dark-mode .form-select {
+    background: #2a2d3e;
+    color: white;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+}
+
+body.dark-mode .form-input::placeholder {
+    color: rgba(255, 255, 255, 0.6);
+}
+
+body.dark-mode .color-select-trigger {
+    background: #2a2d3e;
+    color: white;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+}
+
+body.dark-mode .color-select-options {
+    background: #2a2d3e;
+    color: white;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+}
+
+body.dark-mode .color-category-header {
+    color: white;
+    background-color: #353850;
+}
+
+body.dark-mode .bitaxe-table-container,
+body.dark-mode .block-reward-table-container {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+body.dark-mode .bitaxe-address-input,
+body.dark-mode .bitaxe-comment-input,
+body.dark-mode .block-reward-address-input,
+body.dark-mode .block-reward-comment-input {
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+body.dark-mode .bitaxe-address-input::placeholder,
+body.dark-mode .bitaxe-comment-input::placeholder,
+body.dark-mode .block-reward-address-input::placeholder,
+body.dark-mode .block-reward-comment-input::placeholder {
+    color: rgba(255, 255, 255, 0.6) !important;
+}
+
+body.dark-mode .wallet-add-btn,
+body.dark-mode .bitaxe-add-btn,
+body.dark-mode .block-reward-add-btn {
+    background: rgba(255, 255, 255, 0.15);
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    color: white;
+}
+
+body.dark-mode .wallet-add-btn:hover,
+body.dark-mode .bitaxe-add-btn:hover,
+body.dark-mode .block-reward-add-btn:hover {
+    background: rgba(255, 255, 255, 0.25);
+    border-color: rgba(255, 255, 255, 0.6);
+}
+
+body.dark-mode .upload-area {
+    background: #2a2d3e;
+    color: white;
+}
+
+body.dark-mode .upload-area:hover {
+    background: #353850;
+}
+
+body.dark-mode .upload-area.dragover {
+    background: #3d4157;
+}
+
+body.dark-mode .meme-modal-content {
+    background: #2e324e;
+}
+
+body.dark-mode .modal-header {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+body.dark-mode .modal-header h3 {
+    color: white;
+}
+
+body.dark-mode .modal-close {
+    color: #9ca3af;
+}
+
+body.dark-mode .modal-close:hover {
+    background: #4a5069;
+    color: white;
+}
+
+body.dark-mode .modal-content p {
+    color: rgba(255, 255, 255, 0.9);
+}
+
+body.dark-mode .back-button {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+}
+
+body.dark-mode .back-button:hover {
+    background: rgba(255, 255, 255, 0.3);
 }

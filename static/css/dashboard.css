@@ -1,5 +1,5 @@
 body {
-    background: #1d1f31; /*linear-gradient(180deg, #6610f2 0%, #6610f2 20%, #007bff 80%, #007bff 100%);*/
+    background: #F5F7FA; /*linear-gradient(180deg, #6610f2 0%, #6610f2 20%, #007bff 80%, #007bff 100%);*/
     margin: 0;
     min-height: 100vh;
     display: flex;
@@ -528,4 +528,12 @@ body {
         padding: 12px 16px !important;
         font-size: 12px !important;
     }
+}
+
+/* ========================================
+   DARK MODE STYLES
+   ======================================== */
+
+body.dark-mode {
+    background: #1d1f31;
 }

@@ -46,6 +46,24 @@ let colorOptions = [];
 let pendingLanguageChange = null;
 let memeToDelete = null;
 
+// Dark mode management functions
+function applyDarkMode(isDarkMode) {
+    if (isDarkMode) {
+        document.body.classList.add('dark-mode');
+        localStorage.setItem('mempaper_dark_mode', 'true');
+    } else {
+        document.body.classList.remove('dark-mode');
+        localStorage.setItem('mempaper_dark_mode', 'false');
+    }
+}
+
+function applyDarkModeFromStorage() {
+    const storedDarkMode = localStorage.getItem('mempaper_dark_mode');
+    if (storedDarkMode === 'true') {
+        document.body.classList.add('dark-mode');
+    }
+}
+
 // Check if we're on the config page
 const isConfigPage = window.location.pathname.includes('/config');
 
@@ -440,6 +458,9 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     });
+    
+    // Apply dark mode from localStorage if available
+    applyDarkModeFromStorage();
 });
 
 // Setup modal functionality
@@ -975,6 +996,11 @@ async function loadConfiguration() {
         // Check wallet configuration data
         colorOptions = data.color_options || [];
         
+        // Apply dark mode based on config
+        if (currentConfig.color_mode_dark !== undefined) {
+            applyDarkMode(currentConfig.color_mode_dark);
+        }
+        
         // console.log('Config loaded:', currentConfig);
         // console.log('Schema loaded:', configSchema);
         // console.log('Categories loaded:', categories);
@@ -1222,6 +1248,19 @@ function createFormField(key, field, value) {
             
         case 'boolean':
             input = createBooleanSwitch(value);
+            // Add dark mode listener if this is the dark mode toggle
+            if (key === 'color_mode_dark') {
+                const switchEl = input.querySelector('.switch');
+                if (switchEl) {
+                    switchEl.addEventListener('click', () => {
+                        // Use setTimeout to ensure the toggle has updated
+                        setTimeout(() => {
+                            const isDarkMode = switchEl.classList.contains('active');
+                            applyDarkMode(isDarkMode);
+                        }, 10);
+                    });
+                }
+            }
             break;
             
         case 'toggle':

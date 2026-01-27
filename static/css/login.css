@@ -6,12 +6,12 @@
 
 body {
     font-family: 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif;
-    background: #1d1f31; /*linear-gradient(180deg, #6610f2 0%, #6610f2 20%, #007bff 80%, #007bff 100%);*/
+    background: #F5F7FA; /*linear-gradient(180deg, #6610f2 0%, #6610f2 20%, #007bff 80%, #007bff 100%);*/
     min-height: 100vh;
     display: flex;
     align-items: center;
     justify-content: center;
-    color: white; /*#333;*/
+    color: #333;
 }
 
 @font-face {
@@ -22,10 +22,10 @@ body {
 }
 
 .login-container {
-    background: #2e324e; /*rgba(255,255,255,0.95);*/
+    background: rgba(255,255,255,0.95);
     border-radius: 20px;
     padding: 40px;
-    box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+    box-shadow: 0 20px 60px rgba(0,0,0,0.1);
     backdrop-filter: blur(10px);
     width: 100%;
     max-width: 400px;
@@ -40,14 +40,14 @@ body {
     font-family: 'IBMPlexMono', monospace;
     font-size: 2.2rem;
     margin-bottom: 10px;
-    color: #e8e9ea;
+    color: #2e324e;
     font-weight: 500;
     letter-spacing: -0.01em;
     text-transform: lowercase;
 }
 
 .login-header p {
-    color: white; /*#666;*/
+    color: #666;
     font-size: 0.9rem;
 }
 
@@ -60,7 +60,7 @@ body {
     display: block;
     margin-bottom: 8px;
     font-weight: 500;
-    color: white; /*#555;*/
+    color: #555;
 }
 
 .form-input {
@@ -70,12 +70,12 @@ body {
     border-radius: 10px;
     font-size: 16px;
     transition: border-color 0.3s ease;
-    background: rgb(45, 51, 72); /*white*/
-    color: white; /* Fix black text to white */
+    background: white;
+    color: #333;
 }
 
 .form-input::placeholder {
-    color: #a0a6b8; /* Light grey placeholder text */
+    color: #999;
     opacity: 1;
 }
 
@@ -138,8 +138,8 @@ body {
 }
 
 .security-note {
-    background: #5d6182; /*#f8f9fa;*/
-    color: white; /*#6c757d;*/
+    background: #f8f9fa;
+    color: #6c757d;
     padding: 15px;
     border-radius: 8px;
     font-size: 0.85rem;
@@ -150,8 +150,8 @@ body {
 .community-message {
     margin-top: 25px;
     padding-top: 20px;
-    /*border-top: 1px solid rgba(255, 255, 255, 0.1);*/
-    color: #a0a6b8;
+    /*border-top: 1px solid rgba(0, 0, 0, 0.1);*/
+    color: #6c757d;
     font-size: 0.9rem;
     font-weight: 400;
     letter-spacing: 0.025em;
@@ -159,4 +159,48 @@ body {
 
 .community-message::selection {
     background: rgba(102, 126, 234, 0.3);
+}
+
+/* ========================================
+   DARK MODE STYLES
+   ======================================== */
+
+body.dark-mode {
+    background: #1d1f31;
+    color: white;
+}
+
+body.dark-mode .login-container {
+    background: #2e324e;
+}
+
+body.dark-mode .login-header h1 {
+    color: #e8e9ea;
+}
+
+body.dark-mode .login-header p {
+    color: rgba(255, 255, 255, 0.8);
+}
+
+body.dark-mode .form-label {
+    color: white;
+}
+
+body.dark-mode .form-input {
+    background: rgb(45, 51, 72);
+    color: white;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+}
+
+body.dark-mode .form-input::placeholder {
+    color: #a0a6b8;
+}
+
+body.dark-mode .security-note {
+    background: #5d6182;
+    color: white;
+}
+
+body.dark-mode .community-message {
+    color: #a0a6b8;
 }

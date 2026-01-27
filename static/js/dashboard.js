@@ -512,6 +512,12 @@ function refreshCurrentImage() {
 document.addEventListener('DOMContentLoaded', function() {
     console.log("📄 Page loaded.");
     
+    // Apply dark mode from localStorage
+    const storedDarkMode = localStorage.getItem('mempaper_dark_mode');
+    if (storedDarkMode === 'true') {
+        document.body.classList.add('dark-mode');
+    }
+    
     const dashboardImg = document.getElementById("dashboard");
     
     // Check if image is already loaded from server-side

@@ -1,533 +1,400 @@
-## BTC Mempaper
-
-BTC Mempaper is a Python-based dashboard and e-Paper display app for visualizing Bitcoin mempool data and memes. It supports Raspberry Pi and PC, integrates with a local mempool instance, and features secure password setup, meme downloads, and a web dashboard.
-
----
-
-### Installation
-
-1. **Clone the repository:**
-   ```pwsh
-   git clone https://github.com/satcat21/btc-mempaper.git
-   cd btc-mempaper
-   ```
-2. **Create a virtual environment (recommended):**
-   ```pwsh
-   python -m venv venv
-   .\venv\Scripts\Activate.ps1
-   ```
-3. **Install dependencies:**
-   ```pwsh
-   pip install -r requirements.txt
-   ```
-
----
-
-### First Run: Meme Download
-
-To download memes for the display, run:
-```pwsh
-python initialize_memes.py
-```
-This will fetch memes from [bitcoinmemes.info](https://bitcoinmemes.info/) and save them to `static/memes/`. If the download fails, follow the manual instructions printed by the script.
-
----
-
-### Manual App Start
-
-To start the dashboard and e-Paper display app:
-```pwsh
-python mempaper_app.py
-```
-The web dashboard will be available at [http://localhost:5000](http://localhost:5000).
-
----
-
-### User/Password Setup
-
-To set a secure password for the dashboard, run:
-```pwsh
-python setup_secure_password.py
-```
-Follow the prompts to set your username and password.
-
----
-
-### Raspberry Pi Service Setup
-
-For Raspberry Pi, you can run the app as a systemd service:
-1. Copy `mempaper.service` to `/etc/systemd/system/`.
-2. Edit the service file to set the correct paths.
-3. Enable and start the service:
-   ```pwsh
-   sudo systemctl enable mempaper
-   sudo systemctl start mempaper
-   ```
-See [docs-archive/INSTALL_GUIDE_RASPBERRY_PI.md](docs-archive/INSTALL_GUIDE_RASPBERRY_PI.md) for hardware and SPI setup details. All advanced and legacy documentation is now in docs-archive.
-
----
-
-### Mempool Connection
-
-BTC Mempaper connects to your local mempool instance via REST and WebSocket. Ensure your mempool is running and accessible. For troubleshooting and advanced configuration, see [docs-archive/mempool.md](docs-archive/mempool.md).
-
----
-
-### Further Topics & Advanced Guides
-
-For advanced setup, troubleshooting, development, and legacy documentation, see the [docs-archive/](docs-archive/) directory:
-- [INSTALL_GUIDE_RASPBERRY_PI.md](docs-archive/INSTALL_GUIDE_RASPBERRY_PI.md)
-- [INSTALL_GUIDE_PC.md](docs-archive/INSTALL_GUIDE_PC.md)
-- [mempool.md](docs-archive/mempool.md)
-- [troubleshooting.md](docs-archive/troubleshooting.md)
-- [development.md](docs-archive/development.md)
-- [future_enhancements.md](docs-archive/future_enhancements.md)
-
----
-
-### License
-
-MIT License
-# 🚀 BTC Mempaper - Bitcoin Dashboard
+# 🚀 BTC Mempaper
 
 **A comprehensive, secure Bitcoin dashboard with web interface, real-time updates, and e-Paper display support.**
 
-Mempaper is a modern Bitcoin dashboard that combines live blockchain data, customizable information blocks, and beautiful visual presentation in a self-hosted web application. Social media integration is currently paused and may be implemented in the future using Nostr instead of X/Twitter.
+BTC Mempaper connects to your local (or public) mempool instance to visualize the Bitcoin network status, mine data from your Bitaxe, and display Bitcoin memes.
+
+---
+
+## 📸 Gallery
+
+### Hardware Setup
+
+<table>
+  <tr>
+    <td width="50%">
+      <img src="images/hardware/mempaper-display-darkmode.jpg" alt="Display Dark Mode" width="100%"/>
+      <p align="center"><em>E-Paper Display - Dark Mode</em></p>
+    </td>
+    <td width="50%">
+      <img src="images/hardware/mempaper-display-lightmode.jpg" alt="Display Light Mode" width="100%"/>
+      <p align="center"><em>E-Paper Display - Light Mode</em></p>
+    </td>
+  </tr>
+</table>
+
+<details>
+<summary><b>🔧 Assembly Photos</b> (Click to expand)</summary>
+
+<p align="center">
+  <img src="images/hardware/assembly-1-components.jpg" alt="Components" width="400"/>
+  <br/>
+  <em>All components ready for assembly</em>
+</p>
+
+<p align="center">
+  <img src="images/hardware/assembly-2-wiring.jpg" alt="Wiring" width="400"/>
+  <br/>
+  <em>Raspberry Pi Zero W connected to e-Paper display via SPI Control interface</em>
+</p>
+
+<p align="center">
+  <img src="images/hardware/assembly-3-mounting.jpg" alt="Mounting" width="400"/>
+  <br/>
+  <em>Mounting display in photo frame</em>
+</p>
+
+<p align="center">
+  <img src="images/hardware/assembly-4-back.jpg" alt="Complete Setup" width="400"/>
+  <br/>
+  <em>Photo frame back with USB-C power connector</em>
+</p>
+
+</details>
+
+### Web Interface
+
+<table>
+  <tr>
+    <td width="50%">
+      <img src="images/screenshots/login-screen.png" alt="Login Screen" width="100%"/>
+      <p align="center"><em>Secure login with Argon2id encryption</em></p>
+    </td>
+    <td width="50%">
+      <img src="images/screenshots/dashboard-dark.png" alt="Dashboard Dark Mode" width="100%"/>
+      <p align="center"><em>Dashboard - Dark Mode</em></p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <img src="images/screenshots/dashboard-light.png" alt="Dashboard Light Mode" width="100%"/>
+      <p align="center"><em>Dashboard - Light Mode</em></p>
+    </td>
+    <td width="50%">
+      <img src="images/screenshots/settings-page.png" alt="Settings Page" width="100%"/>
+      <p align="center"><em>Configuration Settings</em></p>
+    </td>
+  </tr>
+</table>
+
+<details>
+<summary><b>📋 System Logs</b> (Click to expand)</summary>
+
+<p align="center">
+  <img src="images/screenshots/log-output.png" alt="System Logs" width="800"/>
+  <br/>
+  <em>Real-time system logs showing WebSocket connections and block updates</em>
+</p>
+
+</details>
+
+---
+
+## 🛒 Shopping List
+
+Here are the components needed to build your own Mempaper display:
+
+| Component | Description | Estimated Price | Link |
+|-----------|-------------|-----------------|------|
+| **Raspberry Pi Zero 1 WH / 2 WH** | Main controller (512MB RAM, WiFi/BT) | ~21€ | [Raspberry Pi Zero 1 WH](https://www.berrybase.de/raspberry-pi-zero-wh) \| [Raspberry Pi Zero 2 WH](https://www.berrybase.de/raspberry-pi-zero-2-wh) |
+| **Waveshare 7.3" e-Paper (F)** | 7-color e-ink display (800×480) | ~88€ | [Waveshare Official](https://www.waveshare.com/7.3inch-e-paper-hat-f.htm?srsltid=AfmBOorcEBNFbDLf1tDJAonJ3p7ACz8wrDXwkRo22J22eUblwLKQoO9Y) \| [Amazon](https://www.amazon.de/dp/B0C3R7Q75T) |
+| **MicroSD Card** | 32GB or larger, Class 10 recommended | ~13€ | [SanDisk Extreme 64GB, Amazon](https://www.amazon.de/dp/B09X7CXWQQ) |
+| **USB-C Power Supply** | 5V/2.5A minimum for Raspberry Pi Zero 2 W | ~10€ | |
+| **USB-C to Micro-USB Adapter** | 2-pack adapter for power routing | ~4€ | [Amazon](https://www.amazon.de/dp/B0B7RMFMN4) |
+| **90° USB-C Panel Mount Cable** | Right-angle USB-C extension for clean cable routing | ~15€ | [Amazon](https://www.amazon.de/dp/B0BQGBWVWM) |
+| **Photo Frame** | 18x24cm frame for display mounting | ~47€ | [Solid wood picture frame with spacer strip, https://allesrahmen.de](https://www.allesrahmen.de/bilderrahmen-ystad-aus-massivholz-mit-distanzleiste-18x24-cmweiss-gemasert27-2043000.html) |
+| **Passepartout (Mat Board)** | White/Tortora, 180x240mm outer, 94×158mm opening | ~17€ | [Passepartout, https://wandstyle.com](https://www.wandstyle.com/passepartout-bianco-naturale-30-x-40-cm/psta-254-030-040p-p1) |
+
+**Total Cost:** ~215€
+
+> **Note:** Prices are approximate and may vary by region and vendor. The Raspberry Pi Zero 2 W is recommended over the original Zero W for better performance.
+> 
+> **Cable Routing Components:** The USB-C to Micro-USB adapter and 90° panel mount cable allow you to cleanly route power from the Raspberry Pi to the back of the picture frame for a professional finish.
+> 
+> **Passepartout Dimensions:** The e-ink display has a visible area of 160×96mm. The passepartout opening is 158×94mm (2mm smaller on each side) to create a frame that holds the display securely in place.
 
 ---
 
 ## ✨ Features
 
-- Real-time Bitcoin data from your local mempool
-- Responsive web dashboard and e-Paper display support
-- Secure authentication and admin panel
-- Multi-currency price blocks and wallet monitoring
-- Meme gallery and multi-language support
-- Raspberry Pi and desktop/server deployment
+- **Real-time Data**: Blocks, difficulty, hashrate, and fees from mempool.space integration.
+- **Hardware Support**: Ready for Raspberry Pi (Zero/3/4/5) and Waveshare e-Paper displays (specifically 7.3" F).
+- **Web Dashboard**: Responsive interface for configuration and monitoring.
+- **Miner Integration**: Monitor Bitaxe miner stats and aggregate hashrate.
+- **Wallet Monitoring**: Track balances and block rewards (XPUB support included).
+- **Security**: Argon2id password hashing, rate limiting, and encrypted configuration.
 
 ---
 
 ## 🚀 Quick Start
 
-### Prerequisites
-- Python 3.8 or higher
-- Local mempool instance (optional, can use public APIs)
-- E-Paper display (optional)
+### 1. Installation
 
-### Installation
+**Raspberry Pi / Linux**
+```bash
+# Install system dependencies
+sudo apt update && sudo apt upgrade -y
+sudo apt install -y libffi-dev build-essential python3-pip python3-pil python3-dev python3-numpy python3-gpiozero libopenjp2-7 pkg-config
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/satcat21/btc-mempaper.git
-   cd btc-mempaper
-   ```
-
-2. **Create virtual environment**
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate  # On Windows: .venv\\Scripts\\activate
-   ```
-
-3. **Install dependencies**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. **Initial setup**
-   ```bash
-   python setup_secure_password.py  # Set up secure admin password
-   python configure_display.py      # Configure your display (optional)
-   ```
-
-5. **Start the application**
-   ```bash
-   python serve.py  # Production server
-   # OR
-   python start_fast.py  # Development mode
-   ```
-
-6. **Access the dashboard**
-   - Open `http://localhost:5000` in your browser
-   - Login with your configured admin credentials
-
----
-
-## 🔧 Configuration
-
-
-BTC Mempaper uses a single JSON configuration file (`config.json`) to control all app settings. You can use the provided `config.json.example` as a template for your own configuration.
-
-#### Setup Default Configuration
-To create a default configuration, copy the example file:
-```pwsh
-cp config.json.example config.json
+# Clone and install
+git clone https://github.com/satcat21/btc-mempaper.git
+cd btc-mempaper
+python3 -m venv .venv
+source .venv/bin/activate
+pip3 install spidev gpiozero lgpio
+pip install -r requirements.txt
 ```
-Edit `config.json` to match your environment and preferences.
 
-#### Supported Settings
-Below are all allowed and supported settings in `config.json`:
+**PC / Windows**
+```powershell
+# Clone and install
+git clone https://github.com/satcat21/btc-mempaper.git
+cd btc-mempaper
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
 
-- `language`: Interface language (`en`, `de`, `es`, `fr`)
-- `display_orientation`: `vertical` or `horizontal`
-- `prioritize_large_scaled_meme`: Show large memes first (true/false)
-- `mempool_host`: IP address or domain name of your mempool instance
-- `mempool_rest_port`: REST API port
-- `mempool_ws_port`: WebSocket port
-- `fee_parameter`: Fee estimation mode (e.g. `fastestFee`)
-- `display_width`, `display_height`: Display resolution in pixels
-- `e-ink-display-connected`: Enable e-Paper display (true/false)
-- `omni_device_name`: Device name for e-Paper (e.g. `waveshare_epd.epd7in3f`)
-- `admin_username`: Dashboard admin username
-- `show_btc_price_block`: Show BTC price block (true/false)
-- `btc_price_currency`: Fiat currency for price display (`USD`, `EUR`, etc.)
-- `show_bitaxe_block`: Show Bitaxe miner block (true/false)
-- `bitaxe_miner_ips`: IPs of Bitaxe miners (comma-separated)
-- `show_wallet_balances_block`: Show wallet balances block (true/false)
-- `wallet_balance_unit`: Display unit (`btc` or `sats`)
-- `wallet_balance_show_fiat`: Show fiat value for wallet balances (true/false)
-- `xpub_derivation_count`: XPUB address derivation count
-- `xpub_enable_gap_limit`: Enable XPUB gap limit (true/false)
-- `xpub_gap_limit_last_n`: XPUB gap limit last N addresses
-- `xpub_gap_limit_increment`: XPUB gap limit increment
-- `xpub_enable_bootstrap_search`: Enable XPUB bootstrap search (true/false)
-- `xpub_bootstrap_max_addresses`: Max addresses for XPUB bootstrap
-- `xpub_bootstrap_increment`: XPUB bootstrap increment
-- `color_mode_dark`: Enable dark mode (true/false)
-- `font_regular`, `font_bold`: Paths to font files
-- `backup_duration_minutes`: Backup interval (minutes)
-- `block_height_area`: Block height display area (pixels)
-- `moscow_time_unit`: Moscow time unit (`hour`, etc.)
+### 2. Setup (All Platforms)
 
-For more details and advanced options, see `config.json.example` and the `/admin` web configuration interface.
-
-### 🔒 Security Settings (Hardcoded for Best Protection)
-
-For enhanced security, critical security settings are no longer user-configurable and use industry best practices:
-
-- **Rate Limiting**: Maximum 5 failed login attempts per 5-minute window
-- **Session Timeout**: 1 hour automatic logout 
-- **Secret Key**: Cryptographically secure 512-bit random key generated on startup
-- **Password Hashing**: Argon2id with memory-hard protection against GPU attacks
-
-These settings are defined in `security_config.py` and cannot be modified through the web interface.
-
----
-
-
-## 🔒 Security Features
-
-### 🛡️ Password Security
-- Passwords are hashed using Argon2id (memory-hard, GPU-resistant)
-- 64 MB memory cost and unique 16-byte salt per password
-- Automatic migration from cleartext passwords
-
-### 🚪 Access Control
-- Configurable session timeout and persistent sessions
-- Rate limiting to prevent brute force attacks
-- Secure authentication and admin-only configuration access
-
-### 🔧 Operational Security
-- Automatic configuration backups before changes
-- Secure file uploads with type and integrity checks
-- Graceful error handling without exposing internals
-- Comprehensive activity logging for audit and troubleshooting
-
----
-
-## 🖼️ Display Support
-
-### 📱 **Supported E-Paper Displays**
-
-#### **Waveshare Displays**
-- **7.3" 7-color (EPD7in3F)** ⭐ *Recommended*
-- **5.83" V2**, **4.2"**, **2.7"** series
-- **Small displays**: 1.02", 1.54", 1.64G
-- **Medium displays**: 2.13", 2.36G, 2.66"
-- **Large displays**: 7.5" series, HD variants
-
-#### **Inky Displays (Pimoroni)**
-- **Inky Impression 7-color**
-- **Inky pHAT** (Red/Yellow/Black variants)
-
-### 🛠️ Hardware Installation (e-Paper)
-
-If you are using a Waveshare e-Paper display (e.g. 7.3" F 7-color), you need to install the Waveshare library manually:
-
-1.  **Clone the Waveshare repository into the project:**
-    ```bash
-    cd btc-mempaper
-    mkdir -p lib
-    git clone https://github.com/waveshare/e-Paper.git lib/waveshare
-    ```
-
-2.  **Install the library:**
-    ```bash
-    source .venv/bin/activate
-    cd lib/waveshare/RaspberryPi_JetsonNano/python/
-    pip install .
-    # Return to project root
-    cd ~/btc-mempaper
-    ```
-
-3.  **Enable SPI interface on Raspberry Pi:**
-    ```bash
-    sudo raspi-config
-    # Navigate to: 3 Interface Options -> I4 SPI -> Yes
-    ```
-
-4.  **Restart the service:**
-    ```bash
-    sudo systemctl restart mempaper.service
-    ```
-- **Inky wHAT** series
-- **Auto-detection** support
-
-#### **Testing**
-- **Mock display**: Virtual display for development
-
-### ⚙️ **Display Configuration**
-1. Run `python configure_display.py`
-2. Select your display from the list
-3. Automatic dimension and color profile setup
-4. Test with mock display first
-
----
-
-## 🔧 API Integration
-
-### ⛏️ **Mempool Integration**
-- **Local mempool server**: Fetching Block and wallet balance data privately
-- **WebSocket updates**: Real-time block notifications
-- **Fee estimation**: Accurate fee recommendations
-
-### 💰 **Price APIs**
-- **Multiple sources**: Redundant price data sources
-- **Currency support**: Major fiat currencies
-- **Caching**: Intelligent caching for performance
-- **Fallback**: Graceful handling of API failures
-
-### ⚡ **Bitaxe Integration**
-- **Multiple miners**: Support for multiple Bitaxe devices
-- **Health monitoring**: Online/offline status tracking
-- **Hashrate aggregation**: Total mining power calculation
-- **Block rewards**: Automatic reward detection
-
----
-
-## 🖥️ Deployment
-
-### 🍓 **Raspberry Pi Setup**
-
-1. **Install Raspberry Pi OS**
-2. **Enable SPI** for e-paper displays:
+1. **Create Configuration**
    ```bash
-   sudo raspi-config
-   # Interface Options → SPI → Enable
+   cp config/config.json.example config/config.json
+   # Windows: copy config\config.json.example config\config.json
    ```
-3. **Install dependencies**:
+
+   > **⚠️ IMPORTANT:** Open `config/config.json` now.
+   > - Change `admin_username` if you don't want the default "admin".
+   > - Review other keys: `language`, `display_orientation`, `mempool_host` etc.
    ```bash
-   sudo apt update
-   sudo apt install -y \
-     libffi-dev \
-     build-essential \
-     python3-dev \
-     pkg-configpython3-pip \
-     python3-venv \
-     git
+   nano config/config.json
    ```
-4. **Clone and setup**:
+
+2. **Application Setup and Service Configuration**
+
    ```bash
-   git clone https://github.com/satcat21/btc-mempaper.git
-   cd btc-mempaper
-   python -m venv .venv
-   source .venv/bin/activate
-   pip install -r requirements.txt
+   # Download memes
+   python initialize_memes.py
+
+   # Start application to set admin user password for web login
+   python serve.py
    ```
-5. **Configure systemd service**:
+   Complete the initial password setup via CLI.
+
+   Access the dashboard at [http://mempaper-ip:5000](http://mempaper-ip:5000)
+   
+   **After setup is complete**, press `Ctrl+C` to stop the server.
+
+3. **Enable Background Service (Raspberry Pi)**
+
+   For production use, run Mempaper as a systemd service (auto-starts on boot):
+   
    ```bash
+   # Copy service file
    sudo cp mempaper.service /etc/systemd/system/
+   
+   # Enable and start the service
    sudo systemctl enable mempaper
    sudo systemctl start mempaper
+   
+   # Check status
+   sudo systemctl status mempaper
+   ```
+   
+   The dashboard will be accessible at [http://mempaper-ip:5000](http://mempaper-ip:5000).
+   
+   **Service Management:**
+   ```bash
+   # View logs
+   sudo journalctl -u mempaper.service -f
+   
+   # Restart after config changes
+   sudo systemctl restart mempaper
+   
+   # Stop service
+   sudo systemctl stop mempaper
    ```
 
-### 🖥️ **Desktop/Server Deployment**
-1. **Setup as above**
-2. **Run with production server**: `python serve.py`
-3. **Configure reverse proxy** (nginx/apache) if needed
-4. **Setup SSL certificate** for secure access
-
 ---
 
-## 🛟 Troubleshooting
+## 🖥️ Display Setup (Raspberry Pi)
 
-### 🔍 **Common Issues**
+Mempaper supports Waveshare e-Paper displays. The **Waveshare 7.3inch F (7-color)** is the primary target.
 
-#### **Display Issues**
-- **No display output**: Check SPI configuration and device selection
-- **Color problems**: Verify e-ink display model in configuration
-- **Size mismatch**: Ensure correct width/height settings
-
-#### **API Issues**
-- **No Bitcoin data**: Verify mempool server connectivity
-- **Twitter/X not working**: Check bearer token and API limits
-- **Price data missing**: Verify internet connectivity and API access
-
-#### **Authentication Issues**
-- **Login fails**: Reset password with `python setup_secure_password.py`
-- **Session expires**: Adjust session timeout in configuration
-- **Rate limited**: Wait for rate limit reset or adjust limits
-
-### 📋 **Debug Tools**
+### 1. Enable SPI Interface
+Crucial for the display to communicate with the Pi.
 ```bash
-python configure_display.py show    # Display current configuration
-python -c "import requests; print(requests.get('http://localhost:4081/api/blocks/tip/height').text)"  # Test mempool
+sudo raspi-config
+# Navigate to: 3 Interface Options -> I4 SPI -> Yes
 ```
 
+### 2. Install Display Drivers
+
+**Option A: Waveshare Native (Recommended)**
+This is the most stable method for the 7.3" (F) display.
+
+```bash
+# 1. Clone the drivers
+cd ~
+git clone https://github.com/waveshare/e-Paper.git
+
+# 2. Test the connection
+cd e-Paper/RaspberryPi_JetsonNano/python/examples
+python3 epd_7in3f_test.py
+```
+*If the test script updates your screen, the hardware is working.*
+
+**Option B: Omni-EPD**
+Use this if you need support for many different display types or prefer the abstraction layer.
+
+```bash
+git clone https://github.com/robweber/omni-epd.git
+cd omni-epd
+pip3 install --upgrade pip setuptools wheel
+pip3 install --prefer-binary .
+```
+
+### Configure Mempaper
+Run the configuration tool to select your discovered display:
+```bash
+python configure_display.py
+```
+
+> **Note:** Service setup is covered in the [Quick Start](#-quick-start) section above.
+
 ---
 
-## 🛠️ Development
+## 📂 Project Structure
 
-### 📁 **Project Structure**
+The codebase is organized into functional modules for better maintainability:
+
 ```
 btc-mempaper/
-├── mempaper_app.py               # Main Flask application
-├── config_manager.py             # Configuration management
-├── image_renderer.py             # Display rendering engine
-├── auth_manager.py               # Authentication system
-├── secure_password_manager.py    # Password security
-├── wallet_balance_api.py         # Wallet balance API
-├── btc_price_api.py              # Bitcoin price API
-├── bitaxe_api.py                 # Bitaxe miner API
-├── mempool_api.py                # Mempool integration
-├── display/                      # Display utilities and scripts
-├── static/                       # Web assets (css, js, memes, icons)
-│   ├── fonts/                    # Typography files (Roboto, IBMPlexMono)
-│   ├── css/                      # Stylesheets
-│   ├── js/                       # JavaScript files
-│   └── memes/                    # Uploaded meme images
-├── templates/                    # HTML templates (dashboard, login, config)
-├── setup_secure_password.py      # Secure password setup script
-├── initialize_memes.py           # Meme download script
-├── serve.py                      # Production server entrypoint
-├── start_fast.py                 # Development server entrypoint
-├── LICENSE                       # License (GPLv3)
-├── requirements.txt              # Python dependencies
-└── README.md                     # This documentation
+│
+├── 🎯 Entry Points
+│   ├── mempaper_app.py        # Main Flask application (core logic)
+│   ├── serve.py               # Development server (quick start)
+│   ├── wsgi.py                # Production WSGI entry point
+│   └── gunicorn.conf.py       # Production server configuration
+│
+├── 📚 lib/                    # Core Business Logic
+│   ├── mempool_api.py         # Mempool.space API client
+│   ├── btc_price_api.py       # Bitcoin price data
+│   ├── bitaxe_api.py          # Bitaxe miner integration
+│   ├── wallet_balance_api.py  # Wallet balance & XPUB tracking
+│   ├── block_monitor.py       # Block height monitoring
+│   ├── block_reward_cache.py  # Persistent block reward storage
+│   ├── image_renderer.py      # Dashboard image generation (2000+ lines)
+│   ├── display_subprocess.py  # Display refresh handler
+│   ├── websocket_client.py    # Real-time mempool WebSocket
+│   ├── address_derivation.py  # HD wallet address derivation
+│   └── btc_holidays.py        # Bitcoin historical events
+│
+├── ⚙️  managers/              # Configuration & Security
+│   ├── config_manager.py      # Configuration management
+│   ├── config_observer.py     # Config change monitoring & cache rebuilding
+│   ├── auth_manager.py        # Authentication & rate limiting
+│   ├── secure_config_manager.py     # Encrypted configuration storage
+│   ├── secure_password_manager.py   # Argon2id password hashing
+│   ├── secure_cache_manager.py      # Encrypted cache files
+│   ├── unified_secure_cache.py      # Unified cache encryption
+│   └── mobile_token_manager.py      # Mobile API token management
+│
+├── 🛠️  utils/                 # Utilities & Helpers
+│   ├── translations.py        # Multi-language support (en, de, es, it, fr)
+│   ├── color_lut.py           # E-Paper color palette mapping
+│   ├── epd_color_fix.py       # Waveshare 7-color optimizations
+│   ├── privacy_utils.py       # Bitcoin address masking for logs
+│   ├── security_config.py     # Security constants & settings
+│   └── technical_config.py    # Technical constants & defaults
+│
+├── 🔧 scripts/                # Administration & Setup
+│   ├── configure_display.py   # Display configuration wizard
+│   ├── initialize_memes.py    # Download Bitcoin memes
+│   ├── backup_manager.py      # Backup & maintenance utility
+│   ├── start_fast.py          # Quick development start
+│   ├── start_pc.py            # PC-specific startup
+│   └── reset_cache_rpi.sh     # Cache reset for Raspberry Pi
+│
+├── 🖥️  display/               # Display Drivers & Config
+│   ├── waveshare_display.py   # Native Waveshare driver integration
+│   ├── show_image.py          # Image display handler
+│   ├── prepare_image.py       # Image preparation pipeline
+│   └── waveshare_epd.epd7in3f.ini  # 7.3" F display configuration
+│
+├── 📁 Data & Configuration
+│   ├── config/                # User configuration
+│   │   ├── config.json        # Main config (created from .example)
+│   │   └── config.secure.json # Encrypted sensitive data
+│   ├── cache/                 # Runtime cache storage
+│   │   └── *.secure.json      # Encrypted cache files
+│   ├── static/                # Web assets (CSS, JS, images)
+│   │   └── memes/             # Bitcoin meme collection
+│   └── templates/             # HTML templates for web interface
+│
+├── 📖 Documentation
+│   ├── README.md              # This file
+│   ├── docs/                  # Additional documentation
+│   │   ├── CONFIG_REFERENCE.md
+│   │   ├── SECURITY_GUIDE.md
+│   │   └── UNIFIED_CACHE_DOCUMENTATION.md
+│   └── mempaper.service       # Systemd service configuration
+│
+└── 🔐 Project Files
+    ├── requirements.txt       # Python dependencies
+    ├── omni-epd.ini           # Optional omni-epd configuration
+    └── LICENSE                # GPL-3.0 license
 ```
 
-### 🔧 **Development Mode**
-```bash
-python start_fast.py  # Fast startup for development
-```
-
-### 📝 **Contributing**
-1. Follow existing code patterns
-2. Add tests for new features
-3. Update documentation
-4. Use secure coding practices
+**Architecture Overview:**
+- **Entry Points** → Load configuration → Initialize **lib/** APIs → Render via **display/**
+- **managers/** handle all security, authentication, and configuration management
+- **utils/** provide shared functionality across the application
+- **scripts/** are standalone tools for setup and maintenance
 
 ---
 
-## ⛏️ Block Reward Monitoring
+## ⚙️ Configuration
 
-BTC Mempaper includes an advanced block reward monitoring system that tracks coinbase transactions for specified Bitcoin addresses. This feature is useful for mining pools, solo miners, or anyone wanting to monitor Bitcoin addresses for block rewards.
+Navigate to **Settings** in the web interface ([http://mempaper-ip:5000](http://mempaper-ip:5000)).
 
-### **Features**
+- **Mempool Connection**: Default is `mempool.space`. Change IP/Port to use a local node or point to hostname of self-hosted mempool instance.
+- **Display**: Toggle "E-Ink Display Connected" to ON.
+- **Bitaxe**: Add miner IPs to monitor hashrate.
 
-- **Smart Caching**: Efficient filesystem cache that stores coinbase transaction counts per address
-- **Transaction History API**: Uses mempool address transaction history instead of scanning entire blockchain
-- **Incremental Updates**: Only scans new blocks since last sync, avoiding full rescans
-- **Recovery System**: Automatically catches up on missed blocks after downtime
-- **Fast API Response**: Cache provides instant response times for web interface
-- **Efficient Scanning**: Optimized approach that gets transaction history and filters for coinbase transactions
+For advanced manual configuration, edit `config/config.json`.
 
-### **Cache Structure**
-
-The system maintains a cache file `block_reward_cache.json` with the following structure:
-
-```json
-{
-  "addresses": {
-    "bc1qexampleaddress": {
-      "total_coinbase_count": 5,
-      "synced_height": 850000,
-      "last_updated": 1693737600,
-      "first_block_found": 840000,
-      "latest_block_found": 849500
-    }
-  },
-  "global_sync_height": 850000,
-  "cache_version": "1.0",
-  "last_full_scan": 1693737600
-}
-```
-
-### **How It Works**
-
-1. **New Address Added**: 
-   - Fetches complete transaction history from mempool API
-   - Filters transactions for coinbase transactions (no inputs except coinbase)
-   - Caches total coinbase count and sync height
-   - Much faster than scanning entire blockchain
-
-2. **New Block Found**:
-   - Checks if coinbase transaction pays monitored addresses
-   - Increments cached count if match found
-   - Updates sync height to current block
-
-3. **System Recovery**:
-   - On startup, compares cache sync height with current blockchain height
-   - For small gaps (≤1000 blocks): scans missing blocks directly
-   - For large gaps (>1000 blocks): re-fetches transaction history and filters by height
-   - Updates cache with any new coinbase transactions found
-
-4. **Web Interface**:
-   - API endpoint returns cached count instantly
-   - No blockchain scanning required for display
-   - Real-time updates via WebSocket when new blocks found
-
-### **Configuration**
-
-Add addresses to monitor in the configuration interface under "Bitaxe Stats" > "Block Reward Monitoring Table":
-
-```json
-{
-  "block_reward_addresses_table": [
-    {
-      "address": "bc1qexampleaddress1",
-      "comment": "Mining Pool 1"
-    },
-    {
-      "address": "bc1qexampleaddress2", 
-      "comment": "Solo Mining Wallet"
-    }
-  ]
-}
-```
-
-### **Testing**
-
-Test the cache system with the included test script:
-
-```bash
-python test_block_cache.py
-```
-
-This will verify cache functionality and demonstrate the system in action.
+📖 **See [Configuration Reference](docs/CONFIG_REFERENCE.md) for detailed explanation of all settings.**
 
 ---
 
-## 📄 License
+## 📚 Documentation
 
-This project is licensed under the GNU General Public License v3.0 (GPLv3). See the LICENSE file for details.
+**Configuration:**
+- [Configuration Reference](docs/CONFIG_REFERENCE.md) - Complete guide to all settings
+
+**Security:**
+- [Security Guide](docs/SECURITY_GUIDE.md) - Encryption and password protection
+
+**Developer Resources:**
+- [Cache System Documentation](docs/UNIFIED_CACHE_DOCUMENTATION.md) - Technical cache implementation details
 
 ---
 
-## 🙏 Acknowledgments
+## ⚡ Support the Project
 
-- **Mempool.space**: For excellent Bitcoin API services
-- **Waveshare/Pimoroni**: For e-paper display hardware and libraries
-- **Bitcoin community**: For inspiration and feedback
+If you find this project useful and want to support its development, you can send a Lightning tip:
 
+<p align="center">
+  <img src="images/lightning-qr.jpg" alt="Lightning Donation QR Code" width="200"/>
+  <br/>
+  <code>khakioctopus15@primal.net</code>
+</p>
 
-*Made with ❤️ for the Bitcoin community*
+Every sat helps keep the project maintained and adds new features! 🙏
+
+---
+
+## License
+
+GNU General Public License v3.0 (GPLv3)

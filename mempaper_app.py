@@ -27,20 +27,20 @@ from flask import Flask, send_file, render_template, request, jsonify, session, 
 from flask_socketio import SocketIO
 
 # Import custom modules
-from mempool_api import MempoolAPI
-from websocket_client import MempoolWebSocket
-from image_renderer import ImageRenderer
-from translations import translations
-from config_manager import ConfigManager
-from technical_config import TechnicalConfig
-from security_config import SecurityConfig
-from secure_cache_manager import SecureCacheManager
-from auth_manager import AuthManager, require_auth, require_web_auth, require_rate_limit, require_mobile_auth
-from mobile_token_manager import MobileTokenManager
+from lib.mempool_api import MempoolAPI
+from lib.websocket_client import MempoolWebSocket
+from lib.image_renderer import ImageRenderer
+from utils.translations import translations
+from managers.config_manager import ConfigManager
+from utils.technical_config import TechnicalConfig
+from utils.security_config import SecurityConfig
+from managers.secure_cache_manager import SecureCacheManager
+from managers.auth_manager import AuthManager, require_auth, require_web_auth, require_rate_limit, require_mobile_auth
+from managers.mobile_token_manager import MobileTokenManager
 
 # Privacy utilities for secure logging
 try:
-    from privacy_utils import BitcoinPrivacyMasker
+    from utils.privacy_utils import BitcoinPrivacyMasker
     PRIVACY_UTILS_AVAILABLE = True
 except ImportError:
     PRIVACY_UTILS_AVAILABLE = False
@@ -84,12 +84,15 @@ class MempaperApp:
         # Let _generate_initial_image handle this logic properly
         try:
             block_info = self.mempool_api.get_current_block_info()
-            if (hasattr(self, 'current_block_height') and self.current_block_height and 
-                self.current_block_height != block_info['block_height']):
-                print(f"🔄 [STARTUP] Block changed since last run: {self.current_block_height} → {block_info['block_height']}")
+            # Safely compare block heights (converting to string to avoid type mismatch)
+            current_bh = str(block_info.get('block_height', ''))
+            cached_bh = str(self.current_block_height) if hasattr(self, 'current_block_height') and self.current_block_height is not None else None
+            
+            if (cached_bh and current_bh and cached_bh != current_bh):
+                print(f"🔄 [STARTUP] Block changed since last run: {cached_bh} → {current_bh}")
                 self.image_is_current = False  # Mark as outdated for _generate_initial_image to handle
-            elif hasattr(self, 'current_block_height') and self.current_block_height == block_info['block_height']:
-                print(f"📸 [STARTUP] Block unchanged: {block_info['block_height']} - cache may be valid")
+            elif cached_bh and current_bh and cached_bh == current_bh:
+                print(f"📸 [STARTUP] Block unchanged: {current_bh} - cache may be valid")
         except Exception as e:
             print(f"⚠️ [STARTUP] Failed to check current block: {e}")
             self.image_is_current = False  # Mark as outdated if we can't verify
@@ -210,7 +213,7 @@ class MempaperApp:
         self.image_renderer = ImageRenderer(self.config, self.translations)
         
         # Initialize block reward monitor (with block callbacks as backup to WebSocket)
-        from block_monitor import initialize_block_monitor
+        from lib.block_monitor import initialize_block_monitor
         self.block_monitor = initialize_block_monitor(
             self.config_manager, 
             self.on_new_block_received,  # Use same callback as WebSocket for consistency
@@ -359,19 +362,19 @@ class MempaperApp:
             verify_ssl=mempool_verify_ssl
         )
         
-        # Configure backup-aware settings (adjust duration based on your backup schedule)
-        backup_duration_minutes = self.config.get("backup_duration_minutes", 45)  # Default 45 minutes
-        self.websocket_client.set_backup_schedule(max_backup_duration_minutes=backup_duration_minutes)
+        # Configure network outage tolerance (how long to retry before giving up)
+        network_outage_tolerance_minutes = self.config.get("network_outage_tolerance_minutes", 45)  # Default 45 minutes
+        self.websocket_client.set_network_tolerance(max_outage_minutes=network_outage_tolerance_minutes)
         
         protocol = "WSS" if mempool_use_https else "WS"
-        print(f"✓ WebSocket client initialized with backup-aware reconnection ({protocol})")
-        print(f"  📋 Max backup duration: {backup_duration_minutes} minutes")
+        print(f"✓ WebSocket client initialized with network outage tolerance ({protocol})")
+        print(f"  📋 Outage tolerance: {network_outage_tolerance_minutes} minutes")
     
     def _generate_initial_image(self):
         """Generate initial dashboard image on startup - optimized for fast start."""
         
         # FIRST: Check if wallet monitoring is enabled
-        from config_manager import ConfigManager
+        from managers.config_manager import ConfigManager
         config_manager = ConfigManager()
         
         wallet_monitoring_enabled = config_manager.get("show_wallet_balances_block", True)
@@ -517,17 +520,19 @@ class MempaperApp:
             file_age = time.time() - os.path.getmtime(self.current_image_path)
             if file_age < 3600:  # Less than 1 hour old
                 # If we don't know what block our cached image is for, mark as outdated
+                # Use string comparison to avoid type mismatches
                 if (self.current_block_height is None or 
-                    self.current_block_height != current_height):
-                    print(f"📸 Cached image exists but for unknown/different block - will refresh")
+                    str(self.current_block_height) != str(current_height)):
+                    print(f"📸 Cached image exists but for unknown/different block (Cache: {self.current_block_height}, Current: {current_height}) - proceeding to refresh")
                     self.image_is_current = False
+                    # Do NOT return here - allow generation to proceed
                 else:
                     print(f"📸 Using cached image for current block {current_height}")
                     self.current_block_height = current_height
                     self.current_block_hash = current_hash
                     self.image_is_current = True
                     self._save_cache_metadata()
-                return
+                    return
         
         # Check if we have a recent cached image first
         if os.path.exists(self.current_image_path):
@@ -538,11 +543,13 @@ class MempaperApp:
                     block_info = self.mempool_api.get_current_block_info()
                     
                     # If we don't know what block our cached image is for, or it's for a different block
+                    # Use string comparison to avoid type mismatches
                     if (self.current_block_height is None or 
-                        self.current_block_height != block_info['block_height']):
+                        str(self.current_block_height) != str(block_info['block_height'])):
                         print(f"📸 Cached image exists (age: {int(file_age/60)} minutes) but for different block")
-                        print("🔄 Will refresh on first client request")
+                        print("🔄 Need to refresh image")
                         self.image_is_current = False
+                        # Do NOT return here - allow generation to proceed
                     else:
                         print(f"📸 Using existing cached image (age: {int(file_age/60)} minutes)")
                         print("✓ Image is current for block {}, skipping generation".format(block_info['block_height']))
@@ -551,17 +558,36 @@ class MempaperApp:
                         self.image_is_current = True  # Mark as current since it's for the right block
                         # Save metadata to ensure persistence
                         self._save_cache_metadata()
-                    return
+                        return
                 except Exception as e:
                     print(f"⚠️ Could not verify block info, marking image as potentially outdated: {e}")
                     self.image_is_current = False
-                    return
+                    # Allow generation to proceed
+
         
         try:
             print("🎨 Generating initial dashboard image with cached data...")
             
             # Get current block info from mempool API
-            block_info = self.mempool_api.get_current_block_info()
+            try:
+                block_info = self.mempool_api.get_current_block_info()
+                # Check for invalid block data
+                if block_info.get('block_height') is None:
+                     raise ValueError("Block height is None")
+            except Exception as e:
+                print(f"⚠️ Could not obtain block info ({e}) - using Genesis block defaults")
+                block_info = {
+                     'block_height': 0,
+                     'block_hash': '000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f'
+                }
+
+            # Check for Genesis block to override meme
+            override_meme = None
+            if block_info['block_height'] == 0:
+                 potential_meme = os.path.join("static", "memes", "0.jpg")
+                 if os.path.exists(potential_meme):
+                      print(f"🖼️ Genesis block detected: Forcing use of {potential_meme}")
+                      override_meme = potential_meme
             
             # IMMEDIATE IMAGE GENERATION: Use cached wallet data for instant startup
             print(f"⚡ [IMMEDIATE] Generating dashboard with cached data for block {block_info['block_height']}...")
@@ -571,7 +597,8 @@ class MempaperApp:
                 block_info['block_height'], 
                 block_info['block_hash'],
                 mempool_api=self.mempool_api,
-                startup_mode=True  # This forces use of cached data only
+                startup_mode=True,  # This forces use of cached data only
+                override_content_path=override_meme
             )
             
             # Save both images for caching
@@ -975,7 +1002,7 @@ class MempaperApp:
                         print(f"📋 E-ink display block height matches: {block_height}")
                 
                 # Use subprocess to avoid GPIO conflicts between threads
-                script_path = os.path.join(os.path.dirname(__file__), "display_subprocess.py")
+                script_path = os.path.join(os.path.dirname(__file__), "lib", "display_subprocess.py")
                 
                 # Start the subprocess
                 process = subprocess.Popen([
@@ -1176,7 +1203,7 @@ class MempaperApp:
             
             # 1. Clear async address cache manager
             try:
-                from config_observer import AsyncAddressCacheManager
+                from managers.config_observer import AsyncAddressCacheManager
                 async_cache = AsyncAddressCacheManager()
                 
                 # Clear cache entries for each removed address
@@ -1199,7 +1226,7 @@ class MempaperApp:
             
             # 2. Clear unified secure cache for XPUBs/ZPUBs and addresses
             try:
-                from unified_secure_cache import get_unified_cache
+                from managers.unified_secure_cache import get_unified_cache
                 unified_cache = get_unified_cache()
                 
                 for address in removed_addresses:
@@ -1822,9 +1849,9 @@ class MempaperApp:
         """Wrapper to run wallet refresh in separate process to avoid gunicorn timeouts."""
         try:
             # Re-initialize components in the new process
-            from config_manager import ConfigManager
-            from image_renderer import ImageRenderer
-            from translations import translations
+            from managers.config_manager import ConfigManager
+            from lib.image_renderer import ImageRenderer
+            from utils.translations import translations
             
             # Load config and initialize image renderer with wallet API
             config_manager = ConfigManager()
@@ -2763,7 +2790,7 @@ class MempaperApp:
         def get_translations(language):
             """Get translations for a specific language."""
             try:
-                from translations import translations
+                from utils.translations import translations
                 language_translations = translations.get(language, translations["en"])
                 return jsonify({
                     'success': True,

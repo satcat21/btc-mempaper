@@ -11,7 +11,7 @@ import os
 
 # Import privacy utilities for masking Bitcoin addresses in logs
 try:
-    from privacy_utils import BitcoinPrivacyMasker, mask_bitcoin_data
+    from utils.privacy_utils import BitcoinPrivacyMasker, mask_bitcoin_data
     PRIVACY_UTILS_AVAILABLE = True
 except ImportError:
     PRIVACY_UTILS_AVAILABLE = False
@@ -58,7 +58,7 @@ backlog = 2048
 
 # Worker processes - optimized for Raspberry Pi Zero WH (single core, 512MB RAM)
 workers = 1  # Single worker for single-core CPU
-worker_class = "geventwebsocket.gunicorn.workers.GeventWebSocketWorker"
+worker_class = "gevent"  # Use standard gevent worker (Flask-SocketIO handles WebSocket natively)
 worker_connections = 100  # Reduced for limited RAM
 timeout = 600  # Increased timeout for wallet balance gap limit detection (10 minutes)
 keepalive = 2

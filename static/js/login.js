@@ -38,3 +38,9 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
 
 // Focus username field on load
 document.getElementById('username').focus();
+
+// Apply dark mode from localStorage
+const storedDarkMode = localStorage.getItem('mempaper_dark_mode');
+if (storedDarkMode === 'true') {
+    document.body.classList.add('dark-mode');
+}
