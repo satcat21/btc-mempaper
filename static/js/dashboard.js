@@ -52,9 +52,94 @@ function setupSocketHandlers() {
         attemptReconnect();
     });
 
-    // ...existing code for other handlers...
-    // (copy all other socket.on handlers here, unchanged)
-    // ...existing code...
+    // Log transport changes for debugging
+    socket.on('upgrade', () => {
+        console.log("⬆️ Transport upgraded to:", socket.io.engine.transport.name);
+    });
+
+    socket.on('upgradeError', (error) => {
+        console.warn("⚠️ Transport upgrade failed:", error);
+    });
+
+    // Enhanced transport monitoring
+    socket.io.on('error', (error) => {
+        console.error("🚫 Socket.IO engine error:", error);
+    });
+
+    // Monitor connection state changes
+    socket.io.engine.on('upgrade', () => {
+        console.log("🔄 Engine transport upgraded to:", socket.io.engine.transport.name);
+    });
+
+    socket.io.engine.on('upgradeError', (error) => {
+        console.warn("⚠️ Engine upgrade error:", error);
+    });
+
+    // Reconnection attempt
+    socket.on('reconnect_attempt', (attemptNumber) => {
+        reconnectAttempts = attemptNumber;
+        console.log(`🔄 Reconnection attempt ${attemptNumber}...`);
+        
+        // Show manual reconnect button after several failed attempts
+        if (attemptNumber > 5) {
+            if (reconnectBtn) {
+                reconnectBtn.style.display = "inline-block";
+            }
+        }
+    });
+
+    // Reconnection successful
+    socket.on('reconnect', (attemptNumber) => {
+        console.log(`✅ Reconnected after ${attemptNumber} attempts`);
+        reconnectAttempts = 0;
+        if (reconnectBtn) {
+            reconnectBtn.style.display = "none";
+        }
+    });
+
+    // Reconnection failed
+    socket.on('reconnect_failed', () => {
+        console.log("❌ Reconnection failed permanently");
+        if (reconnectBtn) {
+            reconnectBtn.style.display = "inline-block";
+        }
+    });
+
+    // New image received
+    socket.on('new_image', (data) => {
+        console.log("📱 New dashboard image received", {
+            hasImageData: !!data.image,
+            imageLength: data.image ? data.image.length : 0,
+            timestamp: new Date().toISOString()
+        });
+        
+        // Validate image data
+        if (!data.image || !data.image.startsWith('data:image/png;base64,') || data.image.length < 100) {
+            console.error("❌ Invalid image data received", data);
+            return;
+        }
+        
+        const dashboardImg = document.getElementById("dashboard");
+        
+        // Create a new image element to preload and ensure loading
+        const tempImg = new Image();
+        tempImg.onload = function() {
+            dashboardImg.src = data.image;
+            lastImageUpdate = new Date();
+            console.log("✅ Dashboard image updated successfully", {
+                newSrcLength: dashboardImg.src.length,
+                timestamp: lastImageUpdate.toISOString()
+            });
+        };
+        
+        tempImg.onerror = function() {
+            console.error("❌ Failed to load new image");
+        };
+        
+        tempImg.src = data.image;
+    });
+
+    // ... other socket event handlers ...
 }
 
 function attemptReconnect() {
@@ -68,149 +153,14 @@ function attemptReconnect() {
     }, 2000);
 }
 
-// Initial connection
-connectSocket();
-
+// Global variables for socket state
 const reconnectBtn = document.getElementById('reconnect-button');
 let reconnectAttempts = 0;
 let lastImageUpdate = null;
-let imageUpdateTimeout = null; // For debouncing image updates
+let imageUpdateTimeout = null;
 
-// Connection successful
-socket.on('connect', () => {
-    console.log("✅ Connected to Mempaper WebSocket");
-    reconnectAttempts = 0; // Reset counter
-    if (reconnectBtn) {
-        reconnectBtn.style.display = "none"; // Hide reconnect button
-    }
-    
-    // Only request latest image if we don't have one loaded yet
-    const dashboardImg = document.getElementById("dashboard");
-    if (!dashboardImg.src || dashboardImg.src.includes('placeholder') || dashboardImg.src === window.location.href) {
-        console.log("📱 Requesting latest image (no current image or placeholder)");
-        socket.emit('request_latest_image');
-    }
-});
-
-// Connection lost
-socket.on('disconnect', (reason) => {
-    console.log("❌ Disconnected from Mempaper WebSocket:", reason);
-});
-
-// Connection errors
-socket.on('connect_error', (error) => {
-    console.error("🚫 Socket.IO connection error:", error);
-});
-
-// Transport errors
-socket.on('error', (error) => {
-    console.error("⚠️ Socket.IO transport error:", error);
-});
-
-// Log transport changes for debugging
-socket.on('upgrade', () => {
-    console.log("⬆️ Transport upgraded to:", socket.io.engine.transport.name);
-});
-
-socket.on('upgradeError', (error) => {
-    console.warn("⚠️ Transport upgrade failed:", error);
-});
-
-// Enhanced transport monitoring
-socket.io.on('error', (error) => {
-    console.error("🚫 Socket.IO engine error:", error);
-});
-
-// Monitor connection state changes
-socket.io.engine.on('upgrade', () => {
-    console.log("🔄 Engine transport upgraded to:", socket.io.engine.transport.name);
-});
-
-socket.io.engine.on('upgradeError', (error) => {
-    console.warn("⚠️ Engine upgrade error:", error);
-});
-
-// Reconnection attempt
-socket.on('reconnect_attempt', (attemptNumber) => {
-    reconnectAttempts = attemptNumber;
-    console.log(`🔄 Reconnection attempt ${attemptNumber}...`);
-    
-    // Show manual reconnect button after several failed attempts
-    if (attemptNumber > 5) {
-        if (reconnectBtn) {
-            reconnectBtn.style.display = "inline-block";
-        }
-    }
-});
-
-// Reconnection successful
-socket.on('reconnect', (attemptNumber) => {
-    console.log(`✅ Reconnected after ${attemptNumber} attempts`);
-    reconnectAttempts = 0;
-    if (reconnectBtn) {
-        reconnectBtn.style.display = "none"; // Hide reconnect button
-    }
-});
-
-// Reconnection failed
-socket.on('reconnect_failed', () => {
-    console.log("❌ Reconnection failed permanently");
-    if (reconnectBtn) {
-        reconnectBtn.style.display = "inline-block"; // Show reconnect button
-    }
-});
-
-// Connection error
-socket.on('connect_error', (error) => {
-    console.log("🚨 Connection error:", error.message);
-});
-
-// New image received
-socket.on('new_image', (data) => {
-    console.log("📱 New dashboard image received", {
-        hasImageData: !!data.image,
-        imageLength: data.image ? data.image.length : 0,
-        timestamp: new Date().toISOString()
-    });
-    
-    // Validate image data
-    if (!data.image || !data.image.startsWith('data:image/png;base64,') || data.image.length < 100) {
-        console.error("❌ Invalid image data received", data);
-        return; // Don't try to load invalid data
-    }
-    
-    const dashboardImg = document.getElementById("dashboard");
-    const timestamp = new Date().getTime();
-    
-    // Use the image data directly (it's already a data URL)
-    const imageUrl = data.image;
-    
-    // Create a new image element to preload and ensure loading
-    const tempImg = new Image();
-    tempImg.onload = function() {
-        // Once loaded, update the main image
-        dashboardImg.src = imageUrl;
-        lastImageUpdate = new Date();
-        console.log("✅ Dashboard image updated successfully", {
-            newSrcLength: dashboardImg.src.length,
-            timestamp: lastImageUpdate.toISOString()
-        });
-    };
-    
-    tempImg.onerror = function() {
-        console.error("❌ Failed to load new dashboard image", {
-            imageDataStart: data.image.substring(0, 100) + "...",
-            imageDataLength: data.image.length,
-            error: "Image load failed"
-        });
-        
-        // Don't try fallback with invalid data
-        console.log("⏭️ Skipping fallback due to invalid image data");
-    };
-    
-    // Start loading the new image
-    tempImg.src = imageUrl;
-});
+// Initial connection
+connectSocket();
 
 // Background processing status updates (for instant startup mode)
 socket.on('background_ready', (data) => {

@@ -1,4 +1,3 @@
-import time
 """
 Main Application Module - Mempaper Bitcoin Dashboard
 
@@ -11,6 +10,7 @@ This is the main Flask application that coordinates all components:
 Version: 2.0 (Refactored)
 """
 
+import time
 import json
 import io
 import base64
@@ -18,7 +18,6 @@ import threading
 import multiprocessing
 import urllib3
 import os
-import time
 import logging
 import requests
 from datetime import datetime
@@ -97,38 +96,6 @@ class MempaperApp:
             print(f"⚠️ [STARTUP] Failed to check current block: {e}")
             self.image_is_current = False  # Mark as outdated if we can't verify
     
-    @staticmethod
-    def mask_wallet_data_for_logging(wallet_data):
-        """
-        Create a privacy-safe copy of wallet data for logging.
-        
-        Args:
-            wallet_data (dict): Original wallet data
-            
-        Returns:
-            dict: Privacy-masked copy safe for logging
-        """
-        if not PRIVACY_UTILS_AVAILABLE or not wallet_data:
-            return wallet_data
-        
-        # Create a deep copy to avoid modifying original data
-        import copy
-        masked_data = copy.deepcopy(wallet_data)
-        
-        # Mask addresses
-        if 'addresses' in masked_data:
-            for addr_info in masked_data['addresses']:
-                if 'address' in addr_info:
-                    addr_info['address'] = BitcoinPrivacyMasker.mask_address(addr_info['address'])
-        
-        # Mask XPUBs
-        if 'xpubs' in masked_data:
-            for xpub_info in masked_data['xpubs']:
-                if 'xpub' in xpub_info:
-                    xpub_info['xpub'] = BitcoinPrivacyMasker.mask_xpub(xpub_info['xpub'])
-        
-        return masked_data
-    
     def _init_flask_app(self):
         """Initialize Flask application and configure it."""
         # Initialize Flask app
@@ -171,15 +138,23 @@ class MempaperApp:
                 'ping_timeout': 120,       # Increase timeout to 2 minutes
                 'ping_interval': 45,       # Increase ping interval  
                 'max_http_buffer_size': 10000000,  # 10MB buffer
-                'engineio_logger': True if not is_production else False,  # Enable logging in development
-                'logger': True if not is_production else False,  # Enable SocketIO logger in development
+                'engineio_logger': False,  # Disable engineio logger to suppress transport warnings
+                'logger': False,           # Disable SocketIO logger to reduce noise
                 'always_connect': True,    # Force connection acceptance
                 'manage_session': False,   # Don't manage Flask sessions for SocketIO
-                'cors_credentials': False  # Disable credentials for CORS to simplify
+                'cors_credentials': False, # Disable credentials for CORS to simplify
+                'transports': ['websocket', 'polling']  # Explicitly allow websocket and polling
             }
             print(f"⚡ SocketIO async mode: {async_mode} ({'production' if is_production else 'development'})")
             # if is_pi_zero:
             #     print("🍓 Raspberry Pi Zero detected - using optimized settings")
+            
+            # Suppress Engine.IO transport warnings at Python logging level
+            logging.getLogger('engineio').setLevel(logging.CRITICAL)
+            logging.getLogger('engineio.server').setLevel(logging.CRITICAL)
+            logging.getLogger('socketio').setLevel(logging.CRITICAL)
+            logging.getLogger('socketio.server').setLevel(logging.CRITICAL)
+            
             self.socketio = SocketIO(self.app, **socketio_config)
     
     def _init_app_components(self):
@@ -367,8 +342,7 @@ class MempaperApp:
         self.websocket_client.set_network_tolerance(max_outage_minutes=network_outage_tolerance_minutes)
         
         protocol = "WSS" if mempool_use_https else "WS"
-        print(f"✓ WebSocket client initialized with network outage tolerance ({protocol})")
-        print(f"  📋 Outage tolerance: {network_outage_tolerance_minutes} minutes")
+        print(f"⏰ WebSocket client initialized ({protocol}) - outage tolerance: {network_outage_tolerance_minutes} min")
     
     def _generate_initial_image(self):
         """Generate initial dashboard image on startup - optimized for fast start."""
@@ -718,46 +692,21 @@ class MempaperApp:
                 return "missing"
             
             cache_manager = self.image_renderer.wallet_api.async_cache_manager
-            
-            # Check if cache file exists
             cache_file_path = "cache/async_wallet_address_cache.secure.json"
+            
             if not os.path.exists(cache_file_path):
                 return "missing"
             
-            # Try different gap limit cache keys (addresses derived during bootstrap)
-            cached_addresses = None
-            final_count = 0
-            
-            for test_count in [20, 40, 60, 80, 100, 120, 140, 160, 180, 200]:
-                cache_key = f"{xpub}:gap_limit:{test_count}"
-                test_addresses = cache_manager.get_addresses(cache_key)
-                if test_addresses:
-                    cached_addresses = test_addresses
-                    final_count = test_count
-                    break
-            
-            if not cached_addresses:
-                # Try regular derivation cache keys as fallback
-                for test_count in [20, 40, 60, 80, 100]:
-                    cache_key = f"{xpub}:{test_count}"
-                    test_addresses = cache_manager.get_addresses(cache_key)
-                    if test_addresses:
-                        cached_addresses = test_addresses
-                        final_count = test_count
-                        break
+            # Try different cache key patterns
+            test_counts = [20, 40, 60, 80, 100, 120, 140, 160, 180, 200]
+            cached_addresses, final_count = self._find_cached_addresses(cache_manager, xpub, test_counts)
             
             if not cached_addresses:
                 return "missing"
             
             # Check cache age (consider outdated if >24 hours)
-            try:
-                cache_mtime = os.path.getmtime(cache_file_path)
-                cache_age_hours = (time.time() - cache_mtime) / 3600
-                
-                if cache_age_hours > 24:
-                    return "outdated"
-            except Exception:
-                # If we can't check age, consider it potentially outdated
+            cache_age_hours = (time.time() - os.path.getmtime(cache_file_path)) / 3600
+            if cache_age_hours > 24:
                 return "outdated"
             
             # Cache exists and is recent
@@ -767,6 +716,24 @@ class MempaperApp:
         except Exception as e:
             print(f"⚠️ Error checking cache status for {xpub[:20]}...: {e}")
             return "error"
+    
+    def _find_cached_addresses(self, cache_manager, xpub: str, test_counts: list) -> tuple:
+        """Helper method to find cached addresses with different count patterns."""
+        # Try gap limit cache keys first
+        for test_count in test_counts:
+            cache_key = f"{xpub}:gap_limit:{test_count}"
+            addresses = cache_manager.get_addresses(cache_key)
+            if addresses:
+                return addresses, test_count
+        
+        # Try regular derivation cache keys as fallback
+        for test_count in [20, 40, 60, 80, 100]:
+            cache_key = f"{xpub}:{test_count}"
+            addresses = cache_manager.get_addresses(cache_key)
+            if addresses:
+                return addresses, test_count
+        
+        return None, 0
     
     def _warm_up_apis(self):
         """
@@ -2011,7 +1978,7 @@ class MempaperApp:
             block_hash (str): New block hash
         """
         print(f"🟠 [DEBUG] Entered on_new_block_received for block {block_height}, hash: {block_hash}")
-        print(f"🎯 WebSocket: New block received - Height: {block_height} (type: {type(block_height)})")
+        print(f"🎯 WebSocket: New block received - Height: {block_height}")
         print(f"📦 Block hash: {block_hash}")
         
         # Convert block_height to integer if it's a string

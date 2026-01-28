@@ -242,7 +242,7 @@ class MempoolWebSocket:
     
     def start_connection(self):
         """Start the WebSocket connection and run forever."""
-        print(f"Starting WebSocket connection to {self.ws_url}")
+        print(f"🔌 Starting WebSocket connection to {self.ws_url}")
         
         self.ws = websocket.WebSocketApp(
             self.ws_url,
@@ -280,7 +280,7 @@ class MempoolWebSocket:
         
         thread = threading.Thread(target=run_listener, daemon=True)
         thread.start()
-        print("WebSocket listener thread started")
+        print("🧵 WebSocket listener thread started")
         return thread
     
     def close_connection(self):
@@ -339,4 +339,3 @@ class MempoolWebSocket:
             max_outage_minutes (int): Maximum expected outage duration in minutes
         """
         self.max_outage_duration = max_outage_minutes * 60
-        print(f"⏰ Configured to tolerate network outages up to {max_outage_minutes} minutes")

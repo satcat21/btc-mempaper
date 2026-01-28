@@ -8,7 +8,6 @@ Now includes secure Argon2 password hashing for enhanced security.
 Version: 2.0 - Enhanced with Argon2 security
 """
 
-import hashlib
 import time
 import logging
 from functools import wraps

@@ -7,7 +7,6 @@ Based on the reference implementation from image_renderer.py.
 """
 
 import requests
-from datetime import datetime
 from typing import Dict, Optional, Union
 
 

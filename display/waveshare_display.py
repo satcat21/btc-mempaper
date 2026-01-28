@@ -50,6 +50,7 @@ class WaveshareDisplay:
         self.width = 800
         self.height = 480
         self.enabled = self.config.get("e-ink-display-connected", True)
+        self.skip_clear = self.config.get("skip_clear_display", True)  # Skip clear by default (saves ~31s)
         
         # Don't initialize display in constructor to avoid blocking
         # Initialize only when needed in display_image method
@@ -289,12 +290,15 @@ class WaveshareDisplay:
                 init_time = time.time() - init_start
                 print(f"✓ E-paper display initialized in {init_time:.2f}s")
                 
-                # Clear display
-                print("Clearing e-paper display...")
-                clear_start = time.time()
-                self.epd.Clear()
-                clear_time = time.time() - clear_start
-                print(f"✓ E-paper display cleared in {clear_time:.2f}s")
+                # Clear display (optional - skipping saves ~31s)
+                if not self.skip_clear:
+                    print("Clearing e-paper display...")
+                    clear_start = time.time()
+                    self.epd.Clear()
+                    clear_time = time.time() - clear_start
+                    print(f"✓ E-paper display cleared in {clear_time:.2f}s")
+                else:
+                    print("⏩ Skipping clear operation for faster refresh (~31s saved)")
                 
                 # Display the image
                 print("Sending image to e-paper display...")

@@ -445,7 +445,7 @@ class ConfigManager:
         validated = self.get_default_config()
         
         # Language validation
-        valid_languages = ["en", "de", "es", "fr"]
+        valid_languages = ["en", "de", "es", "fr", "it"]
         if config.get("language", "").lower() in valid_languages:
             validated["language"] = config["language"].lower()
         
@@ -806,7 +806,8 @@ class ConfigManager:
                     {"value": "en", "label": t.get("english", "English"), "flag": "🇺🇸"},
                     {"value": "de", "label": t.get("german", "Deutsch"), "flag": "🇩🇪"},
                     {"value": "es", "label": t.get("spanish", "Español"), "flag": "🇪🇸"},
-                    {"value": "fr", "label": t.get("french", "Français"), "flag": "🇫🇷"}
+                    {"value": "fr", "label": t.get("french", "Français"), "flag": "🇫🇷"},
+                    {"value": "it", "label": t.get("italian", "Italiano"), "flag": "🇮🇹"}
                 ],
                 "category": "general"
             },
@@ -1057,10 +1058,6 @@ class ConfigManager:
             {"id": "meme_management", "label": t.get("meme_management", "Meme Management"), "icon": "/static/icons/mood.svg"}
         ]
     
-    def get_current_config(self) -> Dict[str, Any]:
-        """Get current configuration."""
-        return self.config.copy()
-    
     def get_color_options(self) -> List[Dict[str, str]]:
         """
         Get available color options from ColorLUT system.
@@ -1092,7 +1089,7 @@ class ConfigManager:
         
         try:
             # Try to use ColorLUT if available
-            from color_lut import ColorLUT
+            from utils.color_lut import ColorLUT
             
             options = []
             categories = ColorLUT.get_color_categories()

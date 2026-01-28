@@ -16,7 +16,7 @@ import json
 import time
 import os
 import threading
-from typing import Dict, List, Optional, Union, Tuple
+from typing import Dict, List, Optional, Union, Tuple, Set
 from datetime import datetime, timedelta
 
 # Optional import for secure config - graceful fallback if not available
@@ -36,13 +36,7 @@ except ImportError:
     def print_privacy_safe(message, **kwargs):
         print(message)
 
-import threading
-from typing import Dict, List, Set, Optional, Union, Tuple
 from lib.address_derivation import AddressDerivation
-import os
-import json
-import hashlib
-import time
 
 # Disable SSL warnings for self-signed certificates
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -191,12 +185,8 @@ class WalletBalanceAPI:
         self.bootstrap_increment = XPUB_BOOTSTRAP_INCREMENT
         self.bootstrap_max_addresses = XPUB_BOOTSTRAP_MAX_ADDRESSES
         
-        # Debug gap limit settings (using constants defined at top of file)
-        print(f"🔍 Gap limit detection enabled (last {self.gap_limit} addresses, +{self.derivation_increment} increment)")
-        if self.enable_bootstrap_search:
-            print(f"🚀 Bootstrap search enabled (max {self.bootstrap_max_addresses} addresses, +{self.bootstrap_increment} increment)")
-        else:
-            print(f"⏭️ Bootstrap search disabled")
+        # Debug gap limit settings - only show if this API will actually be used
+        # Note: This message is logged at init time, actual usage determined by config later
         
         
         # Set up caching strategy

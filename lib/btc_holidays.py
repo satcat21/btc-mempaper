@@ -16,6 +16,10 @@ btc_holidays = {
             "fr": {
                 "title": "Anniversaire de Bitcoin",
                 "description": "Ce jour-là en 2009, le Bloc Genèse a été miné par Satoshi Nakamoto, lançant officiellement la blockchain Bitcoin."
+            },
+            "it": {
+                "title": "Compleanno di Bitcoin",
+                "description": "In questo giorno del 2009, il Blocco Genesi è stato minato da Satoshi Nakamoto, avviando ufficialmente la blockchain di Bitcoin."
             }
         }
     ],
@@ -36,6 +40,10 @@ btc_holidays = {
             "fr": {
                 "title": "Jour Running Bitcoin",
                 "description": "Ce jour-là en 2009, Hal Finney a tweeté son emblématique tweet 'Running bitcoin', en rejoignant le réseau."
+            },
+            "it": {
+                "title": "Giorno Running Bitcoin",
+                "description": "In questo giorno del 2009, Hal Finney ha twittato il suo iconico tweet 'Running bitcoin', unendosi alla rete."
             }
         }
     ],
@@ -56,6 +64,10 @@ btc_holidays = {
             "fr": {
                 "title": "Jour de la Transaction Genèse",
                 "description": "Ce jour-là en 2009, la première transaction jamais diffusée sur le réseau Bitcoin a été envoyée par Satoshi Nakamoto à Hal Finney."
+            },
+            "it": {
+                "title": "Giorno della Transazione Genesi",
+                "description": "In questo giorno del 2009, la prima transazione mai trasmessa sulla rete Bitcoin è stata inviata da Satoshi Nakamoto a Hal Finney."
             }
         }
     ],
@@ -76,6 +88,10 @@ btc_holidays = {
             "fr": {
                 "title": "Jour de la Première Transaction",
                 "description": "Ce jour-là en 2009, Satoshi a transféré des BTC via la toute première transaction (non-coinbase). Le destinataire de cette transaction historique n'est autre que Hal Finney."
+            },
+            "it": {
+                "title": "Giorno della Prima Transazione",
+                "description": "In questo giorno del 2009, Satoshi ha trasferito BTC tramite la prima transazione (non-coinbase) della storia. Il destinatario di quella transazione storica non è altri che Hal Finney."
             }
         }
     ],
@@ -96,6 +112,10 @@ btc_holidays = {
             "fr": {
                 "title": "Jour du Pardon de Ross",
                 "description": "Ce jour-là en 2025, Ross Ulbricht a été gracié par le président Donald Trump fraîchement investi. Ross a été capturé le 1er octobre 2013 ('Jour Free Ross') et a été en détention pendant plus de 11 ans et 3 mois."
+            },
+            "it": {
+                "title": "Giorno della Grazia di Ross",
+                "description": "In questo giorno del 2025, Ross Ulbricht è stato graziato dal presidente Donald Trump appena insediato. Ross è stato catturato il 1° ottobre 2013 ('Giorno Free Ross') ed è stato in custodia per oltre 11 anni e 3 mesi."
             }
         }
     ],
@@ -116,6 +136,10 @@ btc_holidays = {
             "fr": {
                 "title": "Jour du Mille Milliards de Dollars",
                 "description": "Ce jour-là en 2021, la capitalisation boursière de tous les BTC a dépassé 1 billion USD pour la première fois."
+            },
+            "it": {
+                "title": "Giorno del Trilione di Dollari",
+                "description": "In questo giorno del 2021, la capitalizzazione di mercato di tutti i BTC ha superato per la prima volta 1 trilione di USD."
             }
         }
     ],
@@ -136,6 +160,10 @@ btc_holidays = {
             "fr": {
                 "title": "Jour de la Mort de Mt. Gox",
                 "description": "Ce jour-là en 2013, Mt. Gox, la plus grande bourse de bitcoin au monde, est tombée hors ligne en raison d'insolvabilité, après avoir perdu 640 000 BTC."
+            },
+            "it": {
+                "title": "Giorno della Morte di Mt. Gox",
+                "description": "In questo giorno del 2013, Mt. Gox, il più grande exchange di bitcoin al mondo, è andato offline a causa dell'insolvenza, dopo aver perso 640.000 BTC."
             }
         }
     ],
@@ -156,6 +184,10 @@ btc_holidays = {
             "fr": {
                 "title": "Jour de la Pizza Lightning",
                 "description": "Ce jour-là en 2018, Laszlo Hanyecz est revenu pour acheter une pizza via le réseau Lightning."
+            },
+            "it": {
+                "title": "Giorno della Pizza Lightning",
+                "description": "In questo giorno del 2018, Laszlo Hanyecz è tornato per comprare pizza tramite Lightning Network."
             }
         }
     ],
@@ -176,6 +208,10 @@ btc_holidays = {
             "fr": {
                 "title": "Jour de la Parité de l'Or",
                 "description": "Ce jour-là en 2017, 1 BTC a dépassé pour la première fois le prix d'une once d'or."
+            },
+            "it": {
+                "title": "Giorno della Parità con l'Oro",
+                "description": "In questo giorno del 2017, 1 BTC ha superato per la prima volta il prezzo di 1 oncia d'oro."
             }
         }
     ],
@@ -196,6 +232,10 @@ btc_holidays = {
             "fr": {
                 "title": "Jour du Milliard de Dollars",
                 "description": "Ce jour-là en 2013, la capitalisation boursière de tous les BTC a dépassé 1 milliard USD pour la première fois."
+            },
+            "it": {
+                "title": "Giorno del Miliardo di Dollari",
+                "description": "In questo giorno del 2013, la capitalizzazione di mercato di tutti i BTC ha superato per la prima volta 1 miliardo di USD."
             }
         }
     ],
@@ -216,6 +256,10 @@ btc_holidays = {
             "fr": {
                 "title": "Anniversaire de Satoshi",
                 "description": "Satoshi Nakamoto a indiqué sa date de naissance comme étant le 5 avril 1975."
+            },
+            "it": {
+                "title": "Compleanno di Satoshi",
+                "description": "Satoshi Nakamoto ha indicato come data di nascita il 5 aprile 1975."
             }
         }
     ],
@@ -236,6 +280,10 @@ btc_holidays = {
             "fr": {
                 "title": "Jour du Halving #4",
                 "description": "Ce jour-là en 2024, le quatrième 'Halving' a réduit la subvention de 6,25 BTC à 3,125 BTC."
+            },
+            "it": {
+                "title": "Giorno dell'Halving #4",
+                "description": "In questo giorno del 2024, il quarto 'Halving' ha ridotto il sussidio da 6,25 BTC a 3,125 BTC."
             }
         }
     ],
@@ -256,6 +304,10 @@ btc_holidays = {
             "fr": {
                 "title": "Jour du Distributeur Bitcoin",
                 "description": "Ce jour-là en 2013, le tout premier distributeur automatique Bitcoin a été installé dans un café de Vancouver."
+            },
+            "it": {
+                "title": "Giorno dell'ATM Bitcoin",
+                "description": "In questo giorno del 2013, il primo ATM Bitcoin in assoluto è stato installato in una caffetteria di Vancouver."
             }
         }
     ],
@@ -276,6 +328,10 @@ btc_holidays = {
             "fr": {
                 "title": "Jour du Halving #3",
                 "description": "Ce jour-là en 2020, le troisième 'Halving' a réduit la subvention de 12,5 BTC à 6,25 BTC."
+            },
+            "it": {
+                "title": "Giorno dell'Halving #3",
+                "description": "In questo giorno del 2020, il terzo 'Halving' ha ridotto il sussidio da 12,5 BTC a 6,25 BTC."
             }
         }
     ],
@@ -296,6 +352,10 @@ btc_holidays = {
             "fr": {
                 "title": "Jour de la Pizza Bitcoin",
                 "description": "Ce jour-là en 2010, Laszlo Hanyecz a payé 10 000 BTC pour deux pizzas."
+            },
+            "it": {
+                "title": "Giorno della Pizza Bitcoin",
+                "description": "In questo giorno del 2010, Laszlo Hanyecz ha pagato 10.000 BTC per due pizze."
             }
         }
     ],
@@ -316,6 +376,10 @@ btc_holidays = {
             "fr": {
                 "title": "Jour du Halving #2",
                 "description": "Ce jour-là en 2016, le deuxième 'Halving' a réduit la subvention de 25 BTC à 12,5 BTC."
+            },
+            "it": {
+                "title": "Giorno dell'Halving #2",
+                "description": "In questo giorno del 2016, il secondo 'Halving' ha ridotto il sussidio da 25 BTC a 12,5 BTC."
             }
         }
     ],
@@ -336,6 +400,10 @@ btc_holidays = {
             "fr": {
                 "title": "Jour de l'Indépendance Bitcoin (Jour UASF)",
                 "description": "Ce jour-là en 2017, des membres de la communauté ont programmé l'activation d'un User-Activated Soft Fork (UASF)."
+            },
+            "it": {
+                "title": "Giorno dell'Indipendenza di Bitcoin (Giorno UASF)",
+                "description": "In questo giorno del 2017, membri della comunità hanno programmato l'attivazione di un User-Activated Soft Fork (UASF)."
             }
         }
     ],
@@ -356,6 +424,10 @@ btc_holidays = {
             "fr": {
                 "title": "Jour du Verrouillage SegWit",
                 "description": "Ce jour-là en 2017, la mise à niveau Segregated Witness a été verrouillée."
+            },
+            "it": {
+                "title": "Giorno del Lock-In di SegWit",
+                "description": "In questo giorno del 2017, l'aggiornamento Segregated Witness è stato bloccato."
             }
         }
     ],
@@ -376,6 +448,10 @@ btc_holidays = {
             "fr": {
                 "title": "Jour d'Enregistrement de Bitcoin.org",
                 "description": "Ce jour-là en 2008, Satoshi Nakamoto a enregistré bitcoin.org."
+            },
+            "it": {
+                "title": "Giorno della Registrazione di Bitcoin.org",
+                "description": "In questo giorno del 2008, Satoshi Nakamoto ha registrato bitcoin.org."
             }
         }
     ],
@@ -396,6 +472,10 @@ btc_holidays = {
             "fr": {
                 "title": "Jour de l'Infini Bitcoin",
                 "description": "8/21 est célébrée de manière ludique comme ∞/21M."
+            },
+            "it": {
+                "title": "Giorno dell'Infinito di Bitcoin",
+                "description": "8/21 è celebrato scherzosamente come ∞/21M."
             }
         }
     ],
@@ -416,6 +496,10 @@ btc_holidays = {
             "fr": {
                 "title": "Jour d'Activation de SegWit",
                 "description": "Ce jour-là en 2017, SegWit s'est activé sur le réseau principal Bitcoin dans le Bloc #481 824."
+            },
+            "it": {
+                "title": "Giorno dell'Attivazione di SegWit",
+                "description": "In questo giorno del 2017, SegWit si è attivato sulla mainnet di Bitcoin nel Blocco #481.824."
             }
         }
     ],
@@ -436,6 +520,10 @@ btc_holidays = {
             "fr": {
                 "title": "Jour de Monnaie Légale Bitcoin",
                 "description": "Ce jour-là en 2021, BTC est devenu monnaie légale au Salvador."
+            },
+            "it": {
+                "title": "Giorno della Moneta Legale Bitcoin",
+                "description": "In questo giorno del 2021, BTC è diventato moneta a corso legale in El Salvador."
             }
         }
     ],
@@ -456,6 +544,10 @@ btc_holidays = {
             "fr": {
                 "title": "Jour Free Ross",
                 "description": "Ce jour-là en 2013, Ross Ulbricht a été capturé pour avoir créé The Silk Road."
+            },
+            "it": {
+                "title": "Giorno Free Ross",
+                "description": "In questo giorno del 2013, Ross Ulbricht è stato catturato per aver creato The Silk Road."
             }
         }
     ],
@@ -476,6 +568,10 @@ btc_holidays = {
             "fr": {
                 "title": "Jour de la Défaite du BearWhale",
                 "description": "Ce jour-là en 2014, une baleine bitcoin a posté un mur de vente de 30 000 BTC et a été vaincue."
+            },
+            "it": {
+                "title": "Giorno della Sconfitta del BearWhale",
+                "description": "In questo giorno del 2014, una balena di bitcoin ha pubblicato un muro di vendita di 30.000 BTC ed è stata sconfitta."
             }
         }
     ],
@@ -496,6 +592,10 @@ btc_holidays = {
             "fr": {
                 "title": "Jour du Livre Blanc Bitcoin",
                 "description": "Ce jour-là en 2008, Satoshi a publié le livre blanc Bitcoin."
+            },
+            "it": {
+                "title": "Giorno del Whitepaper di Bitcoin",
+                "description": "In questo giorno del 2008, Satoshi ha pubblicato il whitepaper di Bitcoin."
             }
         }
     ],
@@ -516,6 +616,10 @@ btc_holidays = {
             "fr": {
                 "title": "Jour de Diffe-Hellman",
                 "description": "Ce jour-là en 1976, Diffie et Hellman ont publié leur article sur les clés publiques/privées."
+            },
+            "it": {
+                "title": "Giorno di Diffe-Hellman",
+                "description": "In questo giorno del 1976, Diffie e Hellman hanno pubblicato il loro articolo sulle chiavi pubbliche/private."
             }
         }
     ],
@@ -536,6 +640,10 @@ btc_holidays = {
             "fr": {
                 "title": "Jour du Logo Bitcoin",
                 "description": "Ce jour-là en 2010, le logo emblématique de Bitcoin a été partagé par 'bitboy' sur Bitcointalk."
+            },
+            "it": {
+                "title": "Giorno del Logo Bitcoin",
+                "description": "In questo giorno del 2010, l'iconico logo Bitcoin è stato condiviso da 'bitboy' su Bitcointalk."
             }
         }
     ],
@@ -556,6 +664,10 @@ btc_holidays = {
             "fr": {
                 "title": "Jour de This is Gentlemen!",
                 "description": "Ce jour-là en 2014, un utilisateur Reddit excité a créé un mème légendaire."
+            },
+            "it": {
+                "title": "Giorno di This is Gentlemen!",
+                "description": "In questo giorno del 2014, un utente entusiasta di Reddit ha coniato un meme leggendario."
             }
         }
     ],
@@ -576,6 +688,10 @@ btc_holidays = {
             "fr": {
                 "title": "Jour du Halving #1",
                 "description": "Ce jour-là en 2012, le premier 'Halving' a réduit la subvention de 50 BTC à 25 BTC."
+            },
+            "it": {
+                "title": "Giorno dell'Halving #1",
+                "description": "In questo giorno del 2012, il primo 'Halving' ha ridotto il sussidio da 50 BTC a 25 BTC."
             }
         }
     ],
@@ -596,6 +712,10 @@ btc_holidays = {
             "fr": {
                 "title": "Jour des 'Cent Mille'",
                 "description": "Ce jour-là en 2024, BTC a atteint 100 000 USD."
+            },
+            "it": {
+                "title": "Giorno dei 'Centomila'",
+                "description": "In questo giorno del 2024, BTC ha raggiunto i 100.000 USD."
             }
         }
     ],
@@ -616,6 +736,10 @@ btc_holidays = {
             "fr": {
                 "title": "Jour d'Adieu Satoshi",
                 "description": "Ce jour-là en 2010, Satoshi a fait son dernier post public sur Bitcointalk."
+            },
+            "it": {
+                "title": "Giorno dell'Addio a Satoshi",
+                "description": "In questo giorno del 2010, Satoshi ha fatto il suo ultimo post pubblico su Bitcointalk."
             }
         }
     ],
@@ -636,6 +760,10 @@ btc_holidays = {
             "fr": {
                 "title": "Jour HODL",
                 "description": "Ce jour-là en 2013, le légendaire post 'I AM HODLING' a été publié."
+            },
+            "it": {
+                "title": "Giorno HODL",
+                "description": "In questo giorno del 2013, è stato pubblicato il leggendario post 'I AM HODLING'."
             }
         }
     ]

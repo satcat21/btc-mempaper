@@ -39,6 +39,7 @@ These settings can be modified via the Web Dashboard (recommended) or by editing
 | **Display Driver** | `omni_device_name` | String | Driver name (Waveshare/Omni-EPD) | `waveshare_epd.epd7in3f` (Default), `inky.impression` |
 | **Display Width** | `display_width` | Number | Resolution Width (px) | `800` (Default), `600`, `648` |
 | **Display Height** | `display_height` | Number | Resolution Height (px) | `480` (Default), `448`, `400` |
+| **Skip Clear Display** | `skip_clear_display` | Boolean | Skip clearing before refresh (faster) | `true` (Fast ~39s, default), `false` (Full clear ~70s) |
 
 ---
 

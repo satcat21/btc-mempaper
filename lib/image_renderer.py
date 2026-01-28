@@ -23,7 +23,6 @@ import sys
 import random
 import subprocess
 from datetime import datetime
-from tracemalloc import start
 from PIL import Image, ImageDraw, ImageFont
 from babel.dates import format_date
 
@@ -109,6 +108,80 @@ BLOCK_INNER_MARGIN = 10       # Space inside grey section/block
 SECTION_SIDE_PADDING = SIDE_PADDING  # Alias for clarity
 BLOCK_RADIUS = CARD_RADIUS            # Alias for clarity
 
+# --- Text and Label Constants ---
+LABEL_PADDING_TOP = 5         # Vertical padding above labels
+LABEL_TO_VALUE_SPACING = 8    # Space between label and value
+LINE_SPACING_DEFAULT = 10     # Default line spacing for wrapped text
+LINE_SPACING_MULTILINE = 4    # Spacing between lines in multiline text
+HOLIDAY_TITLE_DESC_GAP = 3    # Gap between holiday title and description
+HOLIDAY_PADDING = 24          # Padding around holiday content
+
+# --- Font Sizes ---
+FONT_SIZE_SMALL_LABEL = 14    # Small labels
+FONT_SIZE_LARGE_VALUE = 27    # Large values in info blocks
+FONT_SIZE_BLOCK_VALUE = 48    # Block height value
+FONT_SIZE_HOLIDAY_TITLE = 22  # Holiday title
+FONT_SIZE_HOLIDAY_DESC = 18   # Holiday description
+
+# --- Content Layout ---
+STANDARD_SPACING = 20         # Standard gap between elements
+MEME_RADIUS = 20              # Border radius for meme images
+MEME_MIN_HEIGHT = 50          # Minimum height for meme
+MEME_SIDE_MARGIN = 40         # Total horizontal margin for meme (20 per side)
+
+# --- Info Block Offsets ---
+INFO_BLOCK_VERTICAL_ADJUSTMENT = 10  # Vertical offset adjustment for info block content
+
+
+class LayoutCalculator:
+    """Helper class for efficient layout calculations with consistent spacing."""
+    
+    def __init__(self, width, height):
+        self.width = width
+        self.height = height
+        self.content_width = width - (SECTION_SIDE_PADDING * 2)
+        self.inner_content_width = self.content_width - (BLOCK_INNER_MARGIN * 2)
+    
+    def get_centered_x(self, element_width):
+        """Calculate X position to center an element."""
+        return (self.width - element_width) // 2
+    
+    def get_column_center(self, num_columns, column_index):
+        """Calculate center X position for a column in multi-column layout."""
+        col_width = self.width // num_columns
+        return col_width * column_index + (col_width // 2)
+    
+    def get_text_centered_x(self, bbox, column_center=None):
+        """Calculate X position to center text based on bounding box."""
+        text_width = bbox[2] - bbox[0]
+        if column_center is not None:
+            return column_center - (text_width // 2)
+        return self.get_centered_x(text_width)
+    
+    def get_info_block_bounds(self):
+        """Get standardized bounding box for info blocks."""
+        return (
+            SECTION_SIDE_PADDING + BLOCK_INNER_MARGIN,
+            SECTION_SIDE_PADDING + BLOCK_INNER_MARGIN,
+            self.width - SECTION_SIDE_PADDING - BLOCK_INNER_MARGIN
+        )
+    
+    def calculate_distributed_spacing(self, available_height, content_height, num_gaps):
+        """Calculate evenly distributed spacing between elements."""
+        if num_gaps <= 0:
+            return STANDARD_SPACING
+        remaining_space = available_height - content_height
+        return max(STANDARD_SPACING, remaining_space // num_gaps)
+    
+    def get_label_y(self, block_y):
+        """Get Y position for labels in info blocks."""
+        return block_y + LABEL_PADDING_TOP
+    
+    def get_value_y(self, block_y, label_height):
+        """Get Y position for values in info blocks."""
+        return block_y + label_height + LABEL_TO_VALUE_SPACING + LABEL_PADDING_TOP
+
+
 class ImageRenderer:
     def __init__(self, config, translations):
         self.config = config
@@ -127,6 +200,10 @@ class ImageRenderer:
             self.width, self.height = self.display_height, self.display_width  # 480x800
         else:
             self.width, self.height = self.display_width, self.display_height  # 800x480
+        
+        # Initialize layout calculator for efficient positioning
+        self.layout = LayoutCalculator(self.width, self.height)
+        
         self.meme_dir = os.path.join("static", "memes")
         self.font_regular = os.path.join("static", "fonts", "Roboto-Regular.ttf")
         self.font_bold = os.path.join("static", "fonts", "Roboto-Bold.ttf")
@@ -290,9 +367,7 @@ class ImageRenderer:
         
     # --- Info Block Renderers ---
     def render_btc_price_block(self, draw, info_block_y, font_label, font_value, price_data, web_quality=False):
-        """
-        Render BTC price and Moscow time info block with two-column table layout.
-        """
+        """Render BTC price and Moscow time info block with two-column table layout."""
         if price_data is None or price_data.get("error"):
             return info_block_y
 
@@ -305,52 +380,57 @@ class ImageRenderer:
             "CHF": "CHF", "AUD": "A$", "JPY": "¥"
         }
         fiat_currency_symbol = currency_symbols.get(currency, currency)
-
         moscow_time_unit = self.config.get("moscow_time_unit", "sats")
 
+        # Determine header text
         header_left_text = self.t.get("btc_price", "BTC price")
         if moscow_time_unit == "hour":
             header_right_text = self.t.get("moscow_time", "Moscow time")
         else:
             header_right_text = f"1 {currency} ="
 
-        col_width = self.width // 2
-        left_col_center_x = col_width // 2
-        right_col_center_x = col_width + (col_width // 2)
+        # Calculate column centers
+        left_col_center = self.layout.get_column_center(2, 0)
+        right_col_center = self.layout.get_column_center(2, 1)
 
+        # Create fonts
         try:
-            font_small_label = ImageFont.truetype(self.font_regular, 14)
+            font_small_label = ImageFont.truetype(self.font_regular, FONT_SIZE_SMALL_LABEL)
         except:
             font_small_label = font_label
 
-        bbox_left = font_small_label.getbbox(header_left_text)
-        bbox_right = font_small_label.getbbox(header_right_text)
-
-        left_x = left_col_center_x - (bbox_left[2] - bbox_left[0]) // 2
-        right_x = right_col_center_x - (bbox_right[2] - bbox_right[0]) // 2
-
+        # Draw block background
+        block_bounds = self.layout.get_info_block_bounds()
         draw.rounded_rectangle(
-            [(SECTION_SIDE_PADDING + BLOCK_INNER_MARGIN, info_block_y),
-            (self.width - SECTION_SIDE_PADDING - BLOCK_INNER_MARGIN, info_block_y + INFO_BLOCK_HEIGHT)],
+            [(block_bounds[0], info_block_y),
+            (block_bounds[2], info_block_y + INFO_BLOCK_HEIGHT)],
             radius=BLOCK_RADIUS,
             fill=self.get_color("info_bg", web_quality),
             outline=self.get_color("info_outline", web_quality),
             width=4
         )
 
-        text_y = info_block_y + 5
+        # Render labels
+        text_y = self.layout.get_label_y(info_block_y)
+        bbox_left = font_small_label.getbbox(header_left_text)
+        bbox_right = font_small_label.getbbox(header_right_text)
+        
+        left_x = self.layout.get_text_centered_x(bbox_left, left_col_center)
+        right_x = self.layout.get_text_centered_x(bbox_right, right_col_center)
+        
         draw.text((left_x, text_y), header_left_text, font=font_small_label, fill=self.get_color("info_header", web_quality))
         draw.text((right_x, text_y), header_right_text, font=font_small_label, fill=self.get_color("info_header", web_quality))
 
-        info_block_y += (bbox_left[3] - bbox_left[1]) + 8
+        # Render values
+        label_height = bbox_left[3] - bbox_left[1]
+        value_y = self.layout.get_value_y(info_block_y, label_height)
 
         try:
-            font_large_value = ImageFont.truetype(self.font_bold, 27)
+            font_large_value = ImageFont.truetype(self.font_bold, FONT_SIZE_LARGE_VALUE)
         except:
             font_large_value = font_value
 
         price_value_text = f"{fiat_currency_symbol} {price:,.0f}"
-
         if moscow_time_unit == "hour":
             hours = moscow_time // 100
             minutes = moscow_time % 100
@@ -361,19 +441,16 @@ class ImageRenderer:
         bbox_price = font_large_value.getbbox(price_value_text)
         bbox_moscow = font_large_value.getbbox(moscow_time_text)
 
-        price_x = left_col_center_x - (bbox_price[2] - bbox_price[0]) // 2
-        moscow_x = right_col_center_x - (bbox_moscow[2] - bbox_moscow[0]) // 2
+        price_x = self.layout.get_text_centered_x(bbox_price, left_col_center)
+        moscow_x = self.layout.get_text_centered_x(bbox_moscow, right_col_center)
 
-        text_y = info_block_y + 5
-        draw.text((price_x, text_y), price_value_text, font=font_large_value, fill=self.get_color("btc_price", web_quality))
-        draw.text((moscow_x, text_y), moscow_time_text, font=font_large_value, fill=self.get_color("moscow_time", web_quality))
+        draw.text((price_x, value_y), price_value_text, font=font_large_value, fill=self.get_color("btc_price", web_quality))
+        draw.text((moscow_x, value_y), moscow_time_text, font=font_large_value, fill=self.get_color("moscow_time", web_quality))
 
         return info_block_y + INFO_BLOCK_HEIGHT + ELEMENT_MARGIN
 
     def render_bitaxe_block(self, draw, info_block_y, font_label, font_value, bitaxe_data, web_quality=False):
-        """
-        Render Bitaxe hashrate and valid blocks info block with two-column table layout.
-        """
+        """Render Bitaxe hashrate and valid blocks info block with two-column table layout."""
         if bitaxe_data is None or bitaxe_data.get("error"):
             return info_block_y
 
@@ -390,7 +467,6 @@ class ImageRenderer:
         
         if display_mode == "difficulty":
             header_right_text = self.t.get("best_difficulty", "Best Difficulty")
-            
             # Format difficulty
             if best_difficulty >= 1e12:
                 blocks_value_text = f"{best_difficulty / 1e12:.2f}T"
@@ -406,71 +482,77 @@ class ImageRenderer:
             header_right_text = self.t.get("valid_blocks", "Valid blocks found")
             blocks_value_text = str(valid_blocks)
 
-        col_width = self.width // 2
-        left_col_center_x = col_width // 2
-        right_col_center_x = col_width + (col_width // 2)
+        # Calculate column centers
+        left_col_center = self.layout.get_column_center(2, 0)
+        right_col_center = self.layout.get_column_center(2, 1)
 
         try:
-            font_small_label = ImageFont.truetype(self.font_regular, 14)
+            font_small_label = ImageFont.truetype(self.font_regular, FONT_SIZE_SMALL_LABEL)
         except:
             font_small_label = font_label
 
-        bbox_left = font_small_label.getbbox(header_left_text)
-        bbox_right = font_small_label.getbbox(header_right_text)
-
-        left_x = left_col_center_x - (bbox_left[2] - bbox_left[0]) // 2
-        right_x = right_col_center_x - (bbox_right[2] - bbox_right[0]) // 2
-
+        # Draw block background
+        block_bounds = self.layout.get_info_block_bounds()
         draw.rounded_rectangle(
-            [(SECTION_SIDE_PADDING + BLOCK_INNER_MARGIN, info_block_y),
-            (self.width - SECTION_SIDE_PADDING - BLOCK_INNER_MARGIN, info_block_y + INFO_BLOCK_HEIGHT)],
+            [(block_bounds[0], info_block_y),
+            (block_bounds[2], info_block_y + INFO_BLOCK_HEIGHT)],
             radius=BLOCK_RADIUS,
             fill=self.get_color("info_bg", web_quality),
             outline=self.get_color("info_outline", web_quality),
             width=4
         )
-        text_y = info_block_y + 5
+        
+        # Render labels
+        text_y = self.layout.get_label_y(info_block_y)
+        bbox_left = font_small_label.getbbox(header_left_text)
+        bbox_right = font_small_label.getbbox(header_right_text)
+
+        left_x = self.layout.get_text_centered_x(bbox_left, left_col_center)
+        right_x = self.layout.get_text_centered_x(bbox_right, right_col_center)
 
         draw.text((left_x, text_y), header_left_text, font=font_small_label, fill=self.get_color("info_header", web_quality))
         draw.text((right_x, text_y), header_right_text, font=font_small_label, fill=self.get_color("info_header", web_quality))
 
-        info_block_y += (bbox_left[3] - bbox_left[1]) + 8
+        # Render values
+        label_height = bbox_left[3] - bbox_left[1]
+        value_y = self.layout.get_value_y(info_block_y, label_height)
 
         try:
-            font_large_value = ImageFont.truetype(self.font_bold, 27)
+            font_large_value = ImageFont.truetype(self.font_bold, FONT_SIZE_LARGE_VALUE)
         except:
             font_large_value = font_value
 
         hashrate_value_text = f"{total_ths:.2f} TH/s"
-        # blocks_value_text is already set above based on mode
-
         bbox_hashrate = font_large_value.getbbox(hashrate_value_text)
         bbox_blocks = font_large_value.getbbox(blocks_value_text)
 
-        hashrate_x = left_col_center_x - (bbox_hashrate[2] - bbox_hashrate[0]) // 2
-        blocks_x = right_col_center_x - (bbox_blocks[2] - bbox_blocks[0]) // 2
+        hashrate_x = self.layout.get_text_centered_x(bbox_hashrate, left_col_center)
+        blocks_x = self.layout.get_text_centered_x(bbox_blocks, right_col_center)
 
-        text_y = info_block_y + 5
-        draw.text((hashrate_x, text_y), hashrate_value_text, font=font_large_value, fill=self.get_color("hashrate", web_quality))
-        draw.text((blocks_x, text_y), blocks_value_text, font=font_large_value, fill=self.get_color("found_blocks", web_quality))
+        draw.text((hashrate_x, value_y), hashrate_value_text, font=font_large_value, fill=self.get_color("hashrate", web_quality))
+        draw.text((blocks_x, value_y), blocks_value_text, font=font_large_value, fill=self.get_color("found_blocks", web_quality))
 
         return info_block_y + INFO_BLOCK_HEIGHT + ELEMENT_MARGIN
 
     def render_wallet_balances_block(self, draw, info_block_y, font_label, font_value, balance_data, web_quality=False, startup_mode=False):
+        """Render wallet balances info block with two-column table layout.
+        
+        Args:
+            draw: PIL drawing context
+            info_block_y: Y position for info block
+            font_label: Font for labels
+            font_value: Font for values
+            balance_data: Dictionary with balance information
+            web_quality: True for web display, False for e-ink
+            startup_mode: If True, use cached data only and skip expensive gap limit detection
+            
+        Returns:
+            int: Y position after the info block
+        """
         # Defensive: Ensure balance_data is a dict and not a list
         if balance_data is None or not isinstance(balance_data, dict) or balance_data.get("error"):
             return info_block_y
-        """
-        Render wallet balances info block with two-column table layout.
-        Args:
-            startup_mode (bool): If True, use cached data only and skip expensive gap limit detection
-        """
-        if balance_data is None or balance_data.get("error"):
-            return info_block_y
 
-        total_balance_btc = balance_data.get("total_btc", 0)
-        balance_unit = balance_data.get("unit", "BTC")
-        show_fiat = balance_data.get("show_fiat", False)
         total_balance_btc = balance_data.get("total_btc", 0)
         balance_unit = balance_data.get("unit", "BTC")
         show_fiat = balance_data.get("show_fiat", False)
@@ -480,12 +562,13 @@ class ImageRenderer:
         header_left_text = self.t.get("total_balance", "Total balance") + f" ({balance_unit})"
         header_right_text = self.t.get("fiat_value", "Fiat value") if show_fiat else ""
 
-        col_width = self.width // 2 if show_fiat else self.width
-        left_col_center_x = col_width // 2
-        right_col_center_x = col_width + (col_width // 2) if show_fiat else 0
+        # Use LayoutCalculator for column positioning
+        num_columns = 2 if show_fiat else 1
+        left_col_center_x = self.layout.get_column_center(num_columns, 0)
+        right_col_center_x = self.layout.get_column_center(num_columns, 1) if show_fiat else 0
 
         try:
-            font_small_label = ImageFont.truetype(self.font_regular, 14)
+            font_small_label = ImageFont.truetype(self.font_regular, FONT_SIZE_SMALL_LABEL)
         except Exception:
             font_small_label = font_label
 
@@ -499,19 +582,19 @@ class ImageRenderer:
         )
 
         bbox_left = font_small_label.getbbox(header_left_text)
-        left_x = left_col_center_x - (bbox_left[2] - bbox_left[0]) // 2
-        text_y = info_block_y + 5
+        left_x = self.layout.get_text_centered_x(bbox_left, left_col_center_x)
+        text_y = self.layout.get_label_y(info_block_y)
         draw.text((left_x, text_y), header_left_text, font=font_small_label, fill=self.get_color("info_header", web_quality))
 
         if show_fiat and header_right_text:
             bbox_right = font_small_label.getbbox(header_right_text)
-            right_x = right_col_center_x - (bbox_right[2] - bbox_right[0]) // 2
+            right_x = self.layout.get_text_centered_x(bbox_right, right_col_center_x)
             draw.text((right_x, text_y), header_right_text, font=font_small_label, fill=self.get_color("info_header", web_quality))
 
-        info_block_y += (bbox_left[3] - bbox_left[1]) + 8
+        info_block_y += (bbox_left[3] - bbox_left[1]) + LABEL_TO_VALUE_SPACING
 
         try:
-            font_large_value = ImageFont.truetype(self.font_bold, 27)
+            font_large_value = ImageFont.truetype(self.font_bold, FONT_SIZE_LARGE_VALUE)
         except Exception:
             font_large_value = font_value
 
@@ -522,43 +605,31 @@ class ImageRenderer:
             balance_value_text = f"{total_balance_btc:.8f}"
 
         bbox_balance = font_large_value.getbbox(balance_value_text)
-        balance_x = left_col_center_x - (bbox_balance[2] - bbox_balance[0]) // 2
-        text_y = info_block_y + 5
+        balance_x = self.layout.get_text_centered_x(bbox_balance, left_col_center_x)
+        text_y = self.layout.get_value_y(info_block_y)
         draw.text((balance_x, text_y), balance_value_text, font=font_large_value, fill=self.get_color("wallet_balance", web_quality))
 
-        if show_fiat and fiat_value is not None:
+        if show_fiat:
             currency_symbols = {
                 "USD": "$", "EUR": "€", "GBP": "£", "CAD": "C$", 
                 "CHF": "CHF", "AUD": "A$", "JPY": "¥"
             }
             fiat_currency_symbol = currency_symbols.get(fiat_currency, fiat_currency)
 
-            if fiat_currency == "JPY":
-                fiat_value_text = f"{fiat_currency_symbol} {fiat_value:,.0f}"
-            elif fiat_currency == "EUR":
-                fiat_value_text = f"{fiat_currency_symbol} {fiat_value:,.2f}"
+            if fiat_value is not None:
+                if fiat_currency == "JPY":
+                    fiat_value_text = f"{fiat_currency_symbol} {fiat_value:,.0f}"
+                elif fiat_currency == "EUR":
+                    fiat_value_text = f"{fiat_currency_symbol} {fiat_value:,.2f}"
+                else:
+                    fiat_value_text = f"{fiat_currency_symbol} {fiat_value:,.2f}"
             else:
-                fiat_value_text = f"{fiat_currency_symbol} {fiat_value:,.2f}"
-
-            bbox_fiat = font_large_value.getbbox(fiat_value_text)
-            fiat_x = right_col_center_x - (bbox_fiat[2] - bbox_fiat[0]) // 2
-            text_y = info_block_y + 5
-            draw.text((fiat_x, text_y), fiat_value_text, font=font_large_value, fill=self.get_color("fiat_balance", web_quality))
-        elif show_fiat:
-            currency_symbols = {
-                "USD": "$", "EUR": "€", "GBP": "£", "CAD": "C$", 
-                "CHF": "CHF", "AUD": "A$", "JPY": "¥"
-            }
-            fiat_currency_symbol = currency_symbols.get(fiat_currency, fiat_currency)
-
-            if fiat_currency == "EUR":
-                fiat_value_text = f"{fiat_currency_symbol} 0.00"
-            else:
+                # Show 0.00 for EUR/others when no value
                 fiat_value_text = f"{fiat_currency_symbol} 0.00"
 
             bbox_fiat = font_large_value.getbbox(fiat_value_text)
-            fiat_x = right_col_center_x - (bbox_fiat[2] - bbox_fiat[0]) // 2
-            text_y = info_block_y + 5
+            fiat_x = self.layout.get_text_centered_x(bbox_fiat, right_col_center_x)
+            text_y = self.layout.get_value_y(info_block_y)
             draw.text((fiat_x, text_y), fiat_value_text, font=font_large_value, fill=self.get_color("fiat_balance", web_quality))
 
         return info_block_y + INFO_BLOCK_HEIGHT + ELEMENT_MARGIN
@@ -728,9 +799,7 @@ class ImageRenderer:
             return None
     
     def _wrap_text_at_chars(self, text, max_chars=50):
-        """
-        Wrap text to multiple lines, breaking at word boundaries.
-        Ensures no word is split and each line stays within max_chars limit.
+        """Wrap text to multiple lines, breaking at word boundaries.
         
         Args:
             text (str): Text to wrap
@@ -747,18 +816,15 @@ class ImageRenderer:
         words = text.split()
         
         for word in words:
-            # Check if adding this word would exceed the limit
             test_line = current_line + (" " if current_line else "") + word
             
             if len(test_line) <= max_chars:
                 current_line = test_line
             else:
-                # Current line is full, start a new line
                 if current_line:
                     lines.append(current_line)
                 current_line = word
         
-        # Add the last line if there's any content
         if current_line:
             lines.append(current_line)
         
@@ -899,6 +965,10 @@ class ImageRenderer:
             # French format (e.g., "22 juillet 2025")
             return format_date(today, format="d MMMM y", locale="fr")
         
+        elif self.lang == "it":
+            # Italian format (e.g., "22 luglio 2025")
+            return format_date(today, format="d MMMM y", locale="it")
+        
         else:
             # Fallback to ISO format
             return today.strftime("%Y-%m-%d")
@@ -942,29 +1012,26 @@ class ImageRenderer:
         return min_font_size
 
     def draw_centered(self, draw, text, y, font, fill="black"):
-        """
-        Draw text centered horizontally at specified y position.
+        """Draw text centered horizontally at specified y position.
         
         Args:
             draw (ImageDraw): PIL drawing context
             text (str): Text to draw
             y (int): Y position
             font (ImageFont): Font to use
-            fill (str or tuple): Text color (string name or RGB tuple)
+            fill (str or tuple): Text color
             
         Returns:
             int: Y position after text (for next element)
         """
         bbox = font.getbbox(text)
-        text_width = bbox[2] - bbox[0]
         text_height = bbox[3] - bbox[1]
-        x = (self.width - text_width) // 2
+        x = self.layout.get_text_centered_x(bbox)
         draw.text((x, y), text, font=font, fill=fill)
-        return y + text_height + 10
+        return y + text_height + LINE_SPACING_DEFAULT
     
-    def draw_multiline_centered(self, draw, text, y, font, max_width, fill="black", line_spacing=4):
-        """
-        Draw multi-line text centered horizontally with word wrapping.
+    def draw_multiline_centered(self, draw, text, y, font, max_width, fill="black", line_spacing=LINE_SPACING_MULTILINE):
+        """Draw multi-line text centered horizontally with word wrapping.
         
         Args:
             draw (ImageDraw): PIL drawing context
@@ -1001,9 +1068,8 @@ class ImageRenderer:
         # Draw each line centered
         for line in lines:
             bbox = font.getbbox(line)
-            text_width = bbox[2] - bbox[0]
             text_height = bbox[3] - bbox[1]
-            x = (self.width - text_width) // 2
+            x = self.layout.get_text_centered_x(bbox)
             draw.text((x, y), line, font=font, fill=fill)
             y += text_height + line_spacing
         
@@ -1822,17 +1888,19 @@ class ImageRenderer:
             # Get the configured fee parameter to display the fee type
             fee_parameter = self.config.get("fee_parameter", "minimumFee")
             
-            # Map technical fee parameter names to user-friendly display names
-            fee_type_names = {
-                "fastestFee": "Fastest",
-                "halfHourFee": "Half Hour", 
-                "hourFee": "Hour",
-                "economyFee": "Economy",
-                "minimumFee": "Minimum"
+            # Map technical fee parameter names to translation keys
+            fee_type_keys = {
+                "fastestFee": "fastest",
+                "halfHourFee": "half_hour", 
+                "hourFee": "hour",
+                "economyFee": "economy",
+                "minimumFee": "minimum"
             }
             
-            fee_type_display = fee_type_names.get(fee_parameter, "Unknown")
-            fee_text = f"{fee_type_display} fee: {configured_fee} sat/vB"
+            # Get the translated fee type name
+            fee_key = fee_type_keys.get(fee_parameter, "minimum")
+            fee_type_display = self.t.get(fee_key, "Unknown")
+            fee_text = f"{fee_type_display}: {configured_fee} sat/vB"
             
             try:
                 font_small = ImageFont.truetype(self.font_regular, 12)
@@ -1926,8 +1994,7 @@ class ImageRenderer:
 
     def _render_holiday_info(self, draw, holiday_info, font_title, font_desc, 
                            holiday_box_top_y, holiday_height, web_quality=False):
-        """
-        Render Bitcoin holiday information dynamically centered in available space.
+        """Render Bitcoin holiday information dynamically centered in available space.
         
         Args:
             draw (ImageDraw): Drawing context
@@ -1959,10 +2026,10 @@ class ImageRenderer:
         # Calculate total description height
         desc_bbox = font_desc.getbbox("Ay")  # Sample text for line height
         line_height = desc_bbox[3] - desc_bbox[1]
-        desc_total_height = len(desc_lines) * line_height + (len(desc_lines) - 1) * 4  # 4px line spacing
+        desc_total_height = len(desc_lines) * line_height + (len(desc_lines) - 1) * LINE_SPACING_MULTILINE
             
         # Calculate total holiday content height
-        total_holiday_height = title_height + 3 + desc_total_height  # 3px gap between title and desc
+        total_holiday_height = title_height + HOLIDAY_TITLE_DESC_GAP + desc_total_height
             
         # Calculate equal top and bottom padding
         vertical_padding = (holiday_height - total_holiday_height) // 2
@@ -1971,15 +2038,14 @@ class ImageRenderer:
         # Render the holiday title
         y = self.draw_centered(draw, title_text, y, font_title, fill=title_color)
             
-        # Render the holiday description lines (3px gap already in padding calculation)
-        y += 3  # Gap after title (matches the 3px in total_holiday_height calculation)
+        # Render the holiday description lines
+        y += HOLIDAY_TITLE_DESC_GAP
         for line in desc_lines:
             bbox = font_desc.getbbox(line)
-            text_width = bbox[2] - bbox[0]
             text_height = bbox[3] - bbox[1]
-            x = (self.width - text_width) // 2
+            x = self.layout.get_text_centered_x(bbox)
             draw.text((x, y), line, font=font_desc, fill=desc_color)
-            y += text_height + 4 # 4px spacing
+            y += text_height + LINE_SPACING_MULTILINE
         #else:
         #    print(f"🚫 Holiday hidden due to prioritize_large_scaled_meme=True")
     

@@ -144,16 +144,6 @@ class ColorLUT:
         return color_def.get(display_type, color_def["web"])
     
     @classmethod
-    def get_color_options(cls):
-        """
-        Get list of available color options for web interface.
-        
-        Returns:
-            dict: {color_key: display_name} mapping
-        """
-        return {key: value["name"] for key, value in cls.COLOR_DEFINITIONS.items()}
-    
-    @classmethod
     def get_color_categories(cls):
         """
         Get colors organized by category for web interface.

@@ -7,15 +7,11 @@ Tokens are stored securely and can be revoked as needed.
 
 import secrets
 import time
-import json
 import logging
 from typing import Dict, Optional, List
-from datetime import datetime, timedelta
 from managers.secure_cache_manager import SecureCacheManager
 
 # Setup logging
-logger = logging.getLogger(__name__)
-
 logger = logging.getLogger(__name__)
 
 

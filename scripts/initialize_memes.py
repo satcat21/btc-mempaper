@@ -62,41 +62,6 @@ def is_valid_image(file_path):
     # Check for common image file signatures
     if header.startswith(b'\xff\xd8\xff'):  # JPEG
         return True
-    import os
-import subprocess
-from time import sleep
-import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
-import urllib3
-import ssl
-
-# Disable SSL verification warnings and context
-ssl._create_default_https_context = ssl._create_unverified_context
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
-# Setup directories
-script_dir = os.path.dirname(os.path.abspath(__file__))
-download_dir = os.path.join(script_dir, "static", "memes")
-os.makedirs(download_dir, exist_ok=True)
-
-base_url = "https://bitcoinmemes.info/assets/images/"
-image_number = 1
-consecutive_failures = 0
-max_failures = 10
-
-def is_valid_image(file_path):
-    """Check if the downloaded file is actually an image"""
-    if not os.path.exists(file_path) or os.path.getsize(file_path) == 0:
-        return False
-    
-    # Read first few bytes to check for image headers
-    with open(file_path, 'rb') as f:
-        header = f.read(10)
-        
-    # Check for common image file signatures
-    if header.startswith(b'\xff\xd8\xff'):  # JPEG
-        return True
     elif header.startswith(b'\x89PNG\r\n\x1a\n'):  # PNG
         return True
     elif header.startswith(b'GIF87a') or header.startswith(b'GIF89a'):  # GIF

@@ -226,7 +226,8 @@ class BlockRewardMonitor:
             monitored_addresses = list(set(monitored_addresses))
             
             self.monitored_addresses = set(monitored_addresses)
-            print(f"📍 Monitoring {len(self.monitored_addresses)} addresses for block rewards")
+            if len(self.monitored_addresses) > 0:
+                print(f"📍 Monitoring {len(self.monitored_addresses)} addresses for block rewards")
             
             # Clean up legacy blocks_by_address data for addresses no longer monitored
             if hasattr(self, 'blocks_by_address') and self.blocks_by_address:
@@ -256,7 +257,7 @@ class BlockRewardMonitor:
                 print(f"🔄 Updating cache system with {len(monitored_addresses)} addresses")
                 self.cache.update_monitored_addresses(monitored_addresses)
             else:
-                print("📍 No addresses to monitor - cleaning up cache system")
+                print("� No addresses to monitor - cache cleanup complete")
                 # Clean up cache system if no addresses to monitor
                 self.cache.update_monitored_addresses([])
     

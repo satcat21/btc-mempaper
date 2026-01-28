@@ -76,9 +76,11 @@ class BlockRewardCache:
         # Load existing cache
         self._load_cache()
         
-        print(f"🗄️ Block reward cache initialized with {len(self.cache_data['addresses'])} addresses")
-        if self.cache_data['global_sync_height'] > 0:
-            print(f"📊 Global sync height: {self.cache_data['global_sync_height']}")
+        # Only log initialization if there are addresses to monitor
+        if len(self.cache_data['addresses']) > 0:
+            print(f"🗄️ Block reward cache initialized with {len(self.cache_data['addresses'])} addresses")
+            if self.cache_data['global_sync_height'] > 0:
+                print(f"📊 Global sync height: {self.cache_data['global_sync_height']}")
     
     def _get_mempool_base_url(self) -> str:
         """Get mempool API base URL with unified host field and HTTPS support."""
@@ -702,7 +704,8 @@ class BlockRewardCache:
             self.cache_data["global_sync_height"] = current_height
             self._save_cache()
         
-        print(f"📊 Sync complete: {success_count}/{len(addresses)} addresses synced successfully")
+        if len(addresses) > 0:
+            print(f"📊 Sync complete: {success_count}/{len(addresses)} addresses synced successfully")
         return success_count == len(addresses)
     
     def remove_address(self, address: str) -> bool:

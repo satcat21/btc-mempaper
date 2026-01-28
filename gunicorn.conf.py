@@ -6,12 +6,11 @@ This configuration provides production-ready settings for running
 the Mempaper application with Gunicorn WSGI server.
 """
 
-import multiprocessing
 import os
 
 # Import privacy utilities for masking Bitcoin addresses in logs
 try:
-    from utils.privacy_utils import BitcoinPrivacyMasker, mask_bitcoin_data
+    from utils.privacy_utils import BitcoinPrivacyMasker
     PRIVACY_UTILS_AVAILABLE = True
 except ImportError:
     PRIVACY_UTILS_AVAILABLE = False

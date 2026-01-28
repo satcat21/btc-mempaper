@@ -2986,40 +2986,6 @@ document.addEventListener('configChange', async (event) => {
     }
 });
 
-// Global variable to store current notification timeout
-let notificationTimeout = null;
-
-function showNotification(message, type = 'success') {
-    const notification = document.getElementById('notification');
-    if (!notification) return;
-    if (window.notificationTimeout) {
-        clearTimeout(window.notificationTimeout);
-    }
-    notification.textContent = message;
-    notification.style.background = type === 'success' ? '#38a169' : '#e53e3e';
-    notification.style.color = '#fff';
-    notification.style.borderRadius = '10px';
-    notification.style.padding = '10px 16px';
-    notification.style.position = 'fixed';
-    notification.style.top = '18px';
-    notification.style.left = '50%';
-    notification.style.transform = 'translateX(-50%)';
-    notification.style.zIndex = '9999';
-    notification.style.fontSize = '0.95rem';
-    notification.style.minWidth = '240px';
-    notification.style.maxWidth = '420px';
-    notification.style.width = 'auto';
-    notification.style.textAlign = 'center';
-    notification.style.display = 'block';
-    window.notificationTimeout = setTimeout(hideNotification, 1000);
-}
-
-function hideNotification() {
-    const notification = document.getElementById('notification');
-    if (!notification) return;
-    notification.style.display = 'none';
-}
-
 // Meme Modal Functions
 let currentModalMeme = null;
 
