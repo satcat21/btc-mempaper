@@ -80,7 +80,7 @@ class BlockRewardCache:
         if len(self.cache_data['addresses']) > 0:
             print(f"🗄️ Block reward cache initialized with {len(self.cache_data['addresses'])} addresses")
             if self.cache_data['global_sync_height'] > 0:
-                print(f"📊 Global sync height: {self.cache_data['global_sync_height']}")
+                print(f"💾 Global sync height: {self.cache_data['global_sync_height']}")
     
     def _get_mempool_base_url(self) -> str:
         """Get mempool API base URL with unified host field and HTTPS support."""
@@ -196,7 +196,7 @@ class BlockRewardCache:
             print(f"❌ Error saving cache: {e}")
             # If secure cache fails, try fallback to file
             if self.use_secure_cache:
-                print(f"🔄 Falling back to individual cache file")
+                print(f"⚙️ Falling back to individual cache file")
                 self.use_secure_cache = False
                 self._save_cache()
     
@@ -243,7 +243,7 @@ class BlockRewardCache:
         Returns:
             True if successfully added and scanned
         """
-        print(f"🔍 Adding new address to block reward monitoring: {self._crop_address_for_log(address)}")
+        print(f"👁️ Adding new address to block reward monitoring: {self._crop_address_for_log(address)}")
         
         with self.cache_lock:
             # Check if address already exists
@@ -303,7 +303,7 @@ class BlockRewardCache:
         base_url = self._get_mempool_base_url()
         verify_ssl = self._get_mempool_verify_ssl()
         
-        print(f"🔍 Scanning transaction history for address {self._crop_address_for_log(address)}")
+        print(f"👁️ Scanning transaction history for address {self._crop_address_for_log(address)}")
         
         try:
             # Get all transactions for this address
@@ -320,7 +320,7 @@ class BlockRewardCache:
                 print(f"📭 No transactions found for address {self._crop_address_for_log(address)}")
                 return 0
             
-            print(f"📊 Found {len(transactions)} transactions for address {self._crop_address_for_log(address)}")
+            print(f"💾 Found {len(transactions)} transactions for address {self._crop_address_for_log(address)}")
             
             # Check each transaction to see if it's a coinbase transaction
             for i, tx in enumerate(transactions):
@@ -369,7 +369,7 @@ class BlockRewardCache:
                     # Progress update every 100 transactions
                     if (i + 1) % 100 == 0:
                         progress = ((i + 1) / len(transactions)) * 100
-                        print(f"📊 Scan progress: {progress:.1f}% ({i + 1}/{len(transactions)} transactions)")
+                        print(f"💾 Scan progress: {progress:.1f}% ({i + 1}/{len(transactions)} transactions)")
                 
                 except Exception as e:
                     print(f"⚠️ Error checking transaction {tx.get('txid', 'unknown')}: {e}")
@@ -568,7 +568,7 @@ class BlockRewardCache:
                 return True
             
             blocks_to_sync = current_height - synced_height
-            print(f"🔄 Syncing address {self._crop_address_for_log(address)} from height {synced_height + 1} to {current_height} ({blocks_to_sync} blocks)")
+            print(f"⚙️ Syncing address {self._crop_address_for_log(address)} from height {synced_height + 1} to {current_height} ({blocks_to_sync} blocks)")
             
             new_coinbase_count = 0
             
@@ -576,11 +576,11 @@ class BlockRewardCache:
             # Transaction history is much more efficient for gaps larger than 50 blocks
             if blocks_to_sync <= 50:
                 # Small gap: use block scanning (more efficient for recent blocks)
-                print(f"📊 Using block scanning for {blocks_to_sync} blocks")
+                print(f"💾 Using block scanning for {blocks_to_sync} blocks")
                 new_coinbase_count = self._scan_blocks_for_address(address, synced_height + 1, current_height)
             else:
                 # Large gap: use transaction history and filter by height (much faster)
-                print(f"📊 Using transaction history scanning for {blocks_to_sync} blocks")
+                print(f"💾 Using transaction history scanning for {blocks_to_sync} blocks")
                 new_coinbase_count = self._scan_address_history(address, synced_height + 1, current_height)
             
             # Update cache
@@ -612,7 +612,7 @@ class BlockRewardCache:
         total_blocks = end_height - start_height + 1
         batch_size = 10  # Process in smaller batches for better progress reporting
         
-        print(f"🔍 Block scanning {total_blocks} blocks for address {self._crop_address_for_log(address)}")
+        print(f"👁️ Block scanning {total_blocks} blocks for address {self._crop_address_for_log(address)}")
         
         start_time = time.time()
         processed_blocks = 0
@@ -625,7 +625,7 @@ class BlockRewardCache:
             elapsed_time = time.time() - start_time
             if processed_blocks > 0:
                 eta = (elapsed_time / processed_blocks) * (total_blocks - processed_blocks)
-                print(f"📊 Scanning progress: {processed_blocks}/{total_blocks} blocks ({progress_pct:.1f}%) - ETA: {eta:.1f}s")
+                print(f"💾 Scanning progress: {processed_blocks}/{total_blocks} blocks ({progress_pct:.1f}%) - ETA: {eta:.1f}s")
             
             # Process batch
             for height in range(batch_start, batch_end + 1):
@@ -705,7 +705,7 @@ class BlockRewardCache:
             self._save_cache()
         
         if len(addresses) > 0:
-            print(f"📊 Sync complete: {success_count}/{len(addresses)} addresses synced successfully")
+            print(f"💾 Sync complete: {success_count}/{len(addresses)} addresses synced successfully")
         return success_count == len(addresses)
     
     def remove_address(self, address: str) -> bool:

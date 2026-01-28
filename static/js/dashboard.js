@@ -68,7 +68,7 @@ function setupSocketHandlers() {
 
     // Monitor connection state changes
     socket.io.engine.on('upgrade', () => {
-        console.log("🔄 Engine transport upgraded to:", socket.io.engine.transport.name);
+        console.log("⚙️ Engine transport upgraded to:", socket.io.engine.transport.name);
     });
 
     socket.io.engine.on('upgradeError', (error) => {
@@ -78,7 +78,7 @@ function setupSocketHandlers() {
     // Reconnection attempt
     socket.on('reconnect_attempt', (attemptNumber) => {
         reconnectAttempts = attemptNumber;
-        console.log(`🔄 Reconnection attempt ${attemptNumber}...`);
+        console.log(`⚙️ Reconnection attempt ${attemptNumber}...`);
         
         // Show manual reconnect button after several failed attempts
         if (attemptNumber > 5) {
@@ -107,7 +107,7 @@ function setupSocketHandlers() {
 
     // New image received
     socket.on('new_image', (data) => {
-        console.log("📱 New dashboard image received", {
+        console.log("📶 New dashboard image received", {
             hasImageData: !!data.image,
             imageLength: data.image ? data.image.length : 0,
             timestamp: new Date().toISOString()
@@ -147,7 +147,7 @@ function attemptReconnect() {
     reconnecting = true;
     if (reconnectTimeout) clearTimeout(reconnectTimeout);
     reconnectTimeout = setTimeout(() => {
-        console.log("🔄 Attempting WebSocket reconnect...");
+        console.log("⚙️ Attempting WebSocket reconnect...");
         if (socket) socket.connect();
         reconnecting = false;
     }, 2000);
@@ -164,10 +164,10 @@ connectSocket();
 
 // Background processing status updates (for instant startup mode)
 socket.on('background_ready', (data) => {
-    console.log("🚀 Background processing completed", data);
+    console.log("✅ Background processing completed", data);
     
     // Request fresh image since background processing is done
-    console.log("📱 Requesting fresh image after background completion");
+    console.log("📶 Requesting fresh image after background completion");
     socket.emit('request_latest_image');
     
     // Show a brief notification
@@ -362,9 +362,7 @@ function showBlockToast(blockData) {
 
 // New block notification with toast
 socket.on('new_block_notification', (data) => {
-    console.log("🎯 New block notification received:", data);
-    
-    // Only show notification if page matches
+        console.log("👁️ New block notification received:", data);
     if (data.page && data.page !== 'dashboard') {
         // console.log('[DEBUG] Block notification for other page, ignoring.');
         return;
@@ -408,7 +406,7 @@ setInterval(() => {
     
     if (!socket.connected) {
         if (reconnectAttempts > 0) {
-            console.log(`🔄 Reconnecting... (${reconnectAttempts})`);
+            console.log(`⚙️ Reconnecting... (${reconnectAttempts})`);
         } else {
             console.log("🔴 WebSocket disconnected");
         }
@@ -417,7 +415,7 @@ setInterval(() => {
         if (lastImageUpdate) {
             const timeSinceUpdate = Math.floor((now - lastImageUpdate) / 1000);
             if (timeSinceUpdate > 600) { // 10 minutes
-                console.log("🔄 Auto-requesting image update (stale data)");
+                console.log("⚙️ Auto-requesting image update (stale data)");
                 socket.emit('request_latest_image');
                 refreshCurrentImage();
             }
@@ -427,7 +425,7 @@ setInterval(() => {
 
 // Manual reconnection button (if connection completely fails)
 function forceReconnect() {
-    console.log("🔄 Manual reconnection triggered");
+    console.log("⚙️ Manual reconnection triggered");
     socket.disconnect();
     setTimeout(() => {
         socket.connect();
@@ -436,7 +434,7 @@ function forceReconnect() {
 
 // Force refresh current dashboard image
 function refreshCurrentImage() {
-    console.log("🔄 Refreshing current dashboard image");
+    console.log("⚙️ Refreshing current dashboard image");
     const dashboardImg = document.getElementById("dashboard");
     
     if (dashboardImg && dashboardImg.src) {
@@ -460,7 +458,7 @@ function refreshCurrentImage() {
 
 // Request initial image when page loads
 document.addEventListener('DOMContentLoaded', function() {
-    console.log("📄 Page loaded.");
+    console.log("⚙️ Page loaded.");
     
     // Apply dark mode from localStorage
     const storedDarkMode = localStorage.getItem('mempaper_dark_mode');
@@ -480,7 +478,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Wait a bit for socket to establish connection
     setTimeout(() => {
         if (socket.connected) {
-            console.log("📱 Requesting initial image via WebSocket");
+            console.log("📶 Requesting initial image via WebSocket");
             socket.emit('request_latest_image');
         } else {
             // If not connected yet, try again when connected
@@ -489,7 +487,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (socket.connected) {
                     clearInterval(checkConnection);
                     socket.emit('request_latest_image');
-                    console.log("📄 Initial image requested after connection");
+                    console.log("� Initial image requested after connection");
                 }
             }, 500);
             
@@ -547,7 +545,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 const notificationData = JSON.parse(e.newValue);
                 if (notificationData && notificationData.timestamp > Date.now() - 5000) {
                     // Show notification if it's recent (within 5 seconds)
-                    console.log('🔔 Received cross-page block notification');
+                    console.log('⚙️ Received cross-page block notification');
                     showBlockToast(notificationData.data);
                 }
             } catch (error) {
@@ -571,7 +569,7 @@ function subscribeToBlockNotifications() {
 
 // Unsubscribe from block notifications
 function unsubscribeFromBlockNotifications() {
-    console.log('🔕 Unsubscribing from live block notifications...');
+    console.log('⚙️ Unsubscribing from live block notifications...');
     socket.emit('unsubscribe_block_notifications');
 }
 

@@ -25,14 +25,14 @@ if os.path.exists(epaper_lib_path_parallel):
 try:
     from waveshare_epd import epd7in3f
     WAVESHARE_AVAILABLE = True
-    print("✓ Waveshare EPD library loaded successfully")
+    print("✅ Waveshare EPD library loaded successfully")
 except ImportError as e:
     WAVESHARE_AVAILABLE = False
-    print(f"✗ Waveshare EPD library not available: {e}")
+    print(f"❌ Waveshare EPD library not available: {e}")
     print("  Falling back to file output only")
 except Exception as e:
     WAVESHARE_AVAILABLE = False
-    print(f"✗ Waveshare EPD library error: {e}")
+    print(f"❌ Waveshare EPD library error: {e}")
     print("  Falling back to file output only")
 
 class WaveshareDisplay:
@@ -54,11 +54,11 @@ class WaveshareDisplay:
         
         # Don't initialize display in constructor to avoid blocking
         # Initialize only when needed in display_image method
-        print("ⓘ Waveshare display created (lazy initialization)")
+        print("⚙️ Waveshare display created (lazy initialization)")
         if not WAVESHARE_AVAILABLE:
             print("⚠️ Waveshare library not available - display will use fallback only")
         elif not self.enabled:
-            print("ⓘ E-paper display disabled in configuration")
+            print("⚙️ E-paper display disabled in configuration")
         
         # Color constants from the EPD library
         if WAVESHARE_AVAILABLE:
@@ -93,30 +93,30 @@ class WaveshareDisplay:
     def init_display(self):
         """Initialize the e-paper display hardware."""
         if not self.epd:
-            print("ⓘ EPD not available - skipping hardware initialization")
+            print("⚙️ EPD not available - skipping hardware initialization")
             return False
             
         try:
             print("Initializing e-paper display...")
             self.epd.init()
-            print("✓ E-paper display initialized")
+            print("✅ E-paper display initialized")
             return True
         except Exception as e:
-            print(f"✗ Failed to initialize display: {e}")
+            print(f"❌ Failed to initialize display: {e}")
             return False
 
     def clear_display(self):
         """Clear the e-paper display to white."""
         if not self.epd:
-            print("ⓘ EPD not available - skipping clear")
+            print("⚙️ EPD not available - skipping clear")
             return
             
         try:
             print("Clearing e-paper display...")
             self.epd.Clear()
-            print("✓ E-paper display cleared")
+            print("✅ E-paper display cleared")
         except Exception as e:
-            print(f"✗ Failed to clear display: {e}")
+            print(f"❌ Failed to clear display: {e}")
 
     def convert_to_7color_palette(self, image):
         """
@@ -262,11 +262,11 @@ class WaveshareDisplay:
             
             # Check if hardware display is available and enabled
             if not WAVESHARE_AVAILABLE:
-                print("ⓘ Waveshare library not available - skipping hardware display")
+                print("⚙️ Waveshare library not available - skipping hardware display")
                 return True
                 
             if not self.enabled:
-                print("ⓘ E-paper display disabled in configuration - skipping hardware display")
+                print("⚙️ E-paper display disabled in configuration - skipping hardware display")
                 return True
             
             # Lazy initialization of EPD hardware
@@ -274,9 +274,9 @@ class WaveshareDisplay:
                 print("🔧 Initializing Waveshare EPD hardware...")
                 try:
                     self.epd = epd7in3f.EPD()
-                    print("✓ Waveshare EPD 7.3F initialized")
+                    print("✅ Waveshare EPD 7.3F initialized")
                 except Exception as e:
-                    print(f"✗ Exception during EPD initialization: {e}")
+                    print(f"❌ Exception during EPD initialization: {e}")
                     return False
             
             # Display on hardware - simplified without timeout for now
@@ -288,7 +288,7 @@ class WaveshareDisplay:
                 init_start = time.time()
                 self.epd.init()
                 init_time = time.time() - init_start
-                print(f"✓ E-paper display initialized in {init_time:.2f}s")
+                print(f"✅ E-paper display initialized in {init_time:.2f}s")
                 
                 # Clear display (optional - skipping saves ~31s)
                 if not self.skip_clear:
@@ -296,7 +296,7 @@ class WaveshareDisplay:
                     clear_start = time.time()
                     self.epd.Clear()
                     clear_time = time.time() - clear_start
-                    print(f"✓ E-paper display cleared in {clear_time:.2f}s")
+                    print(f"✅ E-paper display cleared in {clear_time:.2f}s")
                 else:
                     print("⏩ Skipping clear operation for faster refresh (~31s saved)")
                 
@@ -305,7 +305,7 @@ class WaveshareDisplay:
                 display_start = time.time()
                 self.epd.display(self.epd.getbuffer(img))
                 display_time = time.time() - display_start
-                print(f"✓ Image displayed successfully on e-paper in {display_time:.2f}s")
+                print(f"✅ Image displayed successfully on e-paper in {display_time:.2f}s")
                 
                 # Put display to sleep
                 print("Putting display to sleep...")
@@ -313,29 +313,29 @@ class WaveshareDisplay:
                 time.sleep(1)  # Brief pause before sleep
                 self.epd.sleep()
                 sleep_time = time.time() - sleep_start
-                print(f"✓ Display put to sleep in {sleep_time:.2f}s")
+                print(f"✅ Display put to sleep in {sleep_time:.2f}s")
                 
                 total_time = time.time() - init_start
-                print(f"✓ Total display process completed in {total_time:.2f}s")
+                print(f"✅ Total display process completed in {total_time:.2f}s")
                 
                 return True
                 
             except Exception as e:
-                print(f"✗ Error displaying image on hardware: {e}")
+                print(f"❌ Error displaying image on hardware: {e}")
                 print(f"   Error type: {type(e).__name__}")
                 
                 # Try to clean up if there was an error
                 try:
                     if hasattr(self.epd, 'sleep'):
                         self.epd.sleep()
-                        print("✓ Display cleanup: sleep() called after error")
+                        print("✅ Display cleanup: sleep() called after error")
                 except:
-                    print("✗ Could not call sleep() during error cleanup")
+                    print("❌ Could not call sleep() during error cleanup")
                 
                 return False
                 
         except Exception as e:
-            print(f"✗ Error in display_image: {e}")
+            print(f"❌ Error in display_image: {e}")
             print(f"   Error type: {type(e).__name__}")
             import traceback
             print(f"   Traceback: {traceback.format_exc()}")
@@ -346,9 +346,9 @@ class WaveshareDisplay:
         if self.epd:
             try:
                 self.epd.sleep()
-                print("✓ Display put to sleep")
+                print("✅ Display put to sleep")
             except Exception as e:
-                print(f"✗ Error putting display to sleep: {e}")
+                print(f"❌ Error putting display to sleep: {e}")
 
     def cleanup(self):
         """Clean up display resources."""
@@ -356,9 +356,9 @@ class WaveshareDisplay:
             try:
                 if WAVESHARE_AVAILABLE:
                     epd7in3f.epdconfig.module_exit(cleanup=True)
-                print("✓ Display cleanup completed")
+                print("✅ Display cleanup completed")
             except Exception as e:
-                print(f"✗ Error during cleanup: {e}")
+                print(f"❌ Error during cleanup: {e}")
 
 
 def main():
@@ -385,15 +385,15 @@ def main():
         )
         
         if success:
-            print("✓ Image display completed successfully")
+            print("✅ Image display completed successfully")
         else:
-            print("✗ Image display failed")
+            print("❌ Image display failed")
             sys.exit(1)
             
     except KeyboardInterrupt:
         print("\nInterrupted by user")
     except Exception as e:
-        print(f"✗ Unexpected error: {e}")
+        print(f"❌ Unexpected error: {e}")
         sys.exit(1)
     finally:
         # Clean up

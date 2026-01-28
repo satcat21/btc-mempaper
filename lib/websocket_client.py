@@ -86,7 +86,8 @@ class MempoolWebSocket:
                 block_hash = block_data.get("id")
                 timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 
-                print(f"[{timestamp}] New block received: Height {block_height}, Hash {block_hash}")
+                # Block info already logged by block_monitor callback
+                # print(f"📶 [{timestamp}] New block received: Height {block_height}, Hash {block_hash}")
                 
                 # Call the callback function if provided
                 if self.on_new_block_callback:
@@ -163,7 +164,7 @@ class MempoolWebSocket:
         
         # Only log close message if not in DNS error mode
         if self.last_error_type != 'dns':
-            print(f"📡 WebSocket connection closed")
+            print(f"📶 WebSocket connection closed")
             if close_msg:
                 print(f"   Reason: {close_msg} (Code: {close_status_code})")
         
@@ -181,12 +182,12 @@ class MempoolWebSocket:
             # Use longer delays in outage mode
             if self.outage_mode:
                 delay = min(300, 60 + (self.reconnect_attempts - 5) * 30)  # 1-5 min delays during outage
-                print(f"🔄 Outage mode: Attempting reconnection {self.reconnect_attempts + 1}/{self.max_reconnect_attempts} in {delay}s...")
+                print(f"⚙️ Outage mode: Attempting reconnection {self.reconnect_attempts + 1}/{self.max_reconnect_attempts} in {delay}s...")
             else:
                 delay = self.reconnect_delays[min(self.reconnect_attempts, len(self.reconnect_delays) - 1)]
                 # Only log reconnection attempts if not in DNS error mode
                 if self.last_error_type != 'dns':
-                    print(f"🔄 Will attempt to reconnect in {delay}s (attempt {self.reconnect_attempts + 1}/{self.max_reconnect_attempts})...")
+                    print(f"⚙️ Will attempt to reconnect in {delay}s (attempt {self.reconnect_attempts + 1}/{self.max_reconnect_attempts})...")
             
             self.reconnect_attempts += 1
             time.sleep(delay)
@@ -221,14 +222,14 @@ class MempoolWebSocket:
         # Calculate outage duration if we were in outage mode
         if self.outage_mode and self.outage_start_time:
             outage_duration = current_time - self.outage_start_time
-            print(f"✅ Connected to mempool WebSocket at {self.ws_url}")
-            print(f"🎯 Outage lasted {outage_duration/60:.1f} minutes. Connection restored!")
+            print(f"✅ WebSocket connected and subscribed ({self.ws_url})")
+            print(f"✅ Outage lasted {outage_duration/60:.1f} minutes. Connection restored!")
             
             # Reset outage mode
             self.outage_mode = False
             self.outage_start_time = None
         else:
-            print(f"✅ Connected to mempool WebSocket at {self.ws_url}")
+            print(f"✅ WebSocket connected and subscribed ({self.ws_url})")
         
         self.is_connected = True
         self.reconnect_attempts = 0  # Reset counter on successful connection
@@ -238,11 +239,12 @@ class MempoolWebSocket:
         # Subscribe to new block events
         subscription_message = json.dumps({"action": "want", "data": ["blocks"]})
         ws.send(subscription_message)
-        print("📡 Subscribed to block updates")
+        # Subscription confirmation included in connection message above
     
     def start_connection(self):
         """Start the WebSocket connection and run forever."""
-        print(f"🔌 Starting WebSocket connection to {self.ws_url}")
+        # Connection status logged in on_open callback
+        # print(f"📶 Starting WebSocket connection to {self.ws_url}")
         
         self.ws = websocket.WebSocketApp(
             self.ws_url,
@@ -280,7 +282,8 @@ class MempoolWebSocket:
         
         thread = threading.Thread(target=run_listener, daemon=True)
         thread.start()
-        print("🧵 WebSocket listener thread started")
+        # Thread startup logged via on_open callback when connection succeeds
+        # print("📶 WebSocket listener thread started")
         return thread
     
     def close_connection(self):
@@ -329,7 +332,7 @@ class MempoolWebSocket:
         self.outage_mode = False
         self.outage_start_time = None
         self.reconnect_attempts = 0
-        print("🔄 Outage mode reset manually")
+        print("⚙️ Outage mode reset manually")
     
     def set_network_tolerance(self, max_outage_minutes=30):
         """

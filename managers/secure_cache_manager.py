@@ -72,7 +72,9 @@ class SecureCacheManager:
                     if encrypted_data.get('_encrypted_cache'):
                         decrypted_data = self.secure_manager._decrypt_data(encrypted_data['data'])
                         if decrypted_data is not None:
-                            print(f"🔓 Loaded encrypted cache: {self.encrypted_cache_file}")
+                            # Only log if cache has actual content (not just empty dict)
+                            if decrypted_data and len(decrypted_data) > 0:
+                                print(f"💾 Loaded cached data from {self.encrypted_cache_file}")
                             return decrypted_data
                         else:
                             print(f"⚠️ Failed to decrypt cache: {self.encrypted_cache_file}")
@@ -274,7 +276,7 @@ def main():
     print("🔐 Secure Cache Manager Test")
     
     # Check status of all caches
-    print("\n📊 Cache Security Status:")
+    print("\n💾 Cache Security Status:")
     cache_status = get_all_cache_status()
     
     for cache_file, info in cache_status.items():
@@ -286,7 +288,7 @@ def main():
             print(f"   💡 Recommendation: {info['recommendation']}")
     
     # Test migration
-    print(f"\n🔄 Testing cache migration...")
+    print(f"\n⚙️ Testing cache migration...")
     migrate_all_caches()
     
     # Patch existing systems

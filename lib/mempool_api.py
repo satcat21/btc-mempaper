@@ -224,6 +224,6 @@ class MempoolAPI:
         fees = self.get_fee_recommendations()
         if fees:
             fee_value = fees.get(fee_parameter, 1)
-            print(f"📊 Fee info: {fee_value} sat/vB ({fee_parameter})")
+            print(f"💾 Fee info: {fee_value} sat/vB ({fee_parameter})")
             return fee_value
         return None

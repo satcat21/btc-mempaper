@@ -198,7 +198,7 @@ def main():
                 if 1 <= device_num <= len(device_list):
                     device_id = device_list[device_num - 1]
                     if set_device(config, device_id):
-                        print("\n🔄 Restart the application for changes to take effect:")
+                        print("\n⚙️ Restart the application for changes to take effect:")
                         print("   python serve.py")
                         break
                 else:
@@ -207,7 +207,7 @@ def main():
             # Check if it's a device ID
             elif choice in DEVICE_CONFIGS:
                 if set_device(config, choice):
-                    print("\n🔄 Restart the application for changes to take effect:")
+                    print("\n⚙️ Restart the application for changes to take effect:")
                     print("   python serve.py")
                     break
             

@@ -54,11 +54,11 @@ class BitcoinPriceAPI:
         """
         try:
             # Get Bitcoin price in USD
-            print(f"💱 Fetching price data from: {self.base_url}/v1/prices")
+            # print(f"🌐 Fetching price data from: {self.base_url}/v1/prices")
             response = requests.get(f"{self.base_url}/v1/prices", timeout=10, verify=self.mempool_verify_ssl)
             response.raise_for_status()
             price_data = response.json()
-            print(f"💱 Successfully fetched price data from configured mempool instance")
+            # print(f"✅ Successfully fetched price data from configured mempool instance")
             
             # Get configured currency
             selected_currency = self.config.get("btc_price_currency", "USD")
@@ -67,7 +67,7 @@ class BitcoinPriceAPI:
             if not price_in_selected_currency:
                 return {"error": f"Unable to fetch {selected_currency} price"}
 
-            usd_price = price_data.get(selected_currency, 0)
+            usd_price = price_data.get("USD", 0)
             if not usd_price:
                 return {"error": "Unable to fetch USD price"}
             

@@ -275,7 +275,7 @@ class SecurePasswordManager:
             return True
         
         logger.info("Migrating existing cleartext password to secure hash")
-        print("\n🔄 Migrating existing password to secure encryption...")
+        print("\n⚙️ Migrating existing password to secure encryption...")
         
         # Hash the existing password
         password_hash = self.hash_password(cleartext_password)

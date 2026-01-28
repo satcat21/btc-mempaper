@@ -157,7 +157,7 @@ def worker_int(worker):
 
 def pre_fork(server, worker):
     """Called just before a worker is forked."""
-    server.log.info(f"🔄 Worker {worker.pid} is being forked")
+    server.log.info(f"⚙️ Worker {worker.pid} is being forked")
 
 def post_fork(server, worker):
     """Called just after a worker has been forked."""

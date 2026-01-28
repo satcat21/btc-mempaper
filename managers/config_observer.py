@@ -375,7 +375,7 @@ class AsyncAddressCacheManager:
                 print(f"📋 No wallet entries to cache")
                 return
             
-            print(f"🔄 Rebuilding address cache for {len(wallet_entries)} entries...")
+            print(f"⚙️ Rebuilding address cache for {len(wallet_entries)} entries...")
             
             # Separate XPUBs/ZPUBs and regular addresses
             xpubs = [entry for entry in wallet_entries if entry.lower().startswith(("xpub", "zpub"))]
@@ -391,7 +391,7 @@ class AsyncAddressCacheManager:
                     enable_gap_limit = config.get("xpub_enable_gap_limit", False)
                     
                     if enable_gap_limit:
-                        print(f"� Running gap limit detection for new ZPUB {xpub[:20]}...")
+                        print(f"⚙️ Running gap limit detection for new ZPUB {xpub[:20]}...")
                         # Import gap limit detection from wallet balance API
                         try:
                             from wallet_balance_api import WalletBalanceAPI
@@ -401,7 +401,7 @@ class AsyncAddressCacheManager:
                             print(f"✅ Gap limit detection: 20 → {final_count} addresses for {xpub[:20]}...")
                         except Exception as gap_error:
                             print(f"⚠️ Gap limit detection failed for {xpub[:20]}...: {gap_error}")
-                            print(f"🔄 Falling back to basic derivation ({derivation_count} addresses)")
+                            print(f"⚙️ Falling back to basic derivation ({derivation_count} addresses)")
                             derived_addresses = self.address_derivation.derive_addresses(xpub, derivation_count)
                             address_list = [addr for addr, idx in derived_addresses]
                     else:
@@ -454,7 +454,7 @@ class AsyncAddressCacheManager:
     
     def _worker_loop(self):
         """Main worker loop for processing async tasks."""
-        print(f"🔧 Started async address cache worker")
+        # Worker thread started silently
         
         while not self.stop_event.is_set():
             try:
@@ -554,7 +554,7 @@ class WalletConfigurationManager:
             if os.path.exists(self.config_file):
                 with open(self.config_file, 'r') as f:
                     config = json.load(f)
-                    print(f"🔄 Initializing address cache...")
+                    print(f"⚙️ Initializing address cache...")
                     self.cache_manager.queue_cache_rebuild(config)
         except Exception as e:
             print(f"⚠️ Failed to initialize cache: {e}")

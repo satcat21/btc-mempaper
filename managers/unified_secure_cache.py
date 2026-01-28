@@ -69,7 +69,7 @@ class UnifiedSecureCache:
         # Load existing cache or migrate from individual files
         self._load_or_migrate_cache()
         
-        print(f"🔐 Unified secure cache initialized at {self.secure_cache_file}")
+        print(f"💾 Loaded cached data from {self.secure_cache_file}")
     
     def _load_or_migrate_cache(self) -> None:
         """Load existing secure cache or migrate from individual cache files."""
@@ -99,7 +99,7 @@ class UnifiedSecureCache:
     
     def _migrate_individual_cache_files(self) -> None:
         """Migrate data from individual cache files to unified secure cache."""
-        print("🔄 Migrating individual cache files to unified secure cache...")
+        print("⚙️ Migrating individual cache files to unified secure cache...")
         
         # Individual cache file paths
         individual_files = {

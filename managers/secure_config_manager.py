@@ -350,7 +350,7 @@ class SecureConfigManager:
                     decrypted_data = self._decrypt_data(encrypted_file_data['data'])
                     if decrypted_data:
                         encrypted_data = decrypted_data
-                        print(f"🔍 Current encrypted config contains {len(encrypted_data)} fields:")
+                        print(f"👁️ Current encrypted config contains {len(encrypted_data)} fields:")
                         for key in encrypted_data.keys():
                             is_sensitive = key in self.sensitive_fields
                             print(f"   {'🔐' if is_sensitive else '📄'} {key}: {'SENSITIVE' if is_sensitive else 'NOT SENSITIVE'}")
@@ -423,7 +423,7 @@ def main():
     
     # Show security status
     status = secure_manager.get_security_status()
-    print(f"\n📊 Security Status:")
+    print(f"\n💾 Security Status:")
     for key, value in status.items():
         if key != 'recommendations':
             print(f"   {key}: {value}")
@@ -435,7 +435,7 @@ def main():
     
     # Test migration if plain config exists
     if os.path.exists('config/config.json') and not status['encryption_enabled']:
-        print(f"\n🔄 Testing migration from plain config...")
+        print(f"\n⚙️ Testing migration from plain config...")
         success = secure_manager.migrate_from_plain_config()
         if success:
             print("✅ Migration test successful")

@@ -40,7 +40,7 @@ def main():
         print("   - Current image: http://localhost:5000/current-image")
         print("   - Config: http://localhost:5000/admin/config")
         print()
-        print("⚡ App should start much faster now!")
+        print("⚙️ App should start much faster now!")
         print("   Press Ctrl+C to stop")
         print()
 

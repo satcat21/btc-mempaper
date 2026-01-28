@@ -26,14 +26,14 @@ def main():
         success = display.display_image(image_path)
         
         if success:
-            print("✓ Display completed successfully")
+            print("✅ Display completed successfully")
             sys.exit(0)
         else:
-            print("✗ Display failed")
+            print("❌ Display failed")
             sys.exit(1)
             
     except Exception as e:
-        print(f"✗ Error: {e}")
+        print(f"❌ Error: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":

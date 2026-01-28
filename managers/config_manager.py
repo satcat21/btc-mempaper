@@ -60,7 +60,6 @@ class ConfigFileHandler(FileSystemEventHandler if WATCHDOG_AVAILABLE else object
             # Debounce multiple rapid changes
             if current_time - self.last_modified > self.debounce_delay:
                 self.last_modified = current_time
-                print(f"📝 Config file changed: {event.src_path}")
                 
                 # Reload configuration after a short delay
                 threading.Timer(0.5, self.config_manager._reload_config_from_file).start()
@@ -108,7 +107,7 @@ class ConfigManager:
         self.watching_enabled = not disable_watching
         
         if disable_watching:
-            print("⚡ Config file watching disabled for faster startup")
+            print("⚙️ Config file watching disabled for faster startup")
         
         # Start file watching (only if enabled)
         self._start_file_watching()
@@ -165,7 +164,7 @@ class ConfigManager:
                 # Check if config actually changed
                 if new_config != old_config:
                     self.config = new_config
-                    print("🔄 Configuration reloaded from file")
+                    print("⚙️ Configuration reloaded from file")
                     
                     # Notify all registered callbacks
                     self._notify_change_callbacks(new_config)
@@ -300,7 +299,7 @@ class ConfigManager:
         try:
             with open(self.config_path, 'r', encoding='utf-8') as f:
                 plain_config = json.load(f)
-            # print(f"✓ Plain configuration loaded from {self.config_path}")
+            # print(f"✅ Plain configuration loaded from {self.config_path}")
         except FileNotFoundError:
             print(f"⚠ Config file not found: {self.config_path}")
         except json.JSONDecodeError as e:
@@ -314,14 +313,14 @@ class ConfigManager:
         if self.secure_manager:
             secure_config = self.secure_manager.load_secure_config()
             if secure_config is not None:
-                # print(f"✓ Secure configuration loaded from encrypted files")
+                # print(f"✅ Secure configuration loaded from encrypted files")
                 # Only update with sensitive fields from secure config
                 sensitive_fields = {'wallet_balance_addresses_with_comments', 
                                   'block_reward_addresses_table', 'admin_password_hash', 'secret_key'}
                 for key, value in secure_config.items():
                     if key in sensitive_fields:
                         merged_config[key] = value
-                # print(f"🔄 Added sensitive fields from secure configuration")
+                # print(f"⚙️ Added sensitive fields from secure configuration")
                 return merged_config
         
         print(f"📝 Configuration loaded: {len(merged_config)} fields")
@@ -396,7 +395,7 @@ class ConfigManager:
                     with self.config_lock:
                         # Update in-memory config directly instead of reloading
                         self.config = validated_config
-                    print(f"✓ Secure configuration saved")
+                    print(f"✅ Secure configuration saved")
                     
                     # Re-enable file watching after a delay to avoid immediate reload
                     if file_watching_was_enabled:
@@ -425,7 +424,7 @@ class ConfigManager:
                 if config is None:
                     self.config = validated_config
             
-            print(f"✓ Configuration saved to {self.config_path}")
+            print(f"✅ Configuration saved to {self.config_path}")
             return True
             
         except Exception as e:

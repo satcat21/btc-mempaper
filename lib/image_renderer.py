@@ -39,25 +39,25 @@ COLOR_SETS = {
         "date_holiday": "#b22222",
         "holiday_title": "#cd853f",
         "holiday_desc": "#d2691e",
-        "btc_price": "#228B22",
-        "moscow_time": "#4682B4",
-        "hashrate": "#4682B4",
-        "found_blocks": "#DAA520",
+        "btc_price": "#17805B",      # darker green for BTC price (was #228B22)
+        "moscow_time": "#17805B",    # darker blue for Moscow time (was #4682B4)
+        "hashrate": "#B89C1D",       # darker gold for Bitaxe (was #DAA520)
+        "found_blocks": "#B89C1D",   # same as hashrate
         "info_header": "#222222",
         "info_value": "#222222",
         "info_unit": "#808080",
         "info_bg": "#F8F9FA",
         "info_outline": "#E9ECEF",
-        "hash_start": "#007bff",
-        "hash_end": "#6610f2",
-        "green": "#28a745",
-        "yellow": "#ffc107",
-        "orange": "#fd7e14",
-        "red": "#dc3545",
-        "blue": "#007bff",
+        "hash_start": "#005fa3",     # darker blue
+        "hash_end": "#4b0f8f",       # darker purple
+        "green": "#388E3C",          # Material Green (darker)
+        "yellow": "#FFA000",         # Material Amber (darker)
+        "orange": "#F57C00",         # Material Orange (darker)
+        "red": "#C62828",            # Material Red (darker)
+        "blue": "#1976D2",           # Material Blue (darker)
         "black": "#343a40",
-        "wallet_balance": "#1E88E5",  # blue shade for wallet balance
-        "fiat_balance": "#43A047",    # green shade for fiat balance
+        "wallet_balance": "#1565C0", # darker blue for wallet balance
+        "fiat_balance": "#1565C0",   # darker green for fiat balance
     },
     "dark": {
         "background": "#2e324e",
@@ -88,7 +88,17 @@ COLOR_SETS = {
 }
 
 FEE_COLOR_TONES = {
-    # Brightened colors optimized for dark backgrounds and small text readability
+    # (light_mode, dark_mode)
+    "green":   ("#4CAF50", "#8AF1DC"),   # Light Green to Material Green (high contrast)
+    "yellow":  ("#FFC107", "#D0E276"),   # Bright Yellow to Material Amber (very visible)
+    "orange":  ("#FF9800", "#DBD36B"),   # Light Orange to Material Orange (warm and bright)
+    "red":     ("#F44336", "#D9997B"),   # Light Red to Material Red (attention-grabbing)
+    "blue":    ("#2196F3", "#AD85E1"),   # Light Blue to Material Blue (excellent contrast)
+    "black":   ("#BDBDBD", "#E0E0E0"),   # Light Grey to Medium Grey (high readability)
+}
+
+# For dark mode, reverse the tuple order for each color
+FEE_COLOR_TONES_DARK = {
     "green":   ("#8AF1DC", "#4CAF50"),   # Light Green to Material Green (high contrast)
     "yellow":  ("#D0E276", "#FFC107"),   # Bright Yellow to Material Amber (very visible)
     "orange":  ("#DBD36B", "#FF9800"),   # Light Orange to Material Orange (warm and bright)
@@ -236,7 +246,7 @@ class ImageRenderer:
         """
         Callback triggered when wallet cache updates. Refreshes dashboard images.
         """
-        print("🔄 Wallet cache updated, refreshing dashboard images...")
+        print("⚙️ Wallet cache updated, refreshing dashboard images...")
         # You may want to trigger a dashboard refresh here, e.g. by calling a method or setting a flag
         # Example:
         if hasattr(self, "refresh_dashboard"):
@@ -591,8 +601,6 @@ class ImageRenderer:
             right_x = self.layout.get_text_centered_x(bbox_right, right_col_center_x)
             draw.text((right_x, text_y), header_right_text, font=font_small_label, fill=self.get_color("info_header", web_quality))
 
-        info_block_y += (bbox_left[3] - bbox_left[1]) + LABEL_TO_VALUE_SPACING
-
         try:
             font_large_value = ImageFont.truetype(self.font_bold, FONT_SIZE_LARGE_VALUE)
         except Exception:
@@ -606,7 +614,8 @@ class ImageRenderer:
 
         bbox_balance = font_large_value.getbbox(balance_value_text)
         balance_x = self.layout.get_text_centered_x(bbox_balance, left_col_center_x)
-        text_y = self.layout.get_value_y(info_block_y)
+        label_height = bbox_left[3] - bbox_left[1]
+        text_y = self.layout.get_value_y(info_block_y, label_height)
         draw.text((balance_x, text_y), balance_value_text, font=font_large_value, fill=self.get_color("wallet_balance", web_quality))
 
         if show_fiat:
@@ -629,7 +638,8 @@ class ImageRenderer:
 
             bbox_fiat = font_large_value.getbbox(fiat_value_text)
             fiat_x = self.layout.get_text_centered_x(bbox_fiat, right_col_center_x)
-            text_y = self.layout.get_value_y(info_block_y)
+            label_height = bbox_left[3] - bbox_left[1]
+            text_y = self.layout.get_value_y(info_block_y, label_height)
             draw.text((fiat_x, text_y), fiat_value_text, font=font_large_value, fill=self.get_color("fiat_balance", web_quality))
 
         return info_block_y + INFO_BLOCK_HEIGHT + ELEMENT_MARGIN
@@ -690,7 +700,7 @@ class ImageRenderer:
                 return tuple(rgb_values)
             else:
                 # Map named colors directly to EPD colors for e-ink
-                from epd_color_fix import WAVESHARE_EPD_COLORS
+                from utils.epd_color_fix import WAVESHARE_EPD_COLORS
                 color_mapping = {
                     'black': WAVESHARE_EPD_COLORS['BLACK'],
                     'white': WAVESHARE_EPD_COLORS['WHITE'],
@@ -712,7 +722,7 @@ class ImageRenderer:
                     # Fallback: try ColorLUT then map to closest EPD color
                     try:
                         rgb_values = ColorLUT.get_color(color_name, "eink")
-                        from epd_color_fix import get_closest_epd_color
+                        from utils.epd_color_fix import get_closest_epd_color
                         return get_closest_epd_color(tuple(rgb_values))
                     except:
                         return WAVESHARE_EPD_COLORS['BLACK']  # Safe fallback
@@ -721,7 +731,7 @@ class ImageRenderer:
         if web_quality:
             return (0, 0, 0)
         else:
-            from epd_color_fix import WAVESHARE_EPD_COLORS
+            from utils.epd_color_fix import WAVESHARE_EPD_COLORS
             return WAVESHARE_EPD_COLORS['BLACK']
     
     def convert_to_7color(self, img, use_meme_optimization=False):
@@ -887,9 +897,8 @@ class ImageRenderer:
     def fee_to_colors(self, current_fee, recent_fee, web_quality=False):
         """
         Returns a tuple of (current_color, recent_color) for gradient coloring.
-        Caches the last fee in memory.
+        Uses FEE_COLOR_TONES for light mode and FEE_COLOR_TONES_DARK for dark mode.
         """
-        # Helper to map fee to color name
         def fee_to_color_name(fee_value):
             if fee_value is None:
                 return "black"
@@ -906,15 +915,16 @@ class ImageRenderer:
             else:
                 return "black"
 
-        # Get color names for current and recent fee
+        # Determine mode
+        mode = "dark" if self.config.get("color_mode_dark", True) else "light"
+        color_tones = FEE_COLOR_TONES_DARK if mode == "dark" else FEE_COLOR_TONES
+
         current_color_name = fee_to_color_name(current_fee)
         recent_color_name = fee_to_color_name(recent_fee)
 
-        # Get color tones: vivid for current, washed out for recent
-        current_hex = FEE_COLOR_TONES.get(current_color_name, ("#FF9604", "#0B940B"))[0]
-        recent_hex = FEE_COLOR_TONES.get(recent_color_name, ("#A304FF", "#E3D90D"))[1]
+        current_hex = color_tones.get(current_color_name, ("#FF9604", "#0B940B"))[0]
+        recent_hex = color_tones.get(recent_color_name, ("#A304FF", "#E3D90D"))[1]
 
-        # Convert hex to RGB tuple
         def hex_to_rgb(hex_color):
             hex_color = hex_color.lstrip("#")
             if len(hex_color) == 3:
@@ -1602,13 +1612,13 @@ class ImageRenderer:
             # Calculate remaining space and balanced spacing
             remaining_space = available_content_height - total_content_height
             
-            # When no holiday and no info blocks, center the meme vertically
-            if not holiday_info and info_blocks_space == 0:
-                # Center meme between date and hash frame
-                # Calculate true center: start after date, use all available space
+            # When no holiday, center all content (meme + info blocks) vertically
+            if not holiday_info:
+                # Center entire content group (meme + info blocks) between date and hash frame
                 center_point = content_top_y + (available_content_height // 2)
-                blocks_y = center_point - (meme_height // 2) if meme_height > 0 else center_point
-                gap_size = 0  # Not used in this case
+                content_group_height = meme_height + info_blocks_space + (STANDARD_SPACING if info_blocks_space > 0 else 0)
+                blocks_y = center_point - (content_group_height // 2)
+                gap_size = STANDARD_SPACING  # Fixed gap between meme and info blocks
             else:
                 # Distribute spacing evenly
                 gap_size = max(STANDARD_SPACING, remaining_space // num_gaps) if num_gaps > 0 else STANDARD_SPACING
@@ -1705,7 +1715,7 @@ class ImageRenderer:
         if meme_path:
             try:
                 # Use the pre-selected meme path directly
-                print(f"🎨 Using pre-selected meme: {meme_path}")
+                print(f"⚙️ Using pre-selected meme: {meme_path}")
                 
                 # Open and process the meme image
                 meme_img = Image.open(meme_path)
@@ -1984,7 +1994,7 @@ class ImageRenderer:
                 meme_img = self.add_rounded_corners(meme_img, radius=20)  
                 img.paste(meme_img, (x, y), meme_img)
                 
-                print(f"🎨 Rendered fallback meme: {meme_path}")
+                print(f"⚙️ Rendered fallback meme: {meme_path}")
                 
             except Exception as e:
                                print(f"⚠️ Error rendering fallback meme {meme_path}: {e}")
@@ -2063,12 +2073,12 @@ class ImageRenderer:
         """
         # Check if e-Paper display is enabled in configuration
         if not self.e_ink_enabled:
-            print("ⓘ e-Paper display disabled in configuration - skipping hardware display")
+            print("⚙️ e-Paper display disabled in configuration - skipping hardware display")
             return True
         
         # When called from main app, the subprocess method handles the display
         # This method just returns success to avoid blocking the threading
-        print("ⓘ E-paper display handled by subprocess - returning immediately")
+        print("⚙️ E-paper display handled by subprocess - returning immediately")
         return True
     
     def _fallback_display(self, image_path, message=None):
@@ -2097,7 +2107,7 @@ class ImageRenderer:
                 image_path = os.path.abspath(image_path)
             cmd.append(image_path)
             
-            print(f"🔄 Running fallback display command: {' '.join(cmd)}")
+            print(f"⚙️ Running fallback display command: {' '.join(cmd)}")
             
             # Run the display script with timeout
             result = subprocess.run(
@@ -2109,19 +2119,19 @@ class ImageRenderer:
             )
             
             if result.returncode == 0:
-                print("✓ Image displayed on e-Paper via show_image.py (fallback)")
+                print("✅ Image displayed on e-Paper via show_image.py (fallback)")
                 if result.stdout:
                     print(f"Output: {result.stdout}")
                 return True
             else:
-                print(f"✗ Error displaying on e-Paper (exit code {result.returncode}): {result.stderr}")
+                print(f"❌ Error displaying on e-Paper (exit code {result.returncode}): {result.stderr}")
                 if result.stdout:
                     print(f"Output: {result.stdout}")
                 return False
                     
         except subprocess.TimeoutExpired:
-            print("✗ Timeout while displaying image on e-Paper")
+            print("❌ Timeout while displaying image on e-Paper")
             return False
         except Exception as e:
-            print(f"✗ Error displaying on e-Paper: {e}")
+            print(f"❌ Error displaying on e-Paper: {e}")
             return False

@@ -88,9 +88,9 @@ try:
         show_manual_download_instructions()
         exit(1)
     elif test_response.status_code == 404:
-        print("✓ Connection successful (received 404, which means we can reach the server)")
+        print("✅ Connection successful (received 404, which means we can reach the server)")
     elif test_response.status_code == 200:
-        print("✓ Connection successful and image found!")
+        print("✅ Connection successful and image found!")
     else:
         print(f"Connection test returned status code: {test_response.status_code}")
 except Exception as e:
@@ -128,7 +128,7 @@ while consecutive_failures < max_failures:
         output_path = os.path.join(download_dir, f"{image_number}.{ext}")
 
         if os.path.exists(output_path) and is_valid_image(output_path):
-            print(f"✓ Already exists: {image_number}.{ext}")
+            print(f"✅ Already exists: {image_number}.{ext}")
             found = True
             consecutive_failures = 0
             break
@@ -148,7 +148,7 @@ while consecutive_failures < max_failures:
                         f.write(chunk)
                 
                 if is_valid_image(output_path):
-                    print(f" - ✓ Success")
+                    print(f" - ✅ Success")
                     found = True
                     consecutive_failures = 0
                     break
@@ -226,12 +226,12 @@ while consecutive_failures < max_failures:
                 
                 # Verify it's actually an image
                 if is_valid_image(output_path):
-                    print(f"✓ Downloaded: {url}")
+                    print(f"✅ Downloaded: {url}")
                     found = True
                     consecutive_failures = 0
                     break
                 else:
-                    print(f"✗ Invalid image content for {url}")
+                    print(f"❌ Invalid image content for {url}")
                     if os.path.exists(output_path):
                         os.remove(output_path)
             else:
@@ -258,12 +258,12 @@ while consecutive_failures < max_failures:
                 result = subprocess.run(curl_cmd, capture_output=True, text=True, timeout=45)
 
                 if result.returncode == 0 and is_valid_image(output_path):
-                    print(f"✓ Downloaded via curl: {url}")
+                    print(f"✅ Downloaded via curl: {url}")
                     found = True
                     consecutive_failures = 0
                     break
                 else:
-                    print(f"✗ Curl failed or invalid content: {url}")
+                    print(f"❌ Curl failed or invalid content: {url}")
                     if os.path.exists(output_path):
                         os.remove(output_path)
                         

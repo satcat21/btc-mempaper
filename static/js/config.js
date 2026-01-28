@@ -450,7 +450,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const notificationData = JSON.parse(e.newValue);
                 if (notificationData && notificationData.timestamp > Date.now() - 5000) {
                     // Show notification if it's recent (within 5 seconds)
-                    console.log('🔔 Received cross-page block notification');
+                    console.log('⚙️ Received cross-page block notification');
                     showBlockToast(notificationData.data);
                 }
             } catch (error) {
@@ -1544,7 +1544,7 @@ function createColorSelect(value) {
 
 // Diagnostic function to test boolean elements
 function diagnoseBooleanElements() {
-    console.log('🔍 [DIAGNOSTIC] Checking all boolean elements:');
+    console.log('👁️ [DIAGNOSTIC] Checking all boolean elements:');
     const booleanFields = ['prioritize_large_scaled_meme', 'color_mode_dark', 'live_block_notifications_enabled', 'show_btc_price_block', 'show_bitaxe_block', 'show_wallet_balances_block', 'e-ink-display-connected'];
     
     booleanFields.forEach(fieldName => {
@@ -2834,7 +2834,7 @@ async function saveConfiguration() {
             const newLanguage = pendingLanguageChange || formConfig.language;
             const languageChanged = pendingLanguageChange !== null || (newLanguage && newLanguage !== oldLanguage);
             
-            console.log('🔍 Language change detection (saveConfiguration):', {
+            console.log('👁️ Language change detection (saveConfiguration):', {
                 oldLanguage,
                 newLanguage,
                 pendingLanguageChange,
@@ -2849,12 +2849,12 @@ async function saveConfiguration() {
             
             // Handle language change with page reload
             if (languageChanged) {
-                console.log('🔄 LANGUAGE CHANGE DETECTED! (saveConfiguration) Processing language change from', oldLanguage, 'to', newLanguage);
+                console.log('⚙️ LANGUAGE CHANGE DETECTED! (saveConfiguration) Processing language change from', oldLanguage, 'to', newLanguage);
                 
                 // Clear the pending change and reload page immediately
                 pendingLanguageChange = null;
                 setTimeout(() => {
-                    console.log('🔄 FORCING PAGE RELOAD for language change (saveConfiguration)');
+                    console.log('⚙️ FORCING PAGE RELOAD for language change (saveConfiguration)');
                     window.location.reload(true); // Force reload from server
                 }, 500); // Very short timeout for immediate reload
                 
@@ -2862,9 +2862,9 @@ async function saveConfiguration() {
             } else {
                 // Fallback check: if language in formConfig is different from what was in currentConfig
                 if (formConfig.language && formConfig.language !== oldLanguage) {
-                    console.log('🔄 FALLBACK (saveConfiguration): Language difference detected via form config!', oldLanguage, '->', formConfig.language);
+                    console.log('⚙️ FALLBACK (saveConfiguration): Language difference detected via form config!', oldLanguage, '->', formConfig.language);
                     setTimeout(() => {
-                        console.log('🔄 FALLBACK PAGE RELOAD for language change (saveConfiguration)');
+                        console.log('⚙️ FALLBACK PAGE RELOAD for language change (saveConfiguration)');
                         window.location.reload(true);
                     }, 500);
                     return true;
@@ -3395,14 +3395,14 @@ function setupConfigSocketHandlers() {
 
     // Listen for wallet balance updates
     configSocket.on('wallet_balance_updated', (data) => {
-        console.log('📊 Received wallet balance update:', data ? Object.keys(data).length + ' addresses (data masked for privacy)' : 'no data');
+        console.log('💾 Received wallet balance update:', data ? Object.keys(data).length + ' addresses (data masked for privacy)' : 'no data');
         updateWalletBalancesFromWebSocket(data);
         showNotification(window.translations?.wallet_balances_updated || 'Wallet balances updated automatically!', 'success');
     });
 
     // Listen for block notifications
     configSocket.on('new_block_notification', (data) => {
-        console.log("🎯 New block notification received:", data && data.height ? 'block ' + data.height + ' (details masked for privacy)' : 'notification data');
+        console.log("👁️ New block notification received:", data && data.height ? 'block ' + data.height + ' (details masked for privacy)' : 'notification data');
         // Store notification state to prevent duplicates
         const state = getNotificationState();
         const now = Date.now();
@@ -3428,9 +3428,9 @@ function setupConfigSocketHandlers() {
 
     configSocket.on('block_notification_status', (data) => {
         if (data.status === 'subscribed') {
-            console.log('🔔 [CONFIG] ' + (data.message || 'Subscribed to live block notifications'));
+            console.log('⚙️ [CONFIG] ' + (data.message || 'Subscribed to live block notifications'));
         } else if (data.status === 'unsubscribed') {
-            console.log('🔕 [CONFIG] Unsubscribed from live block notifications');
+            console.log('⚙️ [CONFIG] Unsubscribed from live block notifications');
         }
     });
 
@@ -3444,7 +3444,7 @@ function setupConfigSocketHandlers() {
             try {
                 const notificationData = JSON.parse(e.newValue);
                 if (notificationData && notificationData.timestamp > Date.now() - 5000) {
-                    console.log('🔔 Received cross-page block notification');
+                    console.log('⚙️ Received cross-page block notification');
                     showBlockToast(notificationData.data);
                 }
             } catch (error) {
@@ -3464,7 +3464,7 @@ function attemptConfigReconnect() {
     reconnectingConfig = true;
     if (reconnectTimeoutConfig) clearTimeout(reconnectTimeoutConfig);
     reconnectTimeoutConfig = setTimeout(() => {
-        console.log("🔄 Attempting Config WebSocket reconnect...");
+        console.log("⚙️ Attempting Config WebSocket reconnect...");
         if (configSocket) configSocket.connect();
         reconnectingConfig = false;
     }, 2000);
@@ -3553,7 +3553,7 @@ function setupNavigationButtons() {
                 try {
                     const formConfig = {};
                     
-                    console.log('🔍 [SAVE DEBUG] Starting form collection...');
+                    console.log('👁️ [SAVE DEBUG] Starting form collection...');
                     
                     // Collect all form values using the proper method that handles custom getValue() functions
                     document.querySelectorAll('[data-config-key]').forEach(element => {
@@ -3563,20 +3563,20 @@ function setupNavigationButtons() {
                             // Use custom getValue method for boolean switches and other custom elements
                             const value = element.getValue();
                             formConfig[key] = value;
-                            console.log(`🔍 [SAVE DEBUG] Collected ${key} via getValue(): ${value} (type: ${typeof value})`);
+                            console.log(`👁️ [SAVE DEBUG] Collected ${key} via getValue(): ${value} (type: ${typeof value})`);
                         } else if (element.type === 'checkbox') {
                             formConfig[key] = element.checked;
-                            console.log(`🔍 [SAVE DEBUG] Collected ${key} via checkbox: ${element.checked}`);
+                            console.log(`👁️ [SAVE DEBUG] Collected ${key} via checkbox: ${element.checked}`);
                         } else if (element.type === 'number') {
                             formConfig[key] = parseFloat(element.value) || 0;
-                            console.log(`🔍 [SAVE DEBUG] Collected ${key} via number: ${formConfig[key]}`);
+                            console.log(`👁️ [SAVE DEBUG] Collected ${key} via number: ${formConfig[key]}`);
                         } else {
                             formConfig[key] = element.value;
-                            console.log(`🔍 [SAVE DEBUG] Collected ${key} via value: ${element.value}`);
+                            console.log(`👁️ [SAVE DEBUG] Collected ${key} via value: ${element.value}`);
                         }
                     });
                     
-                    console.log('🔍 [SAVE DEBUG] Final formConfig:', formConfig);
+                    console.log('👁️ [SAVE DEBUG] Final formConfig:', formConfig);
                     
                     // Temporary: Show what we collected for boolean fields
                     const booleanFields = ['prioritize_large_scaled_meme', 'color_mode_dark', 'live_block_notifications_enabled', 'show_btc_price_block', 'show_bitaxe_block', 'show_wallet_balances_block', 'e-ink-display-connected'];
@@ -3586,7 +3586,7 @@ function setupNavigationButtons() {
                             booleanData[field] = formConfig[field];
                         }
                     });
-                    console.log('🔍 [SAVE DEBUG] Boolean fields being saved:', booleanData);
+                    console.log('👁️ [SAVE DEBUG] Boolean fields being saved:', booleanData);
                     
                     
                     // If we have a pending language change, make sure it's included in formConfig
@@ -3618,7 +3618,7 @@ function setupNavigationButtons() {
                         const newLanguage = pendingLanguageChange || formConfig.language;
                         const languageChanged = pendingLanguageChange !== null || (newLanguage && newLanguage !== oldLanguage);
                         
-                        console.log('🔍 Language change detection (nav buttons):', {
+                        console.log('👁️ Language change detection (nav buttons):', {
                             oldLanguage,
                             newLanguage,
                             pendingLanguageChange,
@@ -3632,7 +3632,7 @@ function setupNavigationButtons() {
                         
                         // Handle language change with new language success message
                         if (languageChanged) {
-                            console.log('🔄 LANGUAGE CHANGE DETECTED! (nav buttons) Processing language change from', oldLanguage, 'to', newLanguage);
+                            console.log('⚙️ LANGUAGE CHANGE DETECTED! (nav buttons) Processing language change from', oldLanguage, 'to', newLanguage);
                             
                             // Show notification and force page reload
                             showNotification('Language changed! Reloading page...', 'success');
@@ -3640,16 +3640,16 @@ function setupNavigationButtons() {
                             // Clear the pending change and reload page immediately
                             pendingLanguageChange = null;
                             setTimeout(() => {
-                                console.log('🔄 FORCING PAGE RELOAD for language change (nav buttons)');
+                                console.log('⚙️ FORCING PAGE RELOAD for language change (nav buttons)');
                                 window.location.reload(true); // Force reload from server
                             }, 1000); // Shorter timeout
                         } else {
                             // Fallback check: if language in formConfig is different from what was in currentConfig
                             if (formConfig.language && formConfig.language !== oldLanguage) {
-                                console.log('🔄 FALLBACK (nav): Language difference detected via form config!', oldLanguage, '->', formConfig.language);
+                                console.log('⚙️ FALLBACK (nav): Language difference detected via form config!', oldLanguage, '->', formConfig.language);
                                 showNotification('Language changed! Reloading page...', 'success');
                                 setTimeout(() => {
-                                    console.log('🔄 FALLBACK PAGE RELOAD for language change (nav)');
+                                    console.log('⚙️ FALLBACK PAGE RELOAD for language change (nav)');
                                     window.location.reload(true);
                                 }, 1000);
                             } else {
@@ -3733,14 +3733,14 @@ function unregisterPageForNotifications(pageType) {
 function subscribeToBlockNotifications() {
     // Always subscribe for config page, even if other pages are subscribed
     if (configSocket) {
-        console.log('🔔 Config page subscribing to live block notifications...');
+        console.log('⚙️ Config page subscribing to live block notifications...');
         configSocket.emit('subscribe_block_notifications', { page: 'config' });
     }
 }
 
 function unsubscribeFromBlockNotifications() {
     if (configSocket) {
-        console.log('🔕 Config page unsubscribing from live block notifications...');
+        console.log('⚙️ Config page unsubscribing from live block notifications...');
         configSocket.emit('unsubscribe_block_notifications');
     }
 }
@@ -3897,7 +3897,7 @@ window.testConfigSave = function() {
     // Test current boolean values
     const booleanFields = ['prioritize_large_scaled_meme', 'color_mode_dark', 'live_block_notifications_enabled', 'show_btc_price_block', 'show_bitaxe_block', 'show_wallet_balances_block', 'e-ink-display-connected'];
     
-    console.log('📊 Current boolean values:');
+    console.log('💾 Current boolean values:');
     booleanFields.forEach(fieldName => {
         const element = document.querySelector(`[data-config-key="${fieldName}"]`);
         if (element && element.getValue) {

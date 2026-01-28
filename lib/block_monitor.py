@@ -73,8 +73,9 @@ class BlockRewardMonitor:
         # Log mempool configuration
         base_url = self._get_mempool_base_url()
         ws_url = self._get_mempool_ws_url()
-        print(f"📡 Block monitor using mempool API: {base_url}")
-        print(f"🔗 Block monitor WebSocket: {ws_url}")
+        # API endpoint already logged in mempaper_app._init_api_clients
+        # print(f"🌐 Block monitor using mempool API: {base_url}")
+        print(f"📶 Block monitor WebSocket: {ws_url}")
     
     def _load_and_migrate_legacy_data(self):
         """Load legacy data and migrate to new caching system if needed."""
@@ -90,12 +91,12 @@ class BlockRewardMonitor:
                         self.valid_blocks_count = 0
                         self.blocks_by_address = {}
                     
-                    print(f"📊 Loaded legacy valid blocks count: {self.valid_blocks_count}")
+                    print(f"💾 Loaded legacy valid blocks count: {self.valid_blocks_count}")
                     if self.blocks_by_address:
                         # Crop addresses for privacy in logs
                         cropped_blocks = {self.cache._crop_address_for_log(addr): count 
                                          for addr, count in self.blocks_by_address.items()}
-                        print(f"📍 Legacy per-address blocks: {cropped_blocks}")
+                        print(f"👁️ Legacy per-address blocks: {cropped_blocks}")
                     
                     # Note: Legacy data is kept for backward compatibility
                     # New system uses BlockRewardCache for more detailed tracking
@@ -183,7 +184,7 @@ class BlockRewardMonitor:
                         print(f"⚠️ Unexpected valid blocks data type: {type(data)} value={data}")
                         self.valid_blocks_count = 0
                         self.blocks_by_address = {}
-                    print(f"📊 Loaded valid blocks count: {self.valid_blocks_count}")
+                    print(f"💾 Loaded valid blocks count: {self.valid_blocks_count}")
                     if self.blocks_by_address:
                         # Crop addresses for privacy in logs
                         cropped_blocks = {self.cache._crop_address_for_log(addr): count 
@@ -227,7 +228,7 @@ class BlockRewardMonitor:
             
             self.monitored_addresses = set(monitored_addresses)
             if len(self.monitored_addresses) > 0:
-                print(f"📍 Monitoring {len(self.monitored_addresses)} addresses for block rewards")
+                print(f"👁️ Monitoring {len(self.monitored_addresses)} addresses for block rewards")
             
             # Clean up legacy blocks_by_address data for addresses no longer monitored
             if hasattr(self, 'blocks_by_address') and self.blocks_by_address:
@@ -235,7 +236,7 @@ class BlockRewardMonitor:
                 addresses_to_remove = current_legacy_addresses - self.monitored_addresses
                 
                 if addresses_to_remove:
-                    print(f"🧹 Cleaning up legacy data for {len(addresses_to_remove)} removed addresses")
+                    print(f"💾 Cleaning up legacy data for {len(addresses_to_remove)} removed addresses")
                     
                     # Calculate total blocks to subtract before removing addresses
                     removed_count = sum(self.blocks_by_address.get(addr, 0) for addr in addresses_to_remove)
@@ -243,7 +244,7 @@ class BlockRewardMonitor:
                     for addr in addresses_to_remove:
                         # Privacy log the removal
                         cropped_addr = self.cache._crop_address_for_log(addr) if hasattr(self.cache, '_crop_address_for_log') else addr[:6] + '...' + addr[-6:]
-                        print(f"🗑️ Removing legacy data for address: {cropped_addr}")
+                        print(f"💾 Removing legacy data for address: {cropped_addr}")
                         del self.blocks_by_address[addr]
                     
                     # Update valid_blocks_count by subtracting removed address counts
@@ -254,11 +255,10 @@ class BlockRewardMonitor:
             
             # Update cache system with new addresses
             if monitored_addresses:
-                print(f"🔄 Updating cache system with {len(monitored_addresses)} addresses")
+                print(f"💾 Updating cache system with {len(monitored_addresses)} addresses")
                 self.cache.update_monitored_addresses(monitored_addresses)
             else:
-                print("� No addresses to monitor - cache cleanup complete")
-                # Clean up cache system if no addresses to monitor
+                # Clean up cache system if no addresses to monitor (silent when wallet monitoring disabled)
                 self.cache.update_monitored_addresses([])
     
     def get_valid_blocks_count(self) -> int:
@@ -320,11 +320,11 @@ class BlockRewardMonitor:
         
         btc_value = value_sats / 1e8
         cropped_address = self.cache._crop_address_for_log(address)
-        print(f"🎯 BLOCK REWARD FOUND! Block: {block_hash[:16]}... -> {cropped_address}: {btc_value:.8f} BTC")
-        print(f"📊 Total valid blocks found: {self.valid_blocks_count}")
-        print(f"📍 Blocks for {cropped_address}: {self.blocks_by_address[address]}")
+        print(f"👁️ BLOCK REWARD FOUND! Block: {block_hash[:16]}... -> {cropped_address}: {btc_value:.8f} BTC")
+        print(f"👁️ Total valid blocks found: {self.valid_blocks_count}")
+        print(f"👁️ Blocks for {cropped_address}: {self.blocks_by_address[address]}")
         if block_height:
-            print(f"🏗️ Block height: {block_height}")
+            print(f"👁️ Block height: {block_height}")
     
     def sync_cache_to_current(self) -> bool:
         """
@@ -374,7 +374,7 @@ class BlockRewardMonitor:
             txids = None
             for endpoint in endpoints_to_try:
                 try:
-                    print(f"🔍 Trying endpoint: {endpoint}")
+                    print(f"👁️ Trying endpoint: {endpoint}")
                     # Use verify=False for self-signed HTTPS certificates
                     txids_resp = requests.get(endpoint, timeout=10, verify=False)
                     txids_resp.raise_for_status()
@@ -428,18 +428,18 @@ class BlockRewardMonitor:
         """Start WebSocket monitoring for new blocks (always connects, even if no reward addresses)."""
         if not WEBSOCKET_AVAILABLE:
             print("⚠️ WebSocket monitoring unavailable (websocket-client not installed)")
-            print("📊 Block rewards will still be counted manually, but not in real-time")
+            print("💾 Block rewards will still be counted manually, but not in real-time")
             return
 
         if self.running:
-            print("📡 Block monitoring already running")
+            print("⚙️ Block monitoring already running")
             return
 
         # Always connect to WebSocket for block notifications
         self.running = True
         self.monitoring_thread = threading.Thread(target=self._monitor_blocks, daemon=True)
         self.monitoring_thread.start()
-        print(f"📡 Block monitoring started (WebSocket will notify on every new block)")
+        print(f"📶 Block monitoring started (WebSocket will notify on every new block)")
 
         # Startup catch-up: check current block height and process missed blocks
         try:
@@ -450,7 +450,7 @@ class BlockRewardMonitor:
                 current_height = tip_data.get("height") if isinstance(tip_data, dict) else None
                 last_cached_height = self.cache.get_last_cached_block_height() if hasattr(self.cache, "get_last_cached_block_height") else None
                 if last_cached_height and current_height and current_height > last_cached_height:
-                    print(f"🔄 Missed blocks detected: {last_cached_height} → {current_height}. Generating images for missed blocks...")
+                    print(f"⚙️ Missed blocks detected: {last_cached_height} → {current_height}. Generating images for missed blocks...")
                     for h in range(last_cached_height + 1, current_height + 1):
                         # Fetch block hash for height
                         block_resp = requests.get(f"{base_url}/block-height/{h}", timeout=10, verify=False)
@@ -471,7 +471,7 @@ class BlockRewardMonitor:
                             else:
                                 print(f"⚠️ Unexpected block_json type for height {h}: {type(block_json)}")
                             if block_hash and self.image_generation_callback:
-                                print(f"🎨 Generating image for missed block {h}")
+                                print(f"⚙️ Generating image for missed block {h}")
                                 try:
                                     self.image_generation_callback(h, block_hash)
                                 except Exception as e:
@@ -547,12 +547,13 @@ class BlockRewardMonitor:
             except Exception as e:
                 print(f"⚠️ WebSocket error: {e}")
                 if self.running:
-                    print("🔄 Reconnecting in 30 seconds...")
+                    print("⚙️ Reconnecting in 30 seconds...")
                     time.sleep(30)
     
     def _on_open(self, ws):
         """WebSocket connection opened."""
-        print("📡 WebSocket connected, subscribing to blocks...")
+        # Connection already logged by websocket_client on_open
+        # print("📶 WebSocket connected, subscribing to blocks...")
         ws.send(json.dumps({"action": "want", "data": ["blocks"]}))
     
     def _on_message(self, ws, message):
@@ -567,18 +568,18 @@ class BlockRewardMonitor:
                 # Format block height with thousand separators for better readability
                 if block_height:
                     formatted_height = f"{block_height:,}".replace(",", ".")
-                    print(f"🆕 New block: {formatted_height}")
+                    print(f"👁️ New block: {formatted_height}")
                 else:
-                    print(f"🆕 New block: {block_hash[:16]}... (height unknown)")
+                    print(f"👁️ New block: {block_hash[:16]}... (height unknown)")
                 # ...existing code...
                 if self.new_block_notification_callback and block_height:
-                    print(f"📡 Sending new block notification to web clients for block {block_height}")
+                    print(f"📶 Sending new block notification to web clients for block {block_height}")
                     try:
                         self.new_block_notification_callback(block_height, block_hash)
                     except Exception as e:
                         print(f"⚠️ Failed to send block notification: {e}")
                 if self.image_generation_callback and block_height:
-                    print(f"🎨 Triggering image generation for new block {block_height}")
+                    print(f"⚙️ Triggering image generation for new block {block_height}")
                     try:
                         self.image_generation_callback(block_height, block_hash)
                         print(f"✅ Image generation triggered successfully for block {block_height}")
@@ -610,10 +611,10 @@ class BlockRewardMonitor:
                 if coinbase_tx:
                     return coinbase_tx
                 else:
-                    print(f"🔄 Attempt {attempt + 1}/{max_retries}: Block {block_hash[:16]}... not ready yet, waiting...")
+                    print(f"⚙️ Attempt {attempt + 1}/{max_retries}: Block {block_hash[:16]}... not ready yet, waiting...")
                     time.sleep(5)  # Wait longer between retries
             except Exception as e:
-                print(f"🔄 Attempt {attempt + 1}/{max_retries} failed: {e}")
+                print(f"⚙️ Attempt {attempt + 1}/{max_retries} failed: {e}")
                 time.sleep(5)
         
         print(f"⚠️ Failed to fetch coinbase transaction for block {block_hash[:16]}... after {max_retries} attempts")
@@ -625,9 +626,9 @@ class BlockRewardMonitor:
     
     def _on_close(self, ws, close_status_code, close_msg):
         """Handle WebSocket close."""
-        print("📡 WebSocket connection closed")
+        print("📶 WebSocket connection closed")
         if self.running:
-            print("🔄 Will attempt to reconnect...")
+            print("⚙️ Will attempt to reconnect...")
 
 
 # Global instance for use in the main application
