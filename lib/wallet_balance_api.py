@@ -440,7 +440,7 @@ class WalletBalanceAPI:
                 # Only do optimized monitoring if NOT in startup mode with fresh addresses
                 if not (startup_mode and fresh_addresses_found) and monitoring_addresses:
                     cache_age_hours = (current_time - cache_data['last_full_scan']) / 3600
-                    print(f"👁️ [OPTIMIZED] Using optimized monitoring for {xpub[:20]}... (cache age: {cache_age_hours:.1f}h)")
+                    print(f"👁️ [OPTIMIZED] Monitoring {xpub[:20]}... (cache age: {cache_age_hours:.1f}h)")
                     print(f"   💾 Monitoring {len(monitoring_addresses)} critical addresses (cached full scan has {cache_data.get('funded_address_count', 0)} funded addresses)")
                     
                     # Check if any monitored address balance has changed

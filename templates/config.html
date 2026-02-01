@@ -112,15 +112,7 @@
 
     <script>
         // Make translations available to JavaScript
-        window.translations = {
-            meme_preview: "{{ translations.meme_preview }}",
-            filename: "{{ translations.filename }}",
-            dimensions: "{{ translations.dimensions }}",
-            file_size: "{{ translations.file_size }}",
-            loading: "{{ translations.loading }}",
-            download_meme: "{{ translations.download_meme }}",
-            delete_meme: "{{ translations.delete_meme }}"
-        };
+        window.translations = {{ translations | tojson }};
     </script>
     <script src="static/js/session-manager.js"></script>
     <script src="static/js/config.js"></script>

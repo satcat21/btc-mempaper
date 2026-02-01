@@ -15,6 +15,15 @@
   "prioritize_large_scaled_meme": true,
   "color_mode_dark": true,
 
+  "color_holiday_light": "#CD853F",
+  "color_holiday_dark": "#F7931A",
+  "color_btc_price_light": "#17805B",
+  "color_btc_price_dark": "#00C896",
+  "color_bitaxe_stats_light": "#B89C1D",
+  "color_bitaxe_stats_dark": "#FFE566",
+  "color_wallets_light": "#1565C0",
+  "color_wallets_dark": "#09A3BA",
+
   "e-ink-display-connected": false,
   "omni_device_name": "waveshare_epd.epd7in3f",
   "display_orientation": "vertical",

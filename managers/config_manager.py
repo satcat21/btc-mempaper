@@ -646,7 +646,14 @@ class ConfigManager:
                 validated["admin_password"] = config["admin_password"].strip()
         
         # Single value settings that should be passed through directly
-        passthrough_settings = ["language", "display_orientation", "fee_parameter", "moscow_time_unit", "bitaxe_display_mode"]
+        passthrough_settings = [
+            "language", "display_orientation", "fee_parameter", 
+            "moscow_time_unit", "bitaxe_display_mode",
+            "color_holiday_light", "color_holiday_dark",
+            "color_btc_price_light", "color_btc_price_dark",
+            "color_bitaxe_stats_light", "color_bitaxe_stats_dark",
+            "color_wallets_light", "color_wallets_dark"
+        ]
         for setting in passthrough_settings:
             if setting in config:
                 validated[setting] = config[setting]
@@ -726,6 +733,20 @@ class ConfigManager:
                 ],
                 "category": "price_stats"
             },
+            "color_btc_price_light": {
+                "type": "color",
+                "label": t.get("color_btc_price_light", "BTC Price (Light Mode)"),
+                "description": t.get("color_btc_price_light_desc", "Color for BTC price text in light mode"),
+                "default": "#17805B",
+                "category": "price_stats"
+            },
+            "color_btc_price_dark": {
+                "type": "color",
+                "label": t.get("color_btc_price_dark", "BTC Price (Dark Mode)"),
+                "description": t.get("color_btc_price_dark_desc", "Color for BTC price text in dark mode"),
+                "default": "#00c896",
+                "category": "price_stats"
+            },
             "show_bitaxe_block": {
                 "type": "boolean",
                 "label": t.get("show_bitaxe_block", "Show Bitaxe Hashrate/Blocks Block"),
@@ -756,6 +777,20 @@ class ConfigManager:
                 "label": t.get("block_reward_addresses_table", "Block Reward Monitoring Table"),
                 "description": t.get("block_reward_addresses_table_desc", "Manage BTC addresses to monitor for block rewards with comments and found blocks tracking."),
                 "default": [],
+                "category": "bitaxe_stats"
+            },
+            "color_bitaxe_stats_light": {
+                "type": "color",
+                "label": t.get("color_bitaxe_stats_light", "Bitaxe Stats (Light Mode)"),
+                "description": t.get("color_bitaxe_stats_light_desc", "Color for Bitaxe stats text in light mode"),
+                "default": "#B89C1D",
+                "category": "bitaxe_stats"
+            },
+            "color_bitaxe_stats_dark": {
+                "type": "color",
+                "label": t.get("color_bitaxe_stats_dark", "Bitaxe Stats (Dark Mode)"),
+                "description": t.get("color_bitaxe_stats_dark_desc", "Color for Bitaxe stats text in dark mode"),
+                "default": "#ffe566",
                 "category": "bitaxe_stats"
             },
             "show_wallet_balances_block": {
@@ -796,6 +831,20 @@ class ConfigManager:
                     {"value": "AUD", "label": "Australian Dollar (AUD)", "symbol": "A$"},
                     {"value": "JPY", "label": "Japanese Yen (JPY)", "symbol": "¥"}
                 ],
+                "category": "wallet_monitoring"
+            },
+            "color_wallets_light": {
+                "type": "color",
+                "label": t.get("color_wallets_light", "Wallet Stats (Light Mode)"),
+                "description": t.get("color_wallets_light_desc", "Color for wallet balances text in light mode"),
+                "default": "#1565C0",
+                "category": "wallet_monitoring"
+            },
+            "color_wallets_dark": {
+                "type": "color",
+                "label": t.get("color_wallets_dark", "Wallet Stats (Dark Mode)"),
+                "description": t.get("color_wallets_dark_desc", "Color for wallet balances text in dark mode"),
+                "default": "#09a3ba",
                 "category": "wallet_monitoring"
             },
             "language": {
@@ -889,6 +938,20 @@ class ConfigManager:
                 "label": t.get("prioritize_large_scaled_meme", "Prioritize Large Scaled Memes"),
                 "description": t.get("prioritize_large_scaled_meme_desc", "When enabled, maximize meme display space by hiding holiday info and stats if necessary. Holiday takes priority over stats when both can't fit."),
                 "default": False,
+                "category": "general"
+            },
+            "color_holiday_light": {
+                "type": "color",
+                "label": t.get("color_holiday_light", "Holiday (Light Mode)"),
+                "description": t.get("color_holiday_light_desc", "Color for holiday text in light mode"),
+                "default": "#cd853f",
+                "category": "general"
+            },
+            "color_holiday_dark": {
+                "type": "color",
+                "label": t.get("color_holiday_dark", "Holiday (Dark Mode)"),
+                "description": t.get("color_holiday_dark_desc", "Color for holiday text in dark mode"),
+                "default": "#09a3ba",
                 "category": "general"
             },
             "omni_device_name": {

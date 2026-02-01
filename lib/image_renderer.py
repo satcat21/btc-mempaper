@@ -196,6 +196,43 @@ class ImageRenderer:
     def __init__(self, config, translations):
         self.config = config
         self.t = translations
+        
+        # Initialize color sets with defaults and overrides
+        self.color_sets = {k: v.copy() for k, v in COLOR_SETS.items()}
+        
+        # Override with configured colors
+        # Holidays
+        if "color_holiday_light" in config:
+            self.color_sets["light"]["holiday_title"] = config["color_holiday_light"]
+            self.color_sets["light"]["holiday_desc"] = config["color_holiday_light"]
+        if "color_holiday_dark" in config:
+            self.color_sets["dark"]["holiday_title"] = config["color_holiday_dark"]
+            self.color_sets["dark"]["holiday_desc"] = config["color_holiday_dark"]
+
+        # BTC Price
+        if "color_btc_price_light" in config:
+            self.color_sets["light"]["btc_price"] = config["color_btc_price_light"]
+            self.color_sets["light"]["moscow_time"] = config["color_btc_price_light"]
+        if "color_btc_price_dark" in config:
+            self.color_sets["dark"]["btc_price"] = config["color_btc_price_dark"]
+            self.color_sets["dark"]["moscow_time"] = config["color_btc_price_dark"]
+
+        # Bitaxe
+        if "color_bitaxe_stats_light" in config:
+            self.color_sets["light"]["hashrate"] = config["color_bitaxe_stats_light"]
+            self.color_sets["light"]["found_blocks"] = config["color_bitaxe_stats_light"]
+        if "color_bitaxe_stats_dark" in config:
+            self.color_sets["dark"]["hashrate"] = config["color_bitaxe_stats_dark"]
+            self.color_sets["dark"]["found_blocks"] = config["color_bitaxe_stats_dark"]
+
+        # Wallets
+        if "color_wallets_light" in config:
+            self.color_sets["light"]["wallet_balance"] = config["color_wallets_light"]
+            self.color_sets["light"]["fiat_balance"] = config["color_wallets_light"]
+        if "color_wallets_dark" in config:
+            self.color_sets["dark"]["wallet_balance"] = config["color_wallets_dark"]
+            self.color_sets["dark"]["fiat_balance"] = config["color_wallets_dark"]
+
         self.block_fee_cache = {}  # {block_height: {'fee_data': ..., 'fee_color': ...}}
         self.last_block_height = None
         self.fee_param = config.get('fee_param', 'fastestFee')  # Default fee param
@@ -663,18 +700,18 @@ class ImageRenderer:
         For web images, uses COLOR_SETS for light/dark mode.
         For e-ink, uses ColorLUT and EPD color mapping.
         """
-        # Use COLOR_SETS for web images
-        if web_quality and isinstance(color_name, str) and color_name in COLOR_SETS["light"]:
+        # Use self.color_sets for web images
+        if web_quality and isinstance(color_name, str) and color_name in self.color_sets["light"]:
             mode = "dark" if self.config.get("color_mode_dark", True) else "light"
-            hex_color = COLOR_SETS[mode].get(color_name, "#ffffff")
+            hex_color = self.color_sets[mode].get(color_name, "#ffffff")
             hex_color = hex_color.lstrip("#")
             rgb = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
             return rgb
 
         # For e-ink images, use dark mode if enabled
-        if not web_quality and isinstance(color_name, str) and color_name in COLOR_SETS["light"]:
+        if not web_quality and isinstance(color_name, str) and color_name in self.color_sets["light"]:
             mode = "dark" if self.config.get("eink_dark_mode", False) else "light"
-            hex_color = COLOR_SETS[mode].get(color_name, "#ffffff")
+            hex_color = self.color_sets[mode].get(color_name, "#ffffff")
             
             # For e-ink dark mode, override most text to white for readability
             # Exceptions: date colors and fee-based colors (green/yellow/orange/red/blue/black)

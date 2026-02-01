@@ -315,7 +315,7 @@ function createPasswordChangeInterface(key, field) {
     saveButton.style.padding = '8px 16px';
     saveButton.style.borderRadius = '4px';
     saveButton.style.cursor = 'pointer';
-    saveButton.textContent = 'Save';
+    saveButton.textContent = window.translations?.save || 'Save';
     
     // Cancel button
     const cancelButton = document.createElement('button');
@@ -327,7 +327,7 @@ function createPasswordChangeInterface(key, field) {
     cancelButton.style.padding = '8px 16px';
     cancelButton.style.borderRadius = '4px';
     cancelButton.style.cursor = 'pointer';
-    cancelButton.textContent = 'Cancel';
+    cancelButton.textContent = window.translations?.cancel || 'Cancel';
     
     // Event handlers
     changeButton.addEventListener('click', () => {
@@ -392,7 +392,7 @@ function createPasswordChangeInterface(key, field) {
             errorMessage.style.display = 'block';
         } finally {
             saveButton.disabled = false;
-            saveButton.textContent = 'Save';
+            saveButton.textContent = window.translations?.save || 'Save';
         }
     });
     
@@ -1157,6 +1157,11 @@ function createFormField(key, field, value) {
     const formGroup = document.createElement('div');
     formGroup.className = 'form-group';
     
+    // Add special class for color fields to allow side-by-side layout
+    if (field.type === 'color' || field.type === 'color_select') {
+        formGroup.classList.add('form-group-color');
+    }
+    
     // Skip adding label for meme_management since it manages its own interface
     if (field.type !== 'meme_management') {
         const label = document.createElement('label');
@@ -1244,6 +1249,10 @@ function createFormField(key, field, value) {
             
         case 'color_select':
             input = createColorSelect(value);
+            break;
+            
+        case 'color':
+            input = createColorInput(value);
             break;
             
         case 'boolean':
@@ -1337,6 +1346,55 @@ function createFormField(key, field, value) {
     }
     
     return formGroup;
+}
+
+
+function createColorInput(value) {
+    const container = document.createElement('div');
+    container.className = 'color-input-container';
+    container.style.display = 'flex';
+    container.style.alignItems = 'center';
+    container.style.gap = '10px';
+
+    const colorInput = document.createElement('input');
+    colorInput.type = 'color';
+    colorInput.value = value || '#000000';
+    colorInput.className = 'form-color-picker';
+    colorInput.style.height = '40px';
+    colorInput.style.width = '60px';
+    colorInput.style.cursor = 'pointer';
+    colorInput.style.padding = '0';
+    colorInput.style.border = '1px solid #ddd';
+    colorInput.style.borderRadius = '4px';
+
+    const textInput = document.createElement('input');
+    textInput.type = 'text';
+    textInput.value = value || '#000000';
+    textInput.className = 'form-input';
+    textInput.style.width = '100px';
+    textInput.placeholder = '#RRGGBB';
+
+    // Sync inputs
+    colorInput.addEventListener('input', () => {
+        textInput.value = colorInput.value.toUpperCase();
+    });
+
+    textInput.addEventListener('input', () => {
+        const val = textInput.value;
+        if (/^#[0-9A-F]{6}$/i.test(val)) {
+            colorInput.value = val;
+        }
+    });
+
+    container.appendChild(colorInput);
+    container.appendChild(textInput);
+    
+    // Config collector uses getValue() if available
+    container.getValue = function() {
+        return textInput.value;
+    };
+    
+    return container;
 }
 
 function createColorSelect(value) {

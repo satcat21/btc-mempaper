@@ -442,9 +442,10 @@ class MempaperApp:
                             print(f"⚙️ [STARTUP] Cached addresses outdated for {xpub[:20]}... - bootstrap needed")
                             bootstrap_needed = True
                             break
-                        elif cache_status == "valid":
-                            print(f"✅ [STARTUP] Valid cached addresses found for {xpub[:20]}... - bootstrap not needed")
-                        else:
+                        # elif cache_status == "valid":
+                        #     print(f"✅ [STARTUP] Valid cached addresses found for {xpub[:20]}... - bootstrap not needed")
+                        # else:
+                        elif cache_status != "valid":
                             print(f"⚠️ [STARTUP] Unknown cache status for {xpub[:20]}... - bootstrap needed as fallback")
                             bootstrap_needed = True
                             break
@@ -458,7 +459,7 @@ class MempaperApp:
                         ).start()
                         print("✅ [STARTUP] Bootstrap detection started in background")
                     else:
-                        print("✅ [STARTUP] All extended keys have valid cached data - skipping bootstrap")
+                        print("✅ [STARTUP] All extended keys have valid cached data")
             except Exception as e:
                 print(f"⚠️ Could not check wallet status: {e}")
         
@@ -1159,7 +1160,7 @@ class MempaperApp:
             removed_addresses = old_addresses - new_addresses
             
             if not removed_addresses:
-                print("🧹 No removed wallet addresses - cache cleanup not needed")
+                # print("🧹 No removed wallet addresses - cache cleanup not needed")
                 return
             
             print(f"🧹 Cleaning up cache for {len(removed_addresses)} removed wallet address(es)")
@@ -1801,7 +1802,7 @@ class MempaperApp:
     def _safe_wallet_refresh_thread(self, block_height, block_hash, startup_mode=False):
         """Safe wallet refresh that runs in thread but uses subprocess for actual work."""
         try:
-            print(f"🚀 [THREAD] Starting safe wallet refresh for block {block_height}...")
+            # print(f"🚀 [THREAD] Starting safe wallet refresh for block {block_height}...")
             
             # Call the existing process-based refresh logic directly
             self._run_wallet_refresh_process(block_height, block_hash, startup_mode)
@@ -1835,7 +1836,7 @@ class MempaperApp:
             # print(f"✅ [PROCESS] Fresh wallet data: {masked_fresh_data}")
             
             # Get cached wallet data
-            print("📖 [PROCESS] Loading cached wallet data...")
+            # print("📖 [PROCESS] Loading cached wallet data...")
             cached_wallet_data = image_renderer.wallet_api.get_cached_wallet_balances()
             
             # Log cached data with privacy masking  
@@ -1852,7 +1853,7 @@ class MempaperApp:
             fresh_btc = fresh_wallet_data.get("total_btc", 0)
             cached_btc = cached_wallet_data.get("total_btc", 0)
             
-            print(f"⚖️ [PROCESS] Balance comparison: Fresh={fresh_btc} BTC, Cached={cached_btc} BTC")
+            # print(f"⚖️ [PROCESS] Balance comparison: Fresh={fresh_btc} BTC, Cached={cached_btc} BTC")
 
             if fresh_btc != cached_btc:
                 print("⚙️ [PROCESS] Wallet data changed, updating cache...")
@@ -1947,8 +1948,8 @@ class MempaperApp:
                                 args=(self.current_eink_image_path, block_height, block_hash),
                                 daemon=True
                             ).start()
-                else:
-                    print(f"✅ E-ink already shows correct block height {block_height}, skipping display update")
+                # else:
+                #     print(f"✅ E-ink already shows correct block height {block_height}, skipping display update")
             elif skip_epaper:
                 print("⚙️ Skipping e-Paper display (skip_epaper=True)")
             else:

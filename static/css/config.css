@@ -2135,3 +2135,60 @@ body.dark-mode .back-button {
 body.dark-mode .back-button:hover {
     background: rgba(255, 255, 255, 0.3);
 }
+
+/* Layout for side-by-side color pickers */
+.form-group-color {
+    display: inline-block;
+    width: calc(50% - 10px);
+    vertical-align: top;
+    margin-right: 20px;
+    margin-bottom: 20px;
+}
+
+/* Clear margin for every second color field to fit in the row */
+.form-group-color:nth-of-type(2n) {
+    margin-right: 0;
+}
+
+/* Ensure proper wrapping for mobile devices */
+@media (max-width: 600px) {
+    .form-group-color {
+        display: block;
+        width: 100%;
+        margin-right: 0;
+    }
+}
+
+/* Improved Flexbox Layout for Config Sections */
+
+.config-section {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between; /* Use space-between to handle gaps */
+    column-gap: initial; /* Reset if previously set */
+    align-content: flex-start; /* Prevent content from stretching vertically */
+}
+
+.section-title {
+    width: 100%; /* Title takes full width */
+}
+
+/* Standard form groups take full width */
+.form-group {
+    width: 100%; 
+}
+
+/* Color form groups take roughly half width */
+.form-group-color {
+    display: block; /* Reset inline-block */
+    width: 48%;
+    margin-right: 0; /* Reset margins */
+    vertical-align: initial;
+}
+
+/* On mobile, stack everything */
+@media (max-width: 600px) {
+    .form-group-color {
+        width: 100%;
+    }
+}
