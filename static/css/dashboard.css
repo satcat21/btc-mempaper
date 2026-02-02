@@ -12,175 +12,43 @@ body {
 }
 
 #dashboard {
-    /* Base sizing - will be overridden by orientation-specific rules */
+    /* Base sizing - responsive & aspect ratio agnostic */
     width: auto;
     height: auto;
+    
+    /* Constrain width */
+    max-width: 95vw;
+    
+    /* Constrain height - verify vertical space for nav/padding */
+    max-height: calc(100vh - 120px);
+    
     box-shadow: 0 4px 20px rgba(0,0,0,0.1);
     border-radius: 8px;
     object-fit: contain;
+    transition: all 0.3s ease;
 }
 
-/* Horizontal orientation (5:3 aspect ratio - 800x480) */
-.orientation-horizontal #dashboard {
-    /* Maximize responsive sizing that maintains 5:3 aspect ratio */
-    width: min(98vw, calc(100vh - 120px) * 5/3);
-    max-height: calc(100vh - 120px);
-    aspect-ratio: 5/3;
-}
-
-/* Vertical orientation (3:5 aspect ratio - 480x800) */
-.orientation-vertical #dashboard {
-    /* Maximize responsive sizing that maintains 3:5 aspect ratio */
-    width: min(95vw, calc(100vh - 120px) * 3/5);
-    max-height: calc(100vh - 120px);
-    aspect-ratio: 3/5;
-}
-
-/* Large displays - scale image up significantly */
-@media (min-width: 1920px) {
-    .orientation-horizontal #dashboard {
-        width: min(90vw, min(80vh * 5/3, 1600px));
-        max-height: min(80vh, 960px);
-    }
-    
-    .orientation-vertical #dashboard {
-        width: min(75vw, min(80vh * 3/5, 800px));
-        max-height: min(80vh, 1333px);
-    }
-}
-
-/* Extra large displays - even more scaling */
-@media (min-width: 2560px) {
-    .orientation-horizontal #dashboard {
-        width: min(85vw, min(75vh * 5/3, 2000px));
-        max-height: min(75vh, 1200px);
-    }
-    
-    .orientation-vertical #dashboard {
-        width: min(70vw, min(75vh * 3/5, 1000px));
-        max-height: min(75vh, 1667px);
-    }
-}
-
-/* Ultra-wide and high-res displays */
-@media (min-width: 3440px) {
-    .orientation-horizontal #dashboard {
-        width: min(80vw, min(70vh * 5/3, 2400px));
-        max-height: min(70vh, 1440px);
-    }
-    
-    .orientation-vertical #dashboard {
-        width: min(65vw, min(70vh * 3/5, 1200px));
-        max-height: min(70vh, 2000px);
-    }
-}
-
-/* High-resolution displays with tall aspect ratios */
-@media (min-height: 1440px) {
-    .orientation-horizontal #dashboard {
-        max-height: min(75vh, 1080px);
-    }
-    
-    .orientation-vertical #dashboard {
-        max-height: min(80vh, 1440px);
-    }
-}
-
-/* Very tall displays - maximize vertical space usage */
-@media (min-height: 1800px) {
-    .orientation-horizontal #dashboard {
-        max-height: min(70vh, 1440px);
-    }
-    
-    .orientation-vertical #dashboard {
-        max-height: min(75vh, 1800px);
-    }
-}
-
-/* High-resolution mobile displays (like 2960x1440) */
-@media (max-width: 480px) and (min-height: 1200px) {
-    .orientation-vertical #dashboard {
-        width: min(95vw, min(80vh * 3/5, 450px));
-        max-height: min(80vh, 900px);
-    }
-}
-
-/* Responsive Dashboard Anpassungen - Maximale mobile Nutzung */
+/* Mobile adjustments */
 @media (max-width: 768px) {
-    .orientation-horizontal #dashboard {
-        width: min(99vw, calc(100vh - 100px) * 5/3);
-        max-height: calc(100vh - 100px);
-    }
-    
-    .orientation-vertical #dashboard {
-        width: min(98vw, calc(100vh - 100px) * 3/5);
+    #dashboard {
         max-height: calc(100vh - 100px);
     }
 }
 
 @media (max-width: 480px) {
-    .orientation-horizontal #dashboard {
-        width: min(99vw, calc(100vh - 90px) * 5/3);
-        max-height: calc(100vh - 90px);
-    }
-    
-    .orientation-vertical #dashboard {
-        width: min(98vw, calc(100vh - 90px) * 3/5);
-        max-height: calc(100vh - 90px);
+    #dashboard {
+        max-height: calc(100vh - 80px);
+        max-width: 98vw;
     }
 }
 
-/* Touch device optimizations for maximum screen usage */
-@media (pointer: coarse) and (max-width: 768px) {
-    .orientation-vertical #dashboard {
-        width: min(98vw, calc(100vh - 95px) * 3/5);
-        max-height: calc(100vh - 95px);
-    }
-    
-    .orientation-horizontal #dashboard {
-        width: min(99vw, calc(100vh - 95px) * 5/3);
-        max-height: calc(100vh - 95px);
-    }
-}
-
-/* High-DPI touch devices (modern smartphones) - maximize usage */
-@media (pointer: coarse) and (max-width: 480px) and (min-resolution: 2dppx) {
-    .orientation-vertical #dashboard {
-        width: min(98vw, calc(100vh - 85px) * 3/5);
-        max-height: calc(100vh - 85px);
-    }
-    
-    .orientation-horizontal #dashboard {
-        width: min(99vw, calc(100vh - 85px) * 5/3);
-        max-height: calc(100vh - 85px);
-    }
-}
-
-/* Very small touch devices - maximize usage */
-@media (pointer: coarse) and (max-width: 360px) {
-    .orientation-vertical #dashboard {
-        width: min(98vw, calc(100vh - 85px) * 3/5);
-        max-height: calc(100vh - 85px);
-    }
-    
-    .orientation-horizontal #dashboard {
-        width: min(99vw, calc(100vh - 85px) * 5/3);
-        max-height: calc(100vh - 85px);
-    }
-}
-
-/* Landscape mobile optimization */
+/* Landscape on mobile */
 @media (max-height: 500px) and (orientation: landscape) {
-    .orientation-horizontal #dashboard {
-        width: min(99vw, calc(100vh - 70px) * 5/3);
-        max-height: calc(100vh - 70px);
-    }
-    
-    .orientation-vertical #dashboard {
-        width: min(85vw, calc(100vh - 70px) * 3/5);
-        max-height: calc(100vh - 70px);
+    #dashboard {
+        max-height: calc(100vh - 40px);
     }
 }
+
 
 
 

@@ -5,15 +5,28 @@ These settings can be modified via the Web Dashboard (recommended) or by editing
 
 ---
 
-## 🎨 General Appearance
+## 🖼️ General Appearance
 
 | Web Label | Config Key | Type | Description | Allowed Values / Examples |
 | :--- | :--- | :--- | :--- | :--- |
 | **Language** | `language` | Select | Interface language | `en` (English), `de` (German), `es` (Spanish), `fr` (French) |
-| **Display Orientation** | `display_orientation` | Select | Screen layout orientation | `vertical` (Portrait), `horizontal` (Landscape) |
+| **Web Orientation** | `web_orientation` | Toggle | Web dashboard orientation | `vertical` (Portrait), `horizontal` (Landscape) |
+| **E-ink Orientation** | `eink_orientation` | Toggle | E-ink display orientation | `vertical` (Portrait), `horizontal` (Landscape) |
 | **Color Mode** | `color_mode_dark` | Switch | Dark theme for dashboard | `true` (Dark), `false` (Light) |
+| **E-Ink Dark Mode** | `eink_dark_mode` | Switch | Invert colors for E-ink | `true` (Inverted/Night), `false` (Standard) |
 | **Prioritize Large Memes** | `prioritize_large_scaled_meme` | Switch | Maximize meme size vs info blocks | `true` (Large Memes), `false` (Balanced) |
 | **Live Block Notifications** | `live_block_notifications_enabled` | Switch | Popup on new block | `true` (On), `false` (Off) |
+
+---
+
+## 🎨 Color Customization
+
+| Web Label | Config Key | Type | Description | Default Light / Dark |
+| :--- | :--- | :--- | :--- | :--- |
+| **Holiday Color** | `color_holiday_light`<br>`color_holiday_dark` | Color | Text color for holiday events | `#CD853F` / `#F7931A` |
+| **BTC Price Color** | `color_btc_price_light`<br>`color_btc_price_dark` | Color | Text color for Bitcoin price | `#17805B` / `#00C896` |
+| **Bitaxe Color** | `color_bitaxe_stats_light`<br>`color_bitaxe_stats_dark` | Color | Text color for mining stats | `#B89C1D` / `#FFE566` |
+| **Wallet Color** | `color_wallets_light`<br>`color_wallets_dark` | Color | Text color for wallet balances | `#1565C0` / `#09A3BA` |
 
 ---
 

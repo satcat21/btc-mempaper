@@ -154,10 +154,10 @@ def try_display_with_exponential_backoff(device_name, image_path, message=None, 
                 config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config.json')
                 with open(config_path, 'r') as f:
                     config = json.load(f)
-                display_orientation = config.get("display_orientation", "vertical").lower()
+                eink_orientation = config.get("eink_orientation", "vertical").lower()
                 
                 # For vertical orientation, we need special processing to avoid cropping
-                if display_orientation == "vertical":
+                if eink_orientation == "vertical":
                     # Process image with rotation-aware scaling
                     processed_img = process_vertical_image(image_path, epd.width, epd.height, message)
                     # Create a dummy processor object to maintain compatibility
@@ -171,11 +171,11 @@ def try_display_with_exponential_backoff(device_name, image_path, message=None, 
                     proc.process()
                 
                 print(f"show_image.py: Physical display dimensions: {epd.width}x{epd.height}")
-                print(f"show_image.py: Display orientation setting: {display_orientation}")
+                print(f"show_image.py: Display orientation setting: {eink_orientation}")
                 
             except Exception as e:
                 print(f"show_image.py: Could not load config, assuming vertical: {e}")
-                display_orientation = "vertical"
+                eink_orientation = "vertical"
                 # Fallback to standard processing
                 proc = Processor(img_path=image_path,
                                display_width=epd.width,

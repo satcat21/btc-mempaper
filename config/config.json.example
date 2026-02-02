@@ -26,7 +26,8 @@
 
   "e-ink-display-connected": false,
   "omni_device_name": "waveshare_epd.epd7in3f",
-  "display_orientation": "vertical",
+  "web_orientation": "vertical",
+  "eink_orientation": "vertical",
   "display_width": 800,
   "display_height": 480,
 

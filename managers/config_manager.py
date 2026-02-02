@@ -335,7 +335,8 @@ class ConfigManager:
         """
         return {
             "language": "en",
-            "display_orientation": "vertical",
+            "web_orientation": "vertical",
+            "eink_orientation": "vertical",
             "prioritize_large_scaled_meme": False,
             "mempool_host": "127.0.0.1",
             "mempool_rest_port": 4081,
@@ -450,8 +451,10 @@ class ConfigManager:
         
         # Display orientation validation
         valid_orientations = ["vertical", "horizontal"]
-        if config.get("display_orientation", "") in valid_orientations:
-            validated["display_orientation"] = config["display_orientation"]
+        if config.get("web_orientation", "") in valid_orientations:
+            validated["web_orientation"] = config["web_orientation"]
+        if config.get("eink_orientation", "") in valid_orientations:
+            validated["eink_orientation"] = config["eink_orientation"]
         
 
         # Boolean settings
@@ -647,7 +650,7 @@ class ConfigManager:
         
         # Single value settings that should be passed through directly
         passthrough_settings = [
-            "language", "display_orientation", "fee_parameter", 
+            "language", "web_orientation", "eink_orientation", "fee_parameter", 
             "moscow_time_unit", "bitaxe_display_mode",
             "color_holiday_light", "color_holiday_dark",
             "color_btc_price_light", "color_btc_price_dark",
@@ -859,13 +862,26 @@ class ConfigManager:
                 ],
                 "category": "general"
             },
-            "display_orientation": {
+            "web_orientation": {
                 "type": "toggle",
-                "label": t.get("display_orientation", "Display Orientation"),
+                "label": t.get("web_orientation", "Web Orientation"),
+                "description": t.get("web_orientation_desc", "Orientation for the web dashboard"),
                 "options": [
                     {"value": "vertical", "label": t.get("vertical", "Portrait"), "icon": "/static/icons/vertical.svg"},
                     {"value": "horizontal", "label": t.get("horizontal", "Landscape"), "icon": "/static/icons/horizontal.svg"}
                 ],
+                "default": "vertical",
+                "category": "general"
+            },
+            "eink_orientation": {
+                "type": "toggle",
+                "label": t.get("eink_orientation", "E-ink Orientation"),
+                "description": t.get("eink_orientation_desc", "Orientation for the E-ink display"),
+                "options": [
+                    {"value": "vertical", "label": t.get("vertical", "Portrait"), "icon": "/static/icons/vertical.svg"},
+                    {"value": "horizontal", "label": t.get("horizontal", "Landscape"), "icon": "/static/icons/horizontal.svg"}
+                ],
+                "default": "vertical",
                 "category": "eink_display"
             },
             "mempool_host": {

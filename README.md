@@ -165,7 +165,7 @@ pip install -r requirements.txt
 
    > **⚠️ IMPORTANT:** Open `config/config.json` now.
    > - Change `admin_username` if you don't want the default "admin".
-   > - Review other keys: `language`, `display_orientation`, `mempool_host` etc.
+   > - Review other keys: `language`, `web_orientation`, `eink_orientation`, `mempool_host` etc.
    ```bash
    nano config/config.json
    ```

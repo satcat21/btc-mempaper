@@ -237,19 +237,23 @@ class ImageRenderer:
         self.last_block_height = None
         self.fee_param = config.get('fee_param', 'fastestFee')  # Default fee param
         self.lang = config.get("language", "en")
-        self.orientation = config.get("display_orientation", "vertical").lower()
+        
+        # Orientation settings
+        # Specific orientation settings (defaults to vertical if not set)
+        self.web_orientation = config.get("web_orientation", "vertical").lower()
+        self.eink_orientation = config.get("eink_orientation", "vertical").lower()
+        
+        # Initialize default orientation for rendering context (defaults to web settings)
+        self.orientation = self.web_orientation
+        
         self.display_width = config.get("display_width", 800)
         self.display_height = config.get("display_height", 480)
         self.e_ink_enabled = config.get("e-ink-display-connected", True)
         self._last_fee = None
         self._last_block_height = None
-        if self.orientation == "vertical":
-            self.width, self.height = self.display_height, self.display_width  # 480x800
-        else:
-            self.width, self.height = self.display_width, self.display_height  # 800x480
         
-        # Initialize layout calculator for efficient positioning
-        self.layout = LayoutCalculator(self.width, self.height)
+        # Initialize default state (will be overridden during rendering)
+        self._apply_orientation_settings(self.orientation)
         
         self.meme_dir = os.path.join("static", "memes")
         self.font_regular = os.path.join("static", "fonts", "Roboto-Regular.ttf")
@@ -288,6 +292,20 @@ class ImageRenderer:
         # Example:
         if hasattr(self, "refresh_dashboard"):
             self.refresh_dashboard()
+
+    def _apply_orientation_settings(self, orientation):
+        """
+        Apply width/height/layout settings based on requested orientation.
+        Updates self.width, self.height, self.orientation, and self.layout.
+        """
+        self.orientation = orientation
+        if self.orientation == "vertical":
+            self.width, self.height = self.display_height, self.display_width  # 480x800
+        else:
+            self.width, self.height = self.display_width, self.display_height  # 800x480
+        
+        # Re-initialize layout calculator for the new dimensions
+        self.layout = LayoutCalculator(self.width, self.height)
 
     def _block_fee_cache_compat(self):
         """
@@ -1220,6 +1238,8 @@ class ImageRenderer:
         }
 
         # === GENERATE WEB IMAGE ===
+        # Apply web orientation settings
+        self._apply_orientation_settings(self.web_orientation)
         web_img = self._render_image_with_shared_data(
             block_height, block_hash, mempool_api,
             shared_data, web_quality=True, startup_mode=startup_mode
@@ -1228,10 +1248,15 @@ class ImageRenderer:
         # === GENERATE E-INK IMAGE ===
         eink_img = None
         if self.e_ink_enabled:
+            # Apply e-ink orientation settings
+            self._apply_orientation_settings(self.eink_orientation)
             eink_img = self._render_image_with_shared_data(
                 block_height, block_hash, mempool_api,
                 shared_data, web_quality=False, startup_mode=startup_mode
             )
+        
+        # Restore default/web orientation state (optional, but good practice)
+        self._apply_orientation_settings(self.web_orientation)
         
         print(f"✅ Image generated for block {block_height}")
         return web_img, eink_img, content_path  # Return selected content path for caching
@@ -1321,16 +1346,22 @@ class ImageRenderer:
         }
 
         # === GENERATE WEB IMAGE ===
+        # Apply web orientation settings
+        self._apply_orientation_settings(self.web_orientation)
         web_img = self._render_image_with_shared_data(
             block_height, block_hash, mempool_api,
             shared_data, web_quality=True
         )
         
         # === GENERATE E-INK IMAGE ===
+        self._apply_orientation_settings(self.eink_orientation)
         eink_img = self._render_image_with_shared_data(
             block_height, block_hash, mempool_api,
             shared_data, web_quality=False
         )
+        
+        # Restore default
+        self._apply_orientation_settings(self.web_orientation)
         
         return web_img, eink_img, meme_path
     
@@ -1378,9 +1409,348 @@ class ImageRenderer:
         # Create base image
         img = Image.new('RGB', (self.width, self.height), color=self.get_color("background", web_quality))
         draw = ImageDraw.Draw(img)
-        
+
+        # --- Calculate HOLIDAY_HEIGHT (Used in both Landscape and Vertical layouts) ---
+        BLOCK_MARGIN = 15
+        HOLIDAY_HEIGHT = 0
+        if holiday_info:
+            # Calculate exact height needed based on text content
+            title_text = holiday_info.get("title", "Bitcoin Holiday")
+            desc_text = holiday_info.get("description", "")
+            
+            # Title height
+            title_bbox = font_holiday_title.getbbox(title_text)
+            title_height = title_bbox[3] - title_bbox[1]
+            
+            # Description height (with word wrapping at 50 characters)
+            desc_lines = self._wrap_text_at_chars(desc_text, max_chars=50)
+            
+            desc_bbox = font_holiday_desc.getbbox("Ay")
+            line_height = desc_bbox[3] - desc_bbox[1]
+            desc_total_height = len(desc_lines) * line_height + (len(desc_lines) - 1) * 4
+            
+            # Total height: Title + Gap(3) + Description + Padding(24)
+            # 12px top + 12px bottom = 24px total padding for balanced spacing
+            HOLIDAY_HEIGHT = title_height + 3 + desc_total_height + 24
+
+        # === Landscape Mode Layout (Split Screen) ===
+        if self.orientation == "horizontal":
+            # 1. Calculate Date and Layout Widths
+            # Use reduced font size if needed, but horizontal usually allows full width
+            # Standard font date is bold, calculated earlier: font_date
+            
+            # Left pane items: Date, Holiday, Info Blocks, Block Height/Hash
+            # Right pane: Meme
+            
+            date_bbox = font_date.getbbox(date_text)
+            date_width = date_bbox[2] - date_bbox[0]
+            date_height = date_bbox[3] - date_bbox[1]
+            
+            # Define Left Column Width
+            # User wants "width of the date to center all other elements"
+            # We enforce a minimum width to ensure info blocks fit reasonably well (e.g. 300px)
+            # Info blocks standard layout is usually robust
+            left_pane_width = max(date_width + 40, 320)
+            
+            # Ensure we don't take too much space (max 60% of width)
+            left_pane_width = min(left_pane_width, int(self.width * 0.6))
+            
+            left_margin = 20  # "linksbündig" implies left aligned with margin
+            content_center_x = left_margin + (date_width // 2) # Center point based on Date Width as requested
+            # Alternatively, center in the pane width:
+            content_center_x = left_margin + ((left_pane_width - left_margin * 2) // 2)
+            
+            # BUT user said: "using the width of the date to center all other elements"
+            # This implies the center axis is Date's center.
+            # If Date is Left Aligned at `left_margin`.
+            date_center_x = left_margin + (date_width // 2)
+            left_col_center = date_center_x 
+            
+            # We must ensure this center allows elements to fit defined `left_pane_width`
+            # If date is very short (e.g. "May 1"), the center is very left. Info blocks will clip left.
+            # So let's enforce a minimum visual center or just align elements to the date's center
+            # effectively creating a "column" around the date.
+            
+            # 2. Render Date (Left Aligned at specific margin)
+            # Use gradient as before
+            start_color = self.get_color("hash_start", web_quality)
+            end_color = self.get_color("hash_end", web_quality)
+            
+            current_y = 10
+            x = left_margin
+            
+            # Draw Date
+            for i, char in enumerate(date_text):
+                t = i / max(len(date_text) - 1, 1)
+                color = self.interpolate_color(start_color, end_color, t)
+                char_bbox = font_date.getbbox(char)
+                char_width = char_bbox[2] - char_bbox[0]
+                draw.text((x, current_y), char, font=font_date, fill=color)
+                x += char_width
+                
+            current_y += date_height + 10 # Gap after date
+            
+            # 3. Render Holiday and Info Blocks in the Left Column
+            # We need to temporarily hack self.layout/self.width for render functions that depend on it
+            # OR we pass a custom `draw_centered` logic?
+            # Most render functions use `self.layout.get_info_block_bounds()` which uses `self.width`
+            # We will patch `self.layout` temporarily layout calculator
+            
+            original_layout_width = self.layout.width
+            # We want the render functions to think the screen width is `left_pane_width` 
+            # AND we want them to render at `left_margin` offset?
+            # Actually, `get_info_block_bounds` returns (padding, padding, width-padding)
+            # If we set layout width to `left_pane_width`, it renders from 0 to `left_pane_width`.
+            # We can create a separate image/layer for the left pane and paste it?
+            # Or we can just calculate offsets.
+            # Simpler: Temporary Layout Override.
+            
+            # Create a temporary layout for the left column
+            # We set width such that center aligns with `left_col_center` relative to 0?
+            # No, render functions typically assume full screen width and center content.
+            # If we set layout width to `left_pane_width`, content is centered at `left_pane_width / 2`.
+            # If we render to a specific X offset, we need to adjust `draw`.
+            # We can't easily offset `draw` operations without a transform.
+            
+            # Strategy: Render Left Column content assuming a "narrow screen" of `left_pane_width`
+            # BUT we need to position it at `left_margin`?
+            # If `left_pane_width` includes margins, and we position it at `left_margin`...
+            # The User wants alignment to Date Center.
+            # Let's define the "Left Column Context" as a virtual screen of width `left_pane_width`
+            # position at `left_margin` might be tricky if we don't offset.
+            # The Date is drawing at `left_margin`.
+            # Its center is `left_col_center`.
+            # If we define the Virtual Width such that its center is `left_col_center`.
+            # virtual_width = left_col_center * 2. 
+            # If left_col_center = 160 (e.g.), virtual_width = 320.
+            # Then content centered in 320 will align with 160.
+            
+            virtual_col_width = int(left_col_center * 2)
+            # Ensure it's wide enough for info blocks (at least 320px typically needed)
+            # If date is short, `virtual_col_width` is small -> Info blocks will shrink/fail.
+            # We might need to decouple "Date Alignment" from "Info Block Alignment" if Date is too short.
+            # User requirement: "using the width of the date to center all other elements".
+            # If Date is small, this request creates a bad UI.
+            # I will assume "Date is typically wide enough" or strictly follow orders.
+            # If explicitly requested, I will try to respect it, but clamp minimum width.
+            
+            min_col_width = 310 # Info blocks need space
+            if virtual_col_width < min_col_width:
+                 # If date is narrower, we center relative to the DATE, but extend width outwards
+                 # Center X is fixed at `left_col_center`.
+                 # We need virtual width `min_col_width` centered at `left_col_center`.
+                 # This means drawing from `left_col_center - min_col_width/2` to `left_col_center + min_col_width/2`.
+                 pass
+            else:
+                 min_col_width = virtual_col_width
+            # Create a localized layout calculator
+            original_layout = self.layout
+            self.layout = LayoutCalculator(min_col_width, self.height)
+            
+            # Offsets for drawing
+            # We need to shift drawing operations by `x_offset`.
+            # Since we can't shift `draw`, we can't easily reuse `render_btc_price_block` etc IF they use `draw.text((absolute_x...))`.
+            # They use `self.layout.get_centered_x()` which returns value 0..width.
+            # So `x` returned is local to `min_col_width`.
+            # We need to add `offset_x` to every drawing call? No, that requires rewriting all renderers.
+            
+            # Alternative: Render Info Blocks to a temporary image and paste it.
+            # This is cleaner.
+            
+            # We will perform the rendering in Step 3 and 4 below to allow proper vertical centering.
+            # (Deleted duplicate rendering logic here)
+
+            # Update Y cursor for Hash Frame (which comes below info blocks)
+            # Hash Frame / Block Info is rendered via `_render_block_info_with_data`
+            # This function uses `self.layout` again effectively or `self.width`.
+            # We want it in the Left Pane also.
+            # Logic: `_render_block_info_with_data` is typically pinned to bottom.
+            # In split screen, we want it pinned to bottom of Left Pane? Or Screen Bottom?
+            # User: "hash frame is too low ... date and block height are centered over the entire screen, that is not correct"
+            # So Hash Frame should be in the Left Column.
+            
+            # We can use the same "Render to separate image" trick for Block Info?
+            # `_render_block_info_with_data` usually draws at `self.height - area`.
+            # We can override `self.width` and `self.height` temporarily?
+            # Let's try to just call it with a separate image context if possible?
+            # No, `_render_block_info_with_data` takes `img` and `draw` of the main image.
+            
+            # We must override `self.width`.
+            # And `self.layout`.
+            
+            # Override for Block Info
+            orig_width = self.width
+            self.width = min_col_width
+            self.layout = LayoutCalculator(self.width, self.height)
+            
+            # --- 4. Render Block Info (Bottom of Left Column) ---
+            # Calculate the space needed. 
+            # We use the config block_height_area which is typically ~180px.
+            block_info_height = self.block_height_area # Default 180
+            
+            # Create temp image for block info
+            block_info_img = Image.new('RGBA', (min_col_width, block_info_height), (0,0,0,0))
+            block_info_draw = ImageDraw.Draw(block_info_img)
+            
+            # We want it "glued to bottom", meaning the content layout inside `block_info_img` 
+            # should appear at the bottom of `block_info_img`?
+            # Or we simply paste `block_info_img` at the absolute bottom of main screen.
+            
+            # Render internal content. 
+            # _render_block_info_with_data uses "self.height" to calculate positions if y_override is None.
+            # If we pass y_override, it sets the `y` base.
+            # We want the content to be at the bottom of `block_info_img`.
+            # Content height is roughly `block_height_area` (180).
+            # So if we render at y=0 of `block_info_img` (height=180), it fills it.
+            # But the original vertical logic uses `y = self.height - (self.block_height_area - 10)`.
+            # If `self.height` was 180, `y` = 180 - (180 - 10) = 10.
+            # So passing `y_override=10` should work well for a 180px high image.
+            
+            # Also user wanted hash frame "slightly larger". 
+            # We can force `max_width` to be `min_col_width` (full width of column).
+            
+            self._render_block_info_with_data(block_info_img, block_info_draw, block_height, block_hash, font_block_label,
+                                            font_block_value, mempool_api, configured_fee,
+                                            api_block_height, web_quality, y_override=10)
+            
+            # --- 3. Render Center Content (Holiday + Info Blocks) ---
+            # Calculate available vertical space
+            # Top: current_y (after date)
+            # Bottom: self.height - block_info_height
+            available_middle_top = current_y
+            available_middle_bottom = self.height - block_info_height
+            available_middle_height = available_middle_bottom - available_middle_top
+            
+            if available_middle_height < 0: available_middle_height = 0
+            
+            # --- Check how many info blocks fit ---
+            remaining_height_for_info = available_middle_height
+            if holiday_info:
+                remaining_height_for_info -= (HOLIDAY_HEIGHT + 10)
+                
+            # If negative after holiday, maybe don't show info blocks at all?
+            if remaining_height_for_info < 0: remaining_height_for_info = 0
+            
+            # Use same logic as vertical mode: calculate max blocks that fit
+            # Each block takes INFO_BLOCK_HEIGHT + 10 margin
+            max_blocks = remaining_height_for_info // (INFO_BLOCK_HEIGHT + 10)
+            
+            info_blocks_to_render = []
+            if max_blocks > 0 and info_blocks:
+                if len(info_blocks) > max_blocks:
+                    print(f"⚠️ Landscape Mode: Not enough space for all blocks. Showing {int(max_blocks)} of {len(info_blocks)}")
+                    info_blocks_to_render = random.sample(info_blocks, int(max_blocks))
+                else:
+                    info_blocks_to_render = info_blocks
+            
+            # Create a localized layout calculator for rendering
+            # We need to measure content height first.
+            
+            # Temp image to capture content
+            # Make it tall enough to hold everything initially
+            content_canvas_height = max(self.height, 1000) 
+            info_img = Image.new('RGBA', (min_col_width, content_canvas_height), (0,0,0,0))
+            info_draw = ImageDraw.Draw(info_img)
+            
+            info_y = 0
+            # Render Holiday
+            if holiday_info:
+                info_draw.rounded_rectangle(
+                    [(SECTION_SIDE_PADDING + BLOCK_INNER_MARGIN, info_y),
+                     (min_col_width - SECTION_SIDE_PADDING - BLOCK_INNER_MARGIN, info_y + HOLIDAY_HEIGHT)],
+                    radius=BLOCK_RADIUS,
+                    fill=self.get_color("info_bg", web_quality),
+                    outline=self.get_color("info_outline", web_quality),
+                    width=4
+                )
+                self._render_holiday_info(info_draw, holiday_info, font_holiday_title, font_holiday_desc,
+                                        info_y, HOLIDAY_HEIGHT, web_quality)
+                info_y += HOLIDAY_HEIGHT + 10
+
+            # Render Info Blocks
+            for i, (block_fn, block_data) in enumerate(info_blocks_to_render):
+                 try:
+                    if block_fn == self.render_wallet_balances_block:
+                        block_fn(info_draw, info_y, font_block_label, font_block_value, block_data, web_quality, startup_mode=startup_mode)
+                    else:
+                        block_fn(info_draw, info_y, font_block_label, font_block_value, block_data, web_quality)
+                    
+                    info_y += INFO_BLOCK_HEIGHT + 10
+                 except Exception as e:
+                    print(f"Error render info block landscape: {e}")
+            
+            # Total content height used
+            total_content_height = info_y
+            if total_content_height > 0:
+                total_content_height -= 10 # Remove last margin
+            
+            # Crop the info image to actual content
+            info_img = info_img.crop((0, 0, min_col_width, total_content_height + 1)) # +1 to avoid 0 height error
+            
+            # Determine Y position to Center vertically in available space
+            if total_content_height < available_middle_height:
+                info_paste_y = available_middle_top + (available_middle_height - total_content_height) // 2
+            else:
+                # Content exceeds space, start at top (or clip?) 
+                # Let's start at top to show most important info
+                info_paste_y = available_middle_top
+            
+            # Restore State
+            self.width = orig_width
+            self.layout = original_layout
+            
+            # Paste Info Column
+            paste_x = int(left_col_center - min_col_width // 2)
+            img.paste(info_img, (paste_x, info_paste_y), info_img)
+            
+            # Paste Block Info at exact bottom
+            block_info_paste_y = self.height - block_info_height
+            img.paste(block_info_img, (paste_x, block_info_paste_y), block_info_img)
+            
+            # 4. Render Meme (Right Pane)
+            # Left pane occupies up to `paste_x + min_col_width`.
+            # Or just `left_margin + date_width + margin`.
+            # Let's define the start of Right Pane.
+            right_pane_start_x = paste_x + min_col_width + 5
+            # Ensure it doesn't overlap excessively 
+            # (min_col_width centered at date center might extend left of date start? No, date center is width/2)
+            
+            if right_pane_start_x < left_margin + date_width + 10:
+                 right_pane_start_x = int(left_margin + date_width + 10)
+                 
+            available_meme_width = self.width - right_pane_start_x - 5
+            available_meme_height = self.height - 10 # Padding (5 top + 5 bottom)
+            
+            if available_meme_width > 50 and meme_path:
+                try:
+                    meme_img = Image.open(meme_path)
+                    # Scale to fit
+                    aspect = meme_img.width / meme_img.height
+                    
+                    # Fit to box
+                    target_w = min(available_meme_width, int(available_meme_height * aspect))
+                    target_h = int(target_w / aspect)
+                    
+                    if target_h > available_meme_height:
+                         target_h = available_meme_height
+                         target_w = int(target_h * aspect)
+                         
+                    meme_img = meme_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
+                    
+                    # Center in Right Pane
+                    meme_x = right_pane_start_x + (available_meme_width - target_w) // 2
+                    meme_y = (self.height - target_h) // 2
+                    
+                    meme_img = meme_img.convert("RGBA")
+                    meme_img = self.add_rounded_corners(meme_img, radius=20)
+                    img.paste(meme_img, (meme_x, meme_y), meme_img)
+                    
+                except Exception as e:
+                    print(f"Error landscape meme: {e}")
+
+            return img
+
         # Date
-        top_y = 20
         # y = self.draw_centered(draw, self.get_localized_date(), top_y, font_date, fill=self.get_color("date_holiday" if holiday_info else "date_normal", web_quality))
         # Choose gradient colors (can use hash frame colors or any theme keys)
         start_color = self.get_color("hash_start", web_quality)
@@ -1390,8 +1760,7 @@ class ImageRenderer:
         bbox = font_date.getbbox(date_text)
         text_width = bbox[2] - bbox[0]
         x = (self.width - text_width) // 2
-        y = top_y
-
+        y = 20
         # Always set date_bottom_y to the bottom of the date text plus margin
         date_bottom_y = y + (bbox[3] - bbox[1]) + 10
 
@@ -1474,12 +1843,71 @@ class ImageRenderer:
             meme_img = None
             meme_height = 0
             meme_width = 0
+            
+            # Revised Logic: Calculate potential meme height first, but allow Holiday to constrain it
+            # to ensure Holiday visibility (Meme > Holiday > Stats).
+            
+            potential_meme_height = 0
+            if meme_path:
+                try:
+                    temp_img = Image.open(meme_path)
+                    aspect = temp_img.width / temp_img.height
+                    target_w = self.width - 40
+                    # Max possible height in pure isolation
+                    max_possible_h = available_content_height - 20
+                    
+                    # Natural height at full width
+                    natural_h = int(target_w / aspect)
+                    potential_meme_height = min(natural_h, max_possible_h)
+                except:
+                    pass
+
+            # Check if Holiday fits with full Meme
+            # We need Space for Holiday + Meme + Gaps.
+            # Gaps: Top(Sp), Middle(Sp), Bottom(Sp) = 3 * STANDARD_SPACING approx.
+            required_space_with_full_meme = potential_meme_height + (HOLIDAY_HEIGHT if holiday_info else 0) + (3 * STANDARD_SPACING)
+            
+            if holiday_info and required_space_with_full_meme > available_content_height:
+                # Conflict! Holiday + Max Meme doesn't fit.
+                # Prioritize Holiday: Shrink meme to fit limit.
+                # Limit = Available - Holiday - Gaps
+                # (Min Threshold for meme: 100px? If less, we drop Holiday)
+                
+                reserved_holiday_space = HOLIDAY_HEIGHT + STANDARD_SPACING
+                # Gaps: Top + Holiday + Gap + Meme + Bottom = 3 gaps??
+                # Let's say we need `reserved_holiday_space` + Meme + 2*Gap
+                
+                max_meme_h_constrained = available_content_height - reserved_holiday_space - (2 * STANDARD_SPACING)
+                
+                if max_meme_h_constrained > 100: # Acceptable meme size
+                     # Enforce constraint
+                     # This effectively "Hides Stats" (space used covers screen) and "Shrinks Meme" (to fit Holiday)
+                     pass 
+                else: 
+                     # Meme would be too small. Drop Holiday priority.
+                     # "Maximize Meme" wins over "Holiday Priority" if meme is tiny.
+                     reserved_holiday_space = 0 
+            else:
+                # Fits easily OR no holiday.
+                # Stats might still be pushed out if `required_space_with_full_meme` is huge.
+                reserved_holiday_space = HOLIDAY_HEIGHT if holiday_info else 0
+
+            # Now perform actual scaling with constraint
             if meme_path:
                 try:
                     meme_img = Image.open(meme_path)
                     aspect_ratio = meme_img.width / meme_img.height
                     max_width = self.width - 40
-                    max_height = available_content_height - 20
+                    
+                    # Available for meme
+                    # If we reserved holiday, we subtract it.
+                    # Gap estimation: 
+                    # If reserved_holiday: Top(Gap) + Holiday + Gap + Meme + Bottom(Gap implicit) -> 2 gaps explicit
+                    # If NOT reserved: Top(Gap) + Meme + Bottom -> 1 gap explicit
+                    
+                    gaps_estimate = (2 * STANDARD_SPACING) if reserved_holiday_space else STANDARD_SPACING
+                    max_height = available_content_height - reserved_holiday_space - gaps_estimate
+                    
                     # Scale meme to fit max width and max height
                     scaled_width = min(max_width, int(max_height * aspect_ratio))
                     scaled_height = int(scaled_width / aspect_ratio)
@@ -1493,10 +1921,12 @@ class ImageRenderer:
                     print(f"⚠️ Error loading meme for scaling: {e}")
 
             # --- Step 2: Calculate remaining height for info blocks ---
+            # Now we use the actual meme height for layout
             remaining_height = available_content_height - meme_height - STANDARD_SPACING
             blocks_y = content_top_y
 
             # --- Step 3: Assign space for holiday ---
+            # If we reserved it, it should fit. If we didn't, it might logic out here.
             holiday_space = HOLIDAY_HEIGHT if (holiday_info and remaining_height >= HOLIDAY_HEIGHT) else 0
             remaining_height_for_info = remaining_height - holiday_space
 
@@ -1602,23 +2032,39 @@ class ImageRenderer:
 
         else:
             # --- prioritize_large_scaled_meme == False ---
-            # Calculate number of gaps first to ensure correct vertical distribution
-            num_gaps = 1  # After date
-            if holiday_info: num_gaps += 1  # Between holiday and meme
-            if info_blocks_space > 0: 
-                num_gaps += 1  # Between meme and info blocks
-                num_gaps += 1  # After info blocks (before hash frame)
+            # Treat all elements (Holiday, Meme, Info Block 1, Info Block 2, ...) as separate items
+            # and distribute vertical space evenly between them, as well as top and bottom.
             
-            # Calculate reserved vertical space (gaps + fixed content)
-            gaps_height = num_gaps * STANDARD_SPACING
-            fixed_content_height = (HOLIDAY_HEIGHT if holiday_info else 0) + info_blocks_space
+            # 1. Count elements and gaps
+            num_elements = 1  # Meme is always present (or fallback)
+            if holiday_info:
+                num_elements += 1
             
-            # Calculate max available height for meme
-            max_meme_height = available_content_height - fixed_content_height - gaps_height
+            # Add count of info blocks
+            num_info_blocks = len(info_blocks)
+            num_elements += num_info_blocks
+            
+            # Gaps = Elements + 1 (Top, between each, Bottom)
+            num_gaps = num_elements + 1
+            
+            # 2. Calculate fixed content height (Holiday + Info Blocks raw height)
+            # Note: We don't include fixed margins here, as we'll use dynamic gaps
+            fixed_content_height = 0
+            if holiday_info:
+                fixed_content_height += HOLIDAY_HEIGHT
+            
+            fixed_content_height += num_info_blocks * INFO_BLOCK_HEIGHT
+            
+            # 3. Calculate Gaps estimate to find available Meme Height
+            # We use STANDARD_SPACING as a minimum/target estimate
+            estimated_total_gaps = num_gaps * STANDARD_SPACING
+            
+            # 4. Calculate Max Meme Height
+            max_meme_height = available_content_height - fixed_content_height - estimated_total_gaps
             if max_meme_height < 50: 
                 max_meme_height = 50  # Minimum height constraint
 
-            # Calculate meme height
+            # 5. Determine actual Meme Height
             meme_img = None
             meme_height = 0
             meme_width = 0
@@ -1643,32 +2089,26 @@ class ImageRenderer:
                 # Fallback height if no meme
                 meme_height = max(50, max_meme_height)
             
-            # Calculate total actual content height
+            # 6. Calculate Actual Total Content Height
             total_content_height = fixed_content_height + meme_height
             
-            # Calculate remaining space and balanced spacing
+            # 7. Calculate Real Remaining Space and Gap Size
             remaining_space = available_content_height - total_content_height
             
-            # When no holiday, center all content (meme + info blocks) vertically
-            if not holiday_info:
-                # Center entire content group (meme + info blocks) between date and hash frame
-                center_point = content_top_y + (available_content_height // 2)
-                content_group_height = meme_height + info_blocks_space + (STANDARD_SPACING if info_blocks_space > 0 else 0)
-                blocks_y = center_point - (content_group_height // 2)
-                gap_size = STANDARD_SPACING  # Fixed gap between meme and info blocks
-            else:
-                # Distribute spacing evenly
-                gap_size = max(STANDARD_SPACING, remaining_space // num_gaps) if num_gaps > 0 else STANDARD_SPACING
-                
-                # Start positioning with balanced spacing
-                blocks_y = content_top_y + gap_size
+            # Distribute spacing evenly, ensuring at least STANDARD_SPACING if possible, 
+            # but allow shrinking if space is tight (which shouldn't happen with our meme calc)
+            # If remaining space is large (small meme), this gap will grow to center/distribute everything.
+            gap_size = max(5, remaining_space // num_gaps) if num_gaps > 0 else STANDARD_SPACING
             
-            # Render holiday
+            # 8. Render Elements Loop
+            current_y = content_top_y + gap_size
+            
+            # Render Holiday
             if holiday_info:
                 # Draw background
                 draw.rounded_rectangle(
-                    [(SECTION_SIDE_PADDING + BLOCK_INNER_MARGIN, blocks_y),
-                     (self.width - SECTION_SIDE_PADDING - BLOCK_INNER_MARGIN, blocks_y + HOLIDAY_HEIGHT)],
+                    [(SECTION_SIDE_PADDING + BLOCK_INNER_MARGIN, current_y),
+                     (self.width - SECTION_SIDE_PADDING - BLOCK_INNER_MARGIN, current_y + HOLIDAY_HEIGHT)],
                     radius=BLOCK_RADIUS,
                     fill=self.get_color("info_bg", web_quality),
                     outline=self.get_color("info_outline", web_quality),
@@ -1676,59 +2116,35 @@ class ImageRenderer:
                 )
 
                 self._render_holiday_info(draw, holiday_info, font_holiday_title, font_holiday_desc,
-                                        blocks_y, HOLIDAY_HEIGHT, web_quality)
-                blocks_y += HOLIDAY_HEIGHT + gap_size
+                                        current_y, HOLIDAY_HEIGHT, web_quality)
+                current_y += HOLIDAY_HEIGHT + gap_size
 
-            # Render meme
-            # Render meme
+            # Render Meme
             if meme_img:
                 meme_x = (self.width - meme_width) // 2
                 meme_img = meme_img.convert("RGBA")
                 meme_img = self.add_rounded_corners(meme_img, radius=20)
-                img.paste(meme_img, (meme_x, blocks_y), meme_img)
-                blocks_y += meme_height
+                img.paste(meme_img, (meme_x, current_y), meme_img)
+                current_y += meme_height + gap_size
             else:
-                # Use pre-calculated fallback height
-                fallback_height = available_content_height - info_blocks_space - (HOLIDAY_HEIGHT if holiday_info else 0) - (3 * STANDARD_SPACING)
-                fallback_height = max(50, fallback_height)
-                
-                self._render_fallback_content(img, draw, blocks_y, fallback_height,
+                self._render_fallback_content(img, draw, current_y, meme_height,
                                             font_holiday_title, web_quality)
-                blocks_y += fallback_height
+                current_y += meme_height + gap_size
             
-            # Add gap before info blocks for even distribution
-            if len(info_blocks):
-                blocks_y += gap_size
-
-            # Render info blocks below meme, with dark style
-            if len(info_blocks):
-                section_left = BLOCK_MARGIN
-                section_right = self.width - BLOCK_MARGIN
-                section_top = blocks_y
-                section_bottom = blocks_y + len(info_blocks) * INFO_BLOCK_HEIGHT + (len(info_blocks) + 1) * BLOCK_MARGIN
-                # Use theme background color for info block area
-                bg_color = self.get_color("info_bg", web_quality)
-                radius = 15
-                # draw.rounded_rectangle(
-                #     [(section_left, section_top), (section_right, section_bottom)],
-                #     radius=radius,
-                #     fill=bg_color
-                # )
-                blocks_y += BLOCK_MARGIN
-                for i, (block_fn, block_data) in enumerate(info_blocks):
-                    try:
-                        if block_fn == self.render_wallet_balances_block:
-                            # Render functions return next Y position, but we manage spacing here
-                            block_fn(draw, blocks_y, font_block_label, font_block_value, block_data, web_quality, startup_mode=startup_mode)
-                        else:
-                            block_fn(draw, blocks_y, font_block_label, font_block_value, block_data, web_quality)
-                        
-                        # Move to next block position
-                        blocks_y += INFO_BLOCK_HEIGHT
-                        if i < len(info_blocks) - 1:  # Add margin between blocks, but not after last one
-                            blocks_y += BLOCK_MARGIN
-                    except Exception as e:
-                        print(f"⚠️ Error rendering info block {block_fn.__name__}: {e}")
+            # Render Info Blocks
+            # No wrapper background for the group is drawn in this mode, as they are distributed elements
+            for i, (block_fn, block_data) in enumerate(info_blocks):
+                try:
+                    if block_fn == self.render_wallet_balances_block:
+                        block_fn(draw, current_y, font_block_label, font_block_value, block_data, web_quality, startup_mode=startup_mode)
+                    else:
+                        block_fn(draw, current_y, font_block_label, font_block_value, block_data, web_quality)
+                    
+                    current_y += INFO_BLOCK_HEIGHT + gap_size
+                except Exception as e:
+                    print(f"⚠️ Error rendering info block {block_fn.__name__}: {e}")
+                    # If error, skip spacing for this block to avoid large gap? 
+                    # Or keep grid? Safest is to just continue.
 
             # Calculate remaining space for meme (not needed, meme is already rendered above info blocks)
             # meme_top_y = blocks_y + BLOCK_MARGIN
@@ -1808,19 +2224,101 @@ class ImageRenderer:
 
         total_chars = len(block_hash)
         block_hash_colors = [self.interpolate_color(start_color, end_color, i / max(total_chars - 1, 1)) for i in range(total_chars)]
+        
+        # --- VERTICAL MODE (Legacy Logic) ---
+        if self.orientation == "vertical":
+             padding = 40
+             extra_space = 8
+             font = ImageFont.truetype(self.font_mono, 11)
+             
+             bbox = font.getbbox("0")
+             char_w = bbox[2] - bbox[0]
+             char_h = bbox[3] - bbox[1]
+             
+             # Split the hash
+             left_chars = block_hash[:16]           # left vertical
+             right_chars = block_hash[46:64]        # right vertical
+             top_chars = block_hash[0:46]          # top horizontal (22 chars)
+             bottom_chars = block_hash[18:62]       # bottom horizontal (22 chars)
+
+             left_chars_colors = block_hash_colors[:16]
+             right_chars_colors = block_hash_colors[46:64]
+             top_chars_colors = block_hash_colors[0:46]
+             bottom_chars_colors = block_hash_colors[18:62]
+
+             # --- TOP EDGE with grouped pairs ---
+             top_positions = []
+             x = x_init
+             y = y_init
+             for i, c in enumerate(top_chars):
+                 draw.text((x, y), c, fill=top_chars_colors[i], font=font)
+                 top_positions.append(x)
+                 x +=  int(char_w)
+                 if (i + 1) % 2 == 0:
+                     x += 6#int(char_w) # extra space after every 2 chars
+
+             # --- LEFT VERTICAL SIDE with horizontal pairs ---
+             x = top_positions[0]  # align under first char of top edge
+             y = y_init + int(char_h) + extra_space # y_init +padding +  int(char_h) + extra_space
+             i = 0
+             while i < len(left_chars):
+                 pair = left_chars[i:i+2]
+                 draw.text((x, y), pair, fill=left_chars_colors[i], font=font)  # draw both chars on the same line
+                 y +=  int(char_h) + extra_space # move down for next pair
+                 i += 2
+
+             # --- RIGHT VERTICAL SIDE with horizontal pairs ---
+             x = top_positions[-2] + 1 # align under last char of top edge
+             y = y_init + int(char_h) + extra_space #padding +  int(char_h) + extra_space
+             i = 0
+             while i < len(right_chars):
+                 pair = right_chars[i:i+2]
+                 draw.text((x, y), pair, fill=right_chars_colors[i], font=font)
+                 y +=  int(char_h) + extra_space
+                 i += 2
+
+             # --- BOTTOM EDGE with grouped pairs ---
+             x = x_init
+             y = y_init + padding + rect_height + extra_space + int(char_h) + extra_space
+             for i, c in enumerate(bottom_chars):
+                 draw.text((x, y), c, fill=bottom_chars_colors[i], font=font)
+                 x += int(char_w)
+                 if (i + 1) % 2 == 0:
+                     x +=  6#int(char_w)  # extra space after every 2 chars
+                     
+             return
+
+        font_size = 11
         # --- Optional scaling if max_width is given ---
         if max_width is not None:
-            original_width = rect_width + 2 * padding
-            if original_width > max_width:
-                scale_factor = max_width / original_width
-                rect_width = int(rect_width * scale_factor)
-                rect_height = int(rect_height * scale_factor)
-                padding = int(padding * scale_factor)
+            # Calculate required width for standard font 11
+            # 23 pairs in top row. Each pair (2 chars) takes roughly:
+            # bbox("0") width * 2 + extra_space.
+            # Plus gaps between pairs (6px).
+            # This is an approximation since we don't know the font metrics perfectly without loading.
+            
+            # Load font to measure
+            temp_font = ImageFont.truetype(self.font_mono, 11)
+            bbox = temp_font.getbbox("0")
+            cw = bbox[2] - bbox[0]
+            # Top row logic: 2 chars then gap. 
+            # Total width = 46 chars + 23 gaps.
+            # We use gap = 3 (reduced from 6 to fit larger font)
+            
+            estimated_full_width = (46 * cw) + (23 * 3) + 20 # +20 safety
+            
+            if estimated_full_width > max_width:
+                 scale_factor = max_width / estimated_full_width
+                 font_size = int(11 * scale_factor)
+                 if font_size < 1: font_size = 1
+                 
+                 # Adjust padding/spacing by scale too
+                 padding = int(padding * scale_factor)
+                 extra_space = int(max(1, 8 * scale_factor)) # Keep at least 1px
 
-        font = ImageFont.truetype(self.font_mono, 11)
+        font = ImageFont.truetype(self.font_mono, font_size)
     
         # Character size
-        #char_w, char_h = font.getbbox("0")[2:4]
         bbox = font.getbbox("0")
         char_w = bbox[2] - bbox[0]
         char_h = bbox[3] - bbox[1]
@@ -1837,8 +2335,6 @@ class ImageRenderer:
         bottom_chars_colors = block_hash_colors[18:62]
 
         # --- TOP EDGE with grouped pairs ---
-        #x = padding
-        #y = padding
         top_positions = []
         x = x_init
         y = y_init
@@ -1847,11 +2343,11 @@ class ImageRenderer:
             top_positions.append(x)
             x +=  int(char_w)
             if (i + 1) % 2 == 0:
-                x += 6#int(char_w) # extra space after every 2 chars
+               x += 3 # Reduced spacing
 
         # --- LEFT VERTICAL SIDE with horizontal pairs ---
         x = top_positions[0]  # align under first char of top edge
-        y = y_init + int(char_h) + extra_space # y_init +padding +  int(char_h) + extra_space
+        y = y_init + int(char_h) + extra_space 
         i = 0
         while i < len(left_chars):
             pair = left_chars[i:i+2]
@@ -1861,7 +2357,7 @@ class ImageRenderer:
 
         # --- RIGHT VERTICAL SIDE with horizontal pairs ---
         x = top_positions[-2] + 1 # align under last char of top edge
-        y = y_init + int(char_h) + extra_space #padding +  int(char_h) + extra_space
+        y = y_init + int(char_h) + extra_space 
         i = 0
         while i < len(right_chars):
             pair = right_chars[i:i+2]
@@ -1870,17 +2366,23 @@ class ImageRenderer:
             i += 2
 
         # --- BOTTOM EDGE with grouped pairs ---
+        # Auto-calculate Y to connect with vertical sides
+        bottom_y_start = y 
+        
+        # User requested "bottom line needs to be higher". 
+        # Move up further to close the gap (2x char height)
+        y = bottom_y_start - int(2 * char_h)
+
         x = x_init
-        y = y_init + padding + rect_height + extra_space + int(char_h) + extra_space
         for i, c in enumerate(bottom_chars):
             draw.text((x, y), c, fill=bottom_chars_colors[i], font=font)
             x += int(char_w)
             if (i + 1) % 2 == 0:
-                x +=  6#int(char_w)  # extra space after every 2 chars
+                x +=  3 # Reduced spacing
 
     def _render_block_info_with_data(self, img, draw, block_height, block_hash, font_block_label,
                                     font_block_value, mempool_api, configured_fee,
-                                    api_block_height, web_quality):
+                                    api_block_height, web_quality, y_override=None):
         """
         Render block information using pre-collected fee and block data.
         """
@@ -1901,18 +2403,22 @@ class ImageRenderer:
         curr_fee = self._get_fee_for_parameter(self._block_fee_cache["current"]["height"], fee_parameter)
         block_height_start_color, block_height_end_color = self.fee_to_colors(curr_fee, prev_fee, web_quality)
         # Position block info based on orientation (same as existing _render_block_info)
-        if self.orientation == "vertical":
+        
+        if y_override is not None:
+            y = y_override
+        elif self.orientation == "vertical":
             y = self.height - (self.block_height_area - 10)  # Move up by 10px from original position
         else:
             y = self.height - (self.block_height_area - 70)  # Adjust for horizontal layout
         
-        # Draw "Block Height" label
-        # y = self.draw_centered(draw, self.t.get("block_height", "Block Height"), 
-        #                      y, font_block_label)
-        # Draw at (x, y), black text, max width 760px
-        self.draw_hash_frame(draw, 12, y+3, block_hash, web_quality=web_quality)
-        y = y + 24
-        # Format and draw block height with fee-based color
+        # Calculate Max Width for Responsive Layout
+        # Only constrain width in landscape mode. For vertical, we rely on standard sizes (legacy behavior).
+        if self.orientation == "horizontal":
+            max_available_width = self.width - 24 
+        else:
+            max_available_width = None
+        
+        # Format block height string
         if mempool_api:
             formatted_height = mempool_api.format_block_height(display_block_height)
         else:
@@ -1921,15 +2427,84 @@ class ImageRenderer:
                 formatted_height = f"{height_int:,}".replace(",", ".")
             except (ValueError, TypeError):
                 formatted_height = str(display_block_height)
+
+        # Scale Block Height Font if needed
+        used_font_block_value = font_block_value
+        bbox = used_font_block_value.getbbox(formatted_height)
+        text_width = bbox[2] - bbox[0]
         
-        # Draw block height with color based on current fees (move up by 10px)
-        value_y = y - 25
-        bbox = font_block_value.getbbox(formatted_height)
+        if max_available_width and text_width > max_available_width - 80: # More padding for frame
+             # Calculate scale ratio (add some margin)
+             ratio = (max_available_width - 80) / (text_width + 10)
+             # Extract size from font object? No standard way.
+             # Standard size is 124.
+             new_size = int(124 * ratio)
+             if new_size < 20: new_size = 20 # Minimum safeguard
+             try:
+                 used_font_block_value = ImageFont.truetype(self.font_block_height, new_size)
+             except Exception as e:
+                 print(f"Error scaling font: {e}")
+
+        # Draw "Block Height" label
+        # None
+        
+        if self.orientation == "vertical":
+            # --- VERTICAL MODE (Legacy Logic) ---
+            # Draw at (x, y), black text, max width 760px
+            self.draw_hash_frame(draw, 12, y+3, block_hash, web_quality=web_quality)
+            y = y + 24
+            
+            # Draw block height with color based on current fees (move up by 10px)
+            value_y = y - 25
+            bbox = font_block_value.getbbox(formatted_height)
+            text_width = bbox[2] - bbox[0]
+            x = (self.width - text_width) // 2
+            self.draw_vertical_gradient_text(img, draw, formatted_height, x, value_y + 10, font_block_value, block_height_start_color, block_height_end_color)
+            
+            # Add fee information as small text if available
+            if configured_fee is not None:
+                # Fee parameter translation logic replicated locally or reused if possible?
+                # The surrounding code already sets up fee variables but let's reuse the structure at the end of the function if possible?
+                # The current structure has fee logic embedded at the end.
+                # I will define `fee_y` here and let the common block handle text generation if possible, but the positioning is specific.
+                
+                # Get fee text (duplicate logic for safety or refactor later)
+                fee_parameter = self.config.get("fee_parameter", "minimumFee")
+                fee_type_keys = {
+                    "fastestFee": "fastest", "halfHourFee": "half_hour", "hourFee": "hour", "economyFee": "economy", "minimumFee": "minimum"
+                }
+                fee_key = fee_type_keys.get(fee_parameter, "minimum")
+                fee_type_display = self.t.get(fee_key, "Unknown")
+                fee_text = f"{fee_type_display}: {configured_fee} sat/vB"
+                
+                try:
+                    font_small = ImageFont.truetype(self.font_regular, 12)
+                except:
+                    font_small = font_block_label
+                    
+                bbox = font_block_value.getbbox(formatted_height)
+                fee_y = value_y + bbox[3] - bbox[1] + 42
+                
+                color = block_height_start_color if web_quality else block_height_end_color
+                self.draw_centered(draw, fee_text, fee_y, font_small, color)
+                
+            return # Exit early for vertical
+
+        # --- LANDSCAPE/RESPONSIVE MODE ---
+        # Hash frame 
+        # width auto-scaled by draw_hash_frame if max_width passed
+        # User requested: "slightly moved to the right". Old x=24. Adjusted to 32 (halfway).
+        self.draw_hash_frame(draw, 32, y, block_hash, web_quality=web_quality, max_width=max_available_width)
+        
+        # Center Block Height Text inside the frame (approx y+15)
+        # User requested: "Can you even further move up the block height?". Old value_y=y+25. New = y+15.
+        value_y = y + 15
+        
+        bbox = used_font_block_value.getbbox(formatted_height)
         text_width = bbox[2] - bbox[0]
         x = (self.width - text_width) // 2
-        self.draw_vertical_gradient_text(img, draw, formatted_height, x, value_y + 10, font_block_value, block_height_start_color, block_height_end_color)
-        # self.draw_centered(draw, formatted_height, value_y + 10, font_block_value, fill=self.get_color(block_height_color, web_quality))
-
+        self.draw_vertical_gradient_text(img, draw, formatted_height, x, value_y, used_font_block_value, block_height_start_color, block_height_end_color)
+        
         # Add fee information as small text if available
         if configured_fee is not None:
             # Get the configured fee parameter to display the fee type
@@ -1954,9 +2529,12 @@ class ImageRenderer:
             except:
                 font_small = font_block_label
             
-            # Draw fee info in smaller text below block height (use adjusted position)
-            bbox = font_block_value.getbbox(formatted_height)
-            fee_y = value_y + bbox[3] - bbox[1] + 42
+            # Draw fee info in smaller text below block height
+            bbox = used_font_block_value.getbbox(formatted_height)
+            text_height = bbox[3] - bbox[1]
+            # User requested to fix overlap: Increased gap from 15 to 25
+            fee_y = value_y + text_height + 25
+
             # Use darker tone for e-ink, use brighter tone for web (TODO: use darker for light mode as well?)
             if web_quality:
                 self.draw_centered(draw, fee_text, fee_y, font_small, block_height_start_color)
@@ -1964,10 +2542,7 @@ class ImageRenderer:
                 self.draw_centered(draw, fee_text, fee_y, font_small, block_height_end_color)
 
         # Draw shortened hash
-        # if mempool_api:
-        #     short_hash = mempool_api.shorten_hash(block_hash)
-        # else:
-        #     short_hash = f"{block_hash[:12]}...{block_hash[-12:]}"
+        # (covered by frame)
         
         y += 105  # Moved up by 5px (was 110)
         # self.draw_centered(draw, short_hash, y, font_block_label)
@@ -2080,7 +2655,8 @@ class ImageRenderer:
             
         # Calculate equal top and bottom padding
         vertical_padding = (holiday_height - total_holiday_height) // 2
-        y = holiday_box_top_y + vertical_padding  # Equal spacing top and bottom
+        
+        y = holiday_box_top_y + vertical_padding - 5
             
         # Render the holiday title
         y = self.draw_centered(draw, title_text, y, font_title, fill=title_color)

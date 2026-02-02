@@ -1314,7 +1314,7 @@ class MempaperApp:
         image_affecting_changes = False
         if old_config and self.config:
             image_affecting_settings = [
-                'language', 'display_orientation', 'prioritize_large_scaled_meme',
+                'language', 'web_orientation', 'eink_orientation', 'prioritize_large_scaled_meme',
                 'display_width', 'display_height', 'show_btc_price_block',
                 'btc_price_currency', 'show_bitaxe_block', 'show_wallet_balances_block',
                 'wallet_balance_unit', 'wallet_balance_currency', 'color_mode_dark',
@@ -1430,7 +1430,7 @@ class MempaperApp:
         from PIL import Image, ImageDraw, ImageFont
         
         # Use current orientation settings
-        if self.config.get("orientation", "vertical") == "horizontal":
+        if self.config.get("web_orientation", "vertical") == "horizontal":
             width, height = 800, 480
         else:
             width, height = 480, 800
@@ -1545,7 +1545,7 @@ class MempaperApp:
         # Define settings that affect image rendering and require immediate refresh
         image_affecting_settings = {
             # Hardware settings
-            'display_orientation', 'display_width', 'display_height', 'e-ink-display-connected',
+            'web_orientation', 'eink_orientation', 'display_width', 'display_height', 'e-ink-display-connected',
             'omni_device_name', 'block_height_area',
             
             # Design settings (colors, fonts)
@@ -2299,13 +2299,15 @@ class MempaperApp:
             
             # Get current language and orientation
             lang = self.config.get("language", "en")
-            orientation = self.config.get("orientation", "vertical")
+            # Use web_orientation for the dashboard view
+            orientation = self.config.get("web_orientation", "vertical")
             current_translations = translations.get(lang, translations["en"])
             
             return render_template('dashboard.html', 
                                  translations=current_translations,
                                  display_icon=display_icon,
                                  e_ink_enabled=self.e_ink_enabled,
+                                 # This orientation determines the CSS class for layout
                                  orientation=orientation,
                                  live_block_notifications_enabled=self.config.get('live_block_notifications_enabled', False))
         
