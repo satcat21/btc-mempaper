@@ -1796,10 +1796,10 @@ class ImageRenderer:
             # Total height: Title + Gap(3) + Description + Padding(24)
             # 12px top + 12px bottom = 24px total padding for balanced spacing
             HOLIDAY_HEIGHT = title_height + 3 + desc_total_height + 24
-        # Reserve extra space for hash frame that extends beyond block height number
-        # The hash extends upward, so we need minimal or no bottom margin
-        HASH_FRAME_MARGIN = 0  # Minimal margin for hash frame
-        meme_bottom_y = self.height - self.block_height_area - HASH_FRAME_MARGIN
+        # Reserve space for hash frame - calculate where it actually renders
+        # The hash frame rendering in vertical mode uses: y = self.height - (self.block_height_area - 10)
+        hash_frame_y_position = self.height - (self.block_height_area - 10) + 6
+        meme_bottom_y = hash_frame_y_position  # Content can go up to where hash frame visibly starts
         # Content starts after the date. Holiday is part of the content flow.
         content_top_y = date_bottom_y
         available_content_height = meme_bottom_y - content_top_y
@@ -1839,132 +1839,104 @@ class ImageRenderer:
         info_blocks_space = calculate_info_blocks_space(self.config)
 
         if prioritize_large_meme:
-            # --- Step 1: Determine meme scaling ---
+            # --- PRIORITY ORDER: Meme (max size) > Holiday > Info Blocks ---
+            # Step 1: Size meme to MAXIMUM possible size
             meme_img = None
             meme_height = 0
             meme_width = 0
             
-            # Revised Logic: Calculate potential meme height first, but allow Holiday to constrain it
-            # to ensure Holiday visibility (Meme > Holiday > Stats).
-            
-            potential_meme_height = 0
-            if meme_path:
-                try:
-                    temp_img = Image.open(meme_path)
-                    aspect = temp_img.width / temp_img.height
-                    target_w = self.width - 40
-                    # Max possible height in pure isolation
-                    max_possible_h = available_content_height - 20
-                    
-                    # Natural height at full width
-                    natural_h = int(target_w / aspect)
-                    potential_meme_height = min(natural_h, max_possible_h)
-                except:
-                    pass
-
-            # Check if Holiday fits with full Meme
-            # We need Space for Holiday + Meme + Gaps.
-            # Gaps: Top(Sp), Middle(Sp), Bottom(Sp) = 3 * STANDARD_SPACING approx.
-            required_space_with_full_meme = potential_meme_height + (HOLIDAY_HEIGHT if holiday_info else 0) + (3 * STANDARD_SPACING)
-            
-            if holiday_info and required_space_with_full_meme > available_content_height:
-                # Conflict! Holiday + Max Meme doesn't fit.
-                # Prioritize Holiday: Shrink meme to fit limit.
-                # Limit = Available - Holiday - Gaps
-                # (Min Threshold for meme: 100px? If less, we drop Holiday)
-                
-                reserved_holiday_space = HOLIDAY_HEIGHT + STANDARD_SPACING
-                # Gaps: Top + Holiday + Gap + Meme + Bottom = 3 gaps??
-                # Let's say we need `reserved_holiday_space` + Meme + 2*Gap
-                
-                max_meme_h_constrained = available_content_height - reserved_holiday_space - (2 * STANDARD_SPACING)
-                
-                if max_meme_h_constrained > 100: # Acceptable meme size
-                     # Enforce constraint
-                     # This effectively "Hides Stats" (space used covers screen) and "Shrinks Meme" (to fit Holiday)
-                     pass 
-                else: 
-                     # Meme would be too small. Drop Holiday priority.
-                     # "Maximize Meme" wins over "Holiday Priority" if meme is tiny.
-                     reserved_holiday_space = 0 
-            else:
-                # Fits easily OR no holiday.
-                # Stats might still be pushed out if `required_space_with_full_meme` is huge.
-                reserved_holiday_space = HOLIDAY_HEIGHT if holiday_info else 0
-
-            # Now perform actual scaling with constraint
             if meme_path:
                 try:
                     meme_img = Image.open(meme_path)
                     aspect_ratio = meme_img.width / meme_img.height
                     max_width = self.width - 40
                     
-                    # Available for meme
-                    # If we reserved holiday, we subtract it.
-                    # Gap estimation: 
-                    # If reserved_holiday: Top(Gap) + Holiday + Gap + Meme + Bottom(Gap implicit) -> 2 gaps explicit
-                    # If NOT reserved: Top(Gap) + Meme + Bottom -> 1 gap explicit
-                    
-                    gaps_estimate = (2 * STANDARD_SPACING) if reserved_holiday_space else STANDARD_SPACING
-                    max_height = available_content_height - reserved_holiday_space - gaps_estimate
+                    # Calculate maximum meme height with only mandatory gaps (top + bottom)
+                    min_gaps = 2 * STANDARD_SPACING  # Top gap + Bottom gap
+                    max_meme_height = available_content_height - min_gaps
                     
                     # Scale meme to fit max width and max height
-                    scaled_width = min(max_width, int(max_height * aspect_ratio))
+                    scaled_width = min(max_width, int(max_meme_height * aspect_ratio))
                     scaled_height = int(scaled_width / aspect_ratio)
-                    if scaled_height > max_height:
-                        scaled_height = max_height
+                    if scaled_height > max_meme_height:
+                        scaled_height = max_meme_height
                         scaled_width = int(scaled_height * aspect_ratio)
+                    
                     meme_img = meme_img.resize((scaled_width, scaled_height), Image.Resampling.LANCZOS)
                     meme_height = scaled_height
                     meme_width = scaled_width
                 except Exception as e:
                     print(f"⚠️ Error loading meme for scaling: {e}")
-
-            # --- Step 2: Calculate remaining height for info blocks ---
-            # Now we use the actual meme height for layout
-            remaining_height = available_content_height - meme_height - STANDARD_SPACING
-            blocks_y = content_top_y
-
-            # --- Step 3: Assign space for holiday ---
-            # If we reserved it, it should fit. If we didn't, it might logic out here.
-            holiday_space = HOLIDAY_HEIGHT if (holiday_info and remaining_height >= HOLIDAY_HEIGHT) else 0
-            remaining_height_for_info = remaining_height - holiday_space
-
-            # --- Step 4: Assign space for info blocks ---
-            max_blocks = (remaining_height_for_info - BLOCK_MARGIN) // (INFO_BLOCK_HEIGHT + BLOCK_MARGIN)
-            info_blocks_to_render = []
-            if max_blocks > 0 and info_blocks:
-                if len(info_blocks) > max_blocks:
-                    info_blocks_to_render = random.sample(info_blocks, int(max_blocks))
-                else:
-                    info_blocks_to_render = info_blocks
             
-            # --- Step 5: Calculate balanced vertical spacing ---
+            # --- Step 2: Calculate remaining space after meme ---
+            space_after_meme = available_content_height - meme_height
+            
+            # --- Step 3: Try to fit Holiday (higher priority than info blocks) ---
+            holiday_space = 0
+            if holiday_info:
+                # Space needed: gap after meme + holiday + gap before hash = 3 gaps total + holiday
+                space_needed_for_holiday = (3 * STANDARD_SPACING) + HOLIDAY_HEIGHT
+                if space_after_meme >= space_needed_for_holiday:
+                    holiday_space = HOLIDAY_HEIGHT
+                else:
+                    print(f"⚠️ Not enough space for holiday. Need {space_needed_for_holiday}px, have {space_after_meme}px")
+            
+            # --- Step 4: Try to fit Info Blocks in remaining space ---
+            remaining_after_holiday = space_after_meme - holiday_space
+            
+            # Calculate how many info blocks fit
+            # If we have holiday: need gaps: top, holiday-meme, meme-blocks, blocks-hash = 4 gaps
+            # If no holiday: need gaps: top, meme-blocks, blocks-hash = 3 gaps
+            base_gaps = (4 * STANDARD_SPACING) if holiday_space else (3 * STANDARD_SPACING)
+            space_for_blocks = remaining_after_holiday - base_gaps
+            
+            info_blocks_to_render = []
+            if space_for_blocks > 0 and info_blocks:
+                # Calculate how many blocks fit
+                # First block: INFO_BLOCK_HEIGHT
+                # Each additional block: BLOCK_MARGIN + INFO_BLOCK_HEIGHT
+                max_blocks = 0
+                if space_for_blocks >= INFO_BLOCK_HEIGHT:
+                    max_blocks = 1
+                    remaining = space_for_blocks - INFO_BLOCK_HEIGHT
+                    additional = remaining // (BLOCK_MARGIN + INFO_BLOCK_HEIGHT)
+                    max_blocks += int(additional)
+                
+                if max_blocks > 0:
+                    if len(info_blocks) > max_blocks:
+                        info_blocks_to_render = random.sample(info_blocks, int(max_blocks))
+                        print(f"ℹ️ Showing {max_blocks} of {len(info_blocks)} info blocks (meme prioritized)")
+                    else:
+                        info_blocks_to_render = info_blocks
+                else:
+                    print(f"ℹ️ No space for info blocks (meme takes {meme_height}px of {available_content_height}px)")
+            
+            # --- Step 5: Calculate balanced vertical spacing with actual content ---
             # When no holiday and no info blocks, center the meme vertically
             if not holiday_space and len(info_blocks_to_render) == 0:
                 # Center meme between date and hash frame
                 center_point = content_top_y + (available_content_height // 2)
                 current_y = center_point - (meme_height // 2) if meme_height > 0 else center_point
             else:
-                # Calculate total content height
+                # Calculate total content height (actual heights, no gaps included)
                 total_content_height = 0
                 if holiday_space:
                     total_content_height += holiday_space
                 total_content_height += meme_height
                 if len(info_blocks_to_render):
-                    total_content_height += len(info_blocks_to_render) * INFO_BLOCK_HEIGHT + (len(info_blocks_to_render) + 1) * BLOCK_MARGIN
+                    # Include margins between info blocks (not before first or after last)
+                    total_content_height += len(info_blocks_to_render) * INFO_BLOCK_HEIGHT + (len(info_blocks_to_render) - 1) * BLOCK_MARGIN
                 
-                # Calculate remaining space to distribute
+                # Calculate remaining space to distribute evenly across gaps
                 remaining_space = available_content_height - total_content_height
                 
-                # Calculate number of gaps between elements
-                num_gaps = 1  # gap after date (before first element)
+                # Calculate number of gaps for even distribution
+                # Gaps: Top (after date) + Between elements + Bottom (before hash)
+                num_gaps = 2  # Top and bottom gaps are mandatory
                 if holiday_space: num_gaps += 1  # gap between holiday and meme
-                if len(info_blocks_to_render):
-                    num_gaps += 1  # gap between meme and info blocks
-                    num_gaps += 1  # gap after info blocks (before hash frame)
+                if len(info_blocks_to_render): num_gaps += 1  # gap between meme and info blocks
                 
-                # Distribute spacing evenly across all gaps
+                # Distribute spacing evenly across all gaps, ensuring minimum spacing
                 gap_size = max(STANDARD_SPACING, remaining_space // num_gaps) if num_gaps > 0 else STANDARD_SPACING
                 
                 # Start positioning elements with balanced spacing
@@ -2003,24 +1975,13 @@ class ImageRenderer:
                 current_y += gap_size
                 
             if len(info_blocks_to_render):
-                # Render info blocks (each centered in assigned space)
-                section_left = BLOCK_MARGIN
-                section_right = self.width - BLOCK_MARGIN
-                section_top = current_y
-                section_bottom = current_y + len(info_blocks_to_render) * INFO_BLOCK_HEIGHT + (len(info_blocks_to_render) + 1) * BLOCK_MARGIN
+                # Render info blocks without the extra BLOCK_MARGIN wrapper
+                # The first block starts at current_y (already includes gap_size)
+                pass
 
-                bg_color = (255, 250, 200)  # pale yellow
-                # bg_color = (200, 200, 200)  # light grey
-                radius = 15  # rounded corners
-                # draw.rounded_rectangle(
-                #     [(section_left, section_top), (section_right, section_bottom)],
-                #     radius=radius,
-                #     fill=bg_color
-                # )
-                current_y += BLOCK_MARGIN
-
-            for block_fn, block_data in info_blocks_to_render:
-                info_vertical_offset = current_y + (INFO_BLOCK_HEIGHT + BLOCK_MARGIN - INFO_BLOCK_HEIGHT) // 2 + 10
+            for i, (block_fn, block_data) in enumerate(info_blocks_to_render):
+                # Render each info block at current_y position
+                info_vertical_offset = current_y + 10  # Small adjustment for visual centering
                 try:
                     if block_fn == self.render_wallet_balances_block:
                         info_vertical_offset = block_fn(draw, info_vertical_offset, font_block_label, font_block_value, block_data, web_quality, startup_mode=startup_mode)
@@ -2028,7 +1989,11 @@ class ImageRenderer:
                         info_vertical_offset = block_fn(draw, info_vertical_offset, font_block_label, font_block_value, block_data, web_quality)
                 except Exception as e:
                     print(f"⚠️ Error rendering info block {block_fn.__name__}: {e}")
-                current_y += INFO_BLOCK_HEIGHT + BLOCK_MARGIN
+                
+                # Move to next block position (height + margin between blocks)
+                current_y += INFO_BLOCK_HEIGHT
+                if i < len(info_blocks_to_render) - 1:  # Add margin between blocks, but not after the last one
+                    current_y += BLOCK_MARGIN
 
         else:
             # --- prioritize_large_scaled_meme == False ---
@@ -2125,26 +2090,29 @@ class ImageRenderer:
                 meme_img = meme_img.convert("RGBA")
                 meme_img = self.add_rounded_corners(meme_img, radius=20)
                 img.paste(meme_img, (meme_x, current_y), meme_img)
-                current_y += meme_height + gap_size
+                current_y += meme_height
             else:
                 self._render_fallback_content(img, draw, current_y, meme_height,
                                             font_holiday_title, web_quality)
-                current_y += meme_height + gap_size
+                current_y += meme_height
             
             # Render Info Blocks
             # No wrapper background for the group is drawn in this mode, as they are distributed elements
             for i, (block_fn, block_data) in enumerate(info_blocks):
+                # Add gap before each info block (creates uniform spacing with meme and between blocks)
+                current_y += gap_size
+                
                 try:
                     if block_fn == self.render_wallet_balances_block:
                         block_fn(draw, current_y, font_block_label, font_block_value, block_data, web_quality, startup_mode=startup_mode)
                     else:
                         block_fn(draw, current_y, font_block_label, font_block_value, block_data, web_quality)
                     
-                    current_y += INFO_BLOCK_HEIGHT + gap_size
+                    # Move to next position: add block height only (gap is added at start of next iteration or remains as bottom gap)
+                    current_y += INFO_BLOCK_HEIGHT
                 except Exception as e:
                     print(f"⚠️ Error rendering info block {block_fn.__name__}: {e}")
-                    # If error, skip spacing for this block to avoid large gap? 
-                    # Or keep grid? Safest is to just continue.
+                    # If error, skip this block and continue
 
             # Calculate remaining space for meme (not needed, meme is already rendered above info blocks)
             # meme_top_y = blocks_y + BLOCK_MARGIN
