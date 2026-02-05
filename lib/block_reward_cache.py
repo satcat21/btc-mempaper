@@ -531,8 +531,9 @@ class BlockRewardCache:
                     block_height
                 )
             
-            if updated:
-                self._save_cache()
+            # Always save cache after updating global sync height
+            # This ensures we don't rescan blocks on restart, even if no rewards were found
+            self._save_cache()
             
             return updated
             

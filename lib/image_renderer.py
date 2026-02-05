@@ -1140,7 +1140,7 @@ class ImageRenderer:
         
         return y
 
-    def render_dual_images(self, block_height, block_hash, mempool_api=None,  startup_mode=False, override_content_path=None):
+    def render_dual_images(self, block_height, block_hash, mempool_api=None,  startup_mode=False, override_content_path=None, preserve_info_blocks=None, precached_price=None, precached_bitaxe=None):
         """
         Render both web-quality and e-ink optimized images efficiently.
         Optimized to share common elements and reduce API calls.
@@ -1151,9 +1151,12 @@ class ImageRenderer:
             mempool_api (MempoolAPI, optional): Mempool API instance for formatting
             startup_mode (bool): If True, use cached data only and skip expensive gap limit detection
             override_content_path (str, optional): Force specific meme/image path
+            preserve_info_blocks (list, optional): List of block types to preserve ['wallet', 'bitaxe', 'price']
+            precached_price (dict, optional): Pre-cached price data to avoid API call
+            precached_bitaxe (dict, optional): Pre-cached Bitaxe data to avoid API call
             
         Returns:
-            tuple: (web_image, eink_image, content_path) - Both PIL.Image objects and source content path
+            tuple: (web_image, eink_image, content_path, displayed_blocks) - PIL.Image objects, content path, and displayed block types
         """
         # === SHARED DATA COLLECTION (done once) ===
         # Get holiday info once
@@ -1169,19 +1172,58 @@ class ImageRenderer:
         if not content_path:
             content_path = self.pick_random_meme()
         
-        # Randomly select info blocks ONCE
+        # Build info blocks based on preserve_info_blocks or config
         info_blocks = []
         bitaxe_data = None
         btc_price_data = None
         wallet_data = None
+        displayed_blocks = []  # Track which blocks are actually added
         config = self.config
-        if config.get("show_btc_price_block", True):
-            btc_price_data = self.btc_price_api.fetch_btc_price()
-            info_blocks.append((self.render_btc_price_block, btc_price_data))
-        if config.get("show_bitaxe_block", True):
-            bitaxe_data = self.bitaxe_api.fetch_bitaxe_stats()
-            info_blocks.append((self.render_bitaxe_block, bitaxe_data))
-        if config.get("show_wallet_balances_block", True):
+        
+        # If preserving layout, build blocks in the same order as displayed_info_blocks
+        if preserve_info_blocks:
+            print(f"🎭 Preserving info block layout: {preserve_info_blocks}")
+            for block_type in preserve_info_blocks:
+                if block_type == 'price' and config.get("show_btc_price_block", True):
+                    if precached_price:
+                        btc_price_data = precached_price
+                        print("⚡ Using pre-cached price data (fast!)")
+                    else:
+                        btc_price_data = self.btc_price_api.fetch_btc_price()
+                    info_blocks.append((self.render_btc_price_block, btc_price_data))
+                    displayed_blocks.append('price')
+                elif block_type == 'bitaxe' and config.get("show_bitaxe_block", True):
+                    if precached_bitaxe:
+                        bitaxe_data = precached_bitaxe
+                        print("⚡ Using pre-cached Bitaxe data (fast!)")
+                    else:
+                        bitaxe_data = self.bitaxe_api.fetch_bitaxe_stats()
+                    info_blocks.append((self.render_bitaxe_block, bitaxe_data))
+                    displayed_blocks.append('bitaxe')
+                elif block_type == 'wallet' and config.get("show_wallet_balances_block", True):
+                    # Wallet data will be added below
+                    pass
+        else:
+            # Normal mode: add all enabled blocks
+            if config.get("show_btc_price_block", True):
+                if precached_price:
+                    btc_price_data = precached_price
+                    print("⚡ Using pre-cached price data (fast!)")
+                else:
+                    btc_price_data = self.btc_price_api.fetch_btc_price()
+                info_blocks.append((self.render_btc_price_block, btc_price_data))
+                displayed_blocks.append('price')
+            if config.get("show_bitaxe_block", True):
+                if precached_bitaxe:
+                    bitaxe_data = precached_bitaxe
+                    print("⚡ Using pre-cached Bitaxe data (fast!)")
+                else:
+                    bitaxe_data = self.bitaxe_api.fetch_bitaxe_stats()
+                info_blocks.append((self.render_bitaxe_block, bitaxe_data))
+                displayed_blocks.append('bitaxe')
+        
+        # Handle wallet block (always last, or in preserved position)
+        if config.get("show_wallet_balances_block", True) and (not preserve_info_blocks or 'wallet' in preserve_info_blocks):
             if startup_mode:
                 wallet_data = self.wallet_api.get_cached_wallet_balances()
                 if wallet_data is None or wallet_data.get("error"):
@@ -1222,7 +1264,14 @@ class ImageRenderer:
                     else:
                         print("⚠️ Failed to fetch BTC price data for wallet balance updates. Use cache as it is.")
 
-            info_blocks.append((self.render_wallet_balances_block, wallet_data))
+            # Add wallet block to appropriate position
+            if preserve_info_blocks:
+                # Insert wallet at its preserved position
+                wallet_index = preserve_info_blocks.index('wallet') if 'wallet' in preserve_info_blocks else len(info_blocks)
+                info_blocks.insert(wallet_index, (self.render_wallet_balances_block, wallet_data))
+            else:
+                info_blocks.append((self.render_wallet_balances_block, wallet_data))
+            displayed_blocks.append('wallet')
         
         # Pass all shared data to both renders
         shared_data = {
@@ -1234,6 +1283,8 @@ class ImageRenderer:
             "bitaxe_data": bitaxe_data,
             "wallet_data": wallet_data,
             "info_blocks": info_blocks,
+            "displayed_blocks": displayed_blocks,  # Track which blocks are shown
+            "preserve_layout": preserve_info_blocks is not None,  # Flag for layout preservation
             # ...add any other shared data...
         }
 
@@ -1259,7 +1310,7 @@ class ImageRenderer:
         self._apply_orientation_settings(self.web_orientation)
         
         print(f"✅ Image generated for block {block_height}")
-        return web_img, eink_img, content_path  # Return selected content path for caching
+        return web_img, eink_img, content_path, displayed_blocks  # Return images, content path, and displayed block types
     
     def render_dual_images_with_cached_meme(self, block_height, block_hash, cached_meme_path, mempool_api=None):
         """
@@ -1638,8 +1689,13 @@ class ImageRenderer:
             info_blocks_to_render = []
             if max_blocks > 0 and info_blocks:
                 if len(info_blocks) > max_blocks:
-                    print(f"⚠️ Landscape Mode: Not enough space for all blocks. Showing {int(max_blocks)} of {len(info_blocks)}")
-                    info_blocks_to_render = random.sample(info_blocks, int(max_blocks))
+                    # If preserving layout, keep first N blocks in order, otherwise random sample
+                    if shared_data.get('preserve_layout', False):
+                        print(f"ℹ️ Landscape Mode: Preserving first {int(max_blocks)} of {len(info_blocks)} blocks")
+                        info_blocks_to_render = info_blocks[:int(max_blocks)]
+                    else:
+                        print(f"⚠️ Landscape Mode: Not enough space for all blocks. Showing {int(max_blocks)} of {len(info_blocks)}")
+                        info_blocks_to_render = random.sample(info_blocks, int(max_blocks))
                 else:
                     info_blocks_to_render = info_blocks
             

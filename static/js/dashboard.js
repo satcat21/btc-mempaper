@@ -245,136 +245,186 @@ function showBlockToast(blockData) {
         document.body.appendChild(toastContainer);
     }
     
-    // Create toast element
-    const toast = document.createElement('div');
-    toast.style.cssText = `
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        padding: 16px 20px;
-        border-radius: 12px;
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-        backdrop-filter: blur(15px);
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        margin-bottom: 10px;
-        min-width: 320px;
-        max-width: 400px;
-        opacity: 0;
-        transform: translateX(100%);
-        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-        position: relative;
-        font-size: 14px;
-        line-height: 1.4;
-    `;
+    const blockHeight = blockData.block_height;
+    const toastId = `toast-${blockHeight}`;
     
-    // Create close button
-    const closeBtn = document.createElement('button');
-    closeBtn.innerHTML = '×';
-    closeBtn.style.cssText = `
-        position: absolute;
-        top: 8px;
-        right: 12px;
-        background: none;
-        border: none;
-        color: white;
-        font-size: 20px;
-        cursor: pointer;
-        width: 24px;
-        height: 24px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        border-radius: 50%;
-        transition: background-color 0.2s;
-    `;
+    // Check if toast already exists for this block (for enrichment updates)
+    let toast = document.getElementById(toastId);
+    const isUpdate = toast !== null;
     
-    closeBtn.addEventListener('mouseenter', () => {
-        closeBtn.style.backgroundColor = 'rgba(255, 255, 255, 0.2)';
-    });
+    if (!toast) {
+        // Create new toast element
+        toast = document.createElement('div');
+        toast.id = toastId;
+        toast.style.cssText = `
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 16px 20px;
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(15px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            margin-bottom: 10px;
+            min-width: 320px;
+            max-width: 400px;
+            opacity: 0;
+            transform: translateX(100%);
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            font-size: 14px;
+            line-height: 1.4;
+        `;
     
-    closeBtn.addEventListener('mouseleave', () => {
-        closeBtn.style.backgroundColor = 'transparent';
-    });
+        // Create close button (optimized for mobile touch targets: 44x44px minimum)
+        const closeBtn = document.createElement('button');
+        closeBtn.innerHTML = '×';
+        closeBtn.setAttribute('aria-label', 'Close notification');
+        closeBtn.style.cssText = `
+            position: absolute;
+            top: 4px;
+            right: 8px;
+            background: rgba(255, 255, 255, 0.15);
+            border: none;
+            color: white;
+            font-size: 24px;
+            cursor: pointer;
+            width: 44px;
+            height: 44px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            transition: background-color 0.2s;
+            font-weight: bold;
+            z-index: 1;
+        `;
+        
+        closeBtn.addEventListener('mouseenter', () => {
+            closeBtn.style.backgroundColor = 'rgba(255, 255, 255, 0.3)';
+        });
+        
+        closeBtn.addEventListener('mouseleave', () => {
+            closeBtn.style.backgroundColor = 'rgba(255, 255, 255, 0.15)';
+        });
+        
+        // Close toast function
+        const closeToast = () => {
+            toast.style.opacity = '0';
+            toast.style.transform = 'translateX(100%)';
+            setTimeout(() => {
+                if (toast.parentNode) {
+                    toast.parentNode.removeChild(toast);
+                }
+            }, 400);
+        };
+        
+        // Close button click handler
+        closeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            closeToast();
+        });
+        
+        // Mobile-friendly: tap anywhere on toast to dismiss
+        toast.addEventListener('click', closeToast);
+        toast.style.cursor = 'pointer';
+        
+        // Append close button to toast
+        toast.appendChild(closeBtn);
+        
+        // Store close function for later updates
+        toast.closeToast = closeToast;
+    }
     
-    // Format timestamp to local time
+    // Format data (works for both new and enriched)
     const timestamp = new Date(blockData.timestamp * 1000);
     const timeString = timestamp.toLocaleTimeString();
-    
-    // Format numbers
     const heightFormatted = blockData.block_height.toLocaleString().replace(/,/g, '.');
     const rewardFormatted = blockData.total_reward_btc.toFixed(8);
     const feesFormatted = blockData.total_fees_btc.toFixed(4);
     const medianFeeFormatted = blockData.median_fee_sat_vb.toFixed(1);
     
-    // Create toast content
-    toast.innerHTML = `
-        <div style="margin-right: 20px;">
-            <div style="font-weight: bold; font-size: 16px; margin-bottom: 8px; color: #FFD700;">
-                New Block ${heightFormatted}
-            </div>
-            <div style="margin-bottom: 4px;">
-                <span style="opacity: 0.8;">Time:</span> <span style="font-weight: 500;">${timeString}</span>
-            </div>
-            <div style="margin-bottom: 4px;">
-                <span style="opacity: 0.8;">Hash:</span> <span style="font-family: monospace; font-size: 12px;">${blockData.block_hash}</span>
-            </div>
-            <div style="margin-bottom: 4px;">
-                <span style="opacity: 0.8;">Pool:</span> <span style="font-weight: 500;">${blockData.pool_name}</span>
-            </div>
-            <div style="margin-bottom: 4px;">
-                <span style="opacity: 0.8;">Reward:</span> <span style="font-weight: 500; color: #90EE90;">${rewardFormatted} BTC</span>
-                <span style="font-size: 12px; opacity: 0.7;">(+${feesFormatted} fees)</span>
-            </div>
-            <div>
-                <span style="opacity: 0.8;">Median Fee:</span> <span style="font-weight: 500;">${medianFeeFormatted} sat/vB</span>
-            </div>
+    // Find the content div or create toast content
+    let contentDiv = toast.querySelector('.toast-content');
+    if (!contentDiv) {
+        contentDiv = document.createElement('div');
+        contentDiv.className = 'toast-content';
+        contentDiv.style.cssText = 'margin-right: 20px;';
+        toast.appendChild(contentDiv);
+    }
+    
+    // Update content (works for both new and enriched data)
+    contentDiv.innerHTML = `
+        <div style="font-weight: bold; font-size: 16px; margin-bottom: 8px; color: #FFD700;">
+            New Block ${heightFormatted}
+        </div>
+        <div style="margin-bottom: 4px;">
+            <span style="opacity: 0.8;">Time:</span> <span style="font-weight: 500;">${timeString}</span>
+        </div>
+        <div style="margin-bottom: 4px;">
+            <span style="opacity: 0.8;">Hash:</span> <span style="font-family: monospace; font-size: 12px;">${blockData.block_hash}</span>
+        </div>
+        <div style="margin-bottom: 4px;">
+            <span style="opacity: 0.8;">Pool:</span> <span style="font-weight: 500;">${blockData.pool_name}</span>
+        </div>
+        <div style="margin-bottom: 4px;">
+            <span style="opacity: 0.8;">Reward:</span> <span style="font-weight: 500; color: #90EE90;">${rewardFormatted} BTC</span>
+            <span style="font-size: 12px; opacity: 0.7;">(+${feesFormatted} fees)</span>
+        </div>
+        <div>
+            <span style="opacity: 0.8;">Median Fee:</span> <span style="font-weight: 500;">${medianFeeFormatted} sat/vB</span>
         </div>
     `;
     
-    // Add close button
-    toast.appendChild(closeBtn);
-    
-    // Close toast function
-    const closeToast = () => {
-        toast.style.opacity = '0';
-        toast.style.transform = 'translateX(100%)';
+    if (!isUpdate) {
+        // New toast - add to container and animate in
+        toastContainer.appendChild(toast);
+        
+        // Animate in
         setTimeout(() => {
-            if (toast.parentNode) {
-                toast.parentNode.removeChild(toast);
-            }
-        }, 400);
-    };
-    
-    // Close button click handler
-    closeBtn.addEventListener('click', closeToast);
-    
-    // Add toast to container
-    toastContainer.appendChild(toast);
-    
-    // Animate in
-    setTimeout(() => {
-        toast.style.opacity = '1';
-        toast.style.transform = 'translateX(0)';
-    }, 10);
-    
-    // Auto-close after 30 seconds
-    setTimeout(closeToast, 30000);
+            toast.style.opacity = '1';
+            toast.style.transform = 'translateX(0)';
+        }, 10);
+        
+        // Auto-close after 30 seconds
+        setTimeout(toast.closeToast, 30000);
+    } else {
+        // Existing toast - just updated content, add subtle flash effect
+        console.log('✅ Updated block notification with enriched data');
+        contentDiv.style.transition = 'opacity 0.2s';
+        contentDiv.style.opacity = '0.7';
+        setTimeout(() => {
+            contentDiv.style.opacity = '1';
+        }, 100);
+    }
 }
 
 // New block notification with toast
 socket.on('new_block_notification', (data) => {
-        console.log("👁️ New block notification received:", data);
+    console.log("👁️ New block notification received:", data);
     if (data.page && data.page !== 'dashboard') {
         // console.log('[DEBUG] Block notification for other page, ignoring.');
         return;
     }
+    
     const state = getNotificationState();
     const now = Date.now();
-    if (state.lastNotification && (now - state.lastNotification) < 10000) {
-        // console.log("⚠️ Duplicate block notification detected, skipping");
+    
+    // Allow updates for the same block (enriched data) but prevent duplicate new blocks
+    const isEnrichment = data.enriched === true;
+    const isDifferentBlock = !state.lastBlockHeight || state.lastBlockHeight !== data.block_height;
+    
+    if (!isEnrichment && !isDifferentBlock && (now - state.lastNotification) < 10000) {
+        console.log("⚠️ Duplicate block notification detected, skipping");
         return;
     }
-    state.lastNotification = now;
-    setNotificationState(state);
+    
+    // Update state for new blocks (not enrichments)
+    if (!isEnrichment || isDifferentBlock) {
+        state.lastNotification = now;
+        state.lastBlockHeight = data.block_height;
+        setNotificationState(state);
+    }
+    
     showBlockToast(data);
     try {
         localStorage.setItem('mempaper_block_notification', JSON.stringify({
@@ -439,6 +489,13 @@ function refreshCurrentImage() {
     
     if (dashboardImg && dashboardImg.src) {
         const currentSrc = dashboardImg.src;
+        
+        // Only refresh if src is a valid HTTP/HTTPS URL (not base64 data: or placeholder)
+        if (!currentSrc.startsWith('http://') && !currentSrc.startsWith('https://')) {
+            console.log("⏭️ Skipping refresh - image is not an HTTP URL");
+            return;
+        }
+        
         const baseUrl = currentSrc.split('?')[0]; // Remove any existing query parameters
         const timestamp = new Date().getTime();
         const newUrl = baseUrl + "?refresh=" + timestamp + "&cache=" + Math.random();

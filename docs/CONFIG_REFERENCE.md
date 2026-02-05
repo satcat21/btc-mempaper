@@ -103,6 +103,7 @@ These settings are typically managed by the system or only available in `config.
 
 | Config Key | Default | Description |
 | :--- | :--- | :--- |
+| `precache_update_interval_seconds` | `300` | How often to fetch price/Bitaxe data (seconds). Lower = fresher data but more CPU/API calls. 300s = 5 min (recommended for RPi Zero) |
 | `xpub_enable_gap_limit` | `true` | Stop scanning XPUB after N unused addresses |
 | `xpub_gap_limit_last_n` | `20` | Number of empty addresses before stopping |
 | `network_outage_tolerance_minutes` | `45` | Minutes to retry WebSocket reconnection during outages |

@@ -236,6 +236,10 @@ class MempaperApp:
         self.last_eink_block_height = None
         self.last_eink_block_hash = None
         
+        # Track currently displayed info blocks and their data for smart regeneration
+        self.displayed_info_blocks = []  # List of block types shown: ['wallet', 'bitaxe', 'price']
+        self.displayed_bitaxe_data = None  # Cache Bitaxe data shown in current image
+        
         # Block tracker for e-ink display race condition prevention
         self.block_tracker = {}
         
@@ -249,8 +253,22 @@ class MempaperApp:
         # Block processing lock to prevent duplicate block processing
         self._block_processing_lock = threading.Lock()
         
+        # 🚀 Pre-cached data for fast image generation (refreshed in background)
+        self._precache = {
+            'price_data': None,
+            'bitaxe_data': None,
+            'price_last_update': 0,
+            'bitaxe_last_update': 0,
+            'last_price_value': None,  # Track last price to detect changes
+            'last_bitaxe_blocks': None,  # Track last Bitaxe blocks to detect changes
+            'lock': threading.Lock()
+        }
+        
         # Load persistent cache state from file
         self._load_cache_metadata()
+        
+        # Start background pre-cache updater
+        self._start_precache_updater()
         
         # Note: Configuration change callbacks registered at end of __init__
         
@@ -568,13 +586,16 @@ class MempaperApp:
             print(f"⚙️ [IMMEDIATE] Generating dashboard with cached data for block {block_info['block_height']}...")
             
             # Render both web and e-ink images using cached data (startup_mode=True)
-            web_img, eink_img, meme_path = self.image_renderer.render_dual_images(
+            web_img, eink_img, meme_path, displayed_blocks = self.image_renderer.render_dual_images(
                 block_info['block_height'], 
                 block_info['block_hash'],
                 mempool_api=self.mempool_api,
                 startup_mode=True,  # This forces use of cached data only
                 override_content_path=override_meme
             )
+            
+            # Track displayed info blocks
+            self.displayed_info_blocks = displayed_blocks
             
             # Save both images for caching
             if web_img is not None:
@@ -646,9 +667,12 @@ class MempaperApp:
                 
                 if balance_changed:
                     print(f"⚙️ [ASYNC-REFRESH] Balance changed: {cached_balance:.8f} → {fresh_balance:.8f} BTC")
-                    print("⚙️ [ASYNC-REFRESH] Regenerating image with updated balance...")
+                    print("⚙️ [ASYNC-REFRESH] Updating cache first, then regenerating image...")
                     
-                    # Regenerate image with fresh data
+                    # Update cache with fresh data BEFORE regenerating
+                    self.image_renderer.wallet_api.update_cache(fresh_wallet_data)
+                    
+                    # Regenerate image (will use the just-updated cache via startup_mode=True)
                     self._generate_new_image(
                         block_height, 
                         block_hash, 
@@ -657,11 +681,17 @@ class MempaperApp:
                     )
                     
                     print("✅ [ASYNC-REFRESH] Image regenerated with updated wallet balance")
+                    return  # Early return since cache was already updated
                 else:
                     print("✅ [ASYNC-REFRESH] Balance unchanged - no image regeneration needed")
-                    
-                # Update cache with fresh data regardless
-                self.image_renderer.wallet_api.update_cache(fresh_wallet_data)
+                
+                # Update cache with fresh data (only if we didn't already update it above)
+                # This updates timestamp and fiat values (which change with BTC price)
+                # even though BTC balance is the same - ready for next block's image
+                if not balance_changed:
+                    print("💾 [ASYNC-REFRESH] Updating cache with fresh timestamp and current fiat values...")
+                    self.image_renderer.wallet_api.update_cache(fresh_wallet_data)
+                    print("✅ [ASYNC-REFRESH] Cache updated - fresh fiat values ready for next block")
                 
             else:
                 error_msg = fresh_wallet_data.get('error', 'Unknown error') if fresh_wallet_data else 'No data returned'
@@ -1525,7 +1555,9 @@ class MempaperApp:
                 'eink_image_path': self.current_eink_image_path,
                 'current_meme_path': getattr(self, 'current_meme_path', None),  # Add meme caching
                 'last_eink_block_height': self.last_eink_block_height,  # Persist e-ink display state
-                'last_eink_block_hash': self.last_eink_block_hash  # Persist e-ink display hash
+                'last_eink_block_hash': self.last_eink_block_hash,  # Persist e-ink display hash
+                'displayed_info_blocks': getattr(self, 'displayed_info_blocks', []),  # Track which blocks are shown
+                'displayed_bitaxe_data': getattr(self, 'displayed_bitaxe_data', None)  # Cache Bitaxe state
             }
             
             with open(self.cache_metadata_path, 'w') as f:
@@ -1534,6 +1566,99 @@ class MempaperApp:
             print(f"💾 Cache metadata saved for block {self.current_block_height}")
         except Exception as e:
             print(f"⚠️ Error saving cache metadata: {e}")
+    
+    def _start_precache_updater(self):
+        """Start background thread that keeps slow-changing data fresh."""
+        def update_precache():
+            """Background worker to refresh price and bitaxe data between blocks."""
+            # Initial pre-fill on startup
+            print("🚀 Pre-cache updater started - warming cache...")
+            self._update_precache_data()
+            
+            # Get update interval from config (default 5 minutes to reduce RPi load)
+            update_interval = self.config.get("precache_update_interval_seconds", 300)
+            
+            while True:
+                try:
+                    # Update every N seconds (default 5 minutes)
+                    time.sleep(update_interval)
+                    self._update_precache_data()
+                except Exception as e:
+                    print(f"⚠️ Pre-cache update error: {e}")
+                    time.sleep(update_interval)  # Continue despite errors
+        
+        threading.Thread(target=update_precache, daemon=True, name="PreCacheUpdater").start()
+        print("✅ Pre-cache background updater started")
+    
+    def _update_precache_data(self):
+        """Update pre-cached data (price, bitaxe) in background."""
+        with self._precache['lock']:
+            now = time.time()
+            update_interval = self.config.get("precache_update_interval_seconds", 300)
+            
+            # Update price data if stale
+            if now - self._precache['price_last_update'] > update_interval:
+                try:
+                    price_data = self.image_renderer.fetch_btc_price()
+                    if price_data:
+                        self._precache['price_data'] = price_data
+                        self._precache['price_last_update'] = now
+                        
+                        # Only log if price actually changed
+                        currency = price_data.get('currency', 'USD')
+                        price = price_data.get('price_in_selected_currency', 0)
+                        if price != self._precache['last_price_value']:
+                            print(f"💰 Pre-cache updated: Price {price:,.0f} {currency}")
+                            self._precache['last_price_value'] = price
+                except Exception as e:
+                    print(f"⚠️ Failed to pre-cache price: {e}")
+            
+            # Update Bitaxe data if enabled and stale
+            if self.config.get("bitaxe_enabled", False) and now - self._precache['bitaxe_last_update'] > update_interval:
+                try:
+                    bitaxe_data = self.image_renderer.fetch_bitaxe_info()
+                    if bitaxe_data:
+                        self._precache['bitaxe_data'] = bitaxe_data
+                        self._precache['bitaxe_last_update'] = now
+                        
+                        # Only log if Bitaxe data actually changed
+                        blocks = bitaxe_data.get('valid_blocks', 0)
+                        difficulty = bitaxe_data.get('best_difficulty', 0)
+                        if blocks != self._precache['last_bitaxe_blocks']:
+                            print(f"⛏️ Pre-cache updated: Bitaxe {blocks} blocks, diff {difficulty}")
+                            self._precache['last_bitaxe_blocks'] = blocks
+                except Exception as e:
+                    print(f"⚠️ Failed to pre-cache Bitaxe: {e}")
+    
+    def _get_precached_data(self):
+        """Get pre-cached data with fallback to fresh fetch if needed."""
+        with self._precache['lock']:
+            now = time.time()
+            
+            # Use cached price if fresh (<120s old), otherwise fetch new
+            if self._precache['price_data'] and (now - self._precache['price_last_update'] < 120):
+                price_data = self._precache['price_data']
+                print("⚡ Using pre-cached price data (fast!)")
+            else:
+                print("🔄 Pre-cache stale, fetching fresh price...")
+                price_data = self.image_renderer.fetch_btc_price()
+                self._precache['price_data'] = price_data
+                self._precache['price_last_update'] = now
+            
+            # Use cached Bitaxe if fresh (<120s old), otherwise fetch new
+            if self.config.get("bitaxe_enabled", False):
+                if self._precache['bitaxe_data'] and (now - self._precache['bitaxe_last_update'] < 120):
+                    bitaxe_data = self._precache['bitaxe_data']
+                    print("⚡ Using pre-cached Bitaxe data (fast!)")
+                else:
+                    print("🔄 Pre-cache stale, fetching fresh Bitaxe...")
+                    bitaxe_data = self.image_renderer.fetch_bitaxe_info()
+                    self._precache['bitaxe_data'] = bitaxe_data
+                    self._precache['bitaxe_last_update'] = now
+            else:
+                bitaxe_data = None
+            
+            return price_data, bitaxe_data
     
     def _on_config_change(self, new_config):
         """
@@ -1757,38 +1882,80 @@ class MempaperApp:
             if not isinstance(cached_wallet_data, dict):
                 cached_wallet_data = {}
             
-            # Compare only BTC/sats balance
+            # Compare BTC balance
             fresh_btc = fresh_wallet_data.get("total_btc", 0)
             cached_btc = cached_wallet_data.get("total_btc", 0)
+            wallet_changed = fresh_btc != cached_btc
             
-            print(f"⚖️ [WALLET] Balance comparison: Fresh={fresh_btc} BTC, Cached={cached_btc} BTC")
-
-            if fresh_btc != cached_btc:
-                # Regenerate image
-                print("⚙️ [WALLET] Wallet data changed, updating cache and regenerating image...")
-                self.image_renderer.wallet_api.update_cache(fresh_wallet_data)
+            # Compare Bitaxe data if enabled and displayed
+            bitaxe_changed = False
+            if self.config.get("bitaxe_enabled", False) and 'bitaxe' in self.displayed_info_blocks:
+                fresh_bitaxe = self.image_renderer.fetch_bitaxe_info()
+                cached_bitaxe = self.displayed_bitaxe_data or {}
+                
+                fresh_blocks = fresh_bitaxe.get('valid_blocks', 0) if fresh_bitaxe else 0
+                cached_blocks = cached_bitaxe.get('valid_blocks', 0)
+                fresh_difficulty = fresh_bitaxe.get('best_difficulty', 0) if fresh_bitaxe else 0
+                cached_difficulty = cached_bitaxe.get('best_difficulty', 0)
+                
+                if fresh_blocks != cached_blocks or fresh_difficulty != cached_difficulty:
+                    bitaxe_changed = True
+                    print(f"⚖️ [BITAXE] Data changed: Blocks {cached_blocks}→{fresh_blocks}, Difficulty {cached_difficulty}→{fresh_difficulty}")
+                    # Update displayed Bitaxe cache
+                    self.displayed_bitaxe_data = fresh_bitaxe
+            
+            # Determine if regeneration is needed based on what's displayed
+            needs_regeneration = False
+            regeneration_reason = []
+            
+            if wallet_changed and 'wallet' in self.displayed_info_blocks:
+                needs_regeneration = True
+                regeneration_reason.append(f"wallet balance {cached_btc:.8f}→{fresh_btc:.8f} BTC")
+                print(f"⚖️ [WALLET] Balance changed and wallet block is displayed")
+            elif wallet_changed:
+                print(f"ℹ️ [WALLET] Balance changed ({cached_btc:.8f}→{fresh_btc:.8f} BTC) but wallet block not displayed, skipping regeneration")
+            
+            if bitaxe_changed:
+                needs_regeneration = True
+                regeneration_reason.append("Bitaxe data")
+                print(f"⚖️ [BITAXE] Data changed and Bitaxe block is displayed")
+            
+            # Update caches regardless of regeneration
+            self.image_renderer.wallet_api.update_cache(fresh_wallet_data)
+            
+            if needs_regeneration:
+                reason_str = ", ".join(regeneration_reason)
+                print(f"🔄 [REFRESH] Regenerating image due to: {reason_str}")
+                print("🎭 [REFRESH] Preserving current meme and info block selection")
                 
                 # Emit WebSocket event for balance update
                 if hasattr(self, 'socketio') and self.socketio:
                     self.socketio.emit('wallet_balance_updated', fresh_wallet_data)
                     print("📡 [WALLET] Balance update broadcasted via WebSocket")
                 
-                # Regenerate image with updated wallet data
-                web_img, eink_img, content_path = self.image_renderer.render_dual_images(
+                # Get pre-cached data for fast rendering
+                precached_price, precached_bitaxe = self._get_precached_data()
+                
+                # Regenerate with SAME meme and info blocks (preserve_layout=True)
+                web_img, eink_img, content_path, displayed_blocks = self.image_renderer.render_dual_images(
                     block_height, block_hash,
                     mempool_api=self.mempool_api,
-                    startup_mode=startup_mode
+                    startup_mode=startup_mode,
+                    override_content_path=self.current_meme_path,  # Keep same meme
+                    preserve_info_blocks=self.displayed_info_blocks,  # Keep same info blocks
+                    precached_price=precached_price,
+                    precached_bitaxe=precached_bitaxe
                 )
+                # Update displayed blocks tracking
+                self.displayed_info_blocks = displayed_blocks
                 # Save images
                 if web_img is not None:
                     web_img.save(self.current_image_path)
                 if eink_img is not None:
                     eink_img.save(self.current_eink_image_path)
-                print("✅ [WALLET] Image regenerated with updated wallet data")
+                print("✅ [REFRESH] Image regenerated with updated data")
             else:
-                print("✅ [WALLET] No wallet balance change detected, keeping current image")
-                # Still update the cache to keep timestamp fresh
-                self.image_renderer.wallet_api.update_cache(fresh_wallet_data)
+                print("✅ [REFRESH] No visible data changes, keeping current image")
                 
             # Update cache metadata
             self._save_cache_metadata()
@@ -1873,18 +2040,28 @@ class MempaperApp:
 
     def _generate_new_image(self, block_height: int, block_hash: str, skip_epaper: bool = False, use_new_meme: bool = True):
         """Generate a new dashboard image and cache it."""
-        print(f"⚙️ Generating new dashboard image for block {block_height}...")
+        print(f"⚙️ Generating new dashboard image for block {block_height} with CACHED wallet data...")
+        
+        # 🚀 Get pre-cached data for instant image generation
+        precached_price, precached_bitaxe = self._get_precached_data()
         
         # Decide whether to use cached meme or pick a new one
         if use_new_meme or not hasattr(self, 'current_meme_path') or not self.current_meme_path or not os.path.exists(self.current_meme_path):
             print("⚙️ Selecting new random meme for this block...")
-            web_img, eink_img, content_path = self.image_renderer.render_dual_images(
+            web_img, eink_img, content_path, displayed_blocks = self.image_renderer.render_dual_images(
                 block_height,
                 block_hash,
-                mempool_api=self.mempool_api
+                mempool_api=self.mempool_api,
+                startup_mode=True,  # Use cached wallet data for instant response
+                precached_price=precached_price,  # Use pre-cached price
+                precached_bitaxe=precached_bitaxe  # Use pre-cached Bitaxe
             )
-            # Cache the selected meme for this block so both web and e-ink use the same image
+            # Cache the selected meme and displayed blocks for this block
             self.current_meme_path = content_path
+            self.displayed_info_blocks = displayed_blocks
+            # Cache current Bitaxe state if displayed
+            if 'bitaxe' in displayed_blocks and precached_bitaxe:
+                self.displayed_bitaxe_data = precached_bitaxe
         else:
             print(f"🎭 Using cached meme for consistency: {os.path.basename(self.current_meme_path)}")
             web_img, eink_img, content_path = self.image_renderer.render_dual_images_with_cached_meme(
@@ -1914,49 +2091,38 @@ class MempaperApp:
         # This ensures web clients get instant response (~3 seconds) instead of waiting for e-ink display (~25 seconds)
         print("🚀 Returning web image immediately for fast web response")
         
-        # Start all background tasks AFTER returning web image
-        def start_background_tasks():
-            """Start background tasks after web image is served."""
-            # Start async wallet refresh in background for all image generations
-            # Skip if wallet monitoring is disabled
+        # 🚀 IMMEDIATE E-INK UPDATE - Start e-ink display right after web image is ready
+        # This reduces total update time from web→eink by running them sequentially but without delay
+        if self.e_ink_enabled and not skip_epaper:
+            current_eink_height = getattr(self, 'last_eink_block_height', 0) or 0
+            if int(block_height or 0) != int(current_eink_height):
+                print(f"⚡ Starting e-ink update IMMEDIATELY for block {block_height}")
+                with self.display_process_lock:
+                    active_blocks = list(self.active_display_processes.keys())
+                    if not any(active_block >= block_height for active_block in active_blocks):
+                        # Start e-ink display immediately (no delay)
+                        threading.Thread(
+                            target=self._display_on_epaper_async,
+                            args=(self.current_eink_image_path, block_height, block_hash),
+                            daemon=True
+                        ).start()
+                    else:
+                        print(f"⏳ E-ink display already in progress for block >= {block_height}")
+        
+        # Start wallet refresh in background (lower priority)
+        def start_wallet_refresh():
+            """Start wallet refresh in background."""
             if self.config.get("show_wallet_balances_block", True):
                 print("⚙️ Starting async wallet refresh in background...")
                 threading.Thread(
                     target=self._safe_wallet_refresh_thread,
-                    args=(block_height, block_hash, False),  # False for startup_mode
+                    args=(block_height, block_hash, False),
                     daemon=True
                 ).start()
                 print("✅ Async wallet refresh thread started")
-            # Wallet monitoring disabled - skip refresh silently
-            
-            # Display on e-Paper (only if enabled, not skipped, and block height differs)
-            if self.e_ink_enabled and not skip_epaper:
-                # Always update if block height is different from what's shown on e-ink
-                current_eink_height = getattr(self, 'last_eink_block_height', 0) or 0
-                if int(block_height or 0) != int(current_eink_height):
-                    print(f"👁️ Block height changed for e-ink: {block_height} (was: {current_eink_height})")
-                    
-                    # 🔧 FIX: Check if there's already a display process running for a newer or same block
-                    with self.display_process_lock:
-                        active_blocks = list(self.active_display_processes.keys())
-                        if any(active_block >= block_height for active_block in active_blocks):
-                            print(f"⏳ E-ink display already in progress for block >= {block_height}, skipping")
-                        else:
-                            # Run e-Paper display in background to not block the response
-                            threading.Thread(
-                                target=self._display_on_epaper_async,
-                                args=(self.current_eink_image_path, block_height, block_hash),
-                                daemon=True
-                            ).start()
-                # else:
-                #     print(f"✅ E-ink already shows correct block height {block_height}, skipping display update")
-            elif skip_epaper:
-                print("⚙️ Skipping e-Paper display (skip_epaper=True)")
-            else:
-                print("⚙️ Skipping e-Paper display (disabled in config)")
         
-        # Schedule background tasks to run immediately after this function returns
-        threading.Thread(target=start_background_tasks, daemon=True).start()
+        # Schedule wallet refresh to run after a short delay to prioritize e-ink
+        threading.Thread(target=start_wallet_refresh, daemon=True).start()
         
         return web_img  # Return web image for web clients IMMEDIATELY
     
@@ -2032,55 +2198,77 @@ class MempaperApp:
     
     def on_new_block_notification(self, block_height, block_hash):
         """
-        Handle new block notification to web clients (immediate, before image generation).
+        Handle new block notification to web clients (INSTANT, no API wait).
+        Sends basic notification immediately, enriches data in background.
         
         Args:
             block_height (int): New block height
             block_hash (str): New block hash
         """
         try:
-            print(f"🌐 Fetching detailed block information for notification...")
-            
-            # Fetch detailed block information from mempool API
-            base_url = self._get_mempool_base_url()
-            block_response = requests.get(f"{base_url}/block/{block_hash}", timeout=10, verify=False)
-            
-            if not block_response.ok:
-                print(f"⚠️ Failed to fetch block details for notification")
-                return
-            
-            block_data = block_response.json()
-            
-            # Extract block information
-            timestamp = block_data.get('timestamp', 0)
-            total_fees = block_data.get('extras', {}).get('totalFees', 0)
-            subsidy = block_data.get('extras', {}).get('reward', 6.25 * 100000000)  # Default to current subsidy
-            pool_name = block_data.get('extras', {}).get('pool', {}).get('name', 'Unknown Pool')
-            median_fee = block_data.get('extras', {}).get('medianFee', 0)
-            
-            # Calculate total reward (subsidy + fees)
-            total_reward = subsidy + total_fees
-            
-            # Prepare notification data
+            # 🚀 INSTANT NOTIFICATION - Send basic data immediately (no API wait)
             notification_data = {
                 'block_height': block_height,
-                'block_hash': self._format_block_hash_for_display(block_hash),  # Use formatted hash
-                'timestamp': timestamp,
-                'pool_name': pool_name,
-                'total_reward_btc': total_reward / 100000000,  # Convert to BTC
-                'total_fees_btc': total_fees / 100000000,
-                'subsidy_btc': subsidy / 100000000,
-                'median_fee_sat_vb': median_fee
+                'block_hash': self._format_block_hash_for_display(block_hash),
+                'timestamp': int(time.time()),  # Use current time as approximate
+                'pool_name': 'Loading...',  # Will be updated in background
+                'total_reward_btc': 3.125,  # Current default subsidy
+                'total_fees_btc': 0,  # Will be updated
+                'subsidy_btc': 3.125,
+                'median_fee_sat_vb': 0  # Will be updated
             }
             
-            print(f"📶 Sending block notification: Block {block_height} by {pool_name}")
+            print(f"⚡ Sending INSTANT block notification for {block_height} (enrichment in background)")
             
-            # Send notification only to subscribed clients
+            # Send instant notification to subscribed clients
             with self.app.app_context():
                 if self.block_notification_subscribers:
-                    for client_id in self.block_notification_subscribers.copy():  # Use copy to avoid modification during iteration
+                    for client_id in self.block_notification_subscribers.copy():
                         self.socketio.emit('new_block_notification', notification_data, room=client_id)
-                    print(f"📡 Block notification sent to {len(self.block_notification_subscribers)} subscribed clients")
+                    print(f"📡 Instant notification sent to {len(self.block_notification_subscribers)} clients")
+            
+            # 🔄 Enrich notification data in background (non-blocking)
+            def enrich_notification():
+                try:
+                    print(f"🌐 Enriching block notification with API data...")
+                    base_url = self._get_mempool_base_url()
+                    block_response = requests.get(f"{base_url}/block/{block_hash}", timeout=10, verify=False)
+                    
+                    if block_response.ok:
+                        block_data = block_response.json()
+                        timestamp = block_data.get('timestamp', int(time.time()))
+                        total_fees = block_data.get('extras', {}).get('totalFees', 0)
+                        subsidy = block_data.get('extras', {}).get('reward', 3.125 * 100000000)
+                        pool_name = block_data.get('extras', {}).get('pool', {}).get('name', 'Unknown')
+                        median_fee = block_data.get('extras', {}).get('medianFee', 0)
+                        
+                        enriched_data = {
+                            'block_height': block_height,
+                            'block_hash': self._format_block_hash_for_display(block_hash),
+                            'timestamp': timestamp,
+                            'pool_name': pool_name,
+                            'total_reward_btc': (subsidy + total_fees) / 100000000,
+                            'total_fees_btc': total_fees / 100000000,
+                            'subsidy_btc': subsidy / 100000000,
+                            'median_fee_sat_vb': median_fee,
+                            'enriched': True  # Flag to indicate this is enriched data
+                        }
+                        
+                        print(f"✅ Block notification enriched: {pool_name}")
+                        
+                        # Send updated notification
+                        with self.app.app_context():
+                            if self.block_notification_subscribers:
+                                for client_id in self.block_notification_subscribers.copy():
+                                    self.socketio.emit('new_block_notification', enriched_data, room=client_id)
+                                print(f"📡 Enriched notification sent to {len(self.block_notification_subscribers)} clients")
+                            else:
+                                print(f"⚠️ No clients subscribed for enriched notification")
+                except Exception as e:
+                    print(f"⚠️ Failed to enrich notification: {e}")
+            
+            # Run enrichment in background thread
+            threading.Thread(target=enrich_notification, daemon=True).start()
                 
         except Exception as e:
             print(f"⚠️ Error sending new block notification: {e}")
@@ -2256,19 +2444,49 @@ class MempaperApp:
         @require_web_auth(self.auth_manager)
         def image():
             """Return current dashboard image (optimized for fast serving)."""
+            # Get client info for debugging repeated requests
+            client_ip = request.remote_addr
+            user_agent = request.headers.get('User-Agent', 'Unknown')
+            
             # Always serve existing image if available (even if outdated)
             if os.path.exists(self.current_image_path):
                 # For outdated images, start background refresh but serve current one
                 if not self._has_valid_cached_image():
-                    print("📷 Serving cached image, starting background refresh")
+                    print(f"📷 Serving cached image, starting background refresh (client: {client_ip})")
                     threading.Thread(
                         target=self._background_image_generation,
                         daemon=True
                     ).start()
                 else:
-                    print("📷 Serving up-to-date cached image")
+                    # Only log if there are frequent requests (throttle logging)
+                    if not hasattr(self, '_last_image_serve_log'):
+                        self._last_image_serve_log = {}
+                    
+                    now = time.time()
+                    last_log_time = self._last_image_serve_log.get(client_ip, 0)
+                    
+                    # Log once per 5 minutes per client to reduce log spam
+                    if now - last_log_time > 300:
+                        print(f"📷 Serving up-to-date cached image (client: {client_ip})")
+                        self._last_image_serve_log[client_ip] = now
                 
-                return send_file(self.current_image_path, mimetype='image/png')
+                # Serve file with proper cache headers
+                response = send_file(self.current_image_path, mimetype='image/png')
+                
+                # Set cache headers to reduce unnecessary requests (5 minute cache)
+                response.headers['Cache-Control'] = 'public, max-age=300'
+                
+                # Add ETag for conditional requests
+                if os.path.exists(self.current_image_path):
+                    file_mtime = os.path.getmtime(self.current_image_path)
+                    etag = f'"{int(file_mtime)}"'
+                    response.headers['ETag'] = etag
+                    
+                    # Check if client has valid cached version
+                    if request.headers.get('If-None-Match') == etag:
+                        return '', 304  # Not Modified - no need to send data
+                
+                return response
             
             # No cached image at all - generate minimal placeholder and start background generation
             print("⚠️ No cached image - generating placeholder and starting background generation")
