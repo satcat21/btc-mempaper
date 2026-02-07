@@ -91,7 +91,8 @@ class MempaperApp:
                 print(f"⚙️ [STARTUP] Block changed since last run: {cached_bh} → {current_bh}")
                 self.image_is_current = False  # Mark as outdated for _generate_initial_image to handle
             elif cached_bh and current_bh and cached_bh == current_bh:
-                print(f"👁️ [STARTUP] Block unchanged: {current_bh} - cache may be valid")
+                print(f"👁️ [STARTUP] Block unchanged: {current_bh} - cache is valid")
+                self.image_is_current = True  # Mark as current - no regeneration needed
         except Exception as e:
             print(f"⚠️ [STARTUP] Failed to check current block: {e}")
             self.image_is_current = False  # Mark as outdated if we can't verify
@@ -275,31 +276,9 @@ class MempaperApp:
         # Setup Flask routes
         self._setup_routes()
 
-        # Check if instant startup is enabled
-        enable_instant_startup = self.config.get("enable_instant_startup", False)
-        
-        if enable_instant_startup:
-            print("⚙️ Instant startup enabled - website will be available immediately")
-            # Initialize websocket_client to None - will be set up in background
-            self.websocket_client = None
-            self._setup_instant_startup()
-        else:
-            # Traditional startup process
-            self._init_websocket()
-            
-            # Start WebSocket listener now that client is initialized
-            if hasattr(self, 'websocket_client') and self.websocket_client:
-                self.websocket_client.start_listener_thread()
-            else:
-                print("⚠️ WebSocket client not available - using block monitor for updates")
-            
-            # Generate initial image on startup (skip for faster PC testing if disabled)
-            skip_initial_image = self.config.get("skip_initial_image_generation", False)
-            if skip_initial_image:
-                print("⚙️ Skipping initial image generation for faster startup")
-                print("   Image will be generated on first web request")
-            else:
-                self._generate_initial_image()
+        # Initialize websocket_client to None - will be set up in background
+        self.websocket_client = None
+        self._setup_instant_startup()
 
         # Register callbacks for configuration changes (done after all components are initialized)
         self.config_manager.add_change_callback(self._on_config_file_changed)
@@ -516,11 +495,9 @@ class MempaperApp:
                 # Use string comparison to avoid type mismatches
                 if (self.current_block_height is None or 
                     str(self.current_block_height) != str(current_height)):
-                    print(f"💾 Cached image exists but for unknown/different block (Cache: {self.current_block_height}, Current: {current_height}) - proceeding to refresh")
                     self.image_is_current = False
                     # Do NOT return here - allow generation to proceed
                 else:
-                    print(f"💾 Using cached image for current block {current_height}")
                     self.current_block_height = current_height
                     self.current_block_hash = current_hash
                     self.image_is_current = True
@@ -539,13 +516,9 @@ class MempaperApp:
                     # Use string comparison to avoid type mismatches
                     if (self.current_block_height is None or 
                         str(self.current_block_height) != str(block_info['block_height'])):
-                        print(f"💾 Cached image exists (age: {int(file_age/60)} minutes) but for different block")
-                        print("⚙️ Need to refresh image")
                         self.image_is_current = False
                         # Do NOT return here - allow generation to proceed
                     else:
-                        print(f"💾 Using existing cached image (age: {int(file_age/60)} minutes)")
-                        print("✅ Image is current for block {}, skipping generation".format(block_info['block_height']))
                         self.current_block_height = block_info['block_height']
                         self.current_block_hash = block_info['block_hash']
                         self.image_is_current = True  # Mark as current since it's for the right block
@@ -656,7 +629,7 @@ class MempaperApp:
             
             # Fetch fresh wallet balances (this might take time for XPUB derivation)
             print("⚙️ [ASYNC-REFRESH] Fetching fresh wallet balances...")
-            fresh_wallet_data = self.image_renderer.wallet_api.fetch_wallet_balances(startup_mode=False)
+            fresh_wallet_data = self.image_renderer.wallet_api.fetch_wallet_balances(startup_mode=False, current_block=block_height)
             
             if fresh_wallet_data and not fresh_wallet_data.get('error'):
                 fresh_balance = fresh_wallet_data.get('total_btc', 0)
@@ -771,14 +744,13 @@ class MempaperApp:
         Warm up all API clients by fetching initial data to ensure they're ready.
         This prevents the first image from showing incomplete data.
         """
-        print("⚙️ Warming up API clients with initial data fetch...")
+        # print("⚙️ Warming up API clients with initial data fetch...")
         
         # Warm up BTC price API
         try:
             price_data = self.image_renderer.fetch_btc_price()
-            if price_data and not price_data.get("error"):
-                print("✅ BTC price API warmed up successfully")
-            else:
+            # Silently warm up - only log errors
+            if not price_data or price_data.get("error"):
                 print("⚠️ BTC price API warm-up returned no data (may work on retry)")
         except Exception as e:
             print(f"⚠️ BTC price API warm-up failed: {e}")
@@ -796,36 +768,24 @@ class MempaperApp:
         
         if wallet_addresses:
             try:
-                # Use startup_mode=True to utilize cached data from address derivation phase
-                print("🚀 [WARMUP] Using cached wallet data from address derivation...")
-                #TODO: use cache here!
-                # balance_data = self.image_renderer.fetch_wallet_balances(startup_mode=True)
+                # Use cached data to warm up wallet API
                 balance_data = self.image_renderer.wallet_api.get_cached_wallet_balances()
-                if balance_data and not balance_data.get("error"):
-                    total_btc = balance_data.get("total_btc", 0)
-                    print(f"✅ Wallet balance API warmed up successfully ({total_btc:.8f} BTC)")
-                else:
+                # Silently warm up - only log errors
+                if not balance_data or balance_data.get("error"):
                     print("⚠️ Wallet balance API warm-up returned no data (may work on retry)")
             except Exception as e:
                 print(f"⚠️ Wallet balance API warm-up failed: {e}")
-        else:
-            print("⚙️ No wallet addresses configured, skipping wallet API warm-up")
         
         # Warm up Bitaxe API (if configured) 
         bitaxe_ip = self.config.get("bitaxe_ip", "")
         if bitaxe_ip and bitaxe_ip != "192.168.1.1":
             try:
                 bitaxe_data = self.image_renderer.fetch_bitaxe_stats()
-                if bitaxe_data and not bitaxe_data.get("error"):
-                    print("✅ Bitaxe API warmed up successfully")
-                else:
+                # Silently warm up - only log errors
+                if not bitaxe_data or bitaxe_data.get("error"):
                     print("⚠️ Bitaxe API warm-up returned no data (may work on retry)")
             except Exception as e:
                 print(f"⚠️ Bitaxe API warm-up failed: {e}")
-        else:
-            print("⚙️ No Bitaxe configured, skipping Bitaxe API warm-up")
-        
-        print("✅ API warm-up phase completed")
 
     def _setup_instant_startup(self):
         """
@@ -834,7 +794,7 @@ class MempaperApp:
         2. Start heavy operations in background
         3. Update interface when ready
         """
-        print("🚀 Setting up instant startup mode...")
+        # print("🚀 Setting up instant startup mode...")
         
         # Check if we have a cached image to show immediately
         has_cached_image = (os.path.exists(self.current_image_path) and 
@@ -842,7 +802,7 @@ class MempaperApp:
         
         if has_cached_image:
             cache_age = (time.time() - os.path.getmtime(self.current_image_path)) / 60
-            print(f"💾 Found cached image (age: {cache_age:.1f} minutes) - website ready immediately")
+            print(f"💾 Found cached image (age: {cache_age:.1f} minutes)")
             # Image metadata already loaded in _load_cache_metadata()
         else:
             print("💾 No cached image found - will create placeholder")
@@ -850,10 +810,10 @@ class MempaperApp:
         
         # Start background processing after a short delay to let the web server start
         background_delay = self.config.get("background_processing_delay", 2)
-        print(f"⚙️ Background processing will start in {background_delay} seconds...")
+        # print(f"⚙️ Background processing will start in {background_delay} seconds...")
         
         threading.Timer(background_delay, self._run_background_startup).start()
-        print("🌐 Website is now ready for immediate access!")
+        print("🌐 Website is now ready!")
 
     def _create_placeholder_image(self):
         """Create a simple placeholder image for instant startup."""
@@ -944,23 +904,12 @@ class MempaperApp:
                 print("⚠️ WebSocket client not available - using block monitor for updates")
             
             # Warm up APIs
-            print("⚙️ Warming up API clients...")
+            # print("⚙️ Warming up API clients...")
             self._warm_up_apis()
             
-            # Only generate image if not already current
-            if not self.image_is_current or not os.path.exists(self.current_image_path):
-                print("⚙️ Generating fresh dashboard image...")
-                self._generate_initial_image()
-            else:
-                print("💾 Dashboard image already current - skipping generation")
-            
-            # Notify web clients that fresh content is available
-            if hasattr(self, 'socketio') and self.socketio:
-                self.socketio.emit('background_ready', {
-                    'message': 'Background processing complete',
-                    'block_height': self.current_block_height,
-                    'timestamp': time.time()
-                })
+            # Don't force image regeneration here - let block monitor handle new blocks naturally
+            # The cached image is served immediately, and new blocks will trigger updates via WebSocket/monitor
+            # print("💾 Background initialization complete - block monitor will handle updates")
             
             print("✅ Background initialization completed!")
             
@@ -980,6 +929,13 @@ class MempaperApp:
         import subprocess
         import sys
         import signal
+        
+        # Early check: Skip display if block is already superseded
+        if block_height:
+            current_block = getattr(self, 'current_block_height', 0) or 0
+            if int(block_height) < int(current_block):
+                print(f"⏭️ Skipping e-paper display for old block {block_height} (current: {current_block})")
+                return
         
         # Cancel any older display processes when a newer block arrives
         if block_height:
@@ -1025,6 +981,9 @@ class MempaperApp:
                 
                 display_duration = time.time() - display_start
                 
+                # Check if process was intentionally cancelled (SIGTERM/SIGKILL)
+                was_cancelled = return_code in [-15, -9, 15, 1]  # Unix SIGTERM/SIGKILL or Windows terminate
+                
                 if return_code == 0:
                     print(f"✅ E-paper display completed in {display_duration:.2f}s")
                     if stdout.strip():
@@ -1050,6 +1009,9 @@ class MempaperApp:
                             'block_height': block_height,
                             'timestamp': time.time()
                         })
+                elif was_cancelled:
+                    # Don't log cancellation as error - it's expected behavior
+                    pass
                 else:
                     print(f"⚠️ E-paper display failed after {display_duration:.2f}s")
                     if stderr.strip():
@@ -1572,7 +1534,7 @@ class MempaperApp:
         def update_precache():
             """Background worker to refresh price and bitaxe data between blocks."""
             # Initial pre-fill on startup
-            print("🚀 Pre-cache updater started - warming cache...")
+            # print("🚀 Pre-cache updater started - warming cache...")
             self._update_precache_data()
             
             # Get update interval from config (default 5 minutes to reduce RPi load)
@@ -1588,7 +1550,7 @@ class MempaperApp:
                     time.sleep(update_interval)  # Continue despite errors
         
         threading.Thread(target=update_precache, daemon=True, name="PreCacheUpdater").start()
-        print("✅ Pre-cache background updater started")
+        # print("✅ Pre-cache background updater started")
     
     def _update_precache_data(self):
         """Update pre-cached data (price, bitaxe) in background."""
@@ -1862,7 +1824,7 @@ class MempaperApp:
         try:
             # Fetch fresh wallet data
             print("👁️ [WALLET] Fetching fresh wallet data...")
-            fresh_wallet_data = self.image_renderer.wallet_api.fetch_wallet_balances(startup_mode=startup_mode)
+            fresh_wallet_data = self.image_renderer.wallet_api.fetch_wallet_balances(startup_mode=startup_mode, current_block=block_height)
             
             # Log wallet data with privacy masking
             # masked_fresh_data = MempaperApp.mask_wallet_data_for_logging(fresh_wallet_data)
@@ -1996,7 +1958,7 @@ class MempaperApp:
             
             # Fetch fresh wallet data
             print("👁️ [PROCESS] Fetching fresh wallet data...")
-            fresh_wallet_data = image_renderer.wallet_api.fetch_wallet_balances(startup_mode=startup_mode)
+            fresh_wallet_data = image_renderer.wallet_api.fetch_wallet_balances(startup_mode=startup_mode, current_block=block_height)
             
             # Log wallet data with privacy masking
             # masked_fresh_data = MempaperApp.mask_wallet_data_for_logging(fresh_wallet_data)
@@ -2072,6 +2034,12 @@ class MempaperApp:
             )
         
         # Save both images for caching
+        # Race condition check: Verify block is still current before saving
+        current_stored_height = getattr(self, 'current_block_height', 0) or 0
+        if block_height < current_stored_height:
+            print(f"⏭️ Skipping image save for old block {block_height} (current: {current_stored_height})")
+            return  # Abort - newer block already processed
+        
         if web_img is not None:
             web_img.save(self.current_image_path)
             print(f"💾 Web image saved to {self.current_image_path}")
@@ -2096,7 +2064,7 @@ class MempaperApp:
         if self.e_ink_enabled and not skip_epaper:
             current_eink_height = getattr(self, 'last_eink_block_height', 0) or 0
             if int(block_height or 0) != int(current_eink_height):
-                print(f"⚡ Starting e-ink update IMMEDIATELY for block {block_height}")
+                print(f"⚡ Starting e-ink update for block {block_height}")
                 with self.display_process_lock:
                     active_blocks = list(self.active_display_processes.keys())
                     if not any(active_block >= block_height for active_block in active_blocks):
@@ -2113,6 +2081,12 @@ class MempaperApp:
         def start_wallet_refresh():
             """Start wallet refresh in background."""
             if self.config.get("show_wallet_balances_block", True):
+                # Check if wallet refresh is already in progress (prevent concurrent scans)
+                if hasattr(self.image_renderer, 'wallet_api') and hasattr(self.image_renderer.wallet_api, '_fetch_lock'):
+                    if self.image_renderer.wallet_api._fetch_lock.locked():
+                        print("⏸️ Wallet refresh already in progress, skipping duplicate scan")
+                        return
+                
                 print("⚙️ Starting async wallet refresh in background...")
                 threading.Thread(
                     target=self._safe_wallet_refresh_thread,
@@ -2218,7 +2192,7 @@ class MempaperApp:
                 'median_fee_sat_vb': 0  # Will be updated
             }
             
-            print(f"⚡ Sending INSTANT block notification for {block_height} (enrichment in background)")
+            # print(f"⚡ Sending INSTANT block notification for {block_height} (enrichment in background)")
             
             # Send instant notification to subscribed clients
             with self.app.app_context():
@@ -2230,6 +2204,10 @@ class MempaperApp:
             # 🔄 Enrich notification data in background (non-blocking)
             def enrich_notification():
                 try:
+                    # Check if there are subscribers BEFORE making expensive API call
+                    if not self.block_notification_subscribers:
+                        return  # Skip enrichment if no clients subscribed
+                    
                     print(f"🌐 Enriching block notification with API data...")
                     base_url = self._get_mempool_base_url()
                     block_response = requests.get(f"{base_url}/block/{block_hash}", timeout=10, verify=False)
@@ -2262,8 +2240,6 @@ class MempaperApp:
                                 for client_id in self.block_notification_subscribers.copy():
                                     self.socketio.emit('new_block_notification', enriched_data, room=client_id)
                                 print(f"📡 Enriched notification sent to {len(self.block_notification_subscribers)} clients")
-                            else:
-                                print(f"⚠️ No clients subscribed for enriched notification")
                 except Exception as e:
                     print(f"⚠️ Failed to enrich notification: {e}")
             
@@ -3143,6 +3119,77 @@ class MempaperApp:
                     'success': True, 
                     'message': f'Meme deleted successfully: {filename}'
                 })
+                
+            except Exception as e:
+                return jsonify({'success': False, 'message': str(e)}), 500
+        
+        @self.app.route('/api/rename-meme', methods=['POST'])
+        @require_auth(self.auth_manager)
+        def rename_meme():
+            """Rename a meme file."""
+            try:
+                data = request.json
+                if not data or 'old_filename' not in data or 'new_filename' not in data:
+                    return jsonify({'success': False, 'message': 'Missing filename parameters'}), 400
+                
+                old_filename = secure_filename(data['old_filename'])
+                new_filename = secure_filename(data['new_filename'])
+                
+                if old_filename == new_filename:
+                    return jsonify({'success': False, 'message': 'New filename is the same as old filename'}), 400
+                
+                old_path = os.path.join('static', 'memes', old_filename)
+                new_path = os.path.join('static', 'memes', new_filename)
+                
+                if not os.path.exists(old_path):
+                    return jsonify({'success': False, 'message': f'File not found: {old_filename}'}), 404
+                
+                if os.path.exists(new_path):
+                    return jsonify({'success': False, 'message': f'A file with the name {new_filename} already exists'}), 400
+                
+                # Rename the file
+                os.rename(old_path, new_path)
+                
+                return jsonify({
+                    'success': True,
+                    'message': f'Meme renamed from {old_filename} to {new_filename}',
+                    'old_filename': old_filename,
+                    'new_filename': new_filename
+                })
+                
+            except Exception as e:
+                return jsonify({'success': False, 'message': str(e)}), 500
+        
+        @self.app.route('/api/meme-hashes', methods=['GET'])
+        @require_auth(self.auth_manager)
+        def get_meme_hashes():
+            """Get SHA-256 hashes of all existing memes for duplicate detection."""
+            try:
+                import hashlib
+                
+                memes_dir = os.path.join('static', 'memes')
+                if not os.path.exists(memes_dir):
+                    return jsonify({'hashes': {}})
+                
+                hashes = {}
+                for filename in os.listdir(memes_dir):
+                    if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp')):
+                        file_path = os.path.join(memes_dir, filename)
+                        try:
+                            # Calculate SHA-256 hash of file content
+                            sha256_hash = hashlib.sha256()
+                            with open(file_path, "rb") as f:
+                                # Read file in chunks for efficiency
+                                for byte_block in iter(lambda: f.read(4096), b""):
+                                    sha256_hash.update(byte_block)
+                            
+                            file_hash = sha256_hash.hexdigest()
+                            hashes[file_hash] = filename
+                        except Exception as e:
+                            print(f"Error hashing {filename}: {e}")
+                            continue
+                
+                return jsonify({'hashes': hashes})
                 
             except Exception as e:
                 return jsonify({'success': False, 'message': str(e)}), 500

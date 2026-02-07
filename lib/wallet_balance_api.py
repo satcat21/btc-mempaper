@@ -164,6 +164,9 @@ class WalletBalanceAPI:
         # Add lock to prevent concurrent balance fetching
         self._fetch_lock = threading.Lock()
         
+        # Add block-height tracking to prevent scanning same block multiple times
+        self._last_scanned_block = None
+        
         # Add lock to prevent concurrent gap limit detection 
         self._gap_limit_lock = threading.Lock()
         
@@ -395,10 +398,6 @@ class WalletBalanceAPI:
                 if startup_mode:
                     total_balance = cache_data.get('total_balance', 0.0)
                     
-                    # Debug: Check what cache data we have
-                    print(f"👁️ [DEBUG] Cache data keys: {list(cache_data.keys())}")
-                    print(f"👁️ [DEBUG] final_address_count: {cache_data.get('final_address_count', 'NOT_SET')}")
-                    
                     # Check if we have fresh address data from bootstrap that might invalidate balance cache
                     # Try different cache count possibilities
                     test_counts = [20, 40, 60, 80, 100, 120, 140, 160, 180, 200]
@@ -408,30 +407,19 @@ class WalletBalanceAPI:
                             cache_key = f"{xpub}:gap_limit:{test_count}"
                             cached_addresses = self.async_cache_manager.get_addresses(cache_key)
                             if cached_addresses and len(cached_addresses) > 0:
-                                print(f"⚙️ [STARTUP] Fresh address data detected ({len(cached_addresses)} addresses, key: {test_count}) - forcing balance recalculation...")
                                 fresh_addresses_found = True
+                                print(f"⚙️ [STARTUP] Fresh address data found ({len(cached_addresses)} addresses) - full rescan needed")
                                 break
-                    
-                    if not fresh_addresses_found:
-                        print(f"👁️ [DEBUG] No fresh address cache found, checking async cache keys...")
-                        # Check what keys exist in async cache
-                        if hasattr(self, 'async_cache_manager') and hasattr(self.async_cache_manager, 'cache'):
-                            async_keys = [k for k in self.async_cache_manager.cache.keys() if xpub[:20] in k]
-                            print(f"👁️ [DEBUG] Async cache keys for xpub: {async_keys}")
                     
                     # TEMPORARY FIX: Always force recalculation in startup mode until cache detection is fixed
                     if total_balance == 0.0:
-                        print(f"⚙️ [STARTUP] Cached balance is 0.0 - forcing fresh calculation to find real balance...")
                         fresh_addresses_found = True
                     
                     # Only use cached balance if NO fresh address data found AND balance > 0
                     if not fresh_addresses_found:
-                        print(f"🚀 [STARTUP] Using cached balance for {xpub[:20]}...: {total_balance:.8f} BTC (optimized cache)")
+                        print(f"🚀 [STARTUP] Using cached balance for {xpub[:20]}...: {total_balance:.8f} BTC")
                         return total_balance
-                    else:
-                        # Fresh addresses found - skip optimized monitoring and force full recalculation
-                        print(f"⚙️ [STARTUP] Skipping optimized monitoring due to fresh address data - proceeding to full balance calculation...")
-                        # Fall through to full scan section
+                    # Fall through to full scan section
                 
                 # Get monitoring addresses (funded + next N) and cached balances
                 monitoring_addresses = cache_data.get('monitoring_addresses', [])
@@ -471,9 +459,8 @@ class WalletBalanceAPI:
                     if not balance_changed:
                         # All monitored addresses unchanged - return cached total
                         total_balance = cache_data.get('total_balance', 0.0)
-                        print(f"✅ [EXTENDED] No changes detected, using cached balance: {total_balance:.8f} BTC")
                         cache_days_remaining = ((cache_valid_seconds - (current_time - cache_data['last_full_scan'])) / (24 * 60 * 60))
-                        print(f"🕐 [EXTENDED] Cache expires in {cache_days_remaining:.1f} days")
+                        print(f"✅ [EXTENDED] Cached balance valid: {total_balance:.8f} BTC (expires in {cache_days_remaining:.1f} days)")
                         return total_balance
                     else:
                         if bootstrap_expansion_needed:
@@ -503,18 +490,7 @@ class WalletBalanceAPI:
                 scan_time = time.time() - start_time
                 print(f"👁️ [BALANCE] Gap limit scan completed in {scan_time:.1f}s → {len(addresses)} addresses")
                 
-                # DEBUG: Check if addresses include the ones we know have balances
-                print(f"👁️ [BALANCE] DEBUG - Checking for known balance addresses...")
-                known_balance_indices = [31, 32, 33, 34, 38, 39, 40, 42, 43, 44]  # From bootstrap logs
-                address_list = list(addresses)
-                for idx in known_balance_indices[:3]:  # Check first 3 known addresses
-                    if idx < len(address_list):
-                        addr = address_list[idx]
-                        print(f"   [DEBUG] Address {idx}: {addr[:10]}...{addr[-10:]} (should have balance)")
-                    else:
-                        print(f"   [DEBUG] Address {idx}: NOT DERIVED (missing from address list)")
             else:
-                print(f"👁️ [BALANCE] Using regular address derivation (gap limit disabled)")
                 addresses = self.get_xpub_addresses(xpub, startup_mode=False)
             if not addresses:
                 print(f"⚠️ No addresses derived for {xpub[:20]}...")
@@ -526,9 +502,6 @@ class WalletBalanceAPI:
             total_balance = 0.0
             
             print(f"🚀 [BALANCE] Scanning {len(addresses)} addresses for XPUB balance calculation...")
-            print(f"👁️ [BALANCE] Address samples (first 5):")
-            for i, addr in enumerate(list(addresses)[:5]):
-                print(f"   [{i}]: {addr[:10]}...{addr[-10:]}")
             
             # Use parallel processing for better performance
             import concurrent.futures
@@ -537,10 +510,6 @@ class WalletBalanceAPI:
                     balance = self.get_address_balance(address)
                     if balance > 0:
                         print(f"💰 [BALANCE] Found balance: {address[:10]}...{address[-10:]} = {balance:.8f} BTC")
-                    else:
-                        # Debug: show zero balance addresses too (first few)
-                        if list(addresses).index(address) < 3:
-                            print(f"⚪ [BALANCE] Zero balance: {address[:10]}...{address[-10:]} = 0.00000000 BTC")
                     return address, balance
                 except Exception as e:
                     print(f"⚠️ [BALANCE] Error fetching balance for {address}: {e}")
@@ -1651,7 +1620,7 @@ class WalletBalanceAPI:
             total_balance = 0.0
             addresses_with_balance = 0
             
-            if len(addresses) > 10:  # Use parallel processing for larger address sets
+            if len(addresses) > 1:  # Use parallel processing for 2+ addresses (was 10)
                 print(f"🚀 [PARALLEL] Fetching balances for {len(addresses)} addresses...")
                 
                 def fetch_address_balance(address):
@@ -1696,7 +1665,7 @@ class WalletBalanceAPI:
             print(f"⚠️ Error calculating balance for XPUB/ZPUB {xpub[:20]}...: {e}")
             return 0.0
     
-    def fetch_wallet_balances(self, startup_mode: bool = False) -> Optional[Dict[str, Union[str, float, int, List]]]:
+    def fetch_wallet_balances(self, startup_mode: bool = False, current_block: int = None) -> Optional[Dict[str, Union[str, float, int, List]]]:
         """
         Fetch wallet balances with deduplication to avoid double-counting addresses.
         Includes conflict detection to prevent manually added addresses that are also
@@ -1704,6 +1673,7 @@ class WalletBalanceAPI:
         
         Args:
             startup_mode (bool): If True, use cached data only and skip expensive gap limit detection
+            current_block (int): Current block height - used to prevent scanning same block multiple times
         
         Returns:
             Dict containing:
@@ -1723,6 +1693,16 @@ class WalletBalanceAPI:
             return {"error": "Balance fetch in progress"}
         
         try:
+            # Check block-based debouncing (prevent scanning same block multiple times)
+            if current_block and self._last_scanned_block == current_block:
+                print(f"⏸️ Wallet already scanned for block {current_block}, skipping duplicate scan")
+                return {"error": f"Already scanned block {current_block}"}
+            
+            # Update last scanned block
+            if current_block:
+                self._last_scanned_block = current_block
+                print(f"📊 Starting wallet scan for new block {current_block}")
+            
             # Parse wallet entries (supports both old and new format)
             entries_with_comments, user_addresses, user_xpubs = self._parse_wallet_entries()
             
@@ -1812,7 +1792,6 @@ class WalletBalanceAPI:
             xpub_info_list = [(xpub, entries_with_comments, startup_mode) for xpub in user_xpubs]
             
             if len(user_xpubs) > 1:
-                print(f"🚀 [PARALLEL] Starting parallel balance calculation for {len(user_xpubs)} wallets...")
                 # Use ThreadPoolExecutor for parallel processing
                 with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(user_xpubs), 5)) as executor:
                     # Submit all tasks
@@ -1826,10 +1805,9 @@ class WalletBalanceAPI:
                         if result:
                             xpub_balances.append(result)
                 
-                print(f"✅ [PARALLEL] Completed parallel wallet scanning in reduced time")
+                # Removed duplicate completion message - only shown once per complete wallet refresh
             else:
                 # Single wallet - use sequential processing
-                print(f"⚙️ [SEQUENTIAL] Processing single wallet...")
                 xpub_balances = []
                 for xpub_info in xpub_info_list:
                     result = fetch_single_xpub_balance(xpub_info)
@@ -1845,11 +1823,12 @@ class WalletBalanceAPI:
             total_fiat = None
             
             if total_btc > 0:
-                print(f"💰 Converting {total_btc:.8f} BTC to {fiat_currency}...")
+                # print(f"💰 Converting {total_btc:.8f} BTC to {fiat_currency}...")
                 total_fiat = self._convert_to_fiat(total_btc, fiat_currency)
-                if total_fiat:
-                    print(f"✅ Conversion successful: {total_fiat:.2f} {fiat_currency}")
-                else:
+                # if total_fiat:
+                #     print(f"✅ Conversion successful: {total_fiat:.2f} {fiat_currency}")
+                # else:
+                if total_fiat is None:
                     print(f"❌ Conversion failed for {fiat_currency}")
                     total_fiat = 0.0  # Set to 0 if conversion fails
             else:
@@ -1884,16 +1863,11 @@ class WalletBalanceAPI:
         self._wallet_cache = wallet_data
         
         if self.use_unified_cache:
-            # Save to unified secure cache
+            # Save to unified secure cache (single log, no duplicates)
             self.unified_cache.set_cache("wallet_balance_cache", wallet_data)
-            print("💾 Wallet balance cache updated in unified secure storage")
         elif hasattr(self, 'secure_cache_manager') and SECURE_CACHE_AVAILABLE:
             self.secure_cache_manager.save_cache(wallet_data)
-            print("💾 Wallet balance cache updated in secure storage")
-        else:
-            # No fallback to individual file - secure cache only
-            print("⚠️ Unified secure cache not available - wallet balance not cached")
-            print("⚠️ Please ensure unified secure cache is properly initialized")
+        # Removed verbose cache update logs to reduce noise
 
     def get_cached_wallet_balances(self):
         if self.use_unified_cache:

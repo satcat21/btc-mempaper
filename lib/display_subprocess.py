@@ -26,7 +26,7 @@ def main():
         success = display.display_image(image_path)
         
         if success:
-            print("✅ Display completed successfully")
+            # Don't print success - parent logs it
             sys.exit(0)
         else:
             print("❌ Display failed")

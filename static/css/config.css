@@ -1073,6 +1073,8 @@ body {
     align-items: center;
     padding: 8px 0;
     border-bottom: 1px solid #4a5069;
+    flex-wrap: nowrap;
+    gap: 8px;
 }
 
 .meme-info-row:last-child {
@@ -1082,6 +1084,7 @@ body {
 .meme-info-row strong {
     color: white;
     min-width: 100px;
+    flex-shrink: 0;
 }
 
 .meme-info-row span {
@@ -1089,6 +1092,18 @@ body {
     flex: 1;
     text-align: right;
     font-family: monospace;
+}
+
+/* When editing filename, prevent wrapping */
+.meme-info-row #meme-modal-filename-input {
+    flex: 1 1 auto;
+    min-width: 100px;
+    max-width: 300px;
+}
+
+/* Keep buttons together on same line */
+.meme-info-row .icon-button {
+    flex-shrink: 0;
 }
 
 .modal-footer {
@@ -1135,6 +1150,14 @@ body {
     box-shadow: 0 4px 12px rgba(107, 114, 128, 0.3);
 }
 
+.icon-button.confirm {
+    background: #10b981;
+}
+
+.icon-button.confirm:hover {
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+}
+
 .icon-button img {
     width: 24px;
     height: 24px;
@@ -1152,16 +1175,6 @@ body {
     
     .header h1 {
         font-size: 2rem;
-    }
-
-    .modal-buttons {
-        flex-direction: column;
-        gap: 10px;
-    }
-
-    .modal-footer {
-        flex-direction: column;
-        gap: 10px;
     }
 
     .meme-modal-content {

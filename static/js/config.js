@@ -470,26 +470,19 @@ function setupModals() {
     const cancelDeleteBtn = document.getElementById('cancel-delete');
     
     if (confirmDeleteBtn) {
-        // Remove existing listener if any to prevent duplicates
-        confirmDeleteBtn.replaceWith(confirmDeleteBtn.cloneNode(true));
-        const newConfirmBtn = document.getElementById('confirm-delete');
-        
-        newConfirmBtn.addEventListener('click', async () => {
+        confirmDeleteBtn.onclick = async () => {
+            console.log('Confirm delete clicked, memeToDelete:', memeToDelete);
             if (memeToDelete) {
                 await deleteMeme(memeToDelete);
                 hideDeleteModal();
             }
-        });
+        };
     }
     
     if (cancelDeleteBtn) {
-        // Remove existing listener if any to prevent duplicates
-        cancelDeleteBtn.replaceWith(cancelDeleteBtn.cloneNode(true));
-        const newCancelBtn = document.getElementById('cancel-delete');
-        
-        newCancelBtn.addEventListener('click', () => {
+        cancelDeleteBtn.onclick = () => {
             hideDeleteModal();
-        });
+        };
     }
 }
 
@@ -540,75 +533,280 @@ function setupUpload() {
     uploadArea.addEventListener('drop', (e) => {
         e.preventDefault();
         uploadArea.classList.remove('dragover');
-        const files = e.dataTransfer.files;
+        const files = Array.from(e.dataTransfer.files);
         if (files.length > 0) {
-            uploadFile(files[0]);
+            uploadFiles(files);
         }
     });
     
     fileInput.addEventListener('change', (e) => {
         if (e.target.files.length > 0) {
-            uploadFile(e.target.files[0]);
+            uploadFiles(Array.from(e.target.files));
         }
+        // Reset input to allow re-uploading the same file
+        e.target.value = '';
     });
 }
 
-// Upload file function
-async function uploadFile(file) {
+// Calculate SHA-256 hash of file content for duplicate detection
+async function calculateFileHash(file) {
+    try {
+        const arrayBuffer = await file.arrayBuffer();
+        const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        return hashHex;
+    } catch (error) {
+        console.error('Failed to calculate file hash:', error);
+        return null;
+    }
+}
+
+// Get all existing meme hashes from server
+async function getExistingMemeHashes() {
+    try {
+        const response = await fetch('/api/meme-hashes');
+        if (response.ok) {
+            const data = await response.json();
+            return data.hashes || {}; // Returns {hash: filename, ...}
+        }
+    } catch (error) {
+        console.warn('Failed to fetch existing meme hashes:', error);
+    }
+    return {};
+}
+
+// Show rename dialog for a file
+async function showRenameDialog(originalFilename) {
+    const extension = originalFilename.substring(originalFilename.lastIndexOf('.'));
+    const nameWithoutExt = originalFilename.substring(0, originalFilename.lastIndexOf('.'));
+    
+    return new Promise((resolve) => {
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.style.display = 'flex';
+        modal.innerHTML = `
+            <div class="modal-content" style="max-width: 400px;">
+                <h3>Rename Image</h3>
+                <p style="margin-bottom: 15px; color: #666;">Original: ${originalFilename}</p>
+                <label style="display: block; margin-bottom: 5px; font-weight: 600;">New name (without extension):</label>
+                <input type="text" id="rename-input" class="form-input" value="${nameWithoutExt}" style="margin-bottom: 15px;">
+                <p style="font-size: 0.85rem; color: #667eea; margin-bottom: 15px;">Extension ${extension} will be preserved</p>
+                <div class="modal-buttons" style="display: flex; gap: 10px;">
+                    <button id="rename-confirm" class="save-button" style="flex: 1;">Rename</button>
+                    <button id="rename-skip" class="cancel-button" style="flex: 1;">Keep Original</button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        
+        const input = modal.querySelector('#rename-input');
+        input.focus();
+        input.select();
+        
+        const confirmBtn = modal.querySelector('#rename-confirm');
+        const skipBtn = modal.querySelector('#rename-skip');
+        
+        const cleanup = () => {
+            modal.remove();
+        };
+        
+        confirmBtn.onclick = () => {
+            const newName = input.value.trim();
+            cleanup();
+            if (newName && newName !== nameWithoutExt) {
+                resolve(newName + extension);
+            } else {
+                resolve(originalFilename);
+            }
+        };
+        
+        skipBtn.onclick = () => {
+            cleanup();
+            resolve(originalFilename);
+        };
+        
+        input.onkeydown = (e) => {
+            if (e.key === 'Enter') {
+                confirmBtn.click();
+            } else if (e.key === 'Escape') {
+                skipBtn.click();
+            }
+        };
+    });
+}
+
+// Upload multiple files with duplicate detection and rename capability
+async function uploadFiles(files) {
     const progressDiv = document.getElementById('upload-progress');
     const progressBar = document.getElementById('progress-bar');
     const statusText = document.getElementById('upload-status');
     
-    if (!progressDiv || !progressBar || !statusText) {
-        if (isConfigPage) {
-            console.warn('Upload progress elements not found - uploading without progress indication');
-        }
-    } else {
+    if (!files || files.length === 0) return;
+    
+    // Show progress
+    if (progressDiv && progressBar && statusText) {
         progressDiv.style.display = 'block';
         progressBar.style.width = '0%';
-        statusText.textContent = 'Uploading...';
+        statusText.textContent = 'Checking for duplicates...';
+        statusText.style.color = '#667eea';
     }
     
-    const formData = new FormData();
-    formData.append('file', file);
+    // Get existing hashes
+    const existingHashes = await getExistingMemeHashes();
     
-    try {
-        const response = await fetch('/api/upload-meme', {
-            method: 'POST',
-            body: formData
-        });
+    // Process files: check duplicates and allow rename
+    const filesToUpload = [];
+    const duplicates = [];
+    const skipped = [];
+    
+    for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        
+        if (statusText) {
+            statusText.textContent = `Processing ${i + 1}/${files.length}: ${file.name}...`;
+        }
+        
+        // Calculate hash
+        const hash = await calculateFileHash(file);
+        
+        // Check for duplicate
+        if (hash && existingHashes[hash]) {
+            duplicates.push({ name: file.name, duplicate: existingHashes[hash] });
+            continue;
+        }
+        
+        // Ask for rename
+        const newName = await showRenameDialog(file.name);
+        
+        if (newName === file.name) {
+            // Use original file
+            filesToUpload.push({ file, name: file.name, hash });
+        } else {
+            // Rename file
+            const renamedFile = new File([file], newName, { type: file.type });
+            filesToUpload.push({ file: renamedFile, name: newName, hash });
+        }
+    }
+    
+    // Show summary
+    let summaryMessage = '';
+    if (duplicates.length > 0) {
+        summaryMessage += `Skipped ${duplicates.length} duplicate(s). `;
+    }
+    if (filesToUpload.length > 0) {
+        summaryMessage += `Uploading ${filesToUpload.length} file(s)...`;
+    } else {
+        summaryMessage = 'No files to upload.';
+    }
+    
+    if (statusText) {
+        statusText.textContent = summaryMessage;
+        statusText.style.color = duplicates.length > 0 ? '#ff9800' : '#667eea';
+    }
+    
+    // Show duplicate details if any
+    if (duplicates.length > 0) {
+        const dupList = duplicates.map(d => `• ${d.name} (duplicate of ${d.duplicate})`).join('\n');
+        console.log('Duplicates detected:\n' + dupList);
+        showNotification(`${duplicates.length} duplicate file(s) skipped`, 'warning');
+    }
+    
+    // Upload files one by one
+    if (filesToUpload.length > 0) {
+        let uploadedCount = 0;
+        let failedCount = 0;
+        
+        for (let i = 0; i < filesToUpload.length; i++) {
+            const { file, name } = filesToUpload[i];
+            
+            if (statusText) {
+                statusText.textContent = `Uploading ${i + 1}/${filesToUpload.length}: ${name}...`;
+            }
+            
+            if (progressBar) {
+                progressBar.style.width = `${((i) / filesToUpload.length) * 100}%`;
+            }
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            try {
+                const response = await fetch('/api/upload-meme', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    uploadedCount++;
+                } else {
+                    failedCount++;
+                    console.error(`Failed to upload ${name}:`, result.message);
+                }
+            } catch (error) {
+                failedCount++;
+                console.error(`Error uploading ${name}:`, error);
+            }
+        }
         
         if (progressBar) {
             progressBar.style.width = '100%';
         }
         
-        const result = await response.json();
-        
-        if (result.success) {
-            if (statusText) {
-                statusText.textContent = window.translations.upload_successful;
-                statusText.style.color = '#28a745';
-            }
-            clearMemeCache(); // Clear cache before reloading
-            loadMemes(); // Refresh memes list
-            
-            setTimeout(() => {
-                if (progressDiv) {
-                    progressDiv.style.display = 'none';
-                }
-            }, 2000);
-        } else {
-            if (statusText) {
-                statusText.textContent = result.message || window.translations.upload_failed;
-                statusText.style.color = '#dc3545';
-            }
-        }
-    } catch (error) {
+        // Show final status
         if (statusText) {
-            statusText.textContent = window.translations.upload_failed + ': ' + error.message;
-            statusText.style.color = '#dc3545';
+            let finalMessage = '';
+            if (uploadedCount > 0) {
+                finalMessage += `✓ ${uploadedCount} uploaded`;
+            }
+            if (failedCount > 0) {
+                finalMessage += ` | ✗ ${failedCount} failed`;
+            }
+            if (duplicates.length > 0) {
+                finalMessage += ` | ⊝ ${duplicates.length} skipped (duplicates)`;
+            }
+            
+            statusText.textContent = finalMessage;
+            statusText.style.color = failedCount > 0 ? '#dc3545' : '#28a745';
         }
+        
+        // Clear cache and reload memes
+        if (uploadedCount > 0) {
+            clearMemeCache();
+            // Add new memes to the list without reloading entire page
+            loadMemes();
+        }
+        
+        // Hide progress after delay
+        setTimeout(() => {
+            if (progressDiv) {
+                progressDiv.style.display = 'none';
+            }
+        }, 4000);
+        
+        // Show summary notification
+        if (uploadedCount > 0) {
+            showNotification(`Successfully uploaded ${uploadedCount} file(s)`, 'success');
+        }
+        if (failedCount > 0) {
+            showNotification(`Failed to upload ${failedCount} file(s)`, 'error');
+        }
+    } else {
+        // No files to upload
+        setTimeout(() => {
+            if (progressDiv) {
+                progressDiv.style.display = 'none';
+            }
+        }, 3000);
     }
+}
+
+// Legacy single file upload (kept for backwards compatibility)
+async function uploadFile(file) {
+    await uploadFiles([file]);
 }
 
 // Download meme function
@@ -644,14 +842,211 @@ async function deleteMeme(filename) {
         
         if (result.success) {
             showNotification(window.translations.meme_deleted_successfully, 'success');
-            clearMemeCache(); // Clear cache before reloading
-            loadMemes(); // Refresh memes list
+            clearMemeCache(); // Clear cache
+            
+            // Find and remove the meme element from the DOM without reloading the page
+            const memesList = document.getElementById('memes-list');
+            if (memesList) {
+                // Find the image element with matching filename
+                const imgElement = memesList.querySelector(`img[data-filename="${filename}"]`);
+                if (imgElement) {
+                    // Find the parent meme-thumbnail div and remove it
+                    const memeDiv = imgElement.closest('.meme-thumbnail');
+                    if (memeDiv) {
+                        memeDiv.remove();
+                        
+                        // Update total count
+                        if (memeLoader && memeLoader.totalMemes > 0) {
+                            memeLoader.totalMemes--;
+                        }
+                        
+                        // Check if list is now empty
+                        const remainingMemes = memesList.querySelectorAll('.meme-thumbnail');
+                        if (remainingMemes.length === 0) {
+                            const loadMoreBtn = memesList.querySelector('.load-more-btn');
+                            if (!loadMoreBtn) {
+                                // No more memes and no load more button
+                                memesList.innerHTML = `<p style="grid-column: 1/-1; text-align: center; color: #666;">${window.translations.no_memes_uploaded}</p>`;
+                            }
+                        }
+                    }
+                }
+            }
         } else {
             showNotification(result.message || window.translations.meme_delete_failed, 'error');
         }
     } catch (error) {
         showNotification(window.translations.meme_delete_failed + ': ' + error.message, 'error');
     }
+}
+
+// Rename meme function
+async function renameMeme(oldFilename, newFilename) {
+    try {
+        const response = await fetch('/api/rename-meme', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                old_filename: oldFilename,
+                new_filename: newFilename
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            showNotification(window.translations.meme_renamed_successfully || 'Meme renamed successfully', 'success');
+            clearMemeCache();
+            
+            // Update the meme element in the DOM without reloading
+            const memesList = document.getElementById('memes-list');
+            if (memesList) {
+                const imgElement = memesList.querySelector(`img[data-filename="${oldFilename}"]`);
+                if (imgElement) {
+                    const memeDiv = imgElement.closest('.meme-thumbnail');
+                    if (memeDiv) {
+                        // Update the filename in data attribute
+                        imgElement.dataset.filename = newFilename;
+                        
+                        // Update URL if needed
+                        const newUrl = `/static/memes/${newFilename}`;
+                        imgElement.dataset.url = newUrl;
+                        if (imgElement.src && !imgElement.src.includes('data:image/svg')) {
+                            imgElement.src = newUrl;
+                        }
+                        
+                        // Update the filename display
+                        const filenameDiv = memeDiv.querySelector('.meme-filename');
+                        if (filenameDiv) {
+                            filenameDiv.textContent = newFilename;
+                        }
+                        
+                        // Update action buttons to use new filename
+                        const actionsDiv = memeDiv.querySelector('.meme-actions');
+                        if (actionsDiv) {
+                            actionsDiv.innerHTML = `
+                                <button class="action-button" onclick="downloadMeme('${newFilename}')" title="${window.translations?.download_meme || 'Download'}">
+                                    <img src="/static/icons/download.svg" alt="Download" style="width: 16px; height: 16px; filter: brightness(0) invert(1);" />
+                                </button>
+                                <button class="action-button delete" onclick="showDeleteModal('${newFilename}')" title="${window.translations?.delete_meme || 'Delete'}">
+                                    <img src="/static/icons/delete.svg" alt="Delete" style="width: 16px; height: 16px; filter: brightness(0) invert(1);" />
+                                </button>
+                            `;
+                        }
+                        
+                        // Update onclick for the image
+                        imgElement.onclick = () => openMemeModal(newFilename, newUrl);
+                    }
+                }
+            }
+        } else {
+            showNotification(result.message || window.translations.meme_rename_failed || 'Failed to rename meme', 'error');
+        }
+    } catch (error) {
+        showNotification((window.translations.meme_rename_failed || 'Failed to rename meme') + ': ' + error.message, 'error');
+    }
+}
+
+// Inline rename functions for preview modal
+function startRenameInModal() {
+    if (!currentModalMeme) return;
+    
+    const filenameDisplay = document.getElementById('meme-modal-filename-display');
+    const filenameInput = document.getElementById('meme-modal-filename-input');
+    const editBtn = document.getElementById('meme-modal-edit-btn');
+    const saveBtn = document.getElementById('meme-modal-save-btn');
+    const cancelBtn = document.getElementById('meme-modal-cancel-rename-btn');
+    
+    if (!filenameDisplay || !filenameInput || !editBtn || !saveBtn || !cancelBtn) return;
+    
+    const filename = currentModalMeme.filename;
+    const extension = filename.substring(filename.lastIndexOf('.'));
+    const nameWithoutExt = filename.substring(0, filename.lastIndexOf('.'));
+    
+    // Switch to edit mode
+    filenameDisplay.style.display = 'none';
+    editBtn.style.display = 'none';
+    filenameInput.style.display = 'inline-block';
+    saveBtn.style.display = 'inline-block';
+    cancelBtn.style.display = 'inline-block';
+    
+    filenameInput.value = nameWithoutExt;
+    filenameInput.focus();
+    filenameInput.select();
+    
+    // Handle Enter/Escape keys
+    filenameInput.onkeydown = (e) => {
+        if (e.key === 'Enter') {
+            saveRenameInModal();
+        } else if (e.key === 'Escape') {
+            cancelRenameInModal();
+        }
+    };
+}
+
+async function saveRenameInModal() {
+    if (!currentModalMeme) return;
+    
+    const filenameInput = document.getElementById('meme-modal-filename-input');
+    if (!filenameInput) return;
+    
+    const oldFilename = currentModalMeme.filename;
+    const extension = oldFilename.substring(oldFilename.lastIndexOf('.'));
+    const nameWithoutExt = oldFilename.substring(0, oldFilename.lastIndexOf('.'));
+    const newName = filenameInput.value.trim();
+    
+    if (!newName) {
+        showNotification('Please enter a valid name', 'error');
+        return;
+    }
+    
+    if (newName === nameWithoutExt) {
+        // No change, just cancel
+        cancelRenameInModal();
+        return;
+    }
+    
+    const newFilename = newName + extension;
+    
+    // Perform the rename
+    await renameMeme(oldFilename, newFilename);
+    
+    // Update modal with new filename
+    currentModalMeme.filename = newFilename;
+    currentModalMeme.url = `/static/memes/${newFilename}`;
+    
+    // Update display
+    const filenameDisplay = document.getElementById('meme-modal-filename-display');
+    const modalTitle = document.getElementById('meme-modal-title');
+    if (filenameDisplay) {
+        filenameDisplay.textContent = newFilename;
+    }
+    if (modalTitle) {
+        const previewText = window.translations?.meme_preview || 'Meme Preview';
+        modalTitle.textContent = `${previewText} - ${newFilename}`;
+    }
+    
+    // Exit edit mode
+    cancelRenameInModal();
+}
+
+function cancelRenameInModal() {
+    const filenameDisplay = document.getElementById('meme-modal-filename-display');
+    const filenameInput = document.getElementById('meme-modal-filename-input');
+    const editBtn = document.getElementById('meme-modal-edit-btn');
+    const saveBtn = document.getElementById('meme-modal-save-btn');
+    const cancelBtn = document.getElementById('meme-modal-cancel-rename-btn');
+    
+    if (!filenameDisplay || !filenameInput || !editBtn || !saveBtn || !cancelBtn) return;
+    
+    // Switch back to display mode
+    filenameDisplay.style.display = 'inline';
+    editBtn.style.display = 'inline-block';
+    filenameInput.style.display = 'none';
+    saveBtn.style.display = 'none';
+    cancelBtn.style.display = 'none';
 }
 
 // Load memes function
@@ -1180,6 +1575,11 @@ function createFormField(key, field, value) {
             input.className = 'form-input';
             input.value = value !== undefined && value !== null ? value : '';
             input.placeholder = field.placeholder || '';
+            
+            // Disable autocomplete for admin_username field
+            if (key === 'admin_username') {
+                input.setAttribute('autocomplete', 'off');
+            }
             break;
             
         case 'password':
@@ -2698,11 +3098,11 @@ function createMemeManagementInterface(field) {
     uploadArea.className = 'upload-area';
     uploadArea.id = 'upload-area';
     uploadArea.innerHTML = `
-        <input type="file" id="file-input" accept="image/*" style="display: none;">
+        <input type="file" id="file-input" accept="image/*" multiple style="display: none;">
         <div class="upload-placeholder">
             <img src="/static/icons/add_meme.svg" alt="Add Meme" style="width: 2rem; height: 2rem; margin-bottom: 10px; filter: brightness(0) invert(1);" />
-            <p>${window.translations?.upload_placeholder || 'Click to select image or drag & drop'}</p>
-            <p style="font-size: 0.8rem; color: #667eea;">${window.translations?.upload_formats || 'Supported: PNG, JPG, JPEG, GIF, WebP'}</p>
+            <p>${window.translations?.upload_placeholder || 'Click to select image(s) or drag & drop'}</p>
+            <p style="font-size: 0.8rem; color: #667eea;">${window.translations?.upload_formats || 'Supported: PNG, JPG, JPEG, GIF, WebP (Multiple files allowed)'}</p>
         </div>
     `;
     
@@ -3052,7 +3452,6 @@ function openMemeModal(filename, url) {
     
     // Set basic info with null checks
     const modalTitle = document.getElementById('meme-modal-title');
-    const modalFilename = document.getElementById('meme-modal-filename');
     const modalImage = document.getElementById('meme-modal-image');
     const modalDimensions = document.getElementById('meme-modal-dimensions');
     const modalFilesize = document.getElementById('meme-modal-filesize');
@@ -3063,9 +3462,24 @@ function openMemeModal(filename, url) {
         modalTitle.textContent = `${previewText} - ${filename}`;
     }
     
-    // Set filename
-    if (modalFilename) {
-        modalFilename.textContent = filename;
+    // Set filename in display span (not the input)
+    const modalFilenameDisplay = document.getElementById('meme-modal-filename-display');
+    if (modalFilenameDisplay) {
+        modalFilenameDisplay.textContent = filename;
+    }
+    
+    // Reset rename UI to display mode
+    const filenameInput = document.getElementById('meme-modal-filename-input');
+    const editBtn = document.getElementById('meme-modal-edit-btn');
+    const saveBtn = document.getElementById('meme-modal-save-btn');
+    const cancelBtn = document.getElementById('meme-modal-cancel-rename-btn');
+    
+    if (modalFilenameDisplay && filenameInput && editBtn && saveBtn && cancelBtn) {
+        modalFilenameDisplay.style.display = 'inline';
+        editBtn.style.display = 'inline-block';
+        filenameInput.style.display = 'none';
+        saveBtn.style.display = 'none';
+        cancelBtn.style.display = 'none';
     }
     
     // Set loading state for dimensions
@@ -3461,15 +3875,26 @@ function setupConfigSocketHandlers() {
     // Listen for block notifications
     configSocket.on('new_block_notification', (data) => {
         console.log("👁️ New block notification received:", data && data.height ? 'block ' + data.height + ' (details masked for privacy)' : 'notification data');
-        // Store notification state to prevent duplicates
+        
         const state = getNotificationState();
         const now = Date.now();
-        if (state.lastNotification && (now - state.lastNotification) < 10000) {
+        
+        // Allow updates for the same block (enriched data) but prevent duplicate new blocks
+        const isEnrichment = data.enriched === true;
+        const isDifferentBlock = !state.lastBlockHeight || state.lastBlockHeight !== data.block_height;
+        
+        if (!isEnrichment && !isDifferentBlock && (now - state.lastNotification) < 10000) {
             console.log("⚠️ Duplicate block notification detected, skipping");
             return;
         }
-        state.lastNotification = now;
-        setNotificationState(state);
+        
+        // Update state for new blocks (not enrichments)
+        if (!isEnrichment || isDifferentBlock) {
+            state.lastNotification = now;
+            state.lastBlockHeight = data.block_height;
+            setNotificationState(state);
+        }
+        
         showBlockToast(data);
         try {
             localStorage.setItem('mempaper_block_notification', JSON.stringify({
@@ -3820,123 +4245,151 @@ function showBlockToast(blockData) {
         document.body.appendChild(toastContainer);
     }
     
-    // Create toast element
-    const toast = document.createElement('div');
-    toast.style.cssText = `
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        padding: 16px 20px;
-        border-radius: 12px;
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-        backdrop-filter: blur(15px);
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        margin-bottom: 10px;
-        min-width: 320px;
-        max-width: 400px;
-        opacity: 0;
-        transform: translateX(100%);
-        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-        position: relative;
-        font-size: 14px;
-        line-height: 1.4;
-    `;
+    const blockHeight = blockData.block_height;
+    const toastId = `toast-${blockHeight}`;
     
-    // Create close button
-    const closeBtn = document.createElement('button');
-    closeBtn.innerHTML = '×';
-    closeBtn.style.cssText = `
-        position: absolute;
-        top: 8px;
-        right: 12px;
-        background: none;
-        border: none;
-        color: white;
-        font-size: 24px;
-        cursor: pointer;
-        padding: 0;
-        width: 24px;
-        height: 24px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        border-radius: 50%;
-        transition: background-color 0.2s;
-    `;
+    // Check if toast already exists for this block (for enrichment updates)
+    let toast = document.getElementById(toastId);
+    const isUpdate = toast !== null;
     
-    // Format timestamp to local time
+    if (!toast) {
+        // Create new toast element
+        toast = document.createElement('div');
+        toast.id = toastId;
+        toast.style.cssText = `
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 16px 20px;
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(15px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            margin-bottom: 10px;
+            min-width: 320px;
+            max-width: 400px;
+            opacity: 0;
+            transform: translateX(100%);
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            font-size: 14px;
+            line-height: 1.4;
+        `;
+        
+        // Create close button
+        const closeBtn = document.createElement('button');
+        closeBtn.innerHTML = '×';
+        closeBtn.setAttribute('aria-label', 'Close notification');
+        closeBtn.style.cssText = `
+            position: absolute;
+            top: 8px;
+            right: 12px;
+            background: rgba(255, 255, 255, 0.15);
+            border: none;
+            color: white;
+            font-size: 24px;
+            cursor: pointer;
+            width: 44px;
+            height: 44px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            transition: background-color 0.2s;
+            font-weight: bold;
+            z-index: 1;
+        `;
+        
+        // Close toast function
+        const closeToast = () => {
+            toast.style.opacity = '0';
+            toast.style.transform = 'translateX(100%)';
+            setTimeout(() => {
+                if (toast.parentNode) {
+                    toast.parentNode.removeChild(toast);
+                }
+            }, 400);
+        };
+        
+        // Close button event listeners
+        closeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            closeToast();
+        });
+        closeBtn.addEventListener('mouseenter', () => {
+            closeBtn.style.backgroundColor = 'rgba(255, 255, 255, 0.3)';
+        });
+        closeBtn.addEventListener('mouseleave', () => {
+            closeBtn.style.backgroundColor = 'rgba(255, 255, 255, 0.15)';
+        });
+        
+        // Mobile-friendly: tap anywhere on toast to dismiss
+        toast.addEventListener('click', closeToast);
+        toast.style.cursor = 'pointer';
+        
+        // Append close button to toast
+        toast.appendChild(closeBtn);
+        
+        // Store close function for auto-close
+        toast.closeToast = closeToast;
+    }
+    
+    // Format data (works for both new and enriched)
     const timestamp = new Date(blockData.timestamp * 1000);
     const timeString = timestamp.toLocaleTimeString();
-    
-    // Format numbers
     const heightFormatted = blockData.block_height.toLocaleString().replace(/,/g, '.');
     const rewardFormatted = blockData.total_reward_btc.toFixed(8);
     const feesFormatted = blockData.total_fees_btc.toFixed(4);
     const medianFeeFormatted = blockData.median_fee_sat_vb.toFixed(1);
     
-    // Create toast content
-    toast.innerHTML = `
-        <div style="margin-right: 30px;">
-            <div style="font-weight: bold; font-size: 16px; margin-bottom: 8px; display: flex; align-items: center;">
-                🎯 New Bitcoin Block Found!
-            </div>
-            <div style="margin-bottom: 6px;">
-                <strong>Height:</strong> ${heightFormatted}
-            </div>
-            <div style="margin-bottom: 6px;">
-                <strong>Hash:</strong> ${blockData.block_hash}
-            </div>
-            <div style="margin-bottom: 6px;">
-                <strong>Time:</strong> ${timeString}
-            </div>
-            <div style="margin-bottom: 6px;">
-                <strong>Mining Pool:</strong> ${blockData.pool_name}
-            </div>
-            <div style="margin-bottom: 6px;">
-                <strong>Block Reward:</strong> ${rewardFormatted} BTC
-            </div>
-            <div style="margin-bottom: 6px;">
-                <strong>Total Fees:</strong> ${feesFormatted} BTC
-            </div>
-            <div>
-                <strong>Median Fee:</strong> ${medianFeeFormatted} sat/vB
-            </div>
+    // Find the content div or create toast content
+    let contentDiv = toast.querySelector('.toast-content');
+    if (!contentDiv) {
+        contentDiv = document.createElement('div');
+        contentDiv.className = 'toast-content';
+        contentDiv.style.cssText = 'margin-right: 30px;';
+        toast.appendChild(contentDiv);
+    }
+    
+    // Update content (works for both new and enriched data)
+    contentDiv.innerHTML = `
+        <div style="font-weight: bold; font-size: 16px; margin-bottom: 8px; color: #FFD700;">
+            New Block ${heightFormatted}
+        </div>
+        <div style="margin-bottom: 4px;">
+            <span style="opacity: 0.8;">Time:</span> <span style="font-weight: 500;">${timeString}</span>
+        </div>
+        <div style="margin-bottom: 4px;">
+            <span style="opacity: 0.8;">Hash:</span> <span style="font-family: monospace; font-size: 12px;">${blockData.block_hash}</span>
+        </div>
+        <div style="margin-bottom: 4px;">
+            <span style="opacity: 0.8;">Pool:</span> <span style="font-weight: 500;">${blockData.pool_name}</span>
+        </div>
+        <div style="margin-bottom: 4px;">
+            <span style="opacity: 0.8;">Reward:</span> <span style="font-weight: 500; color: #90EE90;">${rewardFormatted} BTC</span>
+            <span style="font-size: 12px; opacity: 0.7;">(+${feesFormatted} fees)</span>
+        </div>
+        <div>
+            <span style="opacity: 0.8;">Median Fee:</span> <span style="font-weight: 500;">${medianFeeFormatted} sat/vB</span>
         </div>
     `;
     
-    // Add close button to toast
-    toast.appendChild(closeBtn);
-    
-    // Close toast function
-    function closeToast() {
-        toast.style.opacity = '0';
-        toast.style.transform = 'translateX(100%)';
+    if (!isUpdate) {
+        // New toast - add to container and animate in
+        toastContainer.appendChild(toast);
+        
+        // Animate in
         setTimeout(() => {
-            if (toast.parentNode) {
-                toast.parentNode.removeChild(toast);
+            toast.style.opacity = '1';
+            toast.style.transform = 'translateX(0)';
+        }, 10);
+        
+        // Auto-close after 30 seconds
+        setTimeout(() => {
+            if (toast.closeToast) {
+                toast.closeToast();
             }
-        }, 400);
+        }, 30000);
     }
-    
-    // Close button event listener
-    closeBtn.addEventListener('click', closeToast);
-    closeBtn.addEventListener('mouseenter', () => {
-        closeBtn.style.backgroundColor = 'rgba(255, 255, 255, 0.2)';
-    });
-    closeBtn.addEventListener('mouseleave', () => {
-        closeBtn.style.backgroundColor = 'transparent';
-    });
-    
-    // Add toast to container
-    toastContainer.appendChild(toast);
-    
-    // Animate in
-    setTimeout(() => {
-        toast.style.opacity = '1';
-        toast.style.transform = 'translateX(0)';
-    }, 10);
-    
-    // Auto-close after 30 seconds
-    setTimeout(closeToast, 30000);
 }
 
 // Initialize WebSocket when page loads

@@ -25,15 +25,12 @@ if os.path.exists(epaper_lib_path_parallel):
 try:
     from waveshare_epd import epd7in3f
     WAVESHARE_AVAILABLE = True
-    print("✅ Waveshare EPD library loaded successfully")
 except ImportError as e:
     WAVESHARE_AVAILABLE = False
     print(f"❌ Waveshare EPD library not available: {e}")
-    print("  Falling back to file output only")
 except Exception as e:
     WAVESHARE_AVAILABLE = False
     print(f"❌ Waveshare EPD library error: {e}")
-    print("  Falling back to file output only")
 
 class WaveshareDisplay:
     """Direct interface to Waveshare 7.3" F 7-color e-paper display."""
@@ -54,7 +51,6 @@ class WaveshareDisplay:
         
         # Don't initialize display in constructor to avoid blocking
         # Initialize only when needed in display_image method
-        print("⚙️ Waveshare display created (lazy initialization)")
         if not WAVESHARE_AVAILABLE:
             print("⚠️ Waveshare library not available - display will use fallback only")
         elif not self.enabled:
@@ -217,16 +213,12 @@ class WaveshareDisplay:
             # Load the image
             if isinstance(image_path, str):
                 img = Image.open(image_path)
-                print(f"Loaded image: {image_path} ({img.size})")
             else:
                 # Assume it's already a PIL Image
                 img = image_path
-                print(f"Using provided image ({img.size})")
             
             # Process image for vertical orientation if needed
             if process_vertical and img.size == (480, 800):
-                print("Processing vertical image for landscape display...")
-                
                 # Add message overlay before rotation if provided
                 if message and len(message) > 1:
                     try:
@@ -238,107 +230,73 @@ class WaveshareDisplay:
                             font = ImageFont.load_default()
                         draw.rectangle([(0, 0), (img.width, 75)], fill=(0, 0, 0))
                         draw.text((10, 30), message, font=font, fill=(255, 255, 255))
-                        print(f"Added message overlay: {message}")
                     except Exception as e:
                         print(f"Warning: Could not add message overlay: {e}")
                 
                 # Rotate 90° clockwise to convert portrait to landscape
                 img = img.transpose(Image.Transpose.ROTATE_90)
-                print(f"Rotated to landscape: {img.size}")
             
             # Ensure image is the correct size for the display
             if img.size != (self.width, self.height):
                 img = img.resize((self.width, self.height), Image.Resampling.LANCZOS)
-                print(f"Resized to display dimensions: {img.size}")
             
             # Convert to 7-color palette
             img = self.convert_to_7color_palette(img)
-            print("Applied 7-color palette conversion")
             
             # Save processed image for debugging
             debug_path = "current_processed.png"
             img.save(debug_path)
-            print(f"Saved processed image to: {debug_path}")
             
             # Check if hardware display is available and enabled
             if not WAVESHARE_AVAILABLE:
-                print("⚙️ Waveshare library not available - skipping hardware display")
                 return True
                 
             if not self.enabled:
-                print("⚙️ E-paper display disabled in configuration - skipping hardware display")
                 return True
             
             # Lazy initialization of EPD hardware
             if not self.epd:
-                print("🔧 Initializing Waveshare EPD hardware...")
                 try:
                     self.epd = epd7in3f.EPD()
-                    print("✅ Waveshare EPD 7.3F initialized")
                 except Exception as e:
-                    print(f"❌ Exception during EPD initialization: {e}")
+                    print(f"❌ EPD initialization failed: {e}")
                     return False
             
-            # Display on hardware - simplified without timeout for now
+            # Display on hardware
             try:
-                print("Starting Waveshare EPD hardware display process...")
+                total_start = time.time()
                 
                 # Initialize display
-                print("Initializing e-paper display...")
-                init_start = time.time()
                 self.epd.init()
-                init_time = time.time() - init_start
-                print(f"✅ E-paper display initialized in {init_time:.2f}s")
                 
                 # Clear display (optional - skipping saves ~31s)
                 if not self.skip_clear:
-                    print("Clearing e-paper display...")
-                    clear_start = time.time()
                     self.epd.Clear()
-                    clear_time = time.time() - clear_start
-                    print(f"✅ E-paper display cleared in {clear_time:.2f}s")
-                else:
-                    print("⏩ Skipping clear operation for faster refresh (~31s saved)")
                 
                 # Display the image
-                print("Sending image to e-paper display...")
-                display_start = time.time()
                 self.epd.display(self.epd.getbuffer(img))
-                display_time = time.time() - display_start
-                print(f"✅ Image displayed successfully on e-paper in {display_time:.2f}s")
                 
                 # Put display to sleep
-                print("Putting display to sleep...")
-                sleep_start = time.time()
-                time.sleep(1)  # Brief pause before sleep
+                time.sleep(1)
                 self.epd.sleep()
-                sleep_time = time.time() - sleep_start
-                print(f"✅ Display put to sleep in {sleep_time:.2f}s")
                 
-                total_time = time.time() - init_start
-                print(f"✅ Total display process completed in {total_time:.2f}s")
-                
+                # total_time = time.time() - total_start
                 return True
                 
             except Exception as e:
-                print(f"❌ Error displaying image on hardware: {e}")
-                print(f"   Error type: {type(e).__name__}")
+                print(f"❌ Display error: {e}")
                 
                 # Try to clean up if there was an error
                 try:
                     if hasattr(self.epd, 'sleep'):
                         self.epd.sleep()
-                        print("✅ Display cleanup: sleep() called after error")
                 except:
-                    print("❌ Could not call sleep() during error cleanup")
+                    pass
                 
                 return False
                 
         except Exception as e:
-            print(f"❌ Error in display_image: {e}")
-            print(f"   Error type: {type(e).__name__}")
-            import traceback
-            print(f"   Traceback: {traceback.format_exc()}")
+            print(f"❌ Display error: {e}")
             return False
 
     def sleep(self):

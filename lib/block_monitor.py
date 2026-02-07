@@ -573,7 +573,7 @@ class BlockRewardMonitor:
                     print(f"👁️ New block: {block_hash[:16]}... (height unknown)")
                 # ...existing code...
                 if self.new_block_notification_callback and block_height:
-                    print(f"📶 Sending new block notification to web clients for block {block_height}")
+                    print(f"📶 Sending new block notification to web clients")
                     try:
                         self.new_block_notification_callback(block_height, block_hash)
                     except Exception as e:

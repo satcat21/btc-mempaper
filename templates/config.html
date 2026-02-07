@@ -65,8 +65,12 @@
             <h3>{{ translations.delete_confirmation_title }}</h3>
             <p>{{ translations.delete_confirmation_message }}</p>
             <div class="modal-buttons">
-                <button id="confirm-delete" class="save-button">{{ translations.confirm_delete }}</button>
-                <button id="cancel-delete" class="cancel-button">{{ translations.cancel }}</button>
+                <button id="confirm-delete" class="icon-button confirm">
+                    <img src="{{ url_for('static', filename='icons/check.svg') }}" alt="Confirm">
+                </button>
+                <button id="cancel-delete" class="icon-button cancel">
+                    <img src="{{ url_for('static', filename='icons/cancel.svg') }}" alt="Cancel">
+                </button>
             </div>
         </div>
     </div>
@@ -83,8 +87,19 @@
                     <img id="meme-modal-image" src="" alt="Meme Preview" />
                 </div>
                 <div class="meme-info">
-                    <div class="meme-info-row">
-                        <strong>{{ translations.filename }}</strong> <span id="meme-modal-filename"></span>
+                    <div class="meme-info-row" style="align-items: center;">
+                        <strong>{{ translations.filename }}</strong> 
+                        <span id="meme-modal-filename-display" style="display: inline;"></span>
+                        <input type="text" id="meme-modal-filename-input" class="form-input" style="display: none; flex: 1; margin: 0 10px; padding: 4px 8px;">
+                        <button id="meme-modal-edit-btn" class="icon-button" onclick="startRenameInModal()" title="{{ translations.rename_meme }}" style="padding: 4px 8px; margin-left: 8px;">
+                            <img src="/static/icons/edit.svg" alt="Edit" style="width: 16px; height: 16px;" />
+                        </button>
+                        <button id="meme-modal-save-btn" class="icon-button" onclick="saveRenameInModal()" title="{{ translations.save }}" style="display: none; padding: 4px 8px; margin-left: 8px; background: #667eea;">
+                            <img src="/static/icons/save.svg" alt="Save" style="width: 16px; height: 16px; filter: brightness(0) invert(1);" />
+                        </button>
+                        <button id="meme-modal-cancel-rename-btn" class="icon-button cancel" onclick="cancelRenameInModal()" title="{{ translations.cancel }}" style="display: none; padding: 4px 8px; margin-left: 4px;">
+                            <img src="/static/icons/cancel.svg" alt="Cancel" style="width: 16px; height: 16px;" />
+                        </button>
                     </div>
                     <div class="meme-info-row">
                         <strong>{{ translations.dimensions }}</strong> <span id="meme-modal-dimensions">{{ translations.loading }}</span>

@@ -419,16 +419,17 @@ class ImageRenderer:
         """
         return self.bitaxe_api.fetch_bitaxe_stats()
 
-    def fetch_wallet_balances(self, startup_mode: bool = False):
+    def fetch_wallet_balances(self, startup_mode: bool = False, current_block: int = None):
         """
         Fetch deduped wallet balances using the dedicated API client.
         
         Args:
             startup_mode (bool): If True, use cached data only and skip expensive gap limit detection
+            current_block (int): Current block height - used to prevent scanning same block multiple times
             
         Returns: dict with balance info or None on failure.
         """
-        return self.wallet_api.fetch_wallet_balances(startup_mode=startup_mode)
+        return self.wallet_api.fetch_wallet_balances(startup_mode=startup_mode, current_block=current_block)
         
     # --- Info Block Renderers ---
     def render_btc_price_block(self, draw, info_block_y, font_label, font_value, price_data, web_quality=False):
@@ -1961,11 +1962,8 @@ class ImageRenderer:
                 if max_blocks > 0:
                     if len(info_blocks) > max_blocks:
                         info_blocks_to_render = random.sample(info_blocks, int(max_blocks))
-                        print(f"ℹ️ Showing {max_blocks} of {len(info_blocks)} info blocks (meme prioritized)")
                     else:
                         info_blocks_to_render = info_blocks
-                else:
-                    print(f"ℹ️ No space for info blocks (meme takes {meme_height}px of {available_content_height}px)")
             
             # --- Step 5: Calculate balanced vertical spacing with actual content ---
             # When no holiday and no info blocks, center the meme vertically

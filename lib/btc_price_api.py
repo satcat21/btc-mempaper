@@ -7,6 +7,7 @@ Based on the reference implementation from image_renderer.py.
 """
 
 import requests
+import time
 from typing import Dict, Optional, Union
 
 
@@ -23,6 +24,11 @@ class BitcoinPriceAPI:
         self.config = config or {}
         self.base_url = self._build_base_url()
         self.mempool_verify_ssl = self.config.get("mempool_verify_ssl", True)
+        
+        # Price caching to prevent duplicate API calls
+        self._price_cache = None
+        self._price_cache_timestamp = 0
+        self._price_cache_ttl = 300  # 5-minute cache TTL
     
     def _build_base_url(self) -> str:
         """Build the base URL for price API from configuration with unified host field and HTTPS support."""
@@ -43,6 +49,7 @@ class BitcoinPriceAPI:
     def fetch_btc_price(self) -> Optional[Dict[str, Union[str, float, int]]]:
         """
         Fetch Bitcoin price data with Moscow time calculation.
+        Uses 5-minute cache to prevent duplicate API calls.
         
         Returns:
             Dict containing:
@@ -52,6 +59,12 @@ class BitcoinPriceAPI:
             - currency_price: Price in selected currency (if not USD)
             - error: Error message if fetch failed
         """
+        # Check cache first
+        current_time = time.time()
+        if self._price_cache and (current_time - self._price_cache_timestamp) < self._price_cache_ttl:
+            # print(f"💰 Using cached price (age: {current_time - self._price_cache_timestamp:.1f}s)")
+            return self._price_cache
+        
         try:
             # Get Bitcoin price in USD
             # print(f"🌐 Fetching price data from: {self.base_url}/v1/prices")
@@ -80,6 +93,10 @@ class BitcoinPriceAPI:
                 "moscow_time": moscow_time,
                 "currency": selected_currency
             }
+            
+            # Cache the result
+            self._price_cache = result
+            self._price_cache_timestamp = current_time
             
             return result
             

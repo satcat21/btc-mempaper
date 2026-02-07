@@ -63,8 +63,8 @@ timeout = 600  # Increased timeout for wallet balance gap limit detection (10 mi
 keepalive = 2
 
 # Restart workers after this many requests, to help control memory usage on Pi Zero
-max_requests = 200  # Reduced for Pi Zero to prevent memory leaks
-max_requests_jitter = 10  # Reduced jitter
+max_requests = 1000  # Increased - Pi Zero memory usage is stable at ~67MB
+max_requests_jitter = 50  # Increased jitter
 
 # Logging
 loglevel = "error" #"debug"
