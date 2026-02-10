@@ -73,8 +73,9 @@ class SecureCacheManager:
                         decrypted_data = self.secure_manager._decrypt_data(encrypted_data['data'])
                         if decrypted_data is not None:
                             # Only log if cache has actual content (not just empty dict)
-                            if decrypted_data and len(decrypted_data) > 0:
-                                print(f"💾 Loaded cached data from {self.encrypted_cache_file}")
+                            # if decrypted_data and len(decrypted_data) > 0:
+                                # Silent loading for faster startup
+                                # print(f"💾 Loaded cached data from {self.encrypted_cache_file}")
                             return decrypted_data
                         else:
                             print(f"⚠️ Failed to decrypt cache: {self.encrypted_cache_file}")

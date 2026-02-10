@@ -29,6 +29,10 @@ import uuid
 class SecureConfigManager:
     """Lightweight encryption for sensitive configuration data."""
     
+    # Class-level cache for encryption key (shared across all instances)
+    _cached_encryption_key = None
+    _key_file_mtime = None
+    
     def __init__(self, config_file: str = "config/config.json"):
         """
         Initialize secure config manager.
@@ -48,7 +52,7 @@ class SecureConfigManager:
             'secret_key',
         }
         
-        # Initialize encryption key
+        # Initialize encryption key (uses class-level cache)
         self._encryption_key = None
         self._ensure_encryption_key()
     
@@ -136,7 +140,16 @@ class SecureConfigManager:
     
     def _ensure_encryption_key(self) -> None:
         """Ensure encryption key exists or create new one."""
+        # Check if we can use cached key
         if os.path.exists(self.key_file):
+            current_mtime = os.path.getmtime(self.key_file)
+            
+            # Use class-level cached key if available and key file hasn't changed
+            if (SecureConfigManager._cached_encryption_key is not None and 
+                SecureConfigManager._key_file_mtime == current_mtime):
+                self._encryption_key = SecureConfigManager._cached_encryption_key
+                return
+            
             # Load existing key
             try:
                 with open(self.key_file, 'rb') as f:
@@ -147,6 +160,10 @@ class SecureConfigManager:
                 
                 # Test key validity
                 Fernet(self._encryption_key)
+                
+                # Cache the key for future instances
+                SecureConfigManager._cached_encryption_key = self._encryption_key
+                SecureConfigManager._key_file_mtime = current_mtime
                 
             except Exception as e:
                 print(f"⚠️ Error loading encryption key: {e}")
@@ -170,6 +187,10 @@ class SecureConfigManager:
         
         # Set restrictive permissions on key file
         os.chmod(self.key_file, 0o600)
+        
+        # Cache the key for future instances
+        SecureConfigManager._cached_encryption_key = self._encryption_key
+        SecureConfigManager._key_file_mtime = os.path.getmtime(self.key_file)
         
         print(f"🔐 Created new encryption key (salt saved to {self.key_file})")
     

@@ -68,8 +68,6 @@ class UnifiedSecureCache:
         
         # Load existing cache or migrate from individual files
         self._load_or_migrate_cache()
-        
-        print(f"💾 Loaded cached data from {self.secure_cache_file}")
     
     def _load_or_migrate_cache(self) -> None:
         """Load existing secure cache or migrate from individual cache files."""

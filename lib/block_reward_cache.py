@@ -525,6 +525,15 @@ class BlockRewardCache:
                         value_btc = vout.get('value', 0) / 1e8
                         print(f"🎯 Block reward found! {address}: {value_btc:.8f} BTC at height {block_height}")
                 
+                # Update synced_height for ALL monitored addresses (even those without rewards in this block)
+                # This prevents rescanning blocks that didn't contain rewards on restart
+                for address in monitored_addresses:
+                    addr_data = self.cache_data["addresses"][address]
+                    # Only update if this block is newer than current synced height
+                    if block_height > addr_data.get("synced_height", 0):
+                        addr_data["synced_height"] = block_height
+                        addr_data["last_updated"] = time.time()
+                
                 # Update global sync height
                 self.cache_data["global_sync_height"] = max(
                     self.cache_data["global_sync_height"], 

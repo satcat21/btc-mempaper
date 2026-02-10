@@ -196,25 +196,11 @@ class MempaperApp:
             self.on_new_block_notification if hasattr(self, 'on_new_block_notification') else None
         )
         
-        # Sync cache to current blockchain height (important for recovery after downtime)
-        if self.block_monitor:
-            try:
-                self.block_monitor.sync_cache_to_current()
-            except Exception as e:
-                print(f"⚠️ Cache sync failed: {e}")
+        # Summary: Cache loading complete
+        print("💾 Secure caches loaded")
         
-        # Start block monitoring if addresses are configured and not skipped for fast startup
-        skip_block_monitoring = self.config.get("skip_block_monitoring_on_startup", False)
-        if not skip_block_monitoring:
-            self.block_monitor.start_monitoring()
-            block_table_addresses = self.config.get("block_reward_addresses_table", [])
-            total_addresses = len(block_table_addresses)
-            if total_addresses > 0:
-                print(f"👁️ Block reward monitoring started for {total_addresses} addresses")
-            # else:
-            #     print("📡 Block monitoring started (no reward addresses configured, will still trigger updates on new blocks)")
-        else:
-            print("⚙️ Skipping block monitoring for faster startup")
+        # Note: Cache sync and monitoring start moved to _run_background_startup for faster website availability
+        print("⚙️ Block monitor initialized (sync and monitoring will start in background)")
         
         # Check e-Paper display configuration
         self.e_ink_enabled = self.config.get("e-ink-display-connected", True)
@@ -893,6 +879,24 @@ class MempaperApp:
         """Run heavy startup operations in background."""
         try:
             print("⚙️ Starting background initialization...")
+            
+            # Sync cache to current blockchain height (important for recovery after downtime)
+            if self.block_monitor:
+                try:
+                    self.block_monitor.sync_cache_to_current()
+                except Exception as e:
+                    print(f"⚠️ Cache sync failed: {e}")
+            
+            # Start block monitoring if addresses are configured and not skipped for fast startup
+            skip_block_monitoring = self.config.get("skip_block_monitoring_on_startup", False)
+            if not skip_block_monitoring:
+                self.block_monitor.start_monitoring()
+                block_table_addresses = self.config.get("block_reward_addresses_table", [])
+                total_addresses = len(block_table_addresses)
+                if total_addresses > 0:
+                    print(f"👁️ Block reward monitoring started for {total_addresses} addresses")
+            else:
+                print("⚙️ Skipping block monitoring for faster startup")
             
             # Initialize WebSocket connection
             self._init_websocket()
