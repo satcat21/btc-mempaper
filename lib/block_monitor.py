@@ -299,7 +299,7 @@ class BlockRewardMonitor:
         # Save legacy data
         self._save_valid_blocks_count()
         
-        # Extract block height from block hash if possible
+        # Extract block height for logging purposes
         block_height = None
         try:
             base_url = self._get_mempool_base_url()
@@ -313,10 +313,6 @@ class BlockRewardMonitor:
                     block_height = None
         except Exception as e:
             print(f"⚠️ Could not get block height for {block_hash}: {e}")
-        
-        # Update new cache system
-        if block_height:
-            self.cache.update_for_new_block(block_hash, block_height)
         
         btc_value = value_sats / 1e8
         cropped_address = self.cache._crop_address_for_log(address)
@@ -571,6 +567,12 @@ class BlockRewardMonitor:
                     print(f"👁️ New block: {formatted_height}")
                 else:
                     print(f"👁️ New block: {block_hash[:16]}... (height unknown)")
+                
+                # Update cache for every block (not just blocks with rewards)
+                # This ensures global_sync_height stays current even when no rewards are found
+                if block_height:
+                    self.cache.update_for_new_block(block_hash, block_height)
+                
                 # ...existing code...
                 if self.new_block_notification_callback and block_height:
                     print(f"📶 Sending new block notification to web clients")
