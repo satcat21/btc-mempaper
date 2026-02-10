@@ -2497,13 +2497,17 @@ class MempaperApp:
             orientation = self.config.get("web_orientation", "vertical")
             current_translations = translations.get(lang, translations["en"])
             
+            # Get current block height for cache-busting
+            block_height = self.current_block_height if self.current_block_height else 0
+            
             return render_template('dashboard.html', 
                                  translations=current_translations,
                                  display_icon=display_icon,
                                  e_ink_enabled=self.e_ink_enabled,
                                  # This orientation determines the CSS class for layout
                                  orientation=orientation,
-                                 live_block_notifications_enabled=self.config.get('live_block_notifications_enabled', False))
+                                 live_block_notifications_enabled=self.config.get('live_block_notifications_enabled', False),
+                                 block_height=block_height)
         
         @self.app.route('/config')
         @require_web_auth(self.auth_manager)
