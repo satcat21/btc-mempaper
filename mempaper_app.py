@@ -33,6 +33,7 @@ from utils.translations import translations
 from managers.config_manager import ConfigManager
 from utils.technical_config import TechnicalConfig
 from utils.security_config import SecurityConfig
+from utils.color_lut import ColorLUT
 from managers.secure_cache_manager import SecureCacheManager
 from managers.auth_manager import AuthManager, require_auth, require_web_auth, require_rate_limit, require_mobile_auth
 from managers.mobile_token_manager import MobileTokenManager
@@ -808,7 +809,12 @@ class MempaperApp:
             
             # Create a simple placeholder
             width, height = 800, 480
-            img = Image.new('RGB', (width, height), color=self.get_color("background", web_quality=True))
+            # Use background color that respects dark mode setting
+            is_dark_mode = self.config.get("color_mode_dark", False)
+            bg_color = (46, 50, 78) if is_dark_mode else (255, 255, 255)  # Dark: #2e324e, Light: white
+            text_color = (255, 255, 255) if is_dark_mode else (0, 0, 0)  # White text for dark, black for light
+            
+            img = Image.new('RGB', (width, height), color=bg_color)
             draw = ImageDraw.Draw(img)
             
             # Try to use the configured font, fallback to default
@@ -835,7 +841,7 @@ class MempaperApp:
             title_width = bbox[2] - bbox[0]
             title_x = (width - title_width) // 2
             title_y = 160
-            draw.text((title_x, title_y), title, fill='black', font=medium_font)
+            draw.text((title_x, title_y), title, fill=text_color, font=medium_font)
             
             # Draw loading message
             loading_msg = self.translations.get("loading_bitcoin_data", "Loading Bitcoin data...")
@@ -843,7 +849,8 @@ class MempaperApp:
             loading_width = bbox[2] - bbox[0]
             loading_x = (width - loading_width) // 2
             loading_y = title_y + 60
-            draw.text((loading_x, loading_y), loading_msg, fill='gray', font=small_font)
+            gray_text = (160, 160, 160) if is_dark_mode else (128, 128, 128)
+            draw.text((loading_x, loading_y), loading_msg, fill=gray_text, font=small_font)
             
             # Draw progress indicator
             progress_msg = "● ● ● ●"
@@ -859,7 +866,8 @@ class MempaperApp:
             bottom_width = bbox[2] - bbox[0]
             bottom_x = (width - bottom_width) // 2
             bottom_y = height - 80
-            draw.text((bottom_x, bottom_y), bottom_msg, fill='#666666', font=small_font)
+            bottom_gray = (140, 140, 140) if is_dark_mode else (102, 102, 102)
+            draw.text((bottom_x, bottom_y), bottom_msg, fill=bottom_gray, font=small_font)
             
             # Save placeholder images
             img.save(self.current_image_path)

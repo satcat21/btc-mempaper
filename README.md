@@ -185,34 +185,48 @@ pip install -r requirements.txt
    
    **After setup is complete**, press `Ctrl+C` to stop the server.
 
-3. **Enable Background Service (Raspberry Pi)**
+3. **Enable Background Service (Linux Systems)**
 
-   For production use, run Mempaper as a systemd service (auto-starts on boot):
+   For production use, run Mempaper as a systemd service (auto-starts on boot).
+   
+   **Generate the service file** (automatically configures paths and user):
    
    ```bash
-   # Copy service file
+   # Generate service file for your installation
+   python scripts/generate_service_file.py
+   
+   # Review the generated file
+   cat mempaper.service
+   
+   # Copy to system directory
    sudo cp mempaper.service /etc/systemd/system/
    
+   # Reload systemd to recognize the new service
+   sudo systemctl daemon-reload
+   
    # Enable and start the service
-   sudo systemctl enable mempaper
-   sudo systemctl start mempaper
+   sudo systemctl enable mempaper.service
+   sudo systemctl start mempaper.service
    
    # Check status
-   sudo systemctl status mempaper
+   sudo systemctl status mempaper.service
    ```
    
    The dashboard will be accessible at [http://mempaper-ip:5000](http://mempaper-ip:5000).
    
    **Service Management:**
    ```bash
-   # View logs
+   # View live logs
    sudo journalctl -u mempaper.service -f
    
    # Restart after config changes
-   sudo systemctl restart mempaper
+   sudo systemctl restart mempaper.service
    
    # Stop service
-   sudo systemctl stop mempaper
+   sudo systemctl stop mempaper.service
+   
+   # Disable service from auto-start
+   sudo systemctl disable mempaper.service
    ```
 
 ---
