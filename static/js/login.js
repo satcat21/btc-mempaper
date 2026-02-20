@@ -39,8 +39,17 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
 // Focus username field on load
 document.getElementById('username').focus();
 
-// Apply dark mode from localStorage
-const storedDarkMode = localStorage.getItem('mempaper_dark_mode');
-if (storedDarkMode === 'true') {
-    document.body.classList.add('dark-mode');
-}
+// Apply dark mode from localStorage or fetch from backend
+(async function() {
+    const storedDarkMode = localStorage.getItem('mempaper_dark_mode');
+    if (storedDarkMode === 'true') {
+        document.body.classList.add('dark-mode');
+    } else if (storedDarkMode === 'false') {
+        document.body.classList.remove('dark-mode');
+    } else {
+        // No localStorage value - fetch from backend (public endpoint not available on login)
+        // For login page, default to light mode
+        // After login, the dashboard will fetch the correct theme
+        console.log('⚙️ No theme preference in localStorage, defaulting to light mode');
+    }
+})();

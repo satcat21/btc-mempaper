@@ -40,7 +40,10 @@ body {
     font-family: 'IBMPlexMono', monospace;
     font-size: 2.2rem;
     margin-bottom: 10px;
-    color: #2e324e;
+    background: linear-gradient(90deg, #005fa3 0%, #4b0f8f 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
     font-weight: 500;
     letter-spacing: -0.01em;
     text-transform: lowercase;
@@ -175,7 +178,10 @@ body.dark-mode .login-container {
 }
 
 body.dark-mode .login-header h1 {
-    color: #e8e9ea;
+    background: linear-gradient(90deg, #4FC3F7 0%, #BA68C8 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
 }
 
 body.dark-mode .login-header p {

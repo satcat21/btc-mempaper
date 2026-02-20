@@ -577,41 +577,54 @@ async function getExistingMemeHashes() {
 }
 
 // Show rename dialog for a file
-async function showRenameDialog(originalFilename) {
+async function showRenameDialog(originalFilename, file) {
     const extension = originalFilename.substring(originalFilename.lastIndexOf('.'));
     const nameWithoutExt = originalFilename.substring(0, originalFilename.lastIndexOf('.'));
-    
+    const t = window.translations;
+
+    // Create a temporary object URL for the preview image if a file is provided
+    const previewUrl = file ? URL.createObjectURL(file) : null;
+
     return new Promise((resolve) => {
         const modal = document.createElement('div');
         modal.className = 'modal';
         modal.style.display = 'flex';
+
+        const previewHtml = previewUrl
+            ? `<div style="text-align: center; margin-bottom: 15px;">
+                   <img src="${previewUrl}" alt="${originalFilename}" style="max-width: 150px; max-height: 150px; object-fit: contain; border-radius: 6px; border: 1px solid #ddd;">
+               </div>`
+            : '';
+
         modal.innerHTML = `
             <div class="modal-content" style="max-width: 400px;">
-                <h3>Rename Image</h3>
-                <p style="margin-bottom: 15px; color: #666;">Original: ${originalFilename}</p>
-                <label style="display: block; margin-bottom: 5px; font-weight: 600;">New name (without extension):</label>
+                <h3>${t?.rename_image || 'Rename Image'}</h3>
+                ${previewHtml}
+                <p style="margin-bottom: 15px; color: #666;">${originalFilename}</p>
+                <label style="display: block; margin-bottom: 5px; font-weight: 600;">${t?.rename_new_name || 'New name (without extension):'}</label>
                 <input type="text" id="rename-input" class="form-input" value="${nameWithoutExt}" style="margin-bottom: 15px;">
-                <p style="font-size: 0.85rem; color: #667eea; margin-bottom: 15px;">Extension ${extension} will be preserved</p>
+                <p style="font-size: 0.85rem; color: #667eea; margin-bottom: 15px;">${(t?.rename_extension_preserved || 'Extension {ext} will be preserved').replace('{ext}', extension)}</p>
                 <div class="modal-buttons" style="display: flex; gap: 10px;">
-                    <button id="rename-confirm" class="save-button" style="flex: 1;">Rename</button>
-                    <button id="rename-skip" class="cancel-button" style="flex: 1;">Keep Original</button>
+                    <button id="rename-confirm" class="save-button" style="flex: 1;">${t?.rename_confirm || 'Rename'}</button>
+                    <button id="rename-skip" class="cancel-button" style="flex: 1;">${t?.rename_keep_original || 'Keep Original'}</button>
                 </div>
             </div>
         `;
-        
+
         document.body.appendChild(modal);
-        
+
         const input = modal.querySelector('#rename-input');
         input.focus();
         input.select();
-        
+
         const confirmBtn = modal.querySelector('#rename-confirm');
         const skipBtn = modal.querySelector('#rename-skip');
-        
+
         const cleanup = () => {
             modal.remove();
+            if (previewUrl) URL.revokeObjectURL(previewUrl);
         };
-        
+
         confirmBtn.onclick = () => {
             const newName = input.value.trim();
             cleanup();
@@ -621,12 +634,12 @@ async function showRenameDialog(originalFilename) {
                 resolve(originalFilename);
             }
         };
-        
+
         skipBtn.onclick = () => {
             cleanup();
             resolve(originalFilename);
         };
-        
+
         input.onkeydown = (e) => {
             if (e.key === 'Enter') {
                 confirmBtn.click();
@@ -645,11 +658,13 @@ async function uploadFiles(files) {
     
     if (!files || files.length === 0) return;
     
+    const t = window.translations;
+
     // Show progress
     if (progressDiv && progressBar && statusText) {
         progressDiv.style.display = 'block';
         progressBar.style.width = '0%';
-        statusText.textContent = 'Checking for duplicates...';
+        statusText.textContent = t?.upload_checking_duplicates || 'Checking for duplicates...';
         statusText.style.color = '#667eea';
     }
     
@@ -665,7 +680,8 @@ async function uploadFiles(files) {
         const file = files[i];
         
         if (statusText) {
-            statusText.textContent = `Processing ${i + 1}/${files.length}: ${file.name}...`;
+            statusText.textContent = (t?.upload_processing || 'Processing {current}/{total}: {filename}...')
+                .replace('{current}', i + 1).replace('{total}', files.length).replace('{filename}', file.name);
         }
         
         // Calculate hash
@@ -678,7 +694,7 @@ async function uploadFiles(files) {
         }
         
         // Ask for rename
-        const newName = await showRenameDialog(file.name);
+        const newName = await showRenameDialog(file.name, file);
         
         if (newName === file.name) {
             // Use original file
@@ -693,12 +709,12 @@ async function uploadFiles(files) {
     // Show summary
     let summaryMessage = '';
     if (duplicates.length > 0) {
-        summaryMessage += `Skipped ${duplicates.length} duplicate(s). `;
+        summaryMessage += (t?.upload_skipped_duplicates_msg || 'Skipped {count} duplicate(s).').replace('{count}', duplicates.length) + ' ';
     }
     if (filesToUpload.length > 0) {
-        summaryMessage += `Uploading ${filesToUpload.length} file(s)...`;
+        summaryMessage += (t?.upload_uploading_count || 'Uploading {count} file(s)...').replace('{count}', filesToUpload.length);
     } else {
-        summaryMessage = 'No files to upload.';
+        summaryMessage = t?.upload_no_files || 'No files to upload.';
     }
     
     if (statusText) {
@@ -710,7 +726,7 @@ async function uploadFiles(files) {
     if (duplicates.length > 0) {
         const dupList = duplicates.map(d => `• ${d.name} (duplicate of ${d.duplicate})`).join('\n');
         console.log('Duplicates detected:\n' + dupList);
-        showNotification(`${duplicates.length} duplicate file(s) skipped`, 'warning');
+        showNotification((t?.upload_duplicates_skipped_notification || '{count} duplicate file(s) skipped').replace('{count}', duplicates.length), 'warning');
     }
     
     // Upload files one by one
@@ -722,7 +738,8 @@ async function uploadFiles(files) {
             const { file, name } = filesToUpload[i];
             
             if (statusText) {
-                statusText.textContent = `Uploading ${i + 1}/${filesToUpload.length}: ${name}...`;
+                statusText.textContent = (t?.upload_uploading_progress || 'Uploading {current}/{total}: {filename}...')
+                    .replace('{current}', i + 1).replace('{total}', filesToUpload.length).replace('{filename}', name);
             }
             
             if (progressBar) {
@@ -758,18 +775,18 @@ async function uploadFiles(files) {
         
         // Show final status
         if (statusText) {
-            let finalMessage = '';
+            const parts = [];
             if (uploadedCount > 0) {
-                finalMessage += `✓ ${uploadedCount} uploaded`;
+                parts.push((t?.upload_count_uploaded || '✓ {count} uploaded').replace('{count}', uploadedCount));
             }
             if (failedCount > 0) {
-                finalMessage += ` | ✗ ${failedCount} failed`;
+                parts.push((t?.upload_count_failed || '✗ {count} failed').replace('{count}', failedCount));
             }
             if (duplicates.length > 0) {
-                finalMessage += ` | ⊝ ${duplicates.length} skipped (duplicates)`;
+                parts.push((t?.upload_count_skipped || '⊝ {count} skipped (duplicates)').replace('{count}', duplicates.length));
             }
-            
-            statusText.textContent = finalMessage;
+
+            statusText.textContent = parts.join(' | ');
             statusText.style.color = failedCount > 0 ? '#dc3545' : '#28a745';
         }
         
@@ -789,10 +806,10 @@ async function uploadFiles(files) {
         
         // Show summary notification
         if (uploadedCount > 0) {
-            showNotification(`Successfully uploaded ${uploadedCount} file(s)`, 'success');
+            showNotification((t?.upload_success_notification || 'Successfully uploaded {count} file(s)').replace('{count}', uploadedCount), 'success');
         }
         if (failedCount > 0) {
-            showNotification(`Failed to upload ${failedCount} file(s)`, 'error');
+            showNotification((t?.upload_fail_notification || 'Failed to upload {count} file(s)').replace('{count}', failedCount), 'error');
         }
     } else {
         // No files to upload
@@ -998,7 +1015,7 @@ async function saveRenameInModal() {
     const newName = filenameInput.value.trim();
     
     if (!newName) {
-        showNotification('Please enter a valid name', 'error');
+        showNotification(window.translations?.please_enter_valid_name || 'Please enter a valid name', 'error');
         return;
     }
     
@@ -2580,16 +2597,24 @@ function createBitaxeTableInput(values, field) {
     addressHeader.style.border = '1px solid rgba(255, 255, 255, 0.2)';
     addressHeader.style.backgroundColor = '#2a2d3e';
     addressHeader.style.color = '#ffffff';
-    addressHeader.style.width = '50%';
-    
+    addressHeader.style.width = '35%';
+
     const commentHeader = document.createElement('th');
     commentHeader.textContent = window.translations?.bitaxe_table_comment || 'Comment/Label';
     commentHeader.style.padding = '10px';
     commentHeader.style.border = '1px solid rgba(255, 255, 255, 0.2)';
     commentHeader.style.backgroundColor = '#2a2d3e';
     commentHeader.style.color = '#ffffff';
-    commentHeader.style.width = '40%';
-    
+    commentHeader.style.width = '30%';
+
+    const bestDiffHeader = document.createElement('th');
+    bestDiffHeader.textContent = window.translations?.bitaxe_table_best_diff || 'Best Difficulty';
+    bestDiffHeader.style.padding = '10px';
+    bestDiffHeader.style.border = '1px solid rgba(255, 255, 255, 0.2)';
+    bestDiffHeader.style.backgroundColor = '#2a2d3e';
+    bestDiffHeader.style.color = '#ffffff';
+    bestDiffHeader.style.width = '25%';
+
     const actionsHeader = document.createElement('th');
     actionsHeader.textContent = '';
     actionsHeader.style.padding = '10px';
@@ -2597,9 +2622,10 @@ function createBitaxeTableInput(values, field) {
     actionsHeader.style.backgroundColor = '#2a2d3e';
     actionsHeader.style.color = '#ffffff';
     actionsHeader.style.width = '10%';
-    
+
     headerRow.appendChild(addressHeader);
     headerRow.appendChild(commentHeader);
+    headerRow.appendChild(bestDiffHeader);
     headerRow.appendChild(actionsHeader);
     thead.appendChild(headerRow);
     table.appendChild(thead);
@@ -2725,13 +2751,47 @@ function addBitaxeTableRow(tbody, entry) {
     commentInput.style.borderRadius = '4px !important';
     
     commentCell.appendChild(commentInput);
-    
+
+    // Best Difficulty cell
+    const bestDiffCell = document.createElement('td');
+    bestDiffCell.style.padding = '8px';
+    bestDiffCell.style.border = '1px solid rgba(255, 255, 255, 0.15)';
+    bestDiffCell.style.textAlign = 'right';
+
+    const bestDiffDisplay = document.createElement('span');
+    bestDiffDisplay.className = 'bitaxe-best-diff-display';
+    bestDiffDisplay.textContent = '-';
+    bestDiffDisplay.style.fontFamily = 'monospace';
+    bestDiffDisplay.style.fontSize = '0.9em';
+    bestDiffDisplay.style.color = '#666';
+    bestDiffCell.appendChild(bestDiffDisplay);
+
+    // Update best diff when IP changes
+    addressInput.addEventListener('input', () => {
+        const newIp = addressInput.value.trim();
+        if (newIp) {
+            bestDiffDisplay.textContent = '...';
+            bestDiffDisplay.style.color = '#aaa';
+            fetchBitaxeBestDiff(newIp, bestDiffDisplay);
+        } else {
+            bestDiffDisplay.textContent = '-';
+            bestDiffDisplay.style.color = '#666';
+        }
+    });
+
+    // Load initial best diff if IP is set
+    if (entry.address) {
+        bestDiffDisplay.textContent = '...';
+        bestDiffDisplay.style.color = '#aaa';
+        fetchBitaxeBestDiff(entry.address, bestDiffDisplay);
+    }
+
     // Actions cell
     const actionsCell = document.createElement('td');
     actionsCell.style.padding = '8px';
     actionsCell.style.border = '1px solid rgba(255, 255, 255, 0.15)';
     actionsCell.style.textAlign = 'center';
-    
+
     const removeButton = document.createElement('button');
     removeButton.type = 'button';
     removeButton.className = 'bitaxe-remove-icon';
@@ -2744,18 +2804,18 @@ function addBitaxeTableRow(tbody, entry) {
     removeButton.style.cursor = 'pointer';
     removeButton.style.borderRadius = '4px';
     removeButton.style.transition = 'color 0.2s, background-color 0.2s';
-    
+
     // Add hover effects
     removeButton.addEventListener('mouseenter', () => {
         removeButton.style.color = '#ffffff';
         removeButton.style.backgroundColor = 'rgba(220, 53, 69, 0.8)';
     });
-    
+
     removeButton.addEventListener('mouseleave', () => {
         removeButton.style.color = 'white';
         removeButton.style.backgroundColor = 'transparent';
     });
-    
+
     removeButton.addEventListener('click', (e) => {
         e.preventDefault();
         row.remove();
@@ -2766,12 +2826,13 @@ function addBitaxeTableRow(tbody, entry) {
         }
         container.dispatchEvent(new Event('change', { bubbles: true }));
     });
-    
+
     actionsCell.appendChild(removeButton);
-    
+
     // Assemble row
     row.appendChild(addressCell);
     row.appendChild(commentCell);
+    row.appendChild(bestDiffCell);
     row.appendChild(actionsCell);
     tbody.appendChild(row);
 }
@@ -3075,6 +3136,38 @@ async function fetchFoundBlocksCount(address, cell) {
         }
     } catch (error) {
         console.error('Error fetching found blocks count:', error);
+        cell.textContent = 'Error';
+        cell.style.color = '#ff6b6b';
+    }
+}
+
+function formatBitaxeDifficulty(value) {
+    if (!value || value === 0) return '-';
+    if (value >= 1e12) return `${(value / 1e12).toFixed(2)}T`;
+    if (value >= 1e9) return `${(value / 1e9).toFixed(2)}G`;
+    if (value >= 1e6) return `${(value / 1e6).toFixed(2)}M`;
+    if (value >= 1e3) return `${(value / 1e3).toFixed(2)}k`;
+    return `${Math.round(value)}`;
+}
+
+async function fetchBitaxeBestDiff(ip, cell) {
+    try {
+        const response = await fetch(`/api/bitaxe/${encodeURIComponent(ip)}/best-diff`);
+        if (response.ok) {
+            const data = await response.json();
+            if (data.online) {
+                cell.textContent = formatBitaxeDifficulty(data.best_diff);
+                cell.style.color = '#4FC3F7';
+            } else {
+                cell.textContent = 'Offline';
+                cell.style.color = '#ff6b6b';
+            }
+        } else {
+            cell.textContent = 'Error';
+            cell.style.color = '#ff6b6b';
+        }
+    } catch (error) {
+        console.error('Error fetching Bitaxe best difficulty:', error);
         cell.textContent = 'Error';
         cell.style.color = '#ff6b6b';
     }

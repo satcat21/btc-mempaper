@@ -853,7 +853,7 @@ class ImageRenderer:
         """
         try:
             memes = [f for f in os.listdir(self.meme_dir) 
-                    if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+                    if f.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp'))]
             if not memes:
                 print("No meme images found in directory")
                 return None
@@ -1286,6 +1286,7 @@ class ImageRenderer:
             "info_blocks": info_blocks,
             "displayed_blocks": displayed_blocks,  # Track which blocks are shown
             "preserve_layout": preserve_info_blocks is not None,  # Flag for layout preservation
+            "selected_info_blocks": None,  # Populated on first render, reused on second
             # ...add any other shared data...
         }
 
@@ -1694,11 +1695,17 @@ class ImageRenderer:
                     if shared_data.get('preserve_layout', False):
                         print(f"ℹ️ Landscape Mode: Preserving first {int(max_blocks)} of {len(info_blocks)} blocks")
                         info_blocks_to_render = info_blocks[:int(max_blocks)]
+                    elif shared_data.get('selected_info_blocks') is not None:
+                        # Reuse selection from first render to keep both screens consistent
+                        info_blocks_to_render = shared_data['selected_info_blocks'][:int(max_blocks)]
                     else:
                         print(f"⚠️ Landscape Mode: Not enough space for all blocks. Showing {int(max_blocks)} of {len(info_blocks)}")
                         info_blocks_to_render = random.sample(info_blocks, int(max_blocks))
+                        shared_data['selected_info_blocks'] = info_blocks_to_render
                 else:
                     info_blocks_to_render = info_blocks
+                    if shared_data.get('selected_info_blocks') is None:
+                        shared_data['selected_info_blocks'] = info_blocks_to_render
             
             # Create a localized layout calculator for rendering
             # We need to measure content height first.
@@ -1961,9 +1968,16 @@ class ImageRenderer:
                 
                 if max_blocks > 0:
                     if len(info_blocks) > max_blocks:
-                        info_blocks_to_render = random.sample(info_blocks, int(max_blocks))
+                        if shared_data.get('selected_info_blocks') is not None:
+                            # Reuse selection from first render to keep both screens consistent
+                            info_blocks_to_render = shared_data['selected_info_blocks'][:int(max_blocks)]
+                        else:
+                            info_blocks_to_render = random.sample(info_blocks, int(max_blocks))
+                            shared_data['selected_info_blocks'] = info_blocks_to_render
                     else:
                         info_blocks_to_render = info_blocks
+                        if shared_data.get('selected_info_blocks') is None:
+                            shared_data['selected_info_blocks'] = info_blocks_to_render
             
             # --- Step 5: Calculate balanced vertical spacing with actual content ---
             # When no holiday and no info blocks, center the meme vertically

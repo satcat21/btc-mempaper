@@ -70,3 +70,6 @@ temp/
 tmp/
 *.tmp
 config/.config_key
+
+# generated service file
+mempaper.service

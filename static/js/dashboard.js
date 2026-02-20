@@ -514,13 +514,33 @@ function refreshCurrentImage() {
 }
 
 // Request initial image when page loads
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', async function() {
     console.log("⚙️ Page loaded.");
     
-    // Apply dark mode from localStorage
+    // Apply dark mode from localStorage or fetch from backend
     const storedDarkMode = localStorage.getItem('mempaper_dark_mode');
     if (storedDarkMode === 'true') {
         document.body.classList.add('dark-mode');
+    } else if (storedDarkMode === 'false') {
+        document.body.classList.remove('dark-mode');
+    } else {
+        // No localStorage value - fetch from backend
+        try {
+            const response = await fetch('/api/config');
+            if (response.ok) {
+                const data = await response.json();
+                if (data.config && data.config.color_mode_dark !== undefined) {
+                    const isDarkMode = data.config.color_mode_dark;
+                    if (isDarkMode) {
+                        document.body.classList.add('dark-mode');
+                    }
+                    localStorage.setItem('mempaper_dark_mode', isDarkMode ? 'true' : 'false');
+                    console.log(`⚙️ Theme loaded from backend: ${isDarkMode ? 'dark' : 'light'}`);
+                }
+            }
+        } catch (error) {
+            console.warn('Failed to fetch theme from backend:', error);
+        }
     }
     
     const dashboardImg = document.getElementById("dashboard");

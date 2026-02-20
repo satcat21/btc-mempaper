@@ -394,29 +394,34 @@ class WalletBalanceAPI:
                 # cache_age_days = (current_time - cache_data['last_full_scan']) / (24 * 60 * 60)
                 # print(f"🕐 [OPTIMIZED] Using cached scan from {datetime.fromtimestamp(cache_data['last_full_scan']).strftime('%Y-%m-%d %H:%M:%S')} ({cache_age_days:.1f} days ago)")
                 
+                # Check if we have fresh address data from gap limit that might invalidate balance cache
+                # This check should happen BEFORE monitoring, regardless of startup_mode
+                total_balance = cache_data.get('total_balance', 0.0)
+                cached_address_count = cache_data.get('final_address_count', 0)
+                
+                # Try different cache count possibilities to detect new addresses from gap limit scan
+                test_counts = [20, 40, 60, 80, 100, 120, 140, 160, 180, 200]
+                
+                if hasattr(self, 'async_cache_manager') and self.async_cache_manager:
+                    for test_count in test_counts:
+                        cache_key = f"{xpub}:gap_limit:{test_count}"
+                        cached_addresses = self.async_cache_manager.get_addresses(cache_key)
+                        if cached_addresses and len(cached_addresses) > 0:
+                            # Check if this is NEW compared to what balance cache knows about
+                            if test_count > cached_address_count:
+                                fresh_addresses_found = True
+                                print(f"⚙️ [BALANCE] Fresh gap limit data found ({len(cached_addresses)} addresses vs {cached_address_count} in balance cache) - full rescan needed")
+                                break
+                            # Also check if balance cache shows 0 but we have addresses (stale cache)
+                            elif total_balance == 0.0 and test_count >= cached_address_count:
+                                fresh_addresses_found = True
+                                print(f"⚙️ [BALANCE] Balance cache shows 0 BTC but {len(cached_addresses)} addresses exist - full rescan needed")
+                                break
+                
                 # In startup mode, check if cache is still valid for balance calculation
                 if startup_mode:
-                    total_balance = cache_data.get('total_balance', 0.0)
-                    
-                    # Check if we have fresh address data from bootstrap that might invalidate balance cache
-                    # Try different cache count possibilities
-                    test_counts = [20, 40, 60, 80, 100, 120, 140, 160, 180, 200]
-                    
-                    if hasattr(self, 'async_cache_manager') and self.async_cache_manager:
-                        for test_count in test_counts:
-                            cache_key = f"{xpub}:gap_limit:{test_count}"
-                            cached_addresses = self.async_cache_manager.get_addresses(cache_key)
-                            if cached_addresses and len(cached_addresses) > 0:
-                                fresh_addresses_found = True
-                                print(f"⚙️ [STARTUP] Fresh address data found ({len(cached_addresses)} addresses) - full rescan needed")
-                                break
-                    
-                    # TEMPORARY FIX: Always force recalculation in startup mode until cache detection is fixed
-                    if total_balance == 0.0:
-                        fresh_addresses_found = True
-                    
                     # Only use cached balance if NO fresh address data found AND balance > 0
-                    if not fresh_addresses_found:
+                    if not fresh_addresses_found and total_balance > 0.0:
                         print(f"🚀 [STARTUP] Using cached balance for {xpub[:20]}...: {total_balance:.8f} BTC")
                         return total_balance
                     # Fall through to full scan section
@@ -425,8 +430,8 @@ class WalletBalanceAPI:
                 monitoring_addresses = cache_data.get('monitoring_addresses', [])
                 cached_balances = cache_data.get('address_balances', {})
                 
-                # Only do optimized monitoring if NOT in startup mode with fresh addresses
-                if not (startup_mode and fresh_addresses_found) and monitoring_addresses:
+                # Only do optimized monitoring if NO fresh addresses found (regardless of startup_mode)
+                if not fresh_addresses_found and monitoring_addresses:
                     cache_age_hours = (current_time - cache_data['last_full_scan']) / 3600
                     print(f"👁️ [OPTIMIZED] Monitoring {xpub[:20]}... (cache age: {cache_age_hours:.1f}h)")
                     print(f"   💾 Monitoring {len(monitoring_addresses)} critical addresses (cached full scan has {cache_data.get('funded_address_count', 0)} funded addresses)")

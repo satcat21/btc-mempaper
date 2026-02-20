@@ -3393,6 +3393,34 @@ class MempaperApp:
                 traceback.print_exc()
                 return jsonify({'success': False, 'message': str(e)}), 500
         
+        @self.app.route('/api/bitaxe/<ip>/best-diff', methods=['GET'])
+        @require_auth(self.auth_manager)
+        def get_bitaxe_best_diff(ip):
+            """Get the best difficulty for a specific Bitaxe miner."""
+            try:
+                if not ip:
+                    return jsonify({'success': False, 'message': 'No IP provided'}), 400
+
+                from lib.bitaxe_api import BitaxeAPI
+                bitaxe_api = getattr(self.image_renderer, 'bitaxe_api', None) or BitaxeAPI()
+                miner_info = bitaxe_api.get_miner_info(ip)
+
+                best_diff = miner_info.get('best_diff', 0)
+                online = miner_info.get('online', False)
+
+                return jsonify({
+                    'success': True,
+                    'ip': ip,
+                    'best_diff': best_diff,
+                    'online': online
+                })
+
+            except Exception as e:
+                print(f"Error in get_bitaxe_best_diff: {e}")
+                import traceback
+                traceback.print_exc()
+                return jsonify({'success': False, 'message': str(e)}), 500
+
         # WebSocket event handlers (only if SocketIO is enabled)
         if self.socketio:
             @self.socketio.on('connect')
