@@ -60,6 +60,7 @@ current_eink.png
 
 # User uploaded content
 static/memes/*
+static/opsec/*
 
 # generated images
 current_processed.png

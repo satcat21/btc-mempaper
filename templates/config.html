@@ -75,6 +75,70 @@
         </div>
     </div>
 
+    <!-- OPSec Delete Confirmation Modal -->
+    <div id="opsec-delete-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <h3>{{ translations.opsec_delete_confirmation_title }}</h3>
+            <p>{{ translations.opsec_delete_confirmation_message }}</p>
+            <div class="modal-buttons">
+                <button id="opsec-confirm-delete" class="icon-button confirm">
+                    <img src="{{ url_for('static', filename='icons/check.svg') }}" alt="Confirm">
+                </button>
+                <button id="opsec-cancel-delete" class="icon-button cancel">
+                    <img src="{{ url_for('static', filename='icons/cancel.svg') }}" alt="Cancel">
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- OPSec Image Inspection Modal -->
+    <div id="opsec-modal" class="modal" style="display: none;">
+        <div class="modal-content meme-modal-content">
+            <div class="modal-header">
+                <h3 id="opsec-modal-title">OPSec Image Preview</h3>
+                <button class="modal-close" onclick="closeOpsecModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="meme-preview-container">
+                    <img id="opsec-modal-image" src="" alt="OPSec Image Preview" />
+                </div>
+                <div class="meme-info">
+                    <div class="meme-info-row" style="align-items: center;">
+                        <strong>{{ translations.filename }}</strong>
+                        <span id="opsec-modal-filename-display" style="display: inline;"></span>
+                        <input type="text" id="opsec-modal-filename-input" class="form-input" style="display: none; flex: 1; margin: 0 10px; padding: 4px 8px;">
+                        <button id="opsec-modal-edit-btn" class="icon-button" onclick="startRenameInOpsecModal()" title="{{ translations.rename_opsec }}" style="padding: 4px 8px; margin-left: 8px;">
+                            <img src="/static/icons/edit.svg" alt="Edit" style="width: 16px; height: 16px;" />
+                        </button>
+                        <button id="opsec-modal-save-btn" class="icon-button" onclick="saveRenameInOpsecModal()" title="{{ translations.save }}" style="display: none; padding: 4px 8px; margin-left: 8px; background: #667eea;">
+                            <img src="/static/icons/save.svg" alt="Save" style="width: 16px; height: 16px; filter: brightness(0) invert(1);" />
+                        </button>
+                        <button id="opsec-modal-cancel-rename-btn" class="icon-button cancel" onclick="cancelRenameInOpsecModal()" title="{{ translations.cancel }}" style="display: none; padding: 4px 8px; margin-left: 4px;">
+                            <img src="/static/icons/cancel.svg" alt="Cancel" style="width: 16px; height: 16px;" />
+                        </button>
+                    </div>
+                    <div class="meme-info-row">
+                        <strong>{{ translations.dimensions }}</strong> <span id="opsec-modal-dimensions">{{ translations.loading }}</span>
+                    </div>
+                    <div class="meme-info-row">
+                        <strong>{{ translations.file_size }}</strong> <span id="opsec-modal-filesize">{{ translations.loading }}</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="icon-button" onclick="downloadOpsecFromModal()" title="{{ translations.download_meme }}">
+                    <img src="/static/icons/download.svg" alt="Download" />
+                </button>
+                <button class="icon-button delete" onclick="deleteOpsecFromModal()" title="{{ translations.delete_meme }}">
+                    <img src="/static/icons/delete.svg" alt="Delete" />
+                </button>
+                <button class="icon-button cancel" onclick="closeOpsecModal()" title="{{ translations.cancel }}">
+                    <img src="/static/icons/cancel.svg" alt="Cancel" />
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Meme Inspection Modal -->
     <div id="meme-modal" class="modal" style="display: none;">
         <div class="modal-content meme-modal-content">

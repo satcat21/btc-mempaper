@@ -40,5 +40,7 @@
 
   "show_wallet_balances_block": false,
   "wallet_balance_unit": "btc",
-  "wallet_balance_currency": "EUR"
+  "wallet_balance_currency": "EUR",
+
+  "opsec_mode_enabled": false
 }

@@ -23,7 +23,7 @@ import sys
 import random
 import subprocess
 from datetime import datetime
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 from babel.dates import format_date
 
 from lib.btc_holidays import btc_holidays
@@ -256,6 +256,8 @@ class ImageRenderer:
         self._apply_orientation_settings(self.orientation)
         
         self.meme_dir = os.path.join("static", "memes")
+        self.opsec_dir = os.path.join("static", "opsec")
+
         self.font_regular = os.path.join("static", "fonts", "Roboto-Regular.ttf")
         self.font_bold = os.path.join("static", "fonts", "Roboto-Bold.ttf")
         self.font_mono = os.path.join("static", "fonts", "IBMPlexMono-Bold.ttf")
@@ -864,6 +866,96 @@ class ImageRenderer:
             print(f"Error selecting meme: {e}")
             return None
     
+    def pick_random_opsec_image(self):
+        """
+        Select a random OPSec image from the opsec directory.
+
+        Returns:
+            str or None: Path to selected OPSec image or None if none found
+        """
+        try:
+            if not os.path.exists(self.opsec_dir):
+                return None
+            images = [f for f in os.listdir(self.opsec_dir)
+                      if f.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp'))]
+            if not images:
+                print("No OPSec images found in directory")
+                return None
+            selected = random.choice(images)
+            return os.path.join(self.opsec_dir, selected)
+        except Exception as e:
+            print(f"Error selecting OPSec image: {e}")
+            return None
+
+    def get_opsec_image_for_eink(self):
+        """
+        Get a randomly selected OPSec image for e-ink display.
+        A new random image is picked on every block update.
+
+        Returns:
+            str or None: Path to a randomly selected OPSec image
+        """
+        image = self.pick_random_opsec_image()
+        if image:
+            print(f"OPSec: selected image: {os.path.basename(image)}")
+        return image
+
+    def _cover_crop(self, img, target_width, target_height):
+        """
+        Scale and center-crop an image to exactly cover the target dimensions
+        without changing the original aspect ratio (CSS object-fit: cover behaviour).
+
+        The image is scaled up/down uniformly so that both target dimensions are
+        fully covered, then the excess is cropped symmetrically from the edges.
+
+        Args:
+            img (PIL.Image): Source image (must already be in RGB mode)
+            target_width (int): Desired output width in pixels
+            target_height (int): Desired output height in pixels
+
+        Returns:
+            PIL.Image: Cropped/scaled image of exactly (target_width × target_height)
+        """
+        img_w, img_h = img.size
+        scale = max(target_width / img_w, target_height / img_h)
+        scaled_w = int(img_w * scale)
+        scaled_h = int(img_h * scale)
+        img = img.resize((scaled_w, scaled_h), Image.LANCZOS)
+        left = (scaled_w - target_width) // 2
+        top = (scaled_h - target_height) // 2
+        return img.crop((left, top, left + target_width, top + target_height))
+
+    def render_opsec_eink_image(self):
+        """
+        Render OPSec image for e-ink display.
+
+        The image is scaled to *cover* the full display area (maintaining the
+        original aspect ratio) and center-cropped so no empty borders remain.
+        self.width / self.height already reflect the active e-ink orientation
+        (set by _apply_orientation_settings before this method is called), so
+        portrait vs. landscape is handled automatically.
+
+        Falls back to a plain white image when no OPSec images are available.
+
+        Returns:
+            PIL.Image: E-ink optimized image
+        """
+        opsec_path = self.get_opsec_image_for_eink()
+
+        if opsec_path and os.path.exists(opsec_path):
+            try:
+                opsec_img = ImageOps.exif_transpose(Image.open(opsec_path)).convert('RGB')
+                opsec_img = self._cover_crop(opsec_img, self.width, self.height)
+                print(f"🔒 OPSec: rendering {os.path.basename(opsec_path)} "
+                      f"({opsec_img.width}×{opsec_img.height}) on e-ink display")
+                return self.convert_to_7color(opsec_img, use_meme_optimization=True)
+            except Exception as e:
+                print(f"⚠️ OPSec: failed to load image {opsec_path}: {e}")
+
+        # Fallback: plain white background
+        print("⚠️ OPSec: no images available, rendering blank fallback")
+        return Image.new('RGB', (self.width, self.height), color='white')
+
     def _wrap_text_at_chars(self, text, max_chars=50):
         """Wrap text to multiple lines, breaking at word boundaries.
         
@@ -1303,14 +1395,18 @@ class ImageRenderer:
         if self.e_ink_enabled:
             # Apply e-ink orientation settings
             self._apply_orientation_settings(self.eink_orientation)
-            eink_img = self._render_image_with_shared_data(
-                block_height, block_hash, mempool_api,
-                shared_data, web_quality=False, startup_mode=startup_mode
-            )
-        
+            if self.config.get("opsec_mode_enabled", False):
+                # OPSec mode: show a random family/cover photo instead of BTC data
+                eink_img = self.render_opsec_eink_image()
+            else:
+                eink_img = self._render_image_with_shared_data(
+                    block_height, block_hash, mempool_api,
+                    shared_data, web_quality=False, startup_mode=startup_mode
+                )
+
         # Restore default/web orientation state (optional, but good practice)
         self._apply_orientation_settings(self.web_orientation)
-        
+
         print(f"✅ Image generated for block {block_height}")
         return web_img, eink_img, content_path, displayed_blocks  # Return images, content path, and displayed block types
     
@@ -1408,14 +1504,18 @@ class ImageRenderer:
         
         # === GENERATE E-INK IMAGE ===
         self._apply_orientation_settings(self.eink_orientation)
-        eink_img = self._render_image_with_shared_data(
-            block_height, block_hash, mempool_api,
-            shared_data, web_quality=False
-        )
-        
+        if self.config.get("opsec_mode_enabled", False):
+            # OPSec mode: show a random family/cover photo instead of BTC data
+            eink_img = self.render_opsec_eink_image()
+        else:
+            eink_img = self._render_image_with_shared_data(
+                block_height, block_hash, mempool_api,
+                shared_data, web_quality=False
+            )
+
         # Restore default
         self._apply_orientation_settings(self.web_orientation)
-        
+
         return web_img, eink_img, meme_path
     
     def _render_image_with_shared_data(self, block_height, block_hash, mempool_api,

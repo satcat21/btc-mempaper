@@ -268,8 +268,10 @@ class MempaperApp:
         self._setup_instant_startup()
 
         # Register callbacks for configuration changes (done after all components are initialized)
-        self.config_manager.add_change_callback(self._on_config_file_changed)
+        # _on_config_change must run BEFORE _on_config_file_changed so it can compare against
+        # self.config (old value) before _on_config_file_changed overwrites it with the new config.
         self.config_manager.add_change_callback(self._on_config_change)
+        self.config_manager.add_change_callback(self._on_config_file_changed)
         # On Windows, force config reload and callback notification after registering callbacks
         if os.name == 'nt':
             self.config_manager._reload_config_from_file()
@@ -1641,67 +1643,76 @@ class MempaperApp:
         """
         print("🔧 Configuration change detected, checking if image refresh needed...")
         
-        # Define settings that affect image rendering and require immediate refresh
+        # Define settings that affect image rendering and require full regeneration
         image_affecting_settings = {
             # Hardware settings
             'web_orientation', 'eink_orientation', 'display_width', 'display_height', 'e-ink-display-connected',
             'omni_device_name', 'block_height_area',
-            
+
             # Design settings (colors, fonts)
             'font_regular', 'font_bold', 'color_mode_dark',
-            
+
             # Price/time display settings
             'moscow_time_unit',
-            
+
             # Holiday settings
             'hide_holiday_if_large_meme',
-            
+
             # General settings that affect display
             'language',
-            
+
             # Mempool fee settings
-            'fee_parameter'
+            'fee_parameter',
         }
-        
+
         # Compare old and new config for image-affecting changes
         old_config = self.config
         config_changed = False
         changed_settings = []
-        
+        opsec_toggled = old_config.get('opsec_mode_enabled') != new_config.get('opsec_mode_enabled')
+
         for setting in image_affecting_settings:
             old_value = old_config.get(setting)
             new_value = new_config.get(setting)
             if old_value != new_value:
                 config_changed = True
                 changed_settings.append(f"{setting}: {old_value} → {new_value}")
-        
+
         if config_changed:
             print(f"⚙️ Image-affecting settings changed: {', '.join(changed_settings)}")
             print("⚙️ Triggering immediate image refresh with cached meme...")
-            
+
             # Update config references
             self.config = new_config
-            
+
             # Update translations if language changed
             if 'language' in [s.split(':')[0] for s in changed_settings]:
                 lang = new_config.get("language", "en")
                 self.translations = translations.get(lang, translations["en"])
                 print(f"🌐 Updated translations to language: {lang}")
-            
+
             # Recreate image renderer with new config
             self.image_renderer = ImageRenderer(self.config, self.translations)
-            
+
             # Check if we have a current image and cached meme to regenerate with
-            if (self.image_is_current and 
-                self.current_block_height and 
-                self.current_block_hash and 
-                hasattr(self, 'current_meme_path') and 
+            if (self.image_is_current and
+                self.current_block_height and
+                self.current_block_hash and
+                hasattr(self, 'current_meme_path') and
                 self.current_meme_path):
-                
+
                 # Generate new images with cached meme
                 self._regenerate_image_with_cached_meme()
             else:
                 print("💾 No cached image state available, will regenerate on next update")
+        elif opsec_toggled:
+            # OPSec mode changed but nothing else — fast path: only update e-ink display,
+            # web image stays unchanged (data hasn't changed, no block update).
+            opsec_enabled = new_config.get('opsec_mode_enabled', False)
+            print(f"🔒 OPSec mode {'enabled' if opsec_enabled else 'disabled'} — refreshing e-ink only...")
+            self.config = new_config
+            self.image_renderer = ImageRenderer(self.config, self.translations)
+            self._refresh_eink_for_opsec_toggle(opsec_enabled)
         else:
             # Update config reference even if no image refresh needed
             self.config = new_config
@@ -1829,7 +1840,67 @@ class MempaperApp:
             print(f"❌ Error regenerating image with cached meme: {e}")
             # Fall back to normal generation
             self._generate_new_image(self.current_block_height, self.current_block_hash, skip_epaper=False, use_new_meme=False)
-    
+
+    def _refresh_eink_for_opsec_toggle(self, opsec_enabled):
+        """
+        Fast e-ink-only refresh when opsec mode is toggled.
+        - Enabled:  renders the opsec cover image and pushes it to the display.
+        - Disabled: converts the existing web image to 7-color e-ink format and
+                    pushes it — no API calls, no web image regeneration.
+        """
+        if not self.e_ink_enabled:
+            print("🖥️ E-ink not connected — skipping opsec display refresh")
+            return
+
+        try:
+            from PIL import Image
+
+            if opsec_enabled:
+                # Render a fresh opsec cover image
+                eink_img = self.image_renderer.render_opsec_eink_image()
+                if eink_img is None:
+                    print("⚠️ No opsec image available — falling back to full regeneration")
+                    if self.image_is_current and self.current_block_height and self.current_block_hash:
+                        self._regenerate_image_with_cached_meme()
+                    return
+                print("🔒 OPSec e-ink image rendered")
+            else:
+                # Convert the existing web image to e-ink format — no data fetch needed
+                if not (hasattr(self, 'current_image_path') and
+                        self.current_image_path and
+                        os.path.exists(self.current_image_path)):
+                    print("⚠️ No cached web image found — falling back to full regeneration")
+                    if self.image_is_current and self.current_block_height and self.current_block_hash:
+                        self._regenerate_image_with_cached_meme()
+                    return
+
+                web_img = Image.open(self.current_image_path).convert('RGB')
+                self.image_renderer._apply_orientation_settings(self.image_renderer.eink_orientation)
+                eink_img = self.image_renderer.convert_to_7color(web_img)
+                self.image_renderer._apply_orientation_settings(self.image_renderer.web_orientation)
+                print("🔓 Converted existing web image to e-ink format")
+
+            # Save the new e-ink image
+            eink_img.save(self.current_eink_image_path)
+            print(f"💾 E-ink image saved to {self.current_eink_image_path}")
+
+            # Display on e-Paper in background thread
+            threading.Thread(
+                target=self._display_on_epaper_async,
+                args=(self.current_eink_image_path, self.current_block_height, self.current_block_hash),
+                daemon=True
+            ).start()
+
+            # Notify web clients so the UI can reflect the opsec state change
+            self.socketio.emit('image_updated', {
+                'message': 'E-ink display refreshed for opsec mode change',
+                'block_height': self.current_block_height,
+                'timestamp': time.time()
+            })
+
+        except Exception as e:
+            print(f"❌ Error in opsec e-ink refresh: {e}")
+
     def async_wallet_refresh(self, block_height, block_hash, startup_mode=False):
         """Fetch fresh wallet data and regenerate image if balance changed."""
         print(f"🚀 [WALLET] Starting wallet refresh for block {block_height}...")
@@ -2865,7 +2936,7 @@ class MempaperApp:
         def get_config():
             """Get current configuration including secure wallet addresses."""
             try:
-                print("📋 [DEBUG] Config API called - checking for wallet addresses...")
+                #print("📋 [DEBUG] Config API called - checking for wallet addresses...")
                 
                 # Get current language and translations
                 lang = self.config.get("language", "en")
@@ -2877,18 +2948,18 @@ class MempaperApp:
                 # Add wallet addresses from secure configuration if available
                 if hasattr(self.image_renderer, 'wallet_api') and self.image_renderer.wallet_api.secure_config_manager:
                     secure_config = self.image_renderer.wallet_api.secure_config_manager.load_secure_config()
-                    print(f"📋 [DEBUG] Secure config loaded: {secure_config is not None}")
+                    #print(f"📋 [DEBUG] Secure config loaded: {secure_config is not None}")
                     # if secure_config:
                     #     print(f"📋 [DEBUG] Secure config keys: {list(secure_config.keys())}")
                     if secure_config and 'wallet_balance_addresses_with_comments' in secure_config:
                         wallet_addresses = secure_config['wallet_balance_addresses_with_comments']
                         config_data['wallet_balance_addresses_with_comments'] = wallet_addresses
-                        print(f"📋 [DEBUG] Added {len(wallet_addresses)} wallet addresses to config response")
+                        #print(f"📋 [DEBUG] Added {len(wallet_addresses)} wallet addresses to config response")
                         
                         # ENHANCEMENT: Include cached balances in the configuration
                         try:
                             if hasattr(self.image_renderer, 'wallet_api') and self.image_renderer.wallet_api:
-                                print("📋 [DEBUG] Attempting to include cached balances in config...")
+                                #print("📋 [DEBUG] Attempting to include cached balances in config...")
                                 cached_data = self.image_renderer.wallet_api.get_cached_wallet_balances()
                                 # print(f"📋 [DEBUG] Cached wallet data: {cached_data}")
                                 
@@ -2914,23 +2985,23 @@ class MempaperApp:
                                             address = addr_entry['address']
                                             if address in address_balances:
                                                 addr_entry['cached_balance'] = address_balances[address]
-                                                print(f"📋 [DEBUG] Added balance {address_balances[address]} for {address[:10]}...")
+                                                #print(f"📋 [DEBUG] Added balance {address_balances[address]} for {address[:10]}...")
                                             else:
                                                 addr_entry['cached_balance'] = 0.0
-                                                print(f"📋 [DEBUG] No balance found for {address[:10]}...")
+                                                #print(f"📋 [DEBUG] No balance found for {address[:10]}...")
                                     
                                     config_data['wallet_balance_addresses_with_comments'] = wallet_addresses
                                     config_data['wallet_total_balance'] = cached_data.get('total_btc', 0.0)
-                                    print(f"📋 [DEBUG] Enhanced config with cached balances, total: {cached_data.get('total_btc', 0.0)}")
+                                    ##print(f"📋 [DEBUG] Enhanced config with cached balances, total: {cached_data.get('total_btc', 0.0)}")
                                     
                         except Exception as balance_error:
                             print(f"📋 [DEBUG] Error adding cached balances to config: {balance_error}")
                             # Continue without cached balances if there's an error
                         
-                        for i, addr in enumerate(wallet_addresses):
-                            address_display = addr.get('address', 'N/A')[:10] + '...' if addr.get('address') else 'N/A'
-                            balance_display = addr.get('cached_balance', 'N/A')
-                            print(f"📋 [DEBUG] Address {i}: {address_display} ({addr.get('comment', 'No comment')}) - Balance: {balance_display}")
+                        # for i, addr in enumerate(wallet_addresses):
+                        #     address_display = addr.get('address', 'N/A')[:10] + '...' if addr.get('address') else 'N/A'
+                        #     balance_display = addr.get('cached_balance', 'N/A')
+                        #     print(f"📋 [DEBUG] Address {i}: {address_display} ({addr.get('comment', 'No comment')}) - Balance: {balance_display}")
                     else:
                         print("📋 [DEBUG] No wallet_balance_addresses_with_comments found in secure config")
                 else:
@@ -2975,20 +3046,27 @@ class MempaperApp:
                 
                 new_config = request.json
                 if self.config_manager.save_config(new_config):
-                    # Update local config reference
+                    # Get validated new config from manager
+                    validated_new_config = self.config_manager.get_current_config()
+
+                    # Trigger image-affecting change detection BEFORE updating self.config,
+                    # so _on_config_change can compare old vs new correctly (opsec mode, etc.)
+                    self._on_config_change(validated_new_config)
+
+                    # Update local config reference (may already be set by _on_config_change)
                     self.config = self.config_manager.get_current_config()
-                    
+
                     # Update auth manager config
                     self.auth_manager.config = self.config
-                    
+
                     # Clean up cache for removed wallet addresses before reinitializing
                     if old_config:
                         self._cleanup_removed_wallet_caches(old_config, new_config)
-                    
+
                     # Reinitialize components if needed
                     self._reinitialize_after_config_change(old_config)
-                    
-                    return jsonify({'success': True, 'message': 'Configuration 2 saved successfully'})
+
+                    return jsonify({'success': True, 'message': 'Configuration saved successfully'})
                 else:
                     return jsonify({'success': False, 'message': 'Failed to save configuration'}), 500
             except Exception as e:
@@ -3210,6 +3288,186 @@ class MempaperApp:
             except Exception as e:
                 return jsonify({'success': False, 'message': str(e)}), 500
         
+        @self.app.route('/api/upload-opsec', methods=['POST'])
+        @require_auth(self.auth_manager)
+        def upload_opsec():
+            """Handle OPSec image uploads."""
+            try:
+                if 'file' not in request.files:
+                    return jsonify({'success': False, 'message': 'No file provided'}), 400
+
+                file = request.files['file']
+                if file.filename == '':
+                    return jsonify({'success': False, 'message': 'No file selected'}), 400
+
+                allowed_extensions = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+                file_ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else ''
+
+                if file_ext not in allowed_extensions:
+                    return jsonify({
+                        'success': False,
+                        'message': f'Invalid file type. Allowed: {", ".join(allowed_extensions)}'
+                    }), 400
+
+                filename = secure_filename(file.filename)
+                upload_path = os.path.join('static', 'opsec', filename)
+                os.makedirs(os.path.dirname(upload_path), exist_ok=True)
+                file.save(upload_path)
+
+                return jsonify({
+                    'success': True,
+                    'message': f'OPSec image uploaded successfully: {filename}',
+                    'filename': filename
+                })
+
+            except Exception as e:
+                return jsonify({'success': False, 'message': str(e)}), 500
+
+        @self.app.route('/api/opsec-images', methods=['GET'])
+        @require_auth(self.auth_manager)
+        def list_opsec_images():
+            """List all uploaded OPSec images with pagination support."""
+            try:
+                page = request.args.get('page', 1, type=int)
+                per_page = request.args.get('per_page', 50, type=int)
+
+                opsec_dir = os.path.join('static', 'opsec')
+                if not os.path.exists(opsec_dir):
+                    return jsonify({'images': [], 'total': 0, 'page': page, 'per_page': per_page, 'has_next': False, 'has_prev': False})
+
+                all_filenames = sorted([
+                    f for f in os.listdir(opsec_dir)
+                    if f.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp'))
+                ])
+
+                total_files = len(all_filenames)
+                start_idx = (page - 1) * per_page
+                end_idx = start_idx + per_page
+                page_filenames = all_filenames[start_idx:end_idx]
+
+                images = []
+                for filename in page_filenames:
+                    file_path = os.path.join(opsec_dir, filename)
+                    try:
+                        file_size = os.path.getsize(file_path)
+                    except Exception:
+                        file_size = 0
+                    images.append({'filename': filename, 'size': file_size, 'url': f'/static/opsec/{filename}'})
+
+                return jsonify({
+                    'images': images,
+                    'total': total_files,
+                    'page': page,
+                    'per_page': per_page,
+                    'has_next': end_idx < total_files,
+                    'has_prev': page > 1,
+                })
+
+            except Exception as e:
+                return jsonify({'success': False, 'message': str(e)}), 500
+
+        @self.app.route('/api/delete-opsec/<filename>', methods=['DELETE'])
+        @require_auth(self.auth_manager)
+        def delete_opsec(filename):
+            """Delete a specific OPSec image."""
+            try:
+                filename = secure_filename(filename)
+                file_path = os.path.join('static', 'opsec', filename)
+
+                if not os.path.exists(file_path):
+                    return jsonify({'success': False, 'message': 'File not found'}), 404
+
+                os.remove(file_path)
+                return jsonify({'success': True, 'message': f'OPSec image deleted: {filename}'})
+
+            except Exception as e:
+                return jsonify({'success': False, 'message': str(e)}), 500
+
+        @self.app.route('/api/opsec-hashes', methods=['GET'])
+        @require_auth(self.auth_manager)
+        def get_opsec_hashes():
+            """Get SHA-256 hashes of all existing OPSec images for duplicate detection."""
+            try:
+                import hashlib
+
+                opsec_dir = os.path.join('static', 'opsec')
+                if not os.path.exists(opsec_dir):
+                    return jsonify({'hashes': {}})
+
+                hashes = {}
+                for filename in os.listdir(opsec_dir):
+                    if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp')):
+                        file_path = os.path.join(opsec_dir, filename)
+                        try:
+                            sha256_hash = hashlib.sha256()
+                            with open(file_path, "rb") as f:
+                                for byte_block in iter(lambda: f.read(4096), b""):
+                                    sha256_hash.update(byte_block)
+                            hashes[sha256_hash.hexdigest()] = filename
+                        except Exception as e:
+                            print(f"Error hashing OPSec image {filename}: {e}")
+                            continue
+
+                return jsonify({'hashes': hashes})
+
+            except Exception as e:
+                return jsonify({'success': False, 'message': str(e)}), 500
+
+        @self.app.route('/api/download-opsec/<filename>', methods=['GET'])
+        @require_auth(self.auth_manager)
+        def download_opsec(filename):
+            """Download a specific OPSec image file."""
+            try:
+                from flask import send_file
+                filename = secure_filename(filename)
+                file_path = os.path.join('static', 'opsec', filename)
+
+                if not os.path.exists(file_path):
+                    return jsonify({'success': False, 'message': 'File not found'}), 404
+
+                return send_file(os.path.abspath(file_path), as_attachment=True, download_name=filename)
+
+            except Exception as e:
+                return jsonify({'success': False, 'message': str(e)}), 500
+
+        @self.app.route('/api/rename-opsec', methods=['POST'])
+        @require_auth(self.auth_manager)
+        def rename_opsec():
+            """Rename an OPSec image file."""
+            try:
+                data = request.get_json()
+                if not data:
+                    return jsonify({'success': False, 'message': 'No data provided'}), 400
+
+                old_filename = secure_filename(data.get('old_filename', ''))
+                new_filename = secure_filename(data.get('new_filename', ''))
+
+                if not old_filename or not new_filename:
+                    return jsonify({'success': False, 'message': 'Invalid filenames'}), 400
+
+                old_path = os.path.join('static', 'opsec', old_filename)
+                new_path = os.path.join('static', 'opsec', new_filename)
+
+                if not os.path.exists(old_path):
+                    return jsonify({'success': False, 'message': 'File not found'}), 404
+
+                if os.path.exists(new_path):
+                    return jsonify({'success': False, 'message': 'A file with that name already exists'}), 409
+
+                if old_filename == new_filename:
+                    return jsonify({'success': False, 'message': 'New name is the same as old name'}), 400
+
+                os.rename(old_path, new_path)
+                return jsonify({
+                    'success': True,
+                    'message': f'OPSec image renamed: {old_filename} → {new_filename}',
+                    'old_filename': old_filename,
+                    'new_filename': new_filename
+                })
+
+            except Exception as e:
+                return jsonify({'success': False, 'message': str(e)}), 500
+
         @self.app.route('/api/wallet_balance', methods=['POST'])
         @require_auth(self.auth_manager)
         def refresh_wallet_balances():

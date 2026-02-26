@@ -123,6 +123,7 @@ Here are the components needed to build your own Mempaper display:
 - **Miner Integration**: Monitor Bitaxe miner stats and aggregate hashrate.
 - **Wallet Monitoring**: Track balances and block rewards (XPUB support included).
 - **Security**: Argon2id password hashing, rate limiting, and encrypted configuration.
+- **OPSec Mode**: One-click toggle to show a random cover image (e.g. family photo) on the e-ink display instead of Bitcoin data — web dashboard stays unaffected.
 
 ---
 
@@ -343,7 +344,8 @@ btc-mempaper/
 │   ├── cache/                 # Runtime cache storage
 │   │   └── *.secure.json      # Encrypted cache files
 │   ├── static/                # Web assets (CSS, JS, images)
-│   │   └── memes/             # Bitcoin meme collection
+│   │   ├── memes/             # Bitcoin meme collection
+│   │   └── opsec/             # OPSec cover images (shown on e-ink in OPSec mode)
 │   └── templates/             # HTML templates for web interface
 │
 ├── 📖 Documentation

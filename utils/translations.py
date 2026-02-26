@@ -30,7 +30,8 @@ translations = {
         "security": "Security",
         "advanced": "Advanced",
         "meme_management": "Meme Management",
-        
+        "opsec_settings": "OPSec",
+
         # Display Settings
         "language": "Language",
         "language_desc": "Interface language for the dashboard",
@@ -301,6 +302,24 @@ translations = {
         "upload_success_notification": "Successfully uploaded {count} file(s)",
         "upload_fail_notification": "Failed to upload {count} file(s)",
         "upload_duplicates_skipped_notification": "{count} duplicate file(s) skipped",
+        "upload_images_only": "Please select image files only",
+
+        # OPSec Settings
+        "opsec_mode_enabled": "OPSec Mode",
+        "opsec_mode_enabled_desc": "When enabled, the e-ink display shows a random cover image (family photo) instead of Bitcoin data. The web dashboard remains unaffected. A new random image is shown on every new block.",
+        "opsec_management": "OPSec Images",
+        "no_opsec_images": "No OPSec images uploaded yet",
+        "opsec_image_deleted": "OPSec image deleted",
+        "opsec_image_deleted_successfully": "OPSec image deleted successfully!",
+        "opsec_image_delete_failed": "Failed to delete OPSec image",
+        "opsec_image_renamed_successfully": "OPSec image renamed successfully",
+        "opsec_image_rename_failed": "Failed to rename OPSec image",
+        "opsec_image_preview": "OPSec Image Preview",
+        "rename_opsec": "Rename OPSec Image",
+        "opsec_delete_confirmation_title": "Delete OPSec Image",
+        "opsec_delete_confirmation_message": "Are you sure you want to permanently delete this OPSec image? This action cannot be undone.",
+        "upload_opsec_image": "Upload OPSec Cover Image",
+        "current_opsec_images": "Current OPSec Images",
     },
     "de": {
         # Dashboard UI
@@ -333,7 +352,8 @@ translations = {
         "security": "Sicherheit",
         "advanced": "Erweitert",
         "meme_management": "Meme-Verwaltung",
-        
+        "opsec_settings": "OPSec",
+
         # Display Settings
         "language": "Sprache",
         "language_desc": "Sprache der Benutzeroberfläche",
@@ -604,6 +624,24 @@ translations = {
         "upload_success_notification": "{count} Datei(en) erfolgreich hochgeladen",
         "upload_fail_notification": "{count} Datei(en) hochladen fehlgeschlagen",
         "upload_duplicates_skipped_notification": "{count} doppelte Datei(en) übersprungen",
+        "upload_images_only": "Bitte nur Bilddateien auswählen",
+
+        # OPSec-Einstellungen
+        "opsec_mode_enabled": "OPSec-Modus",
+        "opsec_mode_enabled_desc": "Wenn aktiviert, zeigt das E-Ink-Display ein zufälliges Deckbild (Familienfoto) anstatt Bitcoin-Daten. Das Web-Dashboard ist nicht betroffen. Bei jedem neuen Block wird ein neues zufälliges Bild angezeigt.",
+        "opsec_management": "OPSec-Bilder",
+        "no_opsec_images": "Noch keine OPSec-Bilder hochgeladen",
+        "opsec_image_deleted": "OPSec-Bild gelöscht",
+        "opsec_image_deleted_successfully": "OPSec-Bild erfolgreich gelöscht!",
+        "opsec_image_delete_failed": "Fehler beim Löschen des OPSec-Bildes",
+        "opsec_image_renamed_successfully": "OPSec-Bild erfolgreich umbenannt",
+        "opsec_image_rename_failed": "Fehler beim Umbenennen des OPSec-Bildes",
+        "opsec_image_preview": "OPSec-Bildvorschau",
+        "rename_opsec": "OPSec-Bild umbenennen",
+        "opsec_delete_confirmation_title": "OPSec-Bild löschen",
+        "opsec_delete_confirmation_message": "Sind Sie sicher, dass Sie dieses OPSec-Bild dauerhaft löschen möchten? Diese Aktion kann nicht rückgängig gemacht werden.",
+        "upload_opsec_image": "OPSec-Deckbild hochladen",
+        "current_opsec_images": "Aktuelle OPSec-Bilder",
     },
     "es": {
         # Dashboard UI
@@ -636,7 +674,8 @@ translations = {
         "security": "Seguridad",
         "advanced": "Avanzado",
         "meme_management": "Gestión de Memes",
-        
+        "opsec_settings": "OPSec",
+
         # Display Settings
         "language": "Idioma",
         "language_desc": "Idioma de la interfaz del panel",
@@ -892,6 +931,24 @@ translations = {
         "upload_success_notification": "{count} archivo(s) subido(s) exitosamente",
         "upload_fail_notification": "Error al subir {count} archivo(s)",
         "upload_duplicates_skipped_notification": "{count} archivo(s) duplicado(s) omitido(s)",
+        "upload_images_only": "Por favor, seleccione solo archivos de imagen",
+
+        # Configuración OPSec
+        "opsec_mode_enabled": "Modo OPSec",
+        "opsec_mode_enabled_desc": "Cuando está habilitado, la pantalla e-ink muestra una imagen de portada aleatoria (foto familiar) en lugar de datos de Bitcoin. El panel web no se ve afectado. Se muestra una nueva imagen aleatoria en cada nuevo bloque.",
+        "opsec_management": "Imágenes OPSec",
+        "no_opsec_images": "Aún no se han subido imágenes OPSec",
+        "opsec_image_deleted": "Imagen OPSec eliminada",
+        "opsec_image_deleted_successfully": "¡Imagen OPSec eliminada exitosamente!",
+        "opsec_image_delete_failed": "Error al eliminar la imagen OPSec",
+        "opsec_image_renamed_successfully": "Imagen OPSec renombrada exitosamente",
+        "opsec_image_rename_failed": "Error al renombrar la imagen OPSec",
+        "opsec_image_preview": "Vista previa de imagen OPSec",
+        "rename_opsec": "Renombrar imagen OPSec",
+        "opsec_delete_confirmation_title": "Eliminar imagen OPSec",
+        "opsec_delete_confirmation_message": "¿Está seguro de que desea eliminar permanentemente esta imagen OPSec? Esta acción no se puede deshacer.",
+        "upload_opsec_image": "Subir Imagen de Portada OPSec",
+        "current_opsec_images": "Imágenes OPSec Actuales",
     },
     "fr": {
         # Dashboard UI
@@ -924,7 +981,8 @@ translations = {
         "security": "Sécurité",
         "advanced": "Avancé",
         "meme_management": "Gestion des Mèmes",
-        
+        "opsec_settings": "OPSec",
+
         # Display Settings
         "language": "Langue",
         "language_desc": "Langue de l'interface du tableau de bord",
@@ -1181,6 +1239,24 @@ translations = {
         "upload_success_notification": "{count} fichier(s) téléversé(s) avec succès",
         "upload_fail_notification": "Échec du téléversement de {count} fichier(s)",
         "upload_duplicates_skipped_notification": "{count} fichier(s) doublon(s) ignoré(s)",
+        "upload_images_only": "Veuillez sélectionner uniquement des fichiers image",
+
+        # Paramètres OPSec
+        "opsec_mode_enabled": "Mode OPSec",
+        "opsec_mode_enabled_desc": "Lorsqu'activé, l'écran e-ink affiche une image de couverture aléatoire (photo de famille) au lieu des données Bitcoin. Le tableau de bord web n'est pas affecté. Une nouvelle image aléatoire est affichée à chaque nouveau bloc.",
+        "opsec_management": "Images OPSec",
+        "no_opsec_images": "Aucune image OPSec téléversée pour le moment",
+        "opsec_image_deleted": "Image OPSec supprimée",
+        "opsec_image_deleted_successfully": "Image OPSec supprimée avec succès !",
+        "opsec_image_delete_failed": "Échec de la suppression de l'image OPSec",
+        "opsec_image_renamed_successfully": "Image OPSec renommée avec succès",
+        "opsec_image_rename_failed": "Échec du renommage de l'image OPSec",
+        "opsec_image_preview": "Aperçu de l'image OPSec",
+        "rename_opsec": "Renommer l'image OPSec",
+        "opsec_delete_confirmation_title": "Supprimer l'image OPSec",
+        "opsec_delete_confirmation_message": "Êtes-vous sûr de vouloir supprimer définitivement cette image OPSec ? Cette action ne peut pas être annulée.",
+        "upload_opsec_image": "Téléverser une Image de Couverture OPSec",
+        "current_opsec_images": "Images OPSec Actuelles",
     },
     "it": {
         # Dashboard UI
@@ -1213,7 +1289,8 @@ translations = {
         "security": "Sicurezza",
         "advanced": "Avanzate",
         "meme_management": "Gestione Meme",
-        
+        "opsec_settings": "OPSec",
+
         # Display Settings
         "language": "Lingua",
         "language_desc": "Lingua dell'interfaccia della dashboard",
@@ -1457,5 +1534,23 @@ translations = {
         "upload_success_notification": "{count} file caricato/i con successo",
         "upload_fail_notification": "Caricamento di {count} file fallito",
         "upload_duplicates_skipped_notification": "{count} file duplicato/i saltato/i",
+        "upload_images_only": "Selezionare solo file immagine",
+
+        # Impostazioni OPSec
+        "opsec_mode_enabled": "Modalità OPSec",
+        "opsec_mode_enabled_desc": "Quando abilitato, il display e-ink mostra un'immagine di copertina casuale (foto di famiglia) invece dei dati Bitcoin. Il pannello web non è interessato. Una nuova immagine casuale viene mostrata ad ogni nuovo blocco.",
+        "opsec_management": "Immagini OPSec",
+        "no_opsec_images": "Nessuna immagine OPSec ancora caricata",
+        "opsec_image_deleted": "Immagine OPSec eliminata",
+        "opsec_image_deleted_successfully": "Immagine OPSec eliminata con successo!",
+        "opsec_image_delete_failed": "Impossibile eliminare l'immagine OPSec",
+        "opsec_image_renamed_successfully": "Immagine OPSec rinominata con successo",
+        "opsec_image_rename_failed": "Impossibile rinominare l'immagine OPSec",
+        "opsec_image_preview": "Anteprima immagine OPSec",
+        "rename_opsec": "Rinomina immagine OPSec",
+        "opsec_delete_confirmation_title": "Elimina immagine OPSec",
+        "opsec_delete_confirmation_message": "Sei sicuro di voler eliminare definitivamente questa immagine OPSec? Questa azione non può essere annullata.",
+        "upload_opsec_image": "Carica Immagine di Copertina OPSec",
+        "current_opsec_images": "Immagini OPSec Attuali",
     }
 }

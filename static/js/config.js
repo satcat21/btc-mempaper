@@ -1,3 +1,17 @@
+// Fix: Define closeOpsecModal globally for HTML onclick handlers
+function closeOpsecModal() {
+    const opsecModal = document.getElementById('opsec-modal');
+    if (opsecModal) {
+        opsecModal.style.display = 'none';
+        opsecModal.style.position = '';
+        opsecModal.style.top = '';
+        opsecModal.style.left = '';
+        opsecModal.style.transform = '';
+        opsecModal.style.margin = '';
+    }
+    window.currentModalOpsec = null;
+}
+
 // Fix: Define closeMemeModal globally for HTML onclick handlers
 function closeMemeModal() {
     const memeModal = document.getElementById('meme-modal');
@@ -560,6 +574,20 @@ async function calculateFileHash(file) {
         console.error('Failed to calculate file hash:', error);
         return null;
     }
+}
+
+// Get all existing OPSec image hashes from server
+async function getExistingOpsecHashes() {
+    try {
+        const response = await fetch('/api/opsec-hashes');
+        if (response.ok) {
+            const data = await response.json();
+            return data.hashes || {}; // Returns {hash: filename, ...}
+        }
+    } catch (error) {
+        console.warn('Failed to fetch existing OPSec hashes:', error);
+    }
+    return {};
 }
 
 // Get all existing meme hashes from server
@@ -1454,8 +1482,8 @@ function renderConfigurationForm() {
         const section = document.createElement('div');
         section.className = 'config-section';
         
-        // Add special class for meme management section
-        if (category.id === 'meme_management') {
+        // Add special class for meme/opsec management sections (spans 2 columns on desktop)
+        if (category.id === 'meme_management' || category.id === 'opsec') {
             section.classList.add('meme-management-section');
         }
         
@@ -1715,6 +1743,11 @@ function createFormField(key, field, value) {
         case 'meme_management':
             console.log(`Creating meme management interface for key ${key}`);
             input = createMemeManagementInterface(field);
+            break;
+
+        case 'opsec_management':
+            console.log(`Creating OPSec management interface for key ${key}`);
+            input = createOpsecManagementInterface(field);
             break;
             
         case 'hidden':
@@ -3248,6 +3281,397 @@ function createMemeManagementInterface(field) {
 
 
 
+// --- OPSec Image Management ---
+
+function createOpsecThumb(img) {
+    const thumb = document.createElement('div');
+    thumb.className = 'meme-thumbnail';
+    thumb.style.position = 'relative';
+
+    const imgEl = document.createElement('img');
+    imgEl.src = img.url;
+    imgEl.alt = img.filename;
+    imgEl.dataset.filename = img.filename;
+    imgEl.loading = 'lazy';
+    imgEl.style.cssText = 'width:100%; aspect-ratio:1; object-fit:cover; border-radius:8px; cursor:pointer;';
+    imgEl.title = img.filename;
+    imgEl.onclick = () => openOpsecModal(img.filename, img.url);
+
+    const nameEl = document.createElement('div');
+    nameEl.className = 'meme-filename';
+    nameEl.style.cssText = 'font-size:0.7rem; text-align:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding: 2px 4px;';
+    nameEl.textContent = img.filename;
+
+    const actionsEl = document.createElement('div');
+    actionsEl.className = 'meme-actions';
+    actionsEl.style.cssText = 'display:flex; justify-content:center; gap:4px; margin-top:4px;';
+    actionsEl.innerHTML = `
+        <button class="action-button" title="${window.translations?.download_meme || 'Download'}"
+                onclick="downloadOpsecImage('${img.filename}')">
+            <img src="/static/icons/download.svg" alt="Download" style="width:16px; height:16px; filter:brightness(0) invert(1);" />
+        </button>
+        <button class="action-button delete" title="${window.translations?.delete_meme || 'Delete'}"
+                onclick="showOpsecDeleteModal('${img.filename}')">
+            <img src="/static/icons/delete.svg" alt="Delete" style="width:16px; height:16px; filter:brightness(0) invert(1);" />
+        </button>
+    `;
+
+    thumb.appendChild(imgEl);
+    thumb.appendChild(nameEl);
+    thumb.appendChild(actionsEl);
+    return thumb;
+}
+
+function createOpsecLoadMoreBtn(data) {
+    const btn = document.createElement('button');
+    btn.className = 'load-more-btn';
+    btn.style.cssText = 'grid-column: 1/-1; padding: 15px; margin: 10px; background: linear-gradient(45deg, #667eea, #764ba2); color: white; border: none; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: all 0.3s ease; font-weight: 600; box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);';
+    const iconImg = document.createElement('img');
+    iconImg.src = '/static/icons/unfold_more.svg';
+    iconImg.style.cssText = 'width: 20px; height: 20px; filter: brightness(0) invert(1);';
+    const remaining = data.total - (data.page * data.per_page);
+    const loadMoreText = window.translations?.load_more_remaining || 'Load More ({remaining} remaining)';
+    btn.appendChild(iconImg);
+    btn.appendChild(document.createTextNode(loadMoreText.replace('{remaining}', remaining)));
+    btn.onclick = () => loadMoreOpsecImages(data.page + 1, btn);
+    return btn;
+}
+
+async function loadOpsecImages() {
+    const list = document.getElementById('opsec-images-list');
+    if (!list) return;
+
+    list.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: #666;">${window.translations?.loading || 'Loading...'}</div>`;
+
+    try {
+        const response = await fetch('/api/opsec-images?page=1&per_page=50');
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        const images = data.images || [];
+
+        list.innerHTML = '';
+
+        if (images.length === 0) {
+            list.innerHTML = `<p style="grid-column: 1/-1; text-align: center; color: #666;">${window.translations?.no_opsec_images || 'No OPSec images uploaded yet'}</p>`;
+            return;
+        }
+
+        images.forEach(img => list.appendChild(createOpsecThumb(img)));
+
+        if (data.has_next) {
+            list.appendChild(createOpsecLoadMoreBtn(data));
+        }
+    } catch (error) {
+        console.error('Error loading OPSec images:', error);
+        list.innerHTML = `<p style="grid-column: 1/-1; text-align: center; color: #dc3545;">Error loading OPSec images</p>`;
+    }
+}
+
+function downloadOpsecImage(filename) {
+    const a = document.createElement('a');
+    a.href = `/api/download-opsec/${encodeURIComponent(filename)}`;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+}
+
+async function loadMoreOpsecImages(page, buttonElement) {
+    try {
+        buttonElement.textContent = window.translations?.loading || 'Loading...';
+        buttonElement.disabled = true;
+
+        const response = await fetch(`/api/opsec-images?page=${page}&per_page=50`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        const images = data.images || [];
+
+        if (!images.length) {
+            buttonElement.remove();
+            return;
+        }
+
+        const list = document.getElementById('opsec-images-list');
+        images.forEach(img => list.insertBefore(createOpsecThumb(img), buttonElement));
+
+        if (data.has_next) {
+            // Rebuild button content with updated count
+            buttonElement.innerHTML = '';
+            buttonElement.style.cssText = 'grid-column: 1/-1; padding: 15px; margin: 10px; background: linear-gradient(45deg, #667eea, #764ba2); color: white; border: none; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: all 0.3s ease; font-weight: 600; box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);';
+            const iconImg = document.createElement('img');
+            iconImg.src = '/static/icons/unfold_more.svg';
+            iconImg.style.cssText = 'width: 20px; height: 20px; filter: brightness(0) invert(1);';
+            const remaining = data.total - (page * data.per_page);
+            const loadMoreText = window.translations?.load_more_remaining || 'Load More ({remaining} remaining)';
+            buttonElement.appendChild(iconImg);
+            buttonElement.appendChild(document.createTextNode(loadMoreText.replace('{remaining}', remaining)));
+            buttonElement.onclick = () => loadMoreOpsecImages(page + 1, buttonElement);
+            buttonElement.disabled = false;
+        } else {
+            buttonElement.remove();
+        }
+    } catch (error) {
+        console.error('Failed to load more OPSec images:', error);
+        buttonElement.textContent = window.translations?.load_failed || 'Failed to load';
+        buttonElement.disabled = false;
+    }
+}
+
+async function deleteOpsecImage(filename) {
+    try {
+        const response = await fetch(`/api/delete-opsec/${encodeURIComponent(filename)}`, { method: 'DELETE' });
+        const result = await response.json();
+        if (result.success) {
+            showNotification(window.translations?.opsec_image_deleted_successfully || 'OPSec image deleted successfully!', 'success');
+            // Remove from DOM directly to preserve pagination state
+            const list = document.getElementById('opsec-images-list');
+            if (list) {
+                const imgEl = list.querySelector(`img[data-filename="${filename}"]`);
+                if (imgEl) {
+                    const thumb = imgEl.closest('.meme-thumbnail');
+                    if (thumb) thumb.remove();
+                    // If grid is now empty (only the load-more btn or nothing left), show empty message
+                    const remaining = list.querySelectorAll('.meme-thumbnail');
+                    if (remaining.length === 0) {
+                        const loadMoreBtn = list.querySelector('.load-more-btn');
+                        if (!loadMoreBtn) {
+                            list.innerHTML = `<p style="grid-column: 1/-1; text-align: center; color: #666;">${window.translations?.no_opsec_images || 'No OPSec images uploaded yet'}</p>`;
+                        }
+                    }
+                }
+            }
+        } else {
+            showNotification(result.message || window.translations?.opsec_image_delete_failed || 'Failed to delete OPSec image', 'error');
+        }
+    } catch (error) {
+        showNotification((window.translations?.opsec_image_delete_failed || 'Failed to delete OPSec image') + ': ' + error.message, 'error');
+    }
+}
+
+function createOpsecManagementInterface(field) {
+    const container = document.createElement('div');
+    container.className = 'meme-management-container';
+
+    // Upload section
+    const uploadSection = document.createElement('div');
+    uploadSection.className = 'form-group';
+    uploadSection.style.marginBottom = '30px';
+
+    const uploadLabel = document.createElement('label');
+    uploadLabel.className = 'form-label';
+    uploadLabel.textContent = window.translations?.upload_opsec_image || 'Upload OPSec Cover Image';
+    uploadSection.appendChild(uploadLabel);
+
+    const uploadArea = document.createElement('div');
+    uploadArea.className = 'upload-area';
+    uploadArea.id = 'opsec-upload-area';
+    uploadArea.innerHTML = `
+        <input type="file" id="opsec-file-input" accept="image/*" multiple style="display: none;">
+        <div class="upload-placeholder">
+            <img src="/static/icons/add_meme.svg" alt="Add Image" style="width: 2rem; height: 2rem; margin-bottom: 10px; filter: brightness(0) invert(1);" />
+            <p>${window.translations?.upload_placeholder || 'Click to select image(s) or drag & drop'}</p>
+            <p style="font-size: 0.8rem; color: #667eea;">${window.translations?.upload_formats || 'Supported: PNG, JPG, JPEG, GIF, WebP (Multiple files allowed)'}</p>
+        </div>
+    `;
+
+    const uploadProgress = document.createElement('div');
+    uploadProgress.id = 'opsec-upload-progress';
+    uploadProgress.style.display = 'none';
+    uploadProgress.style.marginTop = '10px';
+    uploadProgress.innerHTML = `
+        <div style="background: #f0f0f0; border-radius: 10px; overflow: hidden;">
+            <div id="opsec-progress-bar" style="height: 8px; background: #667eea; width: 0%; transition: width 0.3s;"></div>
+        </div>
+        <p id="opsec-upload-status" style="margin-top: 5px; font-size: 0.9rem;"></p>
+    `;
+
+    uploadSection.appendChild(uploadArea);
+    uploadSection.appendChild(uploadProgress);
+
+    // Current images section
+    const imagesSection = document.createElement('div');
+    imagesSection.className = 'form-group';
+
+    const imagesLabel = document.createElement('label');
+    imagesLabel.className = 'form-label';
+    imagesLabel.textContent = window.translations?.current_opsec_images || 'Current OPSec Images';
+    imagesSection.appendChild(imagesLabel);
+
+    const imagesList = document.createElement('div');
+    imagesList.id = 'opsec-images-list';
+    imagesList.style.display = 'grid';
+    imagesList.style.gridTemplateColumns = 'repeat(auto-fill, minmax(100px, 1fr))';
+    imagesList.style.gap = '10px';
+    imagesList.style.marginTop = '10px';
+    imagesSection.appendChild(imagesList);
+
+    container.appendChild(uploadSection);
+    container.appendChild(imagesSection);
+
+    // Wire up upload area
+    setTimeout(() => {
+        const area = document.getElementById('opsec-upload-area');
+        const fileInput = document.getElementById('opsec-file-input');
+        if (!area || !fileInput) return;
+
+        area.addEventListener('click', () => fileInput.click());
+        area.addEventListener('dragover', (e) => { e.preventDefault(); area.classList.add('dragover'); });
+        area.addEventListener('dragleave', () => area.classList.remove('dragover'));
+        area.addEventListener('drop', (e) => {
+            e.preventDefault();
+            area.classList.remove('dragover');
+            uploadOpsecFiles(Array.from(e.dataTransfer.files));
+        });
+        fileInput.addEventListener('change', () => {
+            uploadOpsecFiles(Array.from(fileInput.files));
+            fileInput.value = '';
+        });
+
+        loadOpsecImages();
+    }, 100);
+
+    container.getValue = () => null;
+    return container;
+}
+
+async function uploadOpsecFiles(files) {
+    const progressDiv = document.getElementById('opsec-upload-progress');
+    const progressBar = document.getElementById('opsec-progress-bar');
+    const statusText = document.getElementById('opsec-upload-status');
+
+    if (!files || files.length === 0) return;
+
+    const imageFiles = files.filter(f => f.type.startsWith('image/'));
+    if (imageFiles.length === 0) {
+        showNotification(window.translations?.upload_images_only || 'Please select image files only', 'error');
+        return;
+    }
+
+    const t = window.translations;
+
+    // Show progress
+    if (progressDiv && progressBar && statusText) {
+        progressDiv.style.display = 'block';
+        progressBar.style.width = '0%';
+        statusText.textContent = t?.upload_checking_duplicates || 'Checking for duplicates...';
+        statusText.style.color = '#667eea';
+    }
+
+    // Fetch existing hashes for duplicate detection
+    const existingHashes = await getExistingOpsecHashes();
+
+    // Process files: check for duplicates, offer rename
+    const filesToUpload = [];
+    const duplicates = [];
+
+    for (let i = 0; i < imageFiles.length; i++) {
+        const file = imageFiles[i];
+
+        if (statusText) {
+            statusText.textContent = (t?.upload_processing || 'Processing {current}/{total}: {filename}...')
+                .replace('{current}', i + 1).replace('{total}', imageFiles.length).replace('{filename}', file.name);
+        }
+
+        // Calculate SHA-256 hash
+        const hash = await calculateFileHash(file);
+
+        // Skip duplicates
+        if (hash && existingHashes[hash]) {
+            duplicates.push({ name: file.name, duplicate: existingHashes[hash] });
+            continue;
+        }
+
+        // Offer rename dialog (same as meme upload)
+        const newName = await showRenameDialog(file.name, file);
+
+        if (newName === file.name) {
+            filesToUpload.push({ file, name: file.name, hash });
+        } else {
+            const renamedFile = new File([file], newName, { type: file.type });
+            filesToUpload.push({ file: renamedFile, name: newName, hash });
+        }
+    }
+
+    // Show pre-upload summary
+    let summaryMessage = '';
+    if (duplicates.length > 0) {
+        summaryMessage += (t?.upload_skipped_duplicates_msg || 'Skipped {count} duplicate(s).').replace('{count}', duplicates.length) + ' ';
+    }
+    if (filesToUpload.length > 0) {
+        summaryMessage += (t?.upload_uploading_count || 'Uploading {count} file(s)...').replace('{count}', filesToUpload.length);
+    } else {
+        summaryMessage = t?.upload_no_files || 'No files to upload.';
+    }
+
+    if (statusText) {
+        statusText.textContent = summaryMessage;
+        statusText.style.color = duplicates.length > 0 ? '#ff9800' : '#667eea';
+    }
+
+    if (duplicates.length > 0) {
+        const dupList = duplicates.map(d => `• ${d.name} (duplicate of ${d.duplicate})`).join('\n');
+        console.log('OPSec duplicates detected:\n' + dupList);
+        showNotification((t?.upload_duplicates_skipped_notification || '{count} duplicate file(s) skipped').replace('{count}', duplicates.length), 'warning');
+    }
+
+    // Upload non-duplicate files
+    if (filesToUpload.length > 0) {
+        let uploadedCount = 0;
+        let failedCount = 0;
+
+        for (let i = 0; i < filesToUpload.length; i++) {
+            const { file, name } = filesToUpload[i];
+
+            if (statusText) {
+                statusText.textContent = (t?.upload_uploading_progress || 'Uploading {current}/{total}: {filename}...')
+                    .replace('{current}', i + 1).replace('{total}', filesToUpload.length).replace('{filename}', name);
+            }
+            if (progressBar) {
+                progressBar.style.width = `${(i / filesToUpload.length) * 100}%`;
+            }
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await fetch('/api/upload-opsec', { method: 'POST', body: formData });
+                const result = await response.json();
+                if (result.success) uploadedCount++;
+                else { failedCount++; console.error(`Failed to upload ${name}:`, result.message); }
+            } catch (error) {
+                failedCount++;
+                console.error(`Error uploading ${name}:`, error);
+            }
+        }
+
+        if (progressBar) progressBar.style.width = '100%';
+
+        // Final status summary
+        if (statusText) {
+            const parts = [];
+            if (uploadedCount > 0) parts.push((t?.upload_count_uploaded || '✓ {count} uploaded').replace('{count}', uploadedCount));
+            if (failedCount > 0) parts.push((t?.upload_count_failed || '✗ {count} failed').replace('{count}', failedCount));
+            if (duplicates.length > 0) parts.push((t?.upload_count_skipped || '⊝ {count} skipped (duplicates)').replace('{count}', duplicates.length));
+            statusText.textContent = parts.join(' | ');
+            statusText.style.color = failedCount > 0 ? '#dc3545' : '#28a745';
+        }
+
+        if (uploadedCount > 0) loadOpsecImages();
+
+        setTimeout(() => { if (progressDiv) progressDiv.style.display = 'none'; }, 4000);
+
+        if (uploadedCount > 0) {
+            showNotification((t?.upload_success_notification || 'Successfully uploaded {count} file(s)').replace('{count}', uploadedCount), 'success');
+        }
+        if (failedCount > 0) {
+            showNotification((t?.upload_fail_notification || 'Failed to upload {count} file(s)').replace('{count}', failedCount), 'error');
+        }
+    } else {
+        setTimeout(() => { if (progressDiv) progressDiv.style.display = 'none'; }, 3000);
+    }
+}
+
+
 // Silent configuration save (no user feedback)
 async function saveConfigurationSilent(configToSave) {
     try {
@@ -3684,6 +4108,279 @@ if (memeModal) {
 } else if (isConfigPage) {
     console.warn('Meme modal not found in DOM');
 }
+
+// --- OPSec Modal Functions ---
+let currentModalOpsec = null;
+let opsecToDelete = null;
+
+function openOpsecModal(filename, url) {
+    currentModalOpsec = { filename, url };
+
+    const modalTitle = document.getElementById('opsec-modal-title');
+    const modalImage = document.getElementById('opsec-modal-image');
+    const modalDimensions = document.getElementById('opsec-modal-dimensions');
+    const modalFilesize = document.getElementById('opsec-modal-filesize');
+    const opsecModal = document.getElementById('opsec-modal');
+
+    if (modalTitle) {
+        const previewText = window.translations?.opsec_image_preview || 'OPSec Image Preview';
+        modalTitle.textContent = `${previewText} - ${filename}`;
+    }
+
+    const modalFilenameDisplay = document.getElementById('opsec-modal-filename-display');
+    if (modalFilenameDisplay) {
+        modalFilenameDisplay.textContent = filename;
+    }
+
+    // Reset rename UI to display mode
+    const filenameInput = document.getElementById('opsec-modal-filename-input');
+    const editBtn = document.getElementById('opsec-modal-edit-btn');
+    const saveBtn = document.getElementById('opsec-modal-save-btn');
+    const cancelBtn = document.getElementById('opsec-modal-cancel-rename-btn');
+
+    if (modalFilenameDisplay && filenameInput && editBtn && saveBtn && cancelBtn) {
+        modalFilenameDisplay.style.display = 'inline';
+        editBtn.style.display = 'inline-block';
+        filenameInput.style.display = 'none';
+        saveBtn.style.display = 'none';
+        cancelBtn.style.display = 'none';
+    }
+
+    if (modalDimensions) {
+        modalDimensions.textContent = window.translations?.loading || 'Loading...';
+    }
+    if (modalFilesize) {
+        modalFilesize.textContent = window.translations?.loading || 'Loading...';
+    }
+
+    if (modalImage) {
+        modalImage.onload = function() {
+            if (modalDimensions) {
+                modalDimensions.textContent = `${this.naturalWidth} × ${this.naturalHeight} px`;
+            }
+        };
+        modalImage.onerror = function() {
+            if (modalDimensions) {
+                modalDimensions.textContent = 'Error loading image';
+            }
+        };
+        modalImage.src = url;
+    }
+
+    if (opsecModal) {
+        opsecModal.style.display = 'flex';
+    }
+
+    // Fetch file size
+    fetch(url, { method: 'HEAD' })
+        .then(response => {
+            const contentLength = response.headers.get('content-length');
+            const sizeEl = document.getElementById('opsec-modal-filesize');
+            if (!sizeEl) return;
+            if (contentLength) {
+                sizeEl.textContent = formatFileSize(parseInt(contentLength));
+            } else {
+                return fetch(url, { method: 'GET', headers: { 'Range': 'bytes=0-1' } })
+                    .then(r => {
+                        const contentRange = r.headers.get('content-range');
+                        if (contentRange) {
+                            const match = contentRange.match(/\/(\d+)$/);
+                            if (match) { sizeEl.textContent = formatFileSize(parseInt(match[1])); return; }
+                        }
+                        sizeEl.textContent = 'Unknown';
+                    })
+                    .catch(() => { sizeEl.textContent = 'Unknown'; });
+            }
+        })
+        .catch(() => {
+            const sizeEl = document.getElementById('opsec-modal-filesize');
+            if (sizeEl) sizeEl.textContent = 'Unknown';
+        });
+}
+
+function startRenameInOpsecModal() {
+    if (!currentModalOpsec) return;
+
+    const filenameDisplay = document.getElementById('opsec-modal-filename-display');
+    const filenameInput = document.getElementById('opsec-modal-filename-input');
+    const editBtn = document.getElementById('opsec-modal-edit-btn');
+    const saveBtn = document.getElementById('opsec-modal-save-btn');
+    const cancelBtn = document.getElementById('opsec-modal-cancel-rename-btn');
+
+    if (!filenameDisplay || !filenameInput || !editBtn || !saveBtn || !cancelBtn) return;
+
+    const filename = currentModalOpsec.filename;
+    const nameWithoutExt = filename.substring(0, filename.lastIndexOf('.'));
+
+    filenameDisplay.style.display = 'none';
+    editBtn.style.display = 'none';
+    filenameInput.style.display = 'inline-block';
+    saveBtn.style.display = 'inline-block';
+    cancelBtn.style.display = 'inline-block';
+
+    filenameInput.value = nameWithoutExt;
+    filenameInput.focus();
+    filenameInput.select();
+
+    filenameInput.onkeydown = (e) => {
+        if (e.key === 'Enter') saveRenameInOpsecModal();
+        else if (e.key === 'Escape') cancelRenameInOpsecModal();
+    };
+}
+
+async function saveRenameInOpsecModal() {
+    if (!currentModalOpsec) return;
+
+    const filenameInput = document.getElementById('opsec-modal-filename-input');
+    if (!filenameInput) return;
+
+    const oldFilename = currentModalOpsec.filename;
+    const extension = oldFilename.substring(oldFilename.lastIndexOf('.'));
+    const nameWithoutExt = oldFilename.substring(0, oldFilename.lastIndexOf('.'));
+    const newName = filenameInput.value.trim();
+
+    if (!newName) {
+        showNotification(window.translations?.please_enter_valid_name || 'Please enter a valid name', 'error');
+        return;
+    }
+
+    if (newName === nameWithoutExt) {
+        cancelRenameInOpsecModal();
+        return;
+    }
+
+    const newFilename = newName + extension;
+    await renameOpsecImage(oldFilename, newFilename);
+
+    // Update modal with new filename
+    currentModalOpsec.filename = newFilename;
+    currentModalOpsec.url = `/static/opsec/${newFilename}`;
+
+    const filenameDisplay = document.getElementById('opsec-modal-filename-display');
+    const modalTitle = document.getElementById('opsec-modal-title');
+    if (filenameDisplay) filenameDisplay.textContent = newFilename;
+    if (modalTitle) {
+        const previewText = window.translations?.opsec_image_preview || 'OPSec Image Preview';
+        modalTitle.textContent = `${previewText} - ${newFilename}`;
+    }
+
+    cancelRenameInOpsecModal();
+}
+
+function cancelRenameInOpsecModal() {
+    const filenameDisplay = document.getElementById('opsec-modal-filename-display');
+    const filenameInput = document.getElementById('opsec-modal-filename-input');
+    const editBtn = document.getElementById('opsec-modal-edit-btn');
+    const saveBtn = document.getElementById('opsec-modal-save-btn');
+    const cancelBtn = document.getElementById('opsec-modal-cancel-rename-btn');
+
+    if (!filenameDisplay || !filenameInput || !editBtn || !saveBtn || !cancelBtn) return;
+
+    filenameDisplay.style.display = 'inline';
+    editBtn.style.display = 'inline-block';
+    filenameInput.style.display = 'none';
+    saveBtn.style.display = 'none';
+    cancelBtn.style.display = 'none';
+}
+
+async function renameOpsecImage(oldFilename, newFilename) {
+    try {
+        const response = await fetch('/api/rename-opsec', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ old_filename: oldFilename, new_filename: newFilename })
+        });
+        const result = await response.json();
+        if (result.success) {
+            showNotification(window.translations?.opsec_image_renamed_successfully || 'OPSec image renamed successfully', 'success');
+            // Update thumbnail in the grid
+            const img = document.querySelector(`#opsec-images-list img[data-filename="${oldFilename}"]`);
+            if (img) {
+                img.dataset.filename = newFilename;
+                img.src = `/static/opsec/${newFilename}`;
+                img.title = newFilename;
+                const thumb = img.closest('.meme-thumbnail');
+                if (thumb) {
+                    const nameEl = thumb.querySelector('.meme-filename');
+                    if (nameEl) nameEl.textContent = newFilename;
+                    // Update action buttons to use new filename
+                    const actionsDiv = thumb.querySelector('.meme-actions');
+                    if (actionsDiv) {
+                        actionsDiv.innerHTML = `
+                            <button class="action-button" onclick="downloadOpsecImage('${newFilename}')" title="${window.translations?.download_meme || 'Download'}">
+                                <img src="/static/icons/download.svg" alt="Download" style="width:16px; height:16px; filter:brightness(0) invert(1);" />
+                            </button>
+                            <button class="action-button delete" onclick="showOpsecDeleteModal('${newFilename}')" title="${window.translations?.delete_meme || 'Delete'}">
+                                <img src="/static/icons/delete.svg" alt="Delete" style="width:16px; height:16px; filter:brightness(0) invert(1);" />
+                            </button>
+                        `;
+                    }
+                    // Update onclick to use new filename
+                    img.onclick = () => openOpsecModal(newFilename, `/static/opsec/${newFilename}`);
+                }
+            }
+        } else {
+            showNotification(result.message || window.translations?.opsec_image_rename_failed || 'Failed to rename OPSec image', 'error');
+        }
+    } catch (error) {
+        showNotification((window.translations?.opsec_image_rename_failed || 'Failed to rename OPSec image') + ': ' + error.message, 'error');
+    }
+}
+
+function downloadOpsecFromModal() {
+    if (currentModalOpsec) {
+        const a = document.createElement('a');
+        a.href = `/api/download-opsec/${currentModalOpsec.filename}`;
+        a.download = currentModalOpsec.filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    }
+}
+
+function deleteOpsecFromModal() {
+    if (currentModalOpsec) {
+        closeOpsecModal();
+        showOpsecDeleteModal(currentModalOpsec.filename);
+    }
+}
+
+function showOpsecDeleteModal(filename) {
+    opsecToDelete = filename;
+    const modal = document.getElementById('opsec-delete-modal');
+    if (modal) modal.style.display = 'flex';
+}
+
+function hideOpsecDeleteModal() {
+    opsecToDelete = null;
+    const modal = document.getElementById('opsec-delete-modal');
+    if (modal) modal.style.display = 'none';
+}
+
+// Wire up opsec delete modal buttons
+document.addEventListener('DOMContentLoaded', () => {
+    const opsecConfirmDelete = document.getElementById('opsec-confirm-delete');
+    const opsecCancelDelete = document.getElementById('opsec-cancel-delete');
+    if (opsecConfirmDelete) {
+        opsecConfirmDelete.addEventListener('click', async () => {
+            if (opsecToDelete) {
+                await deleteOpsecImage(opsecToDelete);
+                hideOpsecDeleteModal();
+            }
+        });
+    }
+    if (opsecCancelDelete) {
+        opsecCancelDelete.addEventListener('click', hideOpsecDeleteModal);
+    }
+
+    // Close opsec modal when clicking outside
+    const opsecModal = document.getElementById('opsec-modal');
+    if (opsecModal) {
+        opsecModal.addEventListener('click', function(event) {
+            if (event.target === this) closeOpsecModal();
+        });
+    }
+});
 
 // Load cached wallet balances for display in config table
 async function loadCachedWalletBalances(tbody) {

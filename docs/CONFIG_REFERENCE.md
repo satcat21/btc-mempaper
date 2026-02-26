@@ -88,6 +88,18 @@ These settings can be modified via the Web Dashboard (recommended) or by editing
 
 ---
 
+## 🕵️ OPSec Mode
+
+When OPSec Mode is enabled the e-ink display shows a randomly selected cover image (e.g. a family photo) instead of Bitcoin data. The web dashboard is **not** affected and always shows normal BTC data.
+
+Upload OPSec images via the **Meme Management** section of the config page, in the **OPSec Images** sub-section below the meme gallery.
+
+| Web Label | Config Key | Type | Description | Allowed Values / Examples |
+| :--- | :--- | :--- | :--- | :--- |
+| **OPSec Mode** | `opsec_mode_enabled` | Switch | Show cover image on e-ink instead of BTC data | `true` (OPSec on), `false` (normal, default) |
+
+---
+
 ## 🔒 Security & Admin
 
 | Web Label | Config Key | Type | Description | Allowed Values / Examples |

@@ -365,7 +365,8 @@ class ConfigManager:
             "wallet_balance_currency": "EUR",  # USD, EUR, GBP, CAD, CHF, AUD, JPY - fiat currency for wallet balance display
             "prioritize_large_scaled_meme": False,
             "color_mode_dark": True,
-            "live_block_notifications_enabled": True  # Enable live block notifications by default
+            "live_block_notifications_enabled": True,  # Enable live block notifications by default
+            "opsec_mode_enabled": False
         }
     
     def save_config(self, config: Dict[str, Any] = None) -> bool:
@@ -468,7 +469,8 @@ class ConfigManager:
             "eink_dark_mode",
             "live_block_notifications_enabled",
             "mempool_use_https",
-            "mempool_verify_ssl"
+            "mempool_verify_ssl",
+            "opsec_mode_enabled"
         ]
         for setting in bool_settings:
             if setting in config:
@@ -1111,6 +1113,18 @@ class ConfigManager:
                 "type": "meme_management",
                 "label": t.get("meme_management", "Meme Management"),
                 "category": "meme_management"
+            },
+            "opsec_mode_enabled": {
+                "type": "boolean",
+                "label": t.get("opsec_mode_enabled", "OPSec Mode"),
+                "description": t.get("opsec_mode_enabled_desc", "When enabled, the e-ink display shows a random cover image (family photo) instead of Bitcoin data. The web dashboard remains unaffected. Images rotate every 2 hours."),
+                "default": False,
+                "category": "opsec"
+            },
+            "opsec_management": {
+                "type": "opsec_management",
+                "label": t.get("opsec_management", "OPSec Images"),
+                "category": "opsec"
             }
         }
     
@@ -1133,7 +1147,8 @@ class ConfigManager:
             {"id": "price_stats", "label": t.get("price_stats", "Price Stats"), "icon": "/static/icons/price_change.svg"},
             {"id": "wallet_monitoring", "label": t.get("wallet_monitoring", "Wallet Monitoring"), "icon": "/static/icons/wallet.svg"},
             {"id": "bitaxe_stats", "label": t.get("bitaxe_stats", "Bitaxe Stats"), "icon": "/static/icons/calculate.svg"},
-            {"id": "meme_management", "label": t.get("meme_management", "Meme Management"), "icon": "/static/icons/mood.svg"}
+            {"id": "meme_management", "label": t.get("meme_management", "Meme Management"), "icon": "/static/icons/mood.svg"},
+            {"id": "opsec", "label": t.get("opsec_settings", "OPSec"), "icon": "/static/icons/opsec.svg"}
         ]
     
     def get_color_options(self) -> List[Dict[str, str]]:
