@@ -30,6 +30,7 @@
   "eink_orientation": "vertical",
   "display_width": 800,
   "display_height": 480,
+  "ui_scale_override": 1.0,
 
   "show_btc_price_block": false,
   "btc_price_currency": "USD",

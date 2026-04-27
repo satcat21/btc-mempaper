@@ -175,7 +175,7 @@ pip install -r requirements.txt
 
    ```bash
    # Download memes
-   python initialize_memes.py
+   python scripts/download_all_memes.py
 
    # Start application to set admin user password for web login
    python serve.py
@@ -325,7 +325,8 @@ btc-mempaper/
 │
 ├── 🔧 scripts/                # Administration & Setup
 │   ├── configure_display.py   # Display configuration wizard
-│   ├── initialize_memes.py    # Download Bitcoin memes
+│   ├── einundzwanzig_memes.py # API library for einundzwanzig-memes.space (random fetch, bulk discovery)
+│   ├── download_all_memes.py  # Bulk-download all memes from einundzwanzig-memes.space → static/memes/
 │   ├── backup_manager.py      # Backup & maintenance utility
 │   ├── start_fast.py          # Quick development start
 │   ├── start_pc.py            # PC-specific startup
@@ -345,7 +346,9 @@ btc-mempaper/
 │   │   └── *.secure.json      # Encrypted cache files
 │   ├── static/                # Web assets (CSS, JS, images)
 │   │   ├── memes/             # Bitcoin meme collection
+│   │   │   └── thumbs/        # Auto-generated 200×200 WebP thumbnail cache
 │   │   └── opsec/             # OPSec cover images (shown on e-ink in OPSec mode)
+│   │       └── thumbs/        # Auto-generated 200×200 WebP thumbnail cache
 │   └── templates/             # HTML templates for web interface
 │
 ├── 📖 Documentation

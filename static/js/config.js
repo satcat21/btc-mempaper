@@ -44,10 +44,42 @@ function closeMemeModal() {
                 console.error('Config WebSocket connection error:', error);
             });
 
-            // Example: listen for block notifications
             socket.on('block_notification', function(data) {
                 console.log('🔔 [CONFIG] Block notification:', data);
-                // You can add custom notification handling here
+            });
+
+            socket.on('donation_received', function(donation) {
+                console.log('⚡ Donation received:', donation);
+                // Prepend new row to table if it is currently visible
+                const tbody = document.getElementById('donation-history-tbody');
+                if (tbody) {
+                    // Remove the "No donations yet" placeholder row if present
+                    if (tbody.rows.length === 1 && tbody.rows[0].cells.length === 1) {
+                        tbody.innerHTML = '';
+                    }
+                    const ts = donation.timestamp
+                        ? new Date(donation.timestamp + 'Z').toLocaleString() : '—';
+                    const sats = (donation.amount_sats || 0).toLocaleString();
+                    const msg = donation.message
+                        ? escapeHtml(donation.message) : '<em style="color:#888">—</em>';
+                    const tr = document.createElement('tr');
+                    tr.style.cssText = 'border-bottom:1px solid var(--border-color,#f0f0f0);';
+                    tr.innerHTML = `
+                        <td style="padding:5px 8px; white-space:nowrap;">${ts}</td>
+                        <td style="padding:5px 8px; text-align:right; font-weight:bold;">${sats}</td>
+                        <td style="padding:5px 8px;">${msg}</td>`;
+                    tbody.insertBefore(tr, tbody.firstChild);
+                    // Update total
+                    const totalEl = document.getElementById('donation-total-sats');
+                    if (totalEl) {
+                        const prev = parseInt(totalEl.dataset.total || '0', 10);
+                        const next = prev + (donation.amount_sats || 0);
+                        totalEl.dataset.total = next;
+                        totalEl.textContent = next.toLocaleString() + ' sats';
+                    }
+                }
+                // Toast notification
+                showDonationToast(donation);
             });
         } else {
             console.error('Socket.IO client (window.io) not found. Make sure socket.io.min.js is loaded.');
@@ -87,7 +119,8 @@ function getSectionToggleKey(categoryId) {
         'price_stats': 'show_btc_price_block',
         'bitaxe_stats': 'show_bitaxe_block',
         'wallet_monitoring': 'show_wallet_balances_block',
-        'eink_display': 'e-ink-display-connected'
+        'eink_display': 'e-ink-display-connected',
+        'donation': 'show_donation_block',
     };
     return toggleMapping[categoryId] || null;
 }
@@ -247,7 +280,7 @@ function createCustomSelect(field, value) {
     return container;
 }
 
-// Create password change interface for admin password
+// Create password change interface for password fields managed via button/form flow.
 function createPasswordChangeInterface(key, field) {
     const container = document.createElement('div');
     container.className = 'password-change-container';
@@ -562,6 +595,9 @@ function setupUpload() {
     });
 }
 
+// Global set of existing meme filenames for client-side duplicate name checking
+window.memeFilenameSet = new Set();
+
 // Calculate SHA-256 hash of file content for duplicate detection
 async function calculateFileHash(file) {
     try {
@@ -604,13 +640,14 @@ async function getExistingMemeHashes() {
     return {};
 }
 
-// Show rename dialog for a file
-async function showRenameDialog(originalFilename, file) {
-    const extension = originalFilename.substring(originalFilename.lastIndexOf('.'));
-    const nameWithoutExt = originalFilename.substring(0, originalFilename.lastIndexOf('.'));
+// Show rename dialog for a file when a filename conflict is detected.
+// suggestedFilename: pre-corrected full filename (e.g. "my_pic_1.png")
+// existingFilenames: Set of filenames already present on the server
+async function showRenameDialog(originalFilename, file, suggestedFilename, existingFilenames) {
+    const extension = suggestedFilename.substring(suggestedFilename.lastIndexOf('.'));
+    const suggestedNameWithoutExt = suggestedFilename.substring(0, suggestedFilename.lastIndexOf('.'));
     const t = window.translations;
 
-    // Create a temporary object URL for the preview image if a file is provided
     const previewUrl = file ? URL.createObjectURL(file) : null;
 
     return new Promise((resolve) => {
@@ -628,9 +665,10 @@ async function showRenameDialog(originalFilename, file) {
             <div class="modal-content" style="max-width: 400px;">
                 <h3>${t?.rename_image || 'Rename Image'}</h3>
                 ${previewHtml}
-                <p style="margin-bottom: 15px; color: #666;">${originalFilename}</p>
+                <p style="margin-bottom: 8px; color: #666;">${t?.rename_conflict_info || 'A file named'} <strong>${originalFilename}</strong> ${t?.rename_conflict_exists || 'already exists.'}</p>
                 <label style="display: block; margin-bottom: 5px; font-weight: 600;">${t?.rename_new_name || 'New name (without extension):'}</label>
-                <input type="text" id="rename-input" class="form-input" value="${nameWithoutExt}" style="margin-bottom: 15px;">
+                <input type="text" id="rename-input" class="form-input" value="${suggestedNameWithoutExt}" style="margin-bottom: 5px;">
+                <p id="rename-name-warning" style="font-size: 0.85rem; color: #dc3545; margin-bottom: 5px; display: none;">${t?.rename_name_in_use || 'This name is already in use. Please choose a different name.'}</p>
                 <p style="font-size: 0.85rem; color: #667eea; margin-bottom: 15px;">${(t?.rename_extension_preserved || 'Extension {ext} will be preserved').replace('{ext}', extension)}</p>
                 <div class="modal-buttons" style="display: flex; gap: 10px;">
                     <button id="rename-confirm" class="save-button" style="flex: 1;">${t?.rename_confirm || 'Rename'}</button>
@@ -642,11 +680,23 @@ async function showRenameDialog(originalFilename, file) {
         document.body.appendChild(modal);
 
         const input = modal.querySelector('#rename-input');
-        input.focus();
-        input.select();
-
         const confirmBtn = modal.querySelector('#rename-confirm');
         const skipBtn = modal.querySelector('#rename-skip');
+        const warning = modal.querySelector('#rename-name-warning');
+
+        const validateInput = () => {
+            const candidate = input.value.trim() + extension;
+            const conflict = existingFilenames && existingFilenames.has(candidate);
+            warning.style.display = conflict ? 'block' : 'none';
+            confirmBtn.disabled = conflict || !input.value.trim();
+            confirmBtn.style.opacity = confirmBtn.disabled ? '0.5' : '';
+            confirmBtn.style.cursor = confirmBtn.disabled ? 'not-allowed' : '';
+        };
+
+        input.addEventListener('input', validateInput);
+        validateInput();
+        input.focus();
+        input.select();
 
         const cleanup = () => {
             modal.remove();
@@ -654,18 +704,15 @@ async function showRenameDialog(originalFilename, file) {
         };
 
         confirmBtn.onclick = () => {
+            if (confirmBtn.disabled) return;
             const newName = input.value.trim();
             cleanup();
-            if (newName && newName !== nameWithoutExt) {
-                resolve(newName + extension);
-            } else {
-                resolve(originalFilename);
-            }
+            resolve(newName + extension);
         };
 
         skipBtn.onclick = () => {
             cleanup();
-            resolve(originalFilename);
+            resolve(suggestedFilename);
         };
 
         input.onkeydown = (e) => {
@@ -698,40 +745,56 @@ async function uploadFiles(files) {
     
     // Get existing hashes
     const existingHashes = await getExistingMemeHashes();
-    
-    // Process files: check duplicates and allow rename
+
+    // Build a working set of filenames (server state + files queued this batch)
+    const existingFilenames = new Set(Object.values(existingHashes));
+
+    // Process files: check duplicates and handle name conflicts
     const filesToUpload = [];
     const duplicates = [];
-    const skipped = [];
-    
+
     for (let i = 0; i < files.length; i++) {
         const file = files[i];
-        
+
         if (statusText) {
             statusText.textContent = (t?.upload_processing || 'Processing {current}/{total}: {filename}...')
                 .replace('{current}', i + 1).replace('{total}', files.length).replace('{filename}', file.name);
         }
-        
-        // Calculate hash
+
+        // Calculate hash for content-duplicate detection
         const hash = await calculateFileHash(file);
-        
-        // Check for duplicate
+
+        // Skip content-identical files
         if (hash && existingHashes[hash]) {
             duplicates.push({ name: file.name, duplicate: existingHashes[hash] });
             continue;
         }
-        
-        // Ask for rename
-        const newName = await showRenameDialog(file.name, file);
-        
-        if (newName === file.name) {
-            // Use original file
-            filesToUpload.push({ file, name: file.name, hash });
-        } else {
-            // Rename file
-            const renamedFile = new File([file], newName, { type: file.type });
-            filesToUpload.push({ file: renamedFile, name: newName, hash });
+
+        let targetName = file.name;
+
+        // Check for filename conflict (same name, different content)
+        if (existingFilenames.has(file.name)) {
+            const ext = file.name.substring(file.name.lastIndexOf('.'));
+            const base = file.name.substring(0, file.name.lastIndexOf('.'));
+
+            // Auto-generate a non-conflicting name: base_1.ext, base_2.ext, …
+            let counter = 1;
+            while (existingFilenames.has(base + '_' + counter + ext)) {
+                counter++;
+            }
+            const suggestedName = base + '_' + counter + ext;
+
+            // Show dialog with the pre-corrected name so user can adjust if desired
+            targetName = await showRenameDialog(file.name, file, suggestedName, existingFilenames);
         }
+
+        const uploadFile = targetName === file.name
+            ? file
+            : new File([file], targetName, { type: file.type });
+
+        filesToUpload.push({ file: uploadFile, name: targetName, hash });
+        // Track name within this batch to avoid intra-batch conflicts
+        existingFilenames.add(targetName);
     }
     
     // Show summary
@@ -787,6 +850,7 @@ async function uploadFiles(files) {
                 
                 if (result.success) {
                     uploadedCount++;
+                    window.memeFilenameSet.add(name);
                 } else {
                     failedCount++;
                     console.error(`Failed to upload ${name}:`, result.message);
@@ -888,7 +952,8 @@ async function deleteMeme(filename) {
         if (result.success) {
             showNotification(window.translations.meme_deleted_successfully, 'success');
             clearMemeCache(); // Clear cache
-            
+            window.memeFilenameSet.delete(filename);
+
             // Find and remove the meme element from the DOM without reloading the page
             const memesList = document.getElementById('memes-list');
             if (memesList) {
@@ -944,6 +1009,8 @@ async function renameMeme(oldFilename, newFilename) {
         if (result.success) {
             showNotification(window.translations.meme_renamed_successfully || 'Meme renamed successfully', 'success');
             clearMemeCache();
+            window.memeFilenameSet.delete(oldFilename);
+            window.memeFilenameSet.add(newFilename);
             
             // Update the meme element in the DOM without reloading
             const memesList = document.getElementById('memes-list');
@@ -997,31 +1064,53 @@ async function renameMeme(oldFilename, newFilename) {
 // Inline rename functions for preview modal
 function startRenameInModal() {
     if (!currentModalMeme) return;
-    
+
     const filenameDisplay = document.getElementById('meme-modal-filename-display');
     const filenameInput = document.getElementById('meme-modal-filename-input');
     const editBtn = document.getElementById('meme-modal-edit-btn');
     const saveBtn = document.getElementById('meme-modal-save-btn');
     const cancelBtn = document.getElementById('meme-modal-cancel-rename-btn');
-    
+    const warning = document.getElementById('meme-modal-rename-warning');
+
     if (!filenameDisplay || !filenameInput || !editBtn || !saveBtn || !cancelBtn) return;
-    
+
     const filename = currentModalMeme.filename;
     const extension = filename.substring(filename.lastIndexOf('.'));
     const nameWithoutExt = filename.substring(0, filename.lastIndexOf('.'));
-    
+
     // Switch to edit mode
     filenameDisplay.style.display = 'none';
     editBtn.style.display = 'none';
     filenameInput.style.display = 'inline-block';
     saveBtn.style.display = 'inline-block';
     cancelBtn.style.display = 'inline-block';
-    
+
     filenameInput.value = nameWithoutExt;
     filenameInput.focus();
     filenameInput.select();
-    
-    // Handle Enter/Escape keys
+
+    // Live validation: block saving if the chosen name is already in use by another file
+    const validateModalInput = () => {
+        const candidate = filenameInput.value.trim() + extension;
+        // Allow the current filename itself (no-op rename)
+        const conflict = candidate !== filename && window.memeFilenameSet.has(candidate);
+        if (warning) {
+            warning.textContent = conflict
+                ? (window.translations?.rename_name_in_use || 'This name is already in use. Please choose a different name.')
+                : '';
+            warning.style.display = conflict ? 'block' : 'none';
+        }
+        saveBtn.disabled = conflict || !filenameInput.value.trim();
+        saveBtn.style.opacity = saveBtn.disabled ? '0.5' : '';
+        saveBtn.style.cursor = saveBtn.disabled ? 'not-allowed' : '';
+    };
+
+    // Remove any previous listener before adding a new one
+    filenameInput._modalValidate && filenameInput.removeEventListener('input', filenameInput._modalValidate);
+    filenameInput._modalValidate = validateModalInput;
+    filenameInput.addEventListener('input', validateModalInput);
+    validateModalInput();
+
     filenameInput.onkeydown = (e) => {
         if (e.key === 'Enter') {
             saveRenameInModal();
@@ -1033,35 +1122,45 @@ function startRenameInModal() {
 
 async function saveRenameInModal() {
     if (!currentModalMeme) return;
-    
+
     const filenameInput = document.getElementById('meme-modal-filename-input');
+    const saveBtn = document.getElementById('meme-modal-save-btn');
     if (!filenameInput) return;
-    
+
+    // Guard: respect disabled state set by live validation
+    if (saveBtn && saveBtn.disabled) return;
+
     const oldFilename = currentModalMeme.filename;
     const extension = oldFilename.substring(oldFilename.lastIndexOf('.'));
     const nameWithoutExt = oldFilename.substring(0, oldFilename.lastIndexOf('.'));
     const newName = filenameInput.value.trim();
-    
+
     if (!newName) {
         showNotification(window.translations?.please_enter_valid_name || 'Please enter a valid name', 'error');
         return;
     }
-    
+
     if (newName === nameWithoutExt) {
         // No change, just cancel
         cancelRenameInModal();
         return;
     }
-    
+
     const newFilename = newName + extension;
-    
+
+    // Final guard: check the set once more before the API call
+    if (window.memeFilenameSet.has(newFilename)) {
+        showNotification(window.translations?.rename_name_in_use || 'This name is already in use. Please choose a different name.', 'error');
+        return;
+    }
+
     // Perform the rename
     await renameMeme(oldFilename, newFilename);
-    
+
     // Update modal with new filename
     currentModalMeme.filename = newFilename;
     currentModalMeme.url = `/static/memes/${newFilename}`;
-    
+
     // Update display
     const filenameDisplay = document.getElementById('meme-modal-filename-display');
     const modalTitle = document.getElementById('meme-modal-title');
@@ -1072,7 +1171,7 @@ async function saveRenameInModal() {
         const previewText = window.translations?.meme_preview || 'Meme Preview';
         modalTitle.textContent = `${previewText} - ${newFilename}`;
     }
-    
+
     // Exit edit mode
     cancelRenameInModal();
 }
@@ -1083,15 +1182,20 @@ function cancelRenameInModal() {
     const editBtn = document.getElementById('meme-modal-edit-btn');
     const saveBtn = document.getElementById('meme-modal-save-btn');
     const cancelBtn = document.getElementById('meme-modal-cancel-rename-btn');
-    
+    const warning = document.getElementById('meme-modal-rename-warning');
+
     if (!filenameDisplay || !filenameInput || !editBtn || !saveBtn || !cancelBtn) return;
-    
+
     // Switch back to display mode
     filenameDisplay.style.display = 'inline';
     editBtn.style.display = 'inline-block';
     filenameInput.style.display = 'none';
     saveBtn.style.display = 'none';
+    saveBtn.disabled = false;
+    saveBtn.style.opacity = '';
+    saveBtn.style.cursor = '';
     cancelBtn.style.display = 'none';
+    if (warning) { warning.style.display = 'none'; warning.textContent = ''; }
 }
 
 // Load memes function
@@ -1248,14 +1352,17 @@ async function loadMemes() {
             return;
         }
         memesList.innerHTML = '';
+        // Rebuild filename set from loaded page
+        window.memeFilenameSet = new Set();
         if (data.memes && data.memes.length > 0) {
             data.memes.forEach(meme => {
+                window.memeFilenameSet.add(meme.filename);
                 const memeDiv = document.createElement('div');
                 memeDiv.className = 'meme-thumbnail';
                 // Create placeholder image with lazy loading
                 const img = document.createElement('img');
                 img.dataset.filename = meme.filename;
-                img.dataset.url = meme.url;
+                img.dataset.url = meme.thumb_url || meme.url;
                 img.alt = meme.filename;
                 img.loading = 'lazy'; // Native lazy loading as fallback
                 img.style.cursor = 'pointer';
@@ -1332,7 +1439,7 @@ async function loadMoreMemes(page, buttonElement) {
             
             const img = document.createElement('img');
             img.dataset.filename = meme.filename;
-            img.dataset.url = meme.url;
+            img.dataset.url = meme.thumb_url || meme.url;
             img.alt = meme.filename;
             img.loading = 'lazy';
             img.style.cursor = 'pointer';
@@ -1557,6 +1664,9 @@ function renderConfigurationForm() {
                 //console.log(`Adding field: ${key} to category ${category.id}`);
                 try {
                     const formGroup = createFormField(key, field, currentConfig[key]);
+                    if (field.always_visible) {
+                        formGroup.classList.add('form-group--always-visible');
+                    }
                     section.appendChild(formGroup);
                     fieldsAdded++;
                 } catch (error) {
@@ -1602,8 +1712,8 @@ function createFormField(key, field, value) {
         formGroup.classList.add('form-group-color');
     }
     
-    // Skip adding label for meme_management since it manages its own interface
-    if (field.type !== 'meme_management') {
+    // Skip adding label for self-managed interfaces and pure info boxes
+    if (field.type !== 'meme_management' && field.type !== 'donation_history' && field.type !== 'info_text') {
         const label = document.createElement('label');
         label.className = 'form-label';
         label.textContent = field.label;
@@ -1628,8 +1738,8 @@ function createFormField(key, field, value) {
             break;
             
         case 'password':
-            if (key === 'admin_password') {
-                // Special handling for admin password - show Change Password button instead
+            if (key === 'admin_password' || key === 'mempool_password') {
+                // Use dedicated change-password workflow (button + new/confirm validation).
                 input = createPasswordChangeInterface(key, field);
             } else {
                 // Regular password field
@@ -1749,7 +1859,22 @@ function createFormField(key, field, value) {
             console.log(`Creating OPSec management interface for key ${key}`);
             input = createOpsecManagementInterface(field);
             break;
-            
+
+        case 'donation_history':
+            input = createDonationHistoryInterface();
+            break;
+
+        case 'info_text': {
+            const infoBox = document.createElement('div');
+            infoBox.className = 'form-info-box';
+            const rawHtml = (field.html || field.text || '');
+            infoBox.innerHTML = rawHtml.replace(/\{BASE_URL\}/g, window.location.origin);
+            // Not a config value — excluded from saves
+            infoBox.getValue = () => null;
+            input = infoBox;
+            break;
+        }
+
         case 'hidden':
             // Create hidden input that won't be displayed
             input = document.createElement('input');
@@ -1791,7 +1916,7 @@ function createFormField(key, field, value) {
     if (field.description) {
         const description = document.createElement('div');
         description.className = 'form-description';
-        description.textContent = field.description;
+        description.innerHTML = field.description;
         formGroup.appendChild(description);
     }
     
@@ -2053,7 +2178,7 @@ function createColorSelect(value) {
 // Diagnostic function to test boolean elements
 function diagnoseBooleanElements() {
     console.log('👁️ [DIAGNOSTIC] Checking all boolean elements:');
-    const booleanFields = ['prioritize_large_scaled_meme', 'color_mode_dark', 'live_block_notifications_enabled', 'show_btc_price_block', 'show_bitaxe_block', 'show_wallet_balances_block', 'e-ink-display-connected'];
+    const booleanFields = ['prioritize_large_scaled_meme', 'color_mode_dark', 'live_block_notifications_enabled', 'show_btc_price_block', 'show_bitaxe_block', 'show_wallet_balances_block', 'show_donation_block', 'e-ink-display-connected'];
     
     booleanFields.forEach(fieldName => {
         const element = document.querySelector(`[data-config-key="${fieldName}"]`);
@@ -3263,9 +3388,45 @@ function createMemeManagementInterface(field) {
     memesList.style.marginTop = '10px';
     memesSection.appendChild(memesList);
     
+    // Einundzwanzig bulk-download section
+    const ezSection = document.createElement('div');
+    ezSection.className = 'form-group';
+    ezSection.style.marginBottom = '30px';
+
+    const ezLabel = document.createElement('label');
+    ezLabel.className = 'form-label';
+    ezLabel.textContent = 'Einundzwanzig Memes – Bulk Download';
+    ezSection.appendChild(ezLabel);
+
+    const ezDesc = document.createElement('p');
+    ezDesc.style.cssText = 'font-size:0.85rem; color:var(--text-secondary,#aaa); margin: 4px 0 12px;';
+    ezDesc.textContent = 'Download all available memes from einundzwanzig-memes.space. Duplicates are detected by content hash and skipped automatically.';
+    ezSection.appendChild(ezDesc);
+
+    const ezBtn = document.createElement('button');
+    ezBtn.id = 'ez-download-btn';
+    ezBtn.className = 'save-button';
+    ezBtn.style.cssText = 'display:inline-flex; align-items:center; gap:8px; margin:0; padding:12px 24px; font-size:14px;';
+    ezBtn.innerHTML = `<img src="/static/icons/download.svg" alt="" style="width:16px;height:16px;filter:brightness(0) invert(1);"> Download All Memes`;
+    ezBtn.onclick = startEinundzwanzigDownload;
+    ezSection.appendChild(ezBtn);
+
+    const ezProgress = document.createElement('div');
+    ezProgress.id = 'ez-progress';
+    ezProgress.style.cssText = 'display:none; margin-top:14px;';
+    ezProgress.innerHTML = `
+        <div style="background:#2a2a2a; border-radius:10px; overflow:hidden;">
+            <div id="ez-progress-bar" style="height:8px; background:#667eea; width:0%; transition:width 0.4s;"></div>
+        </div>
+        <p id="ez-status" style="margin-top:6px; font-size:0.9rem;"></p>
+        <p id="ez-counters" style="font-size:0.85rem; color:var(--text-secondary,#aaa);"></p>
+    `;
+    ezSection.appendChild(ezProgress);
+
+    container.appendChild(ezSection);
     container.appendChild(uploadSection);
     container.appendChild(memesSection);
-    
+
     // Initialize the meme management functionality
     setTimeout(() => {
         setupModals();
@@ -3281,6 +3442,96 @@ function createMemeManagementInterface(field) {
 
 
 
+// --- Einundzwanzig bulk-download ---
+
+function startEinundzwanzigDownload() {
+    const btn = document.getElementById('ez-download-btn');
+    const progress = document.getElementById('ez-progress');
+    const bar = document.getElementById('ez-progress-bar');
+    const status = document.getElementById('ez-status');
+    const counters = document.getElementById('ez-counters');
+
+    if (!btn) return;
+    btn.disabled = true;
+    btn.innerHTML = `<img src="/static/icons/download.svg" alt="" style="width:16px;height:16px;filter:brightness(0) invert(1);"> Connecting…`;
+    progress.style.display = 'block';
+    bar.style.width = '2%';
+    status.textContent = 'Connecting…';
+    counters.textContent = '';
+
+    fetch('/api/download-einundzwanzig', { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                status.textContent = '⚠️ ' + (data.message || 'Failed to start download');
+                btn.disabled = false;
+                btn.innerHTML = `<img src="/static/icons/download.svg" alt="" style="width:16px;height:16px;filter:brightness(0) invert(1);"> Download All Memes`;
+            }
+        })
+        .catch(err => {
+            status.textContent = '⚠️ Error: ' + err.message;
+            btn.disabled = false;
+            btn.innerHTML = `<img src="/static/icons/download.svg" alt="" style="width:16px;height:16px;filter:brightness(0) invert(1);"> Download All Memes`;
+        });
+}
+
+function handleEzDownloadProgress(data) {
+    const bar = document.getElementById('ez-progress-bar');
+    const status = document.getElementById('ez-status');
+    const counters = document.getElementById('ez-counters');
+    const btn = document.getElementById('ez-download-btn');
+    if (!status) return;
+
+    if (data.stage === 'hashing') {
+        // 0–5%: scanning existing files for duplicate detection
+        if (bar) bar.style.width = '5%';
+        if (btn) btn.innerHTML = `<img src="/static/icons/download.svg" alt="" style="width:16px;height:16px;filter:brightness(0) invert(1);"> Scanning…`;
+        status.textContent = data.message;
+    } else if (data.stage === 'discovering') {
+        // 5–20%: random sampling (500 calls max, stops early on saturation)
+        // discovered grows toward ~4326; scale bar accordingly
+        const discPct = data.discovered > 0 ? Math.min(5 + Math.round(data.discovered / 55), 20) : 7;
+        if (bar) bar.style.width = discPct + '%';
+        if (btn) btn.innerHTML = `<img src="/static/icons/download.svg" alt="" style="width:16px;height:16px;filter:brightness(0) invert(1);"> Sampling…`;
+        status.textContent = data.message;
+    } else if (data.stage === 'downloading') {
+        // 20–100%: downloading new memes
+        const pct = data.total > 0 ? 20 + Math.round((data.done / data.total) * 80) : 20;
+        if (bar) bar.style.width = pct + '%';
+        if (btn) btn.innerHTML = `<img src="/static/icons/download.svg" alt="" style="width:16px;height:16px;filter:brightness(0) invert(1);"> Downloading…`;
+        status.textContent = data.message;
+        if (counters && data.total > 0) {
+            counters.textContent = `✓ ${data.downloaded} new  ⊝ ${data.duplicates} duplicates  ✗ ${data.failed} failed`;
+        }
+    }
+}
+
+function handleEzDownloadComplete(data) {
+    const bar = document.getElementById('ez-progress-bar');
+    const status = document.getElementById('ez-status');
+    const counters = document.getElementById('ez-counters');
+    const btn = document.getElementById('ez-download-btn');
+
+    if (bar) bar.style.width = '100%';
+
+    if (data.success) {
+        if (bar) bar.style.background = '#4caf50';
+        if (status) status.textContent = `✓ Download complete — ${data.downloaded} new meme${data.downloaded !== 1 ? 's' : ''} added`;
+        if (counters) counters.textContent = `${data.downloaded} new  ·  ${data.duplicates} duplicates skipped  ·  ${data.failed} failed  ·  ${data.total} total found`;
+        // Reload the meme grid so new images appear
+        if (typeof loadMemes === 'function') loadMemes(true);
+    } else {
+        if (bar) bar.style.background = '#f44336';
+        if (status) status.textContent = '✗ Download failed: ' + (data.message || 'Unknown error');
+    }
+
+    if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = `<img src="/static/icons/download.svg" alt="" style="width:16px;height:16px;filter:brightness(0) invert(1);"> Download All Memes`;
+    }
+}
+
+
 // --- OPSec Image Management ---
 
 function createOpsecThumb(img) {
@@ -3289,7 +3540,7 @@ function createOpsecThumb(img) {
     thumb.style.position = 'relative';
 
     const imgEl = document.createElement('img');
-    imgEl.src = img.url;
+    imgEl.src = img.thumb_url || img.url;
     imgEl.alt = img.filename;
     imgEl.dataset.filename = img.filename;
     imgEl.loading = 'lazy';
@@ -3534,6 +3785,102 @@ function createOpsecManagementInterface(field) {
     return container;
 }
 
+function createDonationHistoryInterface() {
+    const container = document.createElement('div');
+    container.className = 'donation-history-container';
+    container.style.cssText = 'margin-top: 12px;';
+
+    const t = window.translations || {};
+    const title = document.createElement('h4');
+    title.textContent = t.recent_donations || 'Recent Donations';
+    title.style.cssText = 'margin: 0 0 10px 0; font-size: 15px;';
+    container.appendChild(title);
+
+    const tableWrapper = document.createElement('div');
+    tableWrapper.style.cssText = 'overflow-x: auto; overflow-y: auto; max-height: 210px; border: 1px solid var(--border-color, #dee2e6); border-radius: 6px;';
+
+    const table = document.createElement('table');
+    table.style.cssText = 'width: 100%; border-collapse: collapse; font-size: 13px;';
+    table.innerHTML = `
+        <thead>
+            <tr style="border-bottom: 1px solid var(--border-color, #dee2e6);">
+                <th style="text-align:left; padding: 6px 8px; position: sticky; top: 0; background: var(--card-bg, #fff); z-index: 1;">${t.donation_col_time || 'Time'}</th>
+                <th style="text-align:right; padding: 6px 8px; position: sticky; top: 0; background: var(--card-bg, #fff); z-index: 1;">Sats</th>
+                <th style="text-align:left; padding: 6px 8px; position: sticky; top: 0; background: var(--card-bg, #fff); z-index: 1;">${t.donation_col_message || 'Message'}</th>
+            </tr>
+        </thead>
+        <tbody id="donation-history-tbody"><tr><td colspan="3" style="padding:8px; color:#888;">${t.loading || 'Loading…'}</td></tr></tbody>
+    `;
+    tableWrapper.appendChild(table);
+    container.appendChild(tableWrapper);
+
+    // Fixed total row (outside the scrollable wrapper)
+    const totalRow = document.createElement('div');
+    totalRow.id = 'donation-total-row';
+    totalRow.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding: 6px 10px; border: 1px solid var(--border-color, #dee2e6); border-top: none; border-radius: 0 0 6px 6px; font-size:13px; background: var(--card-bg, #fff);';
+    totalRow.innerHTML = `<span style="color:var(--text-muted, #888);">${t.donation_total || 'Total received'}</span><span id="donation-total-sats" style="font-weight:bold;">—</span>`;
+    container.appendChild(totalRow);
+
+    // Load donations from API
+    fetch('/api/donations')
+        .then(r => r.json())
+        .then(data => {
+            const tbody = table.querySelector('#donation-history-tbody');
+            const donations = data.donations || [];
+            if (donations.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="3" style="padding:8px; color:#888;">${t.no_donations_yet || 'No donations yet.'}</td></tr>`;
+                return;
+            }
+            tbody.innerHTML = donations.map(d => {
+                const ts = d.timestamp ? new Date(d.timestamp + 'Z').toLocaleString() : '—';
+                const sats = (d.amount_sats || 0).toLocaleString();
+                const msg = d.message ? escapeHtml(d.message) : '<em style="color:#888">—</em>';
+                return `<tr style="border-bottom:1px solid var(--border-color, #f0f0f0);">
+                    <td style="padding:5px 8px; white-space:nowrap;">${ts}</td>
+                    <td style="padding:5px 8px; text-align:right; font-weight:bold;">${sats}</td>
+                    <td style="padding:5px 8px;">${msg}</td>
+                </tr>`;
+            }).join('');
+            const total = donations.reduce((sum, d) => sum + (d.amount_sats || 0), 0);
+            const totalEl = container.querySelector('#donation-total-sats');
+            if (totalEl) {
+                totalEl.dataset.total = total;
+                totalEl.textContent = total.toLocaleString() + ' sats';
+            }
+        })
+        .catch(() => {
+            const tbody = table.querySelector('#donation-history-tbody');
+            tbody.innerHTML = `<tr><td colspan="3" style="padding:8px; color:#888;">${t.could_not_load_donations || 'Could not load donations.'}</td></tr>`;
+        });
+
+    container.getValue = () => null;
+    return container;
+}
+
+function escapeHtml(text) {
+    return text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function showDonationToast(donation) {
+    const sats = (donation.amount_sats || 0).toLocaleString();
+    const msg  = donation.message ? ` — "${escapeHtml(donation.message)}"` : '';
+
+    const toast = document.createElement('div');
+    toast.className = 'donation-toast';
+    const satLabel = donation.amount_sats === 1 ? 'sat' : 'sats';
+    toast.innerHTML = `<span class="donation-toast-icon">⚡</span><span><strong>${sats} ${satLabel}</strong>${msg}</span>`;
+    document.body.appendChild(toast);
+
+    // Trigger fade-in
+    requestAnimationFrame(() => toast.classList.add('donation-toast--visible'));
+
+    // Auto-dismiss after 5 s
+    setTimeout(() => {
+        toast.classList.remove('donation-toast--visible');
+        toast.addEventListener('transitionend', () => toast.remove(), { once: true });
+    }, 5000);
+}
+
 async function uploadOpsecFiles(files) {
     const progressDiv = document.getElementById('opsec-upload-progress');
     const progressBar = document.getElementById('opsec-progress-bar');
@@ -3745,7 +4092,7 @@ async function saveConfiguration() {
         
         // Additional safety check: ensure all boolean fields are properly collected
         // This is a fallback in case boolean switches weren't collected above
-        const expectedBooleanFields = ['prioritize_large_scaled_meme', 'color_mode_dark', 'live_block_notifications_enabled', 'show_btc_price_block', 'show_bitaxe_block', 'show_wallet_balances_block', 'e-ink-display-connected'];
+        const expectedBooleanFields = ['prioritize_large_scaled_meme', 'color_mode_dark', 'live_block_notifications_enabled', 'show_btc_price_block', 'show_bitaxe_block', 'show_wallet_balances_block', 'show_donation_block', 'e-ink-display-connected'];
         expectedBooleanFields.forEach(fieldName => {
             if (!(fieldName in formConfig)) {
                 console.log(`🚨 [FALLBACK] Missing boolean field ${fieldName} in form collection, attempting to recover...`);
@@ -4726,6 +5073,15 @@ function setupConfigSocketHandlers() {
         }
     });
 
+    // Einundzwanzig bulk-download progress
+    configSocket.on('einundzwanzig_download_progress', (data) => {
+        handleEzDownloadProgress(data);
+    });
+
+    configSocket.on('einundzwanzig_download_complete', (data) => {
+        handleEzDownloadComplete(data);
+    });
+
     // Cleanup on page unload
     window.addEventListener('beforeunload', function() {
         unregisterPageForNotifications('config');
@@ -4852,7 +5208,7 @@ function setupNavigationButtons() {
                     console.log('👁️ [SAVE DEBUG] Final formConfig:', formConfig);
                     
                     // Temporary: Show what we collected for boolean fields
-                    const booleanFields = ['prioritize_large_scaled_meme', 'color_mode_dark', 'live_block_notifications_enabled', 'show_btc_price_block', 'show_bitaxe_block', 'show_wallet_balances_block', 'e-ink-display-connected'];
+                    const booleanFields = ['prioritize_large_scaled_meme', 'color_mode_dark', 'live_block_notifications_enabled', 'show_btc_price_block', 'show_bitaxe_block', 'show_wallet_balances_block', 'show_donation_block', 'e-ink-display-connected'];
                     const booleanData = {};
                     booleanFields.forEach(field => {
                         if (formConfig.hasOwnProperty(field)) {
@@ -5196,7 +5552,7 @@ window.testConfigSave = function() {
     console.log('🧪 Starting config save test...');
     
     // Test current boolean values
-    const booleanFields = ['prioritize_large_scaled_meme', 'color_mode_dark', 'live_block_notifications_enabled', 'show_btc_price_block', 'show_bitaxe_block', 'show_wallet_balances_block', 'e-ink-display-connected'];
+    const booleanFields = ['prioritize_large_scaled_meme', 'color_mode_dark', 'live_block_notifications_enabled', 'show_btc_price_block', 'show_bitaxe_block', 'show_wallet_balances_block', 'show_donation_block', 'e-ink-display-connected'];
     
     console.log('💾 Current boolean values:');
     booleanFields.forEach(fieldName => {

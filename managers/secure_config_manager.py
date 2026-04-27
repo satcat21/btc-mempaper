@@ -50,6 +50,7 @@ class SecureConfigManager:
             'block_reward_addresses_table',
             'admin_password_hash',
             'secret_key',
+            'mempool_password'
         }
         
         # Initialize encryption key (uses class-level cache)

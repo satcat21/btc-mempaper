@@ -14,6 +14,8 @@ import threading
 import time
 from typing import List, Set, Dict, Any
 import urllib3
+from requests.auth import HTTPBasicAuth
+from urllib.parse import quote
 
 # Import the new caching system
 from lib.block_reward_cache import BlockRewardCache
@@ -138,6 +140,22 @@ class BlockRewardMonitor:
                 return f"{protocol}://{mempool_host}:{mempool_rest_port}/api"
         else:
             raise ValueError("❌ No configuration manager available. Cannot connect to mempool without configuration.")
+
+    def _get_mempool_auth(self):
+        """Return HTTP basic auth object for mempool if configured, else None."""
+        if not self.config_manager:
+            return None
+        config = self.config_manager.get_current_config()
+        if not isinstance(config, dict):
+            return None
+        username = str(config.get("mempool_username", "") or "").strip()
+        password = str(config.get("mempool_password", "") or "").strip()
+        if username and password:
+            return HTTPBasicAuth(username, password)
+        return None
+
+    def _has_mempool_auth(self) -> bool:
+        return self._get_mempool_auth() is not None
     
     def _get_mempool_ws_url(self) -> str:
         """Get mempool WebSocket URL from configuration with WSS support."""
@@ -147,6 +165,8 @@ class BlockRewardMonitor:
             mempool_ws_port = config.get("mempool_ws_port") if isinstance(config, dict) else None
             mempool_ws_path = config.get("mempool_ws_path", "/api/v1/ws") if isinstance(config, dict) else "/api/v1/ws"
             mempool_use_https = config.get("mempool_use_https", False) if isinstance(config, dict) else False
+            mempool_username = str(config.get("mempool_username", "") or "").strip() if isinstance(config, dict) else ""
+            mempool_password = str(config.get("mempool_password", "") or "").strip() if isinstance(config, dict) else ""
             
             if not mempool_ws_port:
                 raise ValueError("❌ Mempool WebSocket configuration missing. Please configure mempool_ws_port.")
@@ -156,6 +176,9 @@ class BlockRewardMonitor:
             
             # Build WebSocket URL with proper protocol
             protocol = "wss" if mempool_use_https else "ws"
+            auth_prefix = ""
+            if mempool_username and mempool_password:
+                auth_prefix = f"{quote(mempool_username, safe='')}:{quote(mempool_password, safe='')}@"
             
             # Normalize port to string for comparison
             port_str = str(mempool_ws_port) if mempool_ws_port is not None else ""
@@ -165,9 +188,9 @@ class BlockRewardMonitor:
             is_standard_port = (mempool_use_https and port_str == "443") or (not mempool_use_https and port_str == "80")
             
             if is_standard_port:
-                return f"{protocol}://{mempool_host}{mempool_ws_path}"
+                return f"{protocol}://{auth_prefix}{mempool_host}{mempool_ws_path}"
             else:
-                return f"{protocol}://{mempool_host}:{mempool_ws_port}{mempool_ws_path}"
+                return f"{protocol}://{auth_prefix}{mempool_host}:{mempool_ws_port}{mempool_ws_path}"
         else:
             raise ValueError("❌ No configuration manager available. Cannot connect to mempool WebSocket without configuration.")
     
@@ -359,6 +382,8 @@ class BlockRewardMonitor:
         """Fetch and return the coinbase transaction details from a block."""
         try:
             BASE_URL = self._get_mempool_base_url()
+            mempool_auth = self._get_mempool_auth()
+            auth_mode = "basic" if mempool_auth else "none"
             
             # Try different endpoints - some mempool instances have different API structures
             endpoints_to_try = [
@@ -370,12 +395,12 @@ class BlockRewardMonitor:
             txids = None
             for endpoint in endpoints_to_try:
                 try:
-                    print(f"👁️ Trying endpoint: {endpoint}")
+                    print(f"👁️ Trying endpoint: {endpoint} (auth={auth_mode})")
                     # Use verify=False for self-signed HTTPS certificates
-                    txids_resp = requests.get(endpoint, timeout=10, verify=False)
+                    txids_resp = requests.get(endpoint, timeout=10, verify=False, auth=mempool_auth)
                     txids_resp.raise_for_status()
                     txids = txids_resp.json()
-                    print(f"✅ Successfully got txids from: {endpoint}")
+                    print(f"✅ Successfully got txids from: {endpoint} (auth={auth_mode})")
                     break
                 except requests.exceptions.HTTPError as e:
                     if e.response.status_code == 404:
@@ -411,7 +436,7 @@ class BlockRewardMonitor:
             coinbase_txid = transaction_ids[0]
             
             # Get coinbase transaction details
-            tx_resp = requests.get(f"{BASE_URL}/tx/{coinbase_txid}", timeout=10, verify=False)
+            tx_resp = requests.get(f"{BASE_URL}/tx/{coinbase_txid}", timeout=10, verify=False, auth=mempool_auth)
             tx_resp.raise_for_status()
             
             return tx_resp.json()

@@ -6,6 +6,10 @@ This module provides the WSGI application interface for production
 deployment with Gunicorn using gevent workers for better compatibility.
 """
 
+# Must be before any other imports when using gevent workers
+from gevent import monkey
+monkey.patch_all()
+
 import os
 import sys
 

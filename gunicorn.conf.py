@@ -57,7 +57,7 @@ backlog = 2048
 
 # Worker processes - optimized for Raspberry Pi Zero WH (single core, 512MB RAM)
 workers = 1  # Single worker for single-core CPU
-worker_class = "gevent"  # Use standard gevent worker (Flask-SocketIO handles WebSocket natively)
+worker_class = "gevent"  # Standard gevent worker; Flask-SocketIO handles WebSocket natively
 worker_connections = 100  # Reduced for limited RAM
 timeout = 600  # Increased timeout for wallet balance gap limit detection (10 minutes)
 keepalive = 2

@@ -28,6 +28,7 @@ from babel.dates import format_date
 
 from lib.btc_holidays import btc_holidays
 from utils.color_lut import ColorLUT
+from utils.translations import translations as _TRANSLATIONS
 from lib.btc_price_api import BitcoinPriceAPI
 from lib.bitaxe_api import BitaxeAPI
 from lib.wallet_balance_api import WalletBalanceAPI
@@ -58,6 +59,7 @@ COLOR_SETS = {
         "black": "#343a40",
         "wallet_balance": "#1565C0", # darker blue for wallet balance
         "fiat_balance": "#1565C0",   # darker green for fiat balance
+        "donation": "#F7931A",       # Bitcoin orange for donation block
     },
     "dark": {
         "background": "#2e324e",
@@ -84,6 +86,7 @@ COLOR_SETS = {
         'black':  "#CCCCCC",
         "wallet_balance": "#09a3ba",  # lighter blue for wallet balance
         "fiat_balance": "#09a3ba",    # lighter green for fiat balance
+        "donation": "#F7931A",        # Bitcoin orange for donation block
     }
 }
 
@@ -141,6 +144,37 @@ MEME_SIDE_MARGIN = 40         # Total horizontal margin for meme (20 per side)
 
 # --- Info Block Offsets ---
 INFO_BLOCK_VERTICAL_ADJUSTMENT = 10  # Vertical offset adjustment for info block content
+
+# Baseline canvas sizes used for the original layout design.
+BASE_CANVAS_VERTICAL_WIDTH = 480
+BASE_CANVAS_VERTICAL_HEIGHT = 800
+BASE_CANVAS_HORIZONTAL_WIDTH = 800
+BASE_CANVAS_HORIZONTAL_HEIGHT = 480
+
+# Baseline layout constants (immutable references for dynamic scaling).
+BASE_INFO_BLOCK_HEIGHT = INFO_BLOCK_HEIGHT
+BASE_ELEMENT_MARGIN = ELEMENT_MARGIN
+BASE_CARD_RADIUS = CARD_RADIUS
+BASE_SIDE_PADDING = SIDE_PADDING
+BASE_TOP_PADDING = TOP_PADDING
+BASE_BLOCK_HEIGHT_AREA = BLOCK_HEIGHT_AREA
+BASE_BLOCK_INNER_MARGIN = BLOCK_INNER_MARGIN
+BASE_LABEL_PADDING_TOP = LABEL_PADDING_TOP
+BASE_LABEL_TO_VALUE_SPACING = LABEL_TO_VALUE_SPACING
+BASE_LINE_SPACING_DEFAULT = LINE_SPACING_DEFAULT
+BASE_LINE_SPACING_MULTILINE = LINE_SPACING_MULTILINE
+BASE_HOLIDAY_TITLE_DESC_GAP = HOLIDAY_TITLE_DESC_GAP
+BASE_HOLIDAY_PADDING = HOLIDAY_PADDING
+BASE_FONT_SIZE_SMALL_LABEL = FONT_SIZE_SMALL_LABEL
+BASE_FONT_SIZE_LARGE_VALUE = FONT_SIZE_LARGE_VALUE
+BASE_FONT_SIZE_BLOCK_VALUE = FONT_SIZE_BLOCK_VALUE
+BASE_FONT_SIZE_HOLIDAY_TITLE = FONT_SIZE_HOLIDAY_TITLE
+BASE_FONT_SIZE_HOLIDAY_DESC = FONT_SIZE_HOLIDAY_DESC
+BASE_STANDARD_SPACING = STANDARD_SPACING
+BASE_MEME_RADIUS = MEME_RADIUS
+BASE_MEME_MIN_HEIGHT = MEME_MIN_HEIGHT
+BASE_MEME_SIDE_MARGIN = MEME_SIDE_MARGIN
+BASE_INFO_BLOCK_VERTICAL_ADJUSTMENT = INFO_BLOCK_VERTICAL_ADJUSTMENT
 
 
 class LayoutCalculator:
@@ -233,6 +267,15 @@ class ImageRenderer:
             self.color_sets["dark"]["wallet_balance"] = config["color_wallets_dark"]
             self.color_sets["dark"]["fiat_balance"] = config["color_wallets_dark"]
 
+        # Donation colors
+        if "color_donation_light" in config:
+            self.color_sets["light"]["donation"] = config["color_donation_light"]
+        if "color_donation_dark" in config:
+            self.color_sets["dark"]["donation"] = config["color_donation_dark"]
+
+        # Latest Lightning donation data (set from app before each render)
+        self._donation_data = None
+
         self.block_fee_cache = {}  # {block_height: {'fee_data': ..., 'fee_color': ...}}
         self.last_block_height = None
         self.fee_param = config.get('fee_param', 'fastestFee')  # Default fee param
@@ -248,6 +291,7 @@ class ImageRenderer:
         
         self.display_width = config.get("display_width", 800)
         self.display_height = config.get("display_height", 480)
+        self.block_height_area_base = config.get("block_height_area", BASE_BLOCK_HEIGHT_AREA)
         self.e_ink_enabled = config.get("e-ink-display-connected", True)
         self._last_fee = None
         self._last_block_height = None
@@ -262,7 +306,7 @@ class ImageRenderer:
         self.font_bold = os.path.join("static", "fonts", "Roboto-Bold.ttf")
         self.font_mono = os.path.join("static", "fonts", "IBMPlexMono-Bold.ttf")
         self.font_block_height = os.path.join("static", "fonts", "RobotoCondensed-ExtraBold.ttf")
-        self.block_height_area = config.get("block_height_area", 180)
+        self.block_height_area = self.block_height_area_base
         
         # Color palette for 7-color e-Paper display
         # Using the same bright, intense colors as omni-epd configuration for consistency
@@ -295,6 +339,78 @@ class ImageRenderer:
         if hasattr(self, "refresh_dashboard"):
             self.refresh_dashboard()
 
+    def _get_resolution_scale(self, orientation):
+        """Return orientation-aware scale factor based on original baseline canvas."""
+        if orientation == "vertical":
+            base_w, base_h = BASE_CANVAS_VERTICAL_WIDTH, BASE_CANVAS_VERTICAL_HEIGHT
+        else:
+            base_w, base_h = BASE_CANVAS_HORIZONTAL_WIDTH, BASE_CANVAS_HORIZONTAL_HEIGHT
+
+        sx = self.width / max(base_w, 1)
+        sy = self.height / max(base_h, 1)
+
+        # Optional user override for fine-tuning perceived UI density per display model.
+        # 1.0 keeps automatic scaling as-is; values like 0.9 or 1.15 shrink/grow UI.
+        try:
+            override = float(self.config.get("ui_scale_override", 1.0))
+        except (TypeError, ValueError):
+            override = 1.0
+        override = max(0.5, min(2.0, override))
+
+        # Keep uniform scaling to preserve proportions.
+        return max(0.75, min(3.0, min(sx, sy) * override))
+
+    def _scale_px(self, value, min_value=1):
+        """Scale a pixel value using the current UI scale."""
+        return max(min_value, int(round(value * self.ui_scale)))
+
+    def _scale_font_size(self, value, min_value=8):
+        """Scale font size using the current UI scale."""
+        return max(min_value, int(round(value * self.ui_scale)))
+
+    def _apply_scaled_layout_constants(self):
+        """Apply resolution-scaled layout constants used throughout rendering."""
+        global INFO_BLOCK_HEIGHT, ELEMENT_MARGIN, CARD_RADIUS, SIDE_PADDING, TOP_PADDING
+        global BLOCK_HEIGHT_AREA, BLOCK_INNER_MARGIN, SECTION_SIDE_PADDING, BLOCK_RADIUS
+        global LABEL_PADDING_TOP, LABEL_TO_VALUE_SPACING, LINE_SPACING_DEFAULT, LINE_SPACING_MULTILINE
+        global HOLIDAY_TITLE_DESC_GAP, HOLIDAY_PADDING
+        global FONT_SIZE_SMALL_LABEL, FONT_SIZE_LARGE_VALUE, FONT_SIZE_BLOCK_VALUE
+        global FONT_SIZE_HOLIDAY_TITLE, FONT_SIZE_HOLIDAY_DESC
+        global STANDARD_SPACING, MEME_RADIUS, MEME_MIN_HEIGHT, MEME_SIDE_MARGIN
+        global INFO_BLOCK_VERTICAL_ADJUSTMENT
+
+        INFO_BLOCK_HEIGHT = self._scale_px(BASE_INFO_BLOCK_HEIGHT, min_value=32)
+        ELEMENT_MARGIN = self._scale_px(BASE_ELEMENT_MARGIN, min_value=8)
+        CARD_RADIUS = self._scale_px(BASE_CARD_RADIUS, min_value=6)
+        SIDE_PADDING = self._scale_px(BASE_SIDE_PADDING, min_value=8)
+        TOP_PADDING = self._scale_px(BASE_TOP_PADDING, min_value=8)
+        BLOCK_HEIGHT_AREA = self._scale_px(BASE_BLOCK_HEIGHT_AREA, min_value=100)
+        BLOCK_INNER_MARGIN = self._scale_px(BASE_BLOCK_INNER_MARGIN, min_value=4)
+        SECTION_SIDE_PADDING = SIDE_PADDING
+        BLOCK_RADIUS = CARD_RADIUS
+
+        LABEL_PADDING_TOP = self._scale_px(BASE_LABEL_PADDING_TOP, min_value=2)
+        LABEL_TO_VALUE_SPACING = self._scale_px(BASE_LABEL_TO_VALUE_SPACING, min_value=3)
+        LINE_SPACING_DEFAULT = self._scale_px(BASE_LINE_SPACING_DEFAULT, min_value=4)
+        LINE_SPACING_MULTILINE = self._scale_px(BASE_LINE_SPACING_MULTILINE, min_value=2)
+        HOLIDAY_TITLE_DESC_GAP = self._scale_px(BASE_HOLIDAY_TITLE_DESC_GAP, min_value=1)
+        HOLIDAY_PADDING = self._scale_px(BASE_HOLIDAY_PADDING, min_value=10)
+
+        FONT_SIZE_SMALL_LABEL = self._scale_font_size(BASE_FONT_SIZE_SMALL_LABEL, min_value=10)
+        FONT_SIZE_LARGE_VALUE = self._scale_font_size(BASE_FONT_SIZE_LARGE_VALUE, min_value=16)
+        FONT_SIZE_BLOCK_VALUE = self._scale_font_size(BASE_FONT_SIZE_BLOCK_VALUE, min_value=24)
+        FONT_SIZE_HOLIDAY_TITLE = self._scale_font_size(BASE_FONT_SIZE_HOLIDAY_TITLE, min_value=14)
+        FONT_SIZE_HOLIDAY_DESC = self._scale_font_size(BASE_FONT_SIZE_HOLIDAY_DESC, min_value=12)
+
+        STANDARD_SPACING = self._scale_px(BASE_STANDARD_SPACING, min_value=8)
+        MEME_RADIUS = self._scale_px(BASE_MEME_RADIUS, min_value=6)
+        MEME_MIN_HEIGHT = self._scale_px(BASE_MEME_MIN_HEIGHT, min_value=24)
+        MEME_SIDE_MARGIN = self._scale_px(BASE_MEME_SIDE_MARGIN, min_value=16)
+        INFO_BLOCK_VERTICAL_ADJUSTMENT = self._scale_px(BASE_INFO_BLOCK_VERTICAL_ADJUSTMENT, min_value=2)
+
+        # block_height_area may be user-configured; scale from its configured base value.
+        self.block_height_area = self._scale_px(self.block_height_area_base, min_value=100)
+
     def _apply_orientation_settings(self, orientation):
         """
         Apply width/height/layout settings based on requested orientation.
@@ -305,6 +421,10 @@ class ImageRenderer:
             self.width, self.height = self.display_height, self.display_width  # 480x800
         else:
             self.width, self.height = self.display_width, self.display_height  # 800x480
+
+        # Update resolution-aware scale and derived layout constants.
+        self.ui_scale = self._get_resolution_scale(self.orientation)
+        self._apply_scaled_layout_constants()
         
         # Re-initialize layout calculator for the new dimensions
         self.layout = LayoutCalculator(self.width, self.height)
@@ -602,6 +722,201 @@ class ImageRenderer:
 
         return info_block_y + INFO_BLOCK_HEIGHT + ELEMENT_MARGIN
 
+    def _build_donation_header_text(self, amount_sats: int, timestamp: str) -> str:
+        """Build localized donation header text used for measure + render passes."""
+        display_mode = self.config.get("donation_display_mode", "latest")
+        lang = self.config.get("language", "en")
+        t = _TRANSLATIONS.get(lang, _TRANSLATIONS["en"])
+
+        if display_mode == "highest":
+            header_mode = t.get("donation_mode_highest", "Largest donation")
+        elif display_mode == "auto":
+            # In auto mode show the actual label (latest or largest) for the donation being displayed
+            effective = None
+            if self._donation_data and isinstance(self._donation_data, dict):
+                effective = self._donation_data.get("_effective_mode")
+            if effective == "highest":
+                header_mode = t.get("donation_mode_highest", "Largest donation")
+            else:
+                header_mode = t.get("donation_mode_latest", "Latest donation")
+        else:
+            header_mode = t.get("donation_mode_latest", "Latest donation")
+
+        if timestamp:
+            try:
+                from datetime import datetime as _dt2, timezone
+                from babel.dates import format_datetime
+                dt = _dt2.fromisoformat(timestamp)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                dt_local = dt.astimezone()
+                if lang == "de":
+                    timestamp_text = format_datetime(dt_local, "HH:mm 'Uhr', dd.MM.yyyy", locale="de")
+                elif lang == "es":
+                    timestamp_text = format_datetime(dt_local, "dd/MM/yyyy HH:mm 'h'", locale="es")
+                elif lang == "fr":
+                    timestamp_text = format_datetime(dt_local, "dd/MM/yyyy HH:mm 'h'", locale="fr")
+                elif lang == "it":
+                    timestamp_text = format_datetime(dt_local, "dd/MM/yyyy HH:mm", locale="it")
+                elif lang == "en":
+                    timestamp_text = format_datetime(dt_local, "MM/dd/yyyy h:mm a", locale="en_US")
+                else:
+                    timestamp_text = format_datetime(dt_local, "dd.MM.yyyy HH:mm", locale=lang)
+            except Exception:
+                timestamp_text = timestamp.replace("T", " ")[:16]
+        else:
+            timestamp_text = "—"
+
+        amount_text = f"{amount_sats:,} Sat" if amount_sats == 1 else f"{amount_sats:,} Sats"
+        return f"{header_mode}: {amount_text} ({timestamp_text})"
+
+    def _measure_donation_block_layout(self, donation_data, font_label, font_value):
+        """Measure donation block geometry and choose largest 2-line body font that fits width."""
+        amount_sats = donation_data.get("amount_sats", 0)
+        message = donation_data.get("message", "") or ""
+        timestamp = donation_data.get("timestamp", "")
+
+        _ib_left = SIDE_PADDING + BLOCK_INNER_MARGIN + 2
+        _ib_right = self.width - SIDE_PADDING - BLOCK_INNER_MARGIN - 2
+        content_width = max(20, _ib_right - _ib_left - self._scale_px(12, min_value=4))
+        content_center_x = (_ib_left + _ib_right) // 2
+
+        try:
+            font_small_label = ImageFont.truetype(self.font_regular, FONT_SIZE_SMALL_LABEL)
+        except Exception:
+            font_small_label = font_label
+
+        header_text = self._build_donation_header_text(amount_sats, timestamp)
+        min_header_size = self._scale_font_size(8, min_value=8)
+        header_font_size = FONT_SIZE_SMALL_LABEL
+        header_font = font_small_label
+        while header_font_size > min_header_size:
+            try:
+                trial = ImageFont.truetype(self.font_regular, header_font_size)
+            except Exception:
+                trial = font_small_label
+            if trial.getlength(header_text) <= content_width:
+                header_font = trial
+                break
+            header_font_size -= 1
+
+        header_bbox = header_font.getbbox(header_text)
+        header_h = header_bbox[3] - header_bbox[1]
+        header_top_offset = self.layout.get_label_y(0)
+
+        msg = message.strip() if message.strip() else "—"
+        max_lines = 2
+        min_size = self._scale_font_size(8, min_value=8)
+        two_line_max_size = max(min_size, self._scale_font_size(27, min_value=12))
+        # Max body font is 40 pt — short messages stay proportional,
+        # longer ones shrink automatically until they fit 2 lines.
+        start_size = max(min_size, self._scale_font_size(40, min_value=18))
+        line_gap = self._scale_px(3, min_value=1)
+
+        content_font = None
+        lines = None
+        line_h = 0
+        chosen_size = None
+        for size in range(start_size, min_size - 1, -1):
+            try:
+                f = ImageFont.truetype(self.font_bold, size)
+            except Exception:
+                f = font_value
+            wrapped = ImageRenderer._wrap_text_to_lines(msg, f, content_width, max_lines)
+            if wrapped is None:
+                continue
+            bb_line = f.getbbox("Ag")
+            line_h = bb_line[3] - bb_line[1]
+            content_font = f
+            lines = wrapped
+            chosen_size = size
+            break
+
+        if content_font is None or not lines:
+            try:
+                content_font = ImageFont.truetype(self.font_bold, min_size)
+            except Exception:
+                content_font = font_value
+            lines = ImageRenderer._wrap_text_truncated(msg, content_font, content_width, max_lines)
+            bb_line = content_font.getbbox("Ag")
+            line_h = bb_line[3] - bb_line[1]
+            chosen_size = min_size
+
+        # If body needs multiple lines, cap max font size to 27 and re-wrap at that size.
+        if len(lines) > 1 and chosen_size is not None and chosen_size > two_line_max_size:
+            try:
+                content_font = ImageFont.truetype(self.font_bold, two_line_max_size)
+            except Exception:
+                content_font = font_value
+            lines = ImageRenderer._wrap_text_to_lines(msg, content_font, content_width, max_lines)
+            if lines is None:
+                lines = ImageRenderer._wrap_text_truncated(msg, content_font, content_width, max_lines)
+            bb_line = content_font.getbbox("Ag")
+            line_h = bb_line[3] - bb_line[1]
+
+        body_h = len(lines) * line_h + (len(lines) - 1) * line_gap
+        body_top_gap = self._scale_px(4, min_value=2)
+        bottom_pad = self._scale_px(6, min_value=2)
+        block_height = max(INFO_BLOCK_HEIGHT, header_top_offset + header_h + body_top_gap + body_h + bottom_pad)
+
+        return {
+            "content_center_x": content_center_x,
+            "content_width": content_width,
+            "header_text": header_text,
+            "header_font": header_font,
+            "header_h": header_h,
+            "header_top_offset": header_top_offset,
+            "line_gap": line_gap,
+            "content_font": content_font,
+            "lines": lines,
+            "line_h": line_h,
+            "body_top_gap": body_top_gap,
+            "block_height": block_height,
+        }
+
+    def _get_info_block_height(self, block_fn, block_data, font_label, font_value):
+        """Return dynamic height for variable-size blocks, defaulting to INFO_BLOCK_HEIGHT."""
+        if block_fn == self.render_donation_block and block_data:
+            layout = self._measure_donation_block_layout(block_data, font_label, font_value)
+            return layout["block_height"]
+        return INFO_BLOCK_HEIGHT
+
+    def render_donation_block(self, draw, info_block_y, font_label, font_value, donation_data, web_quality=False):
+        """Render a Lightning donation info block with adaptive 2-line body and dynamic height."""
+        if not donation_data:
+            return info_block_y
+
+        layout = self._measure_donation_block_layout(donation_data, font_label, font_value)
+        block_height = layout["block_height"]
+
+        block_bounds = self.layout.get_info_block_bounds()
+        draw.rounded_rectangle(
+            [(block_bounds[0], info_block_y),
+             (block_bounds[2], info_block_y + block_height)],
+            radius=BLOCK_RADIUS,
+            fill=self.get_color("info_bg", web_quality),
+            outline=self.get_color("info_outline", web_quality),
+            width=4
+        )
+
+        text_y = info_block_y + layout["header_top_offset"]
+        header_bbox = layout["header_font"].getbbox(layout["header_text"])
+        header_x = self.layout.get_text_centered_x(header_bbox, layout["content_center_x"])
+        draw.text((header_x, text_y), layout["header_text"], font=layout["header_font"], fill=self.get_color("info_header", web_quality))
+
+        start_y = text_y + layout["header_h"] + layout["body_top_gap"]
+        for i, line in enumerate(layout["lines"]):
+            bb = layout["content_font"].getbbox(line)
+            x = self.layout.get_text_centered_x(bb, layout["content_center_x"])
+            draw.text(
+                (x, start_y + i * (layout["line_h"] + layout["line_gap"])),
+                line,
+                font=layout["content_font"],
+                fill=self.get_color("donation", web_quality)
+            )
+
+        return info_block_y + block_height + ELEMENT_MARGIN
+
     def render_wallet_balances_block(self, draw, info_block_y, font_label, font_value, balance_data, web_quality=False, startup_mode=False):
         """Render wallet balances info block with two-column table layout.
         
@@ -848,23 +1163,68 @@ class ImageRenderer:
     
     def pick_random_meme(self):
         """
-        Select a random meme image from the memes directory.
-        
+        Select a random meme image. If einundzwanzig_meme_source is enabled,
+        fetches a live meme from einundzwanzig-memes.space; otherwise selects
+        from the local memes directory.
+
         Returns:
             str or None: Path to selected meme or None if no memes found
         """
+        if self.config.get("einundzwanzig_meme_source", False):
+            return self._pick_online_meme()
+        return self._pick_local_meme()
+
+    def _pick_local_meme(self):
+        """Select a random meme from the local memes directory."""
         try:
-            memes = [f for f in os.listdir(self.meme_dir) 
-                    if f.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp'))]
+            memes = [f for f in os.listdir(self.meme_dir)
+                    if f.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp'))
+                    and not f.startswith('_')]
             if not memes:
                 print("No meme images found in directory")
                 return None
-            
             selected = random.choice(memes)
             return os.path.join(self.meme_dir, selected)
         except Exception as e:
             print(f"Error selecting meme: {e}")
             return None
+
+    def _pick_online_meme(self):
+        """Fetch a random meme live from einundzwanzig-memes.space."""
+        import urllib.request
+        import json as _json
+
+        try:
+            api_url = "https://einundzwanzig-memes.space/api/v1/random?count=1&full=true"
+            req = urllib.request.Request(api_url, headers={"User-Agent": "btc-mempaper/1.0"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = _json.loads(resp.read().decode())
+
+            results = data.get("results", [])
+            if not results:
+                print("Einundzwanzig API returned no memes, falling back to local")
+                return self._pick_local_meme()
+
+            meme = results[0]
+            meme_id = meme["id"]
+            image_url = f"https://einundzwanzig-memes.space/images/medium/{meme_id}.webp"
+
+            req = urllib.request.Request(image_url, headers={"User-Agent": "btc-mempaper/1.0"})
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                image_bytes = resp.read()
+
+            os.makedirs(self.meme_dir, exist_ok=True)
+            dest = os.path.join(self.meme_dir, "_einundzwanzig_live.webp")
+            with open(dest, "wb") as f:
+                f.write(image_bytes)
+
+            template = meme.get("meme_template") or meme_id
+            print(f"Fetched online meme from einundzwanzig-memes.space: {template}")
+            return dest
+
+        except Exception as e:
+            print(f"Failed to fetch online meme: {e}, falling back to local")
+            return self._pick_local_meme()
     
     def pick_random_opsec_image(self):
         """
@@ -987,6 +1347,34 @@ class ImageRenderer:
             lines.append(current_line)
         
         return lines
+
+    def _get_holiday_description_layout(self, text):
+        """Pick font size and wrapping so holiday description stays compact and readable.
+
+        Target at most 2 lines on all screen sizes for better aesthetics.
+        """
+        text = (text or "").strip()
+        if not text:
+            font_desc = ImageFont.truetype(self.font_regular, FONT_SIZE_HOLIDAY_DESC)
+            return font_desc, [""]
+
+        max_lines = 2
+        inner_pad = max(self._scale_px(12, min_value=6), HOLIDAY_PADDING // 2)
+        max_text_width = max(120, self.width - (2 * (SECTION_SIDE_PADDING + BLOCK_INNER_MARGIN + inner_pad)))
+
+        base_size = FONT_SIZE_HOLIDAY_DESC
+        min_size = max(10, int(round(base_size * 0.6)))
+
+        for font_size in range(base_size, min_size - 1, -1):
+            font_desc = ImageFont.truetype(self.font_regular, font_size)
+            lines = self._wrap_text_to_lines(text, font_desc, max_text_width, max_lines)
+            if lines is not None:
+                return font_desc, lines
+
+        # Last resort: keep max line count and truncate with ellipsis.
+        fallback_font = ImageFont.truetype(self.font_regular, min_size)
+        fallback_lines = self._wrap_text_truncated(text, fallback_font, max_text_width, max_lines)
+        return fallback_font, fallback_lines
     
     def get_today_btc_holiday(self):
         """
@@ -1148,10 +1536,10 @@ class ImageRenderer:
             max_width = int(self.width * 0.9)  # Use 90% of display width as default
         
         if max_font_size is None:
-            max_font_size = self.config.get("date_font_max_size", 48)
+            max_font_size = self._scale_font_size(self.config.get("date_font_max_size", 48), min_value=20)
         
         if min_font_size is None:
-            min_font_size = self.config.get("date_font_min_size", 32)
+            min_font_size = self._scale_font_size(self.config.get("date_font_min_size", 32), min_value=14)
         
         # Start with the maximum font size and work down
         for font_size in range(max_font_size, min_font_size - 1, -1):
@@ -1365,7 +1753,12 @@ class ImageRenderer:
             else:
                 info_blocks.append((self.render_wallet_balances_block, wallet_data))
             displayed_blocks.append('wallet')
-        
+
+        donation_data = getattr(self, '_donation_data', None)
+        if donation_data and config.get("show_donation_block", False):
+            info_blocks.append((self.render_donation_block, donation_data))
+            displayed_blocks.append('donation')
+
         # Pass all shared data to both renders
         shared_data = {
             "holiday_info": holiday_info,
@@ -1480,6 +1873,9 @@ class ImageRenderer:
                         print("⚠️ Failed to fetch BTC price data for wallet balance updates. Use cache as it is.")
 
             info_blocks.append((self.render_wallet_balances_block, wallet_data))
+        donation_data = getattr(self, '_donation_data', None)
+        if donation_data and config.get("show_donation_block", False):
+            info_blocks.append((self.render_donation_block, donation_data))
         # Random selection logic here if needed
 
         shared_data = {
@@ -1545,10 +1941,10 @@ class ImageRenderer:
         
         # Load fonts with calculated date font size
         font_date = ImageFont.truetype(self.font_bold, optimal_date_font_size)
-        font_holiday_title = ImageFont.truetype(self.font_bold, 20)
-        font_holiday_desc = ImageFont.truetype(self.font_regular, 16)
-        font_block_label = ImageFont.truetype(self.font_regular, 16)
-        font_block_value = ImageFont.truetype(self.font_block_height, 124)
+        font_holiday_title = ImageFont.truetype(self.font_bold, FONT_SIZE_HOLIDAY_TITLE)
+        font_holiday_desc = ImageFont.truetype(self.font_regular, FONT_SIZE_HOLIDAY_DESC)
+        font_block_label = ImageFont.truetype(self.font_regular, FONT_SIZE_SMALL_LABEL)
+        font_block_value = ImageFont.truetype(self.font_block_height, self._scale_font_size(124, min_value=52))
         
         holiday_info = shared_data["holiday_info"]
         configured_fee = shared_data["configured_fee"]
@@ -1575,16 +1971,14 @@ class ImageRenderer:
             title_bbox = font_holiday_title.getbbox(title_text)
             title_height = title_bbox[3] - title_bbox[1]
             
-            # Description height (with word wrapping at 50 characters)
-            desc_lines = self._wrap_text_at_chars(desc_text, max_chars=50)
-            
-            desc_bbox = font_holiday_desc.getbbox("Ay")
+            # Description layout (adaptive font and wrapping)
+            holiday_desc_font, desc_lines = self._get_holiday_description_layout(desc_text)
+
+            desc_bbox = holiday_desc_font.getbbox("Ay")
             line_height = desc_bbox[3] - desc_bbox[1]
-            desc_total_height = len(desc_lines) * line_height + (len(desc_lines) - 1) * 4
-            
-            # Total height: Title + Gap(3) + Description + Padding(24)
-            # 12px top + 12px bottom = 24px total padding for balanced spacing
-            HOLIDAY_HEIGHT = title_height + 3 + desc_total_height + 24
+            desc_total_height = len(desc_lines) * line_height + (len(desc_lines) - 1) * LINE_SPACING_MULTILINE
+
+            HOLIDAY_HEIGHT = title_height + HOLIDAY_TITLE_DESC_GAP + desc_total_height + HOLIDAY_PADDING
 
         # === Landscape Mode Layout (Split Screen) ===
         if self.orientation == "horizontal":
@@ -1925,8 +2319,10 @@ class ImageRenderer:
         text_width = bbox[2] - bbox[0]
         x = (self.width - text_width) // 2
         y = 20
-        # Always set date_bottom_y to the bottom of the date text plus margin
-        date_bottom_y = y + (bbox[3] - bbox[1]) + 10
+        # Always set date_bottom_y to the bottom of the date text plus margin.
+        # Use bbox[3] (actual bottom offset from y), not bbox[3]-bbox[1] (height), so
+        # descenders (e.g. "p" in "April") never overlap the meme image.
+        date_bottom_y = y + bbox[3] + 5
 
         # Always draw the date at the top, with gradient color
         date_color = self.get_color("date_holiday", web_quality) if holiday_info else self.get_color("date_normal", web_quality)
@@ -1939,7 +2335,7 @@ class ImageRenderer:
             x += char_width
 
         # Define constants needed for calculations
-        BLOCK_MARGIN = 15
+        BLOCK_MARGIN = 8
         HOLIDAY_HEIGHT = 0
         if holiday_info:
             # Calculate exact height needed based on text content
@@ -1950,29 +2346,28 @@ class ImageRenderer:
             title_bbox = font_holiday_title.getbbox(title_text)
             title_height = title_bbox[3] - title_bbox[1]
             
-            # Description height (with word wrapping at 50 characters)
-            desc_lines = self._wrap_text_at_chars(desc_text, max_chars=50)
-            
-            desc_bbox = font_holiday_desc.getbbox("Ay")
+            # Description layout (adaptive font and wrapping)
+            holiday_desc_font, desc_lines = self._get_holiday_description_layout(desc_text)
+
+            desc_bbox = holiday_desc_font.getbbox("Ay")
             line_height = desc_bbox[3] - desc_bbox[1]
-            desc_total_height = len(desc_lines) * line_height + (len(desc_lines) - 1) * 4
-            
-            # Total height: Title + Gap(3) + Description + Padding(24)
-            # 12px top + 12px bottom = 24px total padding for balanced spacing
-            HOLIDAY_HEIGHT = title_height + 3 + desc_total_height + 24
-        # Reserve space for hash frame - calculate where it actually renders
-        # The hash frame rendering in vertical mode uses: y = self.height - (self.block_height_area - 10)
-        hash_frame_y_position = self.height - (self.block_height_area - 10) + 6
+            desc_total_height = len(desc_lines) * line_height + (len(desc_lines) - 1) * LINE_SPACING_MULTILINE
+
+            HOLIDAY_HEIGHT = title_height + HOLIDAY_TITLE_DESC_GAP + desc_total_height + HOLIDAY_PADDING
+        # Reserve space for hash frame — must stay in sync with y formula in _render_block_info_with_data.
+        # y = self.height - self.block_height_area, hash frame drawn at y+3
+        hash_frame_y_position = self.height - self.block_height_area + 3
         meme_bottom_y = hash_frame_y_position  # Content can go up to where hash frame visibly starts
         # Content starts after the date. Holiday is part of the content flow.
         content_top_y = date_bottom_y
+        min_content_start_y = date_bottom_y + 5  # Keep at least 5px separation below date text.
         available_content_height = meme_bottom_y - content_top_y
 
         prioritize_large_meme = self.config.get("prioritize_large_scaled_meme", False)
 
         # Define standard spacing unit for balanced layout
         # Increase spacing when holiday is present to ensure visual separation
-        STANDARD_SPACING = 25 if holiday_info else 20  # Base spacing between major elements
+        STANDARD_SPACING = 12 if holiday_info else 10  # Reduced by ~50% to maximize meme area
 
         # Info blocks setup - moved after data initialization
         # info_blocks = []
@@ -2002,30 +2397,67 @@ class ImageRenderer:
 
         info_blocks_space = calculate_info_blocks_space(self.config)
 
+        def _block_height(entry):
+            block_fn, block_data = entry
+            return self._get_info_block_height(block_fn, block_data, font_block_label, font_block_value)
+
+        def _blocks_total_height(entries):
+            if not entries:
+                return 0
+            total = 0
+            for idx, entry in enumerate(entries):
+                total += _block_height(entry)
+                if idx < len(entries) - 1:
+                    total += BLOCK_MARGIN
+            return total
+
+        def _fit_blocks_to_height(candidates, limit_height):
+            fitted = []
+            used = 0
+            for entry in candidates:
+                candidate_h = _block_height(entry)
+                add_h = candidate_h if not fitted else BLOCK_MARGIN + candidate_h
+                if used + add_h <= limit_height:
+                    fitted.append(entry)
+                    used += add_h
+            return fitted
+
         if prioritize_large_meme:
-            # --- PRIORITY ORDER: Meme (max size) > Holiday > Info Blocks ---
-            # Step 1: Size meme to MAXIMUM possible size
+            # --- PRIORITY ORDER: Donation (guaranteed) > Meme (max remaining) > Holiday > Other Info Blocks ---
+            # Step 0: If donation block is enabled, pre-reserve its ACTUAL measured space so the
+            #         meme is scaled into what is left — guaranteeing the block is always shown.
+            donation_reserved = 0
+            _donation_entry = next(
+                (b for b in info_blocks if b[0].__name__ == 'render_donation_block'), None
+            )
+            if _donation_entry and self.config.get("show_donation_block", False):
+                # Use actual measured height (not the hardcoded INFO_BLOCK_HEIGHT) so the
+                # meme doesn't steal the space the donation block really needs.
+                donation_reserved = _block_height(_donation_entry) + 2 * STANDARD_SPACING
+
+            # Step 1: Size meme to MAXIMUM possible size (minus donation reservation)
             meme_img = None
             meme_height = 0
             meme_width = 0
-            
+
             if meme_path:
                 try:
                     meme_img = Image.open(meme_path)
                     aspect_ratio = meme_img.width / meme_img.height
                     max_width = self.width - 40
-                    
+
                     # Calculate maximum meme height with only mandatory gaps (top + bottom)
                     min_gaps = 2 * STANDARD_SPACING  # Top gap + Bottom gap
-                    max_meme_height = available_content_height - min_gaps
-                    
+                    max_meme_height = available_content_height - min_gaps - donation_reserved
+                    max_meme_height = max(max_meme_height, 0)
+
                     # Scale meme to fit max width and max height
                     scaled_width = min(max_width, int(max_meme_height * aspect_ratio))
                     scaled_height = int(scaled_width / aspect_ratio)
                     if scaled_height > max_meme_height:
                         scaled_height = max_meme_height
                         scaled_width = int(scaled_height * aspect_ratio)
-                    
+
                     meme_img = meme_img.resize((scaled_width, scaled_height), Image.Resampling.LANCZOS)
                     meme_height = scaled_height
                     meme_width = scaled_width
@@ -2047,37 +2479,27 @@ class ImageRenderer:
             
             # --- Step 4: Try to fit Info Blocks in remaining space ---
             remaining_after_holiday = space_after_meme - holiday_space
-            
-            # Calculate how many info blocks fit
             # If we have holiday: need gaps: top, holiday-meme, meme-blocks, blocks-hash = 4 gaps
             # If no holiday: need gaps: top, meme-blocks, blocks-hash = 3 gaps
             base_gaps = (4 * STANDARD_SPACING) if holiday_space else (3 * STANDARD_SPACING)
             space_for_blocks = remaining_after_holiday - base_gaps
-            
+
             info_blocks_to_render = []
             if space_for_blocks > 0 and info_blocks:
-                # Calculate how many blocks fit
-                # First block: INFO_BLOCK_HEIGHT
-                # Each additional block: BLOCK_MARGIN + INFO_BLOCK_HEIGHT
-                max_blocks = 0
-                if space_for_blocks >= INFO_BLOCK_HEIGHT:
-                    max_blocks = 1
-                    remaining = space_for_blocks - INFO_BLOCK_HEIGHT
-                    additional = remaining // (BLOCK_MARGIN + INFO_BLOCK_HEIGHT)
-                    max_blocks += int(additional)
-                
-                if max_blocks > 0:
-                    if len(info_blocks) > max_blocks:
-                        if shared_data.get('selected_info_blocks') is not None:
-                            # Reuse selection from first render to keep both screens consistent
-                            info_blocks_to_render = shared_data['selected_info_blocks'][:int(max_blocks)]
-                        else:
-                            info_blocks_to_render = random.sample(info_blocks, int(max_blocks))
-                            shared_data['selected_info_blocks'] = info_blocks_to_render
+                if shared_data.get('selected_info_blocks') is not None:
+                    candidate_order = shared_data['selected_info_blocks']
+                else:
+                    donation_entry = _donation_entry  # already computed above
+                    if shared_data.get('preserve_layout', False):
+                        candidate_order = info_blocks
                     else:
-                        info_blocks_to_render = info_blocks
-                        if shared_data.get('selected_info_blocks') is None:
-                            shared_data['selected_info_blocks'] = info_blocks_to_render
+                        others = [b for b in info_blocks if b is not donation_entry]
+                        random_order = random.sample(others, len(others)) if others else []
+                        candidate_order = ([donation_entry] if donation_entry else []) + random_order
+
+                info_blocks_to_render = _fit_blocks_to_height(candidate_order, space_for_blocks)
+                if shared_data.get('selected_info_blocks') is None:
+                    shared_data['selected_info_blocks'] = info_blocks_to_render
             
             # --- Step 5: Calculate balanced vertical spacing with actual content ---
             # When no holiday and no info blocks, center the meme vertically
@@ -2092,8 +2514,7 @@ class ImageRenderer:
                     total_content_height += holiday_space
                 total_content_height += meme_height
                 if len(info_blocks_to_render):
-                    # Include margins between info blocks (not before first or after last)
-                    total_content_height += len(info_blocks_to_render) * INFO_BLOCK_HEIGHT + (len(info_blocks_to_render) - 1) * BLOCK_MARGIN
+                    total_content_height += _blocks_total_height(info_blocks_to_render)
                 
                 # Calculate remaining space to distribute evenly across gaps
                 remaining_space = available_content_height - total_content_height
@@ -2109,6 +2530,9 @@ class ImageRenderer:
                 
                 # Start positioning elements with balanced spacing
                 current_y = content_top_y + gap_size
+
+            # Enforce a hard minimum margin below the date, even for centered/tall memes.
+            current_y = max(current_y, min_content_start_y)
                     
             # Render holiday (centered in assigned space)
             if holiday_space:
@@ -2149,7 +2573,7 @@ class ImageRenderer:
 
             for i, (block_fn, block_data) in enumerate(info_blocks_to_render):
                 # Render each info block at current_y position
-                info_vertical_offset = current_y + 10  # Small adjustment for visual centering
+                info_vertical_offset = current_y
                 try:
                     if block_fn == self.render_wallet_balances_block:
                         info_vertical_offset = block_fn(draw, info_vertical_offset, font_block_label, font_block_value, block_data, web_quality, startup_mode=startup_mode)
@@ -2157,9 +2581,9 @@ class ImageRenderer:
                         info_vertical_offset = block_fn(draw, info_vertical_offset, font_block_label, font_block_value, block_data, web_quality)
                 except Exception as e:
                     print(f"⚠️ Error rendering info block {block_fn.__name__}: {e}")
-                
-                # Move to next block position (height + margin between blocks)
-                current_y += INFO_BLOCK_HEIGHT
+
+                # Move to next block position (dynamic height + margin between blocks)
+                current_y += _block_height((block_fn, block_data))
                 if i < len(info_blocks_to_render) - 1:  # Add margin between blocks, but not after the last one
                     current_y += BLOCK_MARGIN
 
@@ -2186,7 +2610,7 @@ class ImageRenderer:
             if holiday_info:
                 fixed_content_height += HOLIDAY_HEIGHT
             
-            fixed_content_height += num_info_blocks * INFO_BLOCK_HEIGHT
+            fixed_content_height += _blocks_total_height(info_blocks)
             
             # 3. Calculate Gaps estimate to find available Meme Height
             # We use STANDARD_SPACING as a minimum/target estimate
@@ -2235,6 +2659,7 @@ class ImageRenderer:
             
             # 8. Render Elements Loop
             current_y = content_top_y + gap_size
+            current_y = max(current_y, min_content_start_y)
             
             # Render Holiday
             if holiday_info:
@@ -2276,8 +2701,8 @@ class ImageRenderer:
                     else:
                         block_fn(draw, current_y, font_block_label, font_block_value, block_data, web_quality)
                     
-                    # Move to next position: add block height only (gap is added at start of next iteration or remains as bottom gap)
-                    current_y += INFO_BLOCK_HEIGHT
+                    # Move to next position: add dynamic block height only
+                    current_y += _block_height((block_fn, block_data))
                 except Exception as e:
                     print(f"⚠️ Error rendering info block {block_fn.__name__}: {e}")
                     # If error, skip this block and continue
@@ -2349,82 +2774,34 @@ class ImageRenderer:
     def interpolate_color(self, start, end, t):
         return tuple(int(start[i] + (end[i] - start[i]) * t) for i in range(3))
 
-    def draw_hash_frame(self, draw, x_init, y_init, block_hash, rect_width=760, rect_height=80, max_width=None, web_quality=True):
+    def draw_hash_frame(self, draw, x_init, y_init, block_hash, rect_width=760, rect_height=80, max_width=None, web_quality=True, center=False):
         """
         Draws a block hash as a rectangular frame starting at (x, y).
         """
-        padding = 40
-        extra_space = 8
+        padding = self._scale_px(40, min_value=16)
+        # On wide screens increase interior breathing room so fee text stays inside the frame.
+        extra_space = self._scale_px(11, min_value=3) if self.width >= 1000 else self._scale_px(8, min_value=3)
         start_color = self.get_color("hash_start", web_quality)  # #4FC3F7
         end_color   = self.get_color("hash_end", web_quality)    # #BA68C8
 
         total_chars = len(block_hash)
         block_hash_colors = [self.interpolate_color(start_color, end_color, i / max(total_chars - 1, 1)) for i in range(total_chars)]
         
-        # --- VERTICAL MODE (Legacy Logic) ---
-        if self.orientation == "vertical":
-             padding = 40
-             extra_space = 8
-             font = ImageFont.truetype(self.font_mono, 11)
-             
-             bbox = font.getbbox("0")
-             char_w = bbox[2] - bbox[0]
-             char_h = bbox[3] - bbox[1]
-             
-             # Split the hash
-             left_chars = block_hash[:16]           # left vertical
-             right_chars = block_hash[46:64]        # right vertical
-             top_chars = block_hash[0:46]          # top horizontal (22 chars)
-             bottom_chars = block_hash[18:62]       # bottom horizontal (22 chars)
+        is_wide_screen = self.width >= 1000
 
-             left_chars_colors = block_hash_colors[:16]
-             right_chars_colors = block_hash_colors[46:64]
-             top_chars_colors = block_hash_colors[0:46]
-             bottom_chars_colors = block_hash_colors[18:62]
+        # Resolution-aware spacing between 2-char groups in the hash frame.
+        # Keep 480x800 baseline unchanged while opening spacing on larger canvases.
+        def _pair_gap_px(vertical_mode: bool) -> int:
+            base_gap = 6 if vertical_mode else 3
+            min_gap = 2 if vertical_mode else 1
+            gap_px = self._scale_px(base_gap, min_value=min_gap)
+            if self.ui_scale > 1.0:
+                gap_px += int(round((self.ui_scale - 1.0) * 2))
+            if is_wide_screen and not vertical_mode:
+                gap_px += self._scale_px(5, min_value=1)
+            return gap_px
 
-             # --- TOP EDGE with grouped pairs ---
-             top_positions = []
-             x = x_init
-             y = y_init
-             for i, c in enumerate(top_chars):
-                 draw.text((x, y), c, fill=top_chars_colors[i], font=font)
-                 top_positions.append(x)
-                 x +=  int(char_w)
-                 if (i + 1) % 2 == 0:
-                     x += 6#int(char_w) # extra space after every 2 chars
-
-             # --- LEFT VERTICAL SIDE with horizontal pairs ---
-             x = top_positions[0]  # align under first char of top edge
-             y = y_init + int(char_h) + extra_space # y_init +padding +  int(char_h) + extra_space
-             i = 0
-             while i < len(left_chars):
-                 pair = left_chars[i:i+2]
-                 draw.text((x, y), pair, fill=left_chars_colors[i], font=font)  # draw both chars on the same line
-                 y +=  int(char_h) + extra_space # move down for next pair
-                 i += 2
-
-             # --- RIGHT VERTICAL SIDE with horizontal pairs ---
-             x = top_positions[-2] + 1 # align under last char of top edge
-             y = y_init + int(char_h) + extra_space #padding +  int(char_h) + extra_space
-             i = 0
-             while i < len(right_chars):
-                 pair = right_chars[i:i+2]
-                 draw.text((x, y), pair, fill=right_chars_colors[i], font=font)
-                 y +=  int(char_h) + extra_space
-                 i += 2
-
-             # --- BOTTOM EDGE with grouped pairs ---
-             x = x_init
-             y = y_init + padding + rect_height + extra_space + int(char_h) + extra_space
-             for i, c in enumerate(bottom_chars):
-                 draw.text((x, y), c, fill=bottom_chars_colors[i], font=font)
-                 x += int(char_w)
-                 if (i + 1) % 2 == 0:
-                     x +=  6#int(char_w)  # extra space after every 2 chars
-                     
-             return
-
-        font_size = 11
+        font_size = self._scale_font_size(11, min_value=8)
         # --- Optional scaling if max_width is given ---
         if max_width is not None:
             # Calculate required width for standard font 11
@@ -2434,23 +2811,25 @@ class ImageRenderer:
             # This is an approximation since we don't know the font metrics perfectly without loading.
             
             # Load font to measure
-            temp_font = ImageFont.truetype(self.font_mono, 11)
+            temp_font = ImageFont.truetype(self.font_mono, self._scale_font_size(11, min_value=8))
             bbox = temp_font.getbbox("0")
             cw = bbox[2] - bbox[0]
             # Top row logic: 2 chars then gap. 
             # Total width = 46 chars + 23 gaps.
             # We use gap = 3 (reduced from 6 to fit larger font)
             
-            estimated_full_width = (46 * cw) + (23 * 3) + 20 # +20 safety
+            _est_horizontal_pairs = 24 if is_wide_screen else 23
+            _est_horizontal_chars = _est_horizontal_pairs * 2
+            _est_gaps = max(0, _est_horizontal_pairs - 1)
+            estimated_full_width = (_est_horizontal_chars * cw) + (_est_gaps * _pair_gap_px(vertical_mode=False)) + self._scale_px(20, min_value=8)
             
             if estimated_full_width > max_width:
                  scale_factor = max_width / estimated_full_width
-                 font_size = int(11 * scale_factor)
+                 font_size = int(self._scale_font_size(11, min_value=8) * scale_factor)
                  if font_size < 1: font_size = 1
                  
-                 # Adjust padding/spacing by scale too
-                 padding = int(padding * scale_factor)
-                 extra_space = int(max(1, 8 * scale_factor)) # Keep at least 1px
+                 # Adjust spacing by scale too
+                 extra_space = int(max(1, extra_space * scale_factor))
 
         font = ImageFont.truetype(self.font_mono, font_size)
     
@@ -2459,62 +2838,111 @@ class ImageRenderer:
         char_w = bbox[2] - bbox[0]
         char_h = bbox[3] - bbox[1]
 
-        # Split the hash
-        left_chars = block_hash[:16]           # left vertical
-        right_chars = block_hash[46:64]        # right vertical
-        top_chars = block_hash[0:46]          # top horizontal (22 chars)
-        bottom_chars = block_hash[18:62]       # bottom horizontal (22 chars)
+        # Hash frame geometry profile.
+        # Wide screens: 24 pairs wide x 9 pairs high.
+        # Default profile: 23 pairs wide x 10 pairs high.
+        # The sequence length follows the overlap model: N = W + H - 1.
+        horizontal_pairs = 24 if is_wide_screen else 23
+        vertical_pairs_total = 9 if is_wide_screen else 10
+        side_pairs_middle = max(0, vertical_pairs_total - 2)
+        sequence_pair_count = horizontal_pairs + vertical_pairs_total - 1
 
-        left_chars_colors = block_hash_colors[:16]
-        right_chars_colors = block_hash_colors[46:64]
-        top_chars_colors = block_hash_colors[0:46]
-        bottom_chars_colors = block_hash_colors[18:62]
+        # Build two-character pairs from the block hash, wrapping if needed.
+        hash_text = (block_hash or "").strip()
+        if len(hash_text) < 2:
+            hash_text = "00" * max(32, sequence_pair_count)
 
-        # --- TOP EDGE with grouped pairs ---
-        top_positions = []
+        pair_chars = []
+        pair_colors = []
+        for i in range(sequence_pair_count):
+            c0 = hash_text[(2 * i) % len(hash_text)]
+            c1 = hash_text[(2 * i + 1) % len(hash_text)]
+            pair_chars.append(c0 + c1)
+            pair_colors.append(block_hash_colors[(2 * i) % total_chars])
+
+        # Legacy two-pass edge construction:
+        # pass 1: top starts at upper-left and uses first W pairs, then right uses remaining pairs.
+        # pass 2: left starts at upper-left and uses first H pairs, then bottom uses remaining pairs.
+        top_pairs_chars = pair_chars[:horizontal_pairs]
+        top_pairs_colors = pair_colors[:horizontal_pairs]
+
+        # Side columns are only the middle rows, excluding both corners.
+        left_pairs_chars = pair_chars[1:1 + side_pairs_middle]
+        left_pairs_colors = pair_colors[1:1 + side_pairs_middle]
+        right_pairs_chars = pair_chars[horizontal_pairs:horizontal_pairs + side_pairs_middle]
+        right_pairs_colors = pair_colors[horizontal_pairs:horizontal_pairs + side_pairs_middle]
+
+        # Bottom keeps full width and starts at the lower-left corner value.
+        bottom_start = vertical_pairs_total - 1
+        bottom_pairs_chars = pair_chars[bottom_start:bottom_start + horizontal_pairs]
+        bottom_pairs_colors = pair_colors[bottom_start:bottom_start + horizontal_pairs]
+
+        # Use the same effective gap value as the draw loop below.
+        # Vertical mode uses 6 px, horizontal uses 3 px.
+        gap = _pair_gap_px(vertical_mode=(self.orientation == "vertical"))
+
+        # Optional deterministic centering based on the actual frame geometry.
+        top_pair_count = len(top_pairs_chars)
+        top_effective_gaps = max(0, top_pair_count - 1)
+        frame_width = (top_pair_count * 2 * int(char_w)) + (top_effective_gaps * gap)
+        if center:
+            x_init = max(0, (self.width - frame_width) // 2)
+
+        # --- TOP EDGE ---
         x = x_init
         y = y_init
-        for i, c in enumerate(top_chars):
-            draw.text((x, y), c, fill=top_chars_colors[i], font=font)
-            top_positions.append(x)
-            x +=  int(char_w)
-            if (i + 1) % 2 == 0:
-               x += 3 # Reduced spacing
+        for i, pair in enumerate(top_pairs_chars):
+            draw.text((x, y), pair, fill=top_pairs_colors[i], font=font)
+            x += (2 * int(char_w))
+            if i < len(top_pairs_chars) - 1:
+                x += gap
 
         # --- LEFT VERTICAL SIDE with horizontal pairs ---
-        x = top_positions[0]  # align under first char of top edge
-        y = y_init + int(char_h) + extra_space 
-        i = 0
-        while i < len(left_chars):
-            pair = left_chars[i:i+2]
-            draw.text((x, y), pair, fill=left_chars_colors[i], font=font)  # draw both chars on the same line
-            y +=  int(char_h) + extra_space # move down for next pair
-            i += 2
+        x_left = x_init
+        x = x_left
+        y = y_init + int(char_h) + extra_space
+        base_side_pairs = 10
+        base_side_step = int(char_h) + extra_space
+        if vertical_pairs_total > 1:
+            # Wide profile: moderate spacing to fit fee text inside without excess vertical room.
+            if is_wide_screen:
+                target_span = (vertical_pairs_total - 1) * base_side_step
+            else:
+                target_span = (base_side_pairs - 1) * base_side_step
+            side_step = max(1, int(round(target_span / (vertical_pairs_total - 1))))
+        else:
+            side_step = base_side_step
+        for i, pair in enumerate(left_pairs_chars):
+            draw.text((x, y), pair, fill=left_pairs_colors[i], font=font)
+            y += side_step
 
-        # --- RIGHT VERTICAL SIDE with horizontal pairs ---
-        x = top_positions[-2] + 1 # align under last char of top edge
-        y = y_init + int(char_h) + extra_space 
-        i = 0
-        while i < len(right_chars):
-            pair = right_chars[i:i+2]
-            draw.text((x, y), pair, fill=right_chars_colors[i], font=font)
-            y +=  int(char_h) + extra_space
-            i += 2
+        # --- RIGHT VERTICAL SIDE ---
+        x_right = x_init + frame_width - (2 * int(char_w))
+        x = x_right
+        y = y_init + int(char_h) + extra_space
+        # Keep both sides on the same vertical cadence to avoid asymmetric heights.
+        right_step = side_step
+        for i, pair in enumerate(right_pairs_chars):
+            draw.text((x, y), pair, fill=right_pairs_colors[i], font=font)
+            y += right_step
 
-        # --- BOTTOM EDGE with grouped pairs ---
-        # Auto-calculate Y to connect with vertical sides
-        bottom_y_start = y 
-        
-        # User requested "bottom line needs to be higher". 
-        # Move up further to close the gap (2x char height)
-        y = bottom_y_start - int(2 * char_h)
+        # --- BOTTOM EDGE ---
+        # Place bottom edge from deterministic frame geometry.
+        # Keep a small vertical breathing room below side pairs and scale by resolution.
+        left_pair_count = max(1, len(left_pairs_chars))
+        right_pair_count = max(1, len(right_pairs_chars))
+        last_left_y = y_init + int(char_h) + extra_space + (left_pair_count - 1) * side_step
+        last_right_y = y_init + int(char_h) + extra_space + (right_pair_count - 1) * right_step
+        last_side_y = max(last_left_y, last_right_y)
+        bottom_edge_nudge = self._scale_px(4, min_value=1)
+        y = last_side_y + int(char_h) + max(1, extra_space // 2) + bottom_edge_nudge
 
         x = x_init
-        for i, c in enumerate(bottom_chars):
-            draw.text((x, y), c, fill=bottom_chars_colors[i], font=font)
-            x += int(char_w)
-            if (i + 1) % 2 == 0:
-                x +=  3 # Reduced spacing
+        for i, pair in enumerate(bottom_pairs_chars):
+            draw.text((x, y), pair, fill=bottom_pairs_colors[i], font=font)
+            x += (2 * int(char_w))
+            if i < len(bottom_pairs_chars) - 1:
+                x += gap
 
     def _render_block_info_with_data(self, img, draw, block_height, block_hash, font_block_label,
                                     font_block_value, mempool_api, configured_fee,
@@ -2543,17 +2971,38 @@ class ImageRenderer:
         if y_override is not None:
             y = y_override
         elif self.orientation == "vertical":
-            y = self.height - (self.block_height_area - 10)  # Move up by 10px from original position
+            # Use the full block_height_area so the hash frame bottom row stays within the image.
+            y = self.height - self.block_height_area
         else:
-            y = self.height - (self.block_height_area - 70)  # Adjust for horizontal layout
+            y = self.height - (self.block_height_area - self._scale_px(70, min_value=20))
         
         # Calculate Max Width for Responsive Layout
-        # Only constrain width in landscape mode. For vertical, we rely on standard sizes (legacy behavior).
-        if self.orientation == "horizontal":
-            max_available_width = self.width - 24 
-        else:
-            max_available_width = None
-        
+        max_available_width = self.width - self._scale_px(24, min_value=8)
+
+        # Compute the inner width of the hash frame so we can target exactly
+        # 8 px of margin between the block-height number and the frame chars.
+        # The frame uses IBMPlexMono-Bold 11 pt; char advance = getbbox("0") width.
+        # top row: 46 chars, gap of 6 px (vertical) or 3 px (horizontal) after every 2.
+        # Inner left  = x_init + 2*cw   (left side draws pairs of 2 chars)
+        # Inner right = x_init + 44*cw + 22*gap  (= top_positions[-2])
+        # Inner width = 42*cw + 22*gap
+        _MARGIN = self._scale_px(8, min_value=3)  # desired px gap on each side
+        try:
+            _mono_font = ImageFont.truetype(self.font_mono, self._scale_font_size(11, min_value=8))
+            _cw = _mono_font.getbbox("0")[2] - _mono_font.getbbox("0")[0]
+            _gap_frame = self._scale_px(6, min_value=2) if self.orientation == "vertical" else self._scale_px(3, min_value=1)
+            if self.ui_scale > 1.0:
+                _gap_frame += int(round((self.ui_scale - 1.0) * 2))
+            if self.width >= 1000 and self.orientation != "vertical":
+                _gap_frame += self._scale_px(2, min_value=1)
+            _horizontal_pairs = 24 if self.width >= 1000 else 23
+            _horizontal_chars = _horizontal_pairs * 2
+            _horizontal_gaps = max(0, _horizontal_pairs - 1)
+            _inner_frame_width = (_horizontal_chars - 4) * _cw + _horizontal_gaps * _gap_frame
+            frame_target_width = max(self._scale_px(200, min_value=80), _inner_frame_width - 2 * _MARGIN)
+        except Exception:
+            frame_target_width = max_available_width - self._scale_px(20, min_value=8)
+
         # Format block height string
         if mempool_api:
             formatted_height = mempool_api.format_block_height(display_block_height)
@@ -2564,38 +3013,47 @@ class ImageRenderer:
             except (ValueError, TypeError):
                 formatted_height = str(display_block_height)
 
-        # Scale Block Height Font if needed
+        # Dot-advance compression: tighter dots narrow the number so it fits
+        # comfortably inside the hash frame with the desired margin.
+        # 0.35 means each '.' uses 35 % of its natural advance width.
+        _DOT_FRACTION = 0.35
+
+        # Scale block-height font so the squeezed text fits inside frame_target_width
         used_font_block_value = font_block_value
-        bbox = used_font_block_value.getbbox(formatted_height)
-        text_width = bbox[2] - bbox[0]
-        
-        if max_available_width and text_width > max_available_width - 80: # More padding for frame
-             # Calculate scale ratio (add some margin)
-             ratio = (max_available_width - 80) / (text_width + 10)
-             # Extract size from font object? No standard way.
-             # Standard size is 124.
-             new_size = int(124 * ratio)
-             if new_size < 20: new_size = 20 # Minimum safeguard
-             try:
-                 used_font_block_value = ImageFont.truetype(self.font_block_height, new_size)
-             except Exception as e:
-                 print(f"Error scaling font: {e}")
+        text_width = ImageRenderer._squeezed_text_width(formatted_height, used_font_block_value, _DOT_FRACTION)
+
+        if text_width > frame_target_width:
+            ratio = frame_target_width / text_width
+            new_size = max(self._scale_font_size(20, min_value=12), int(self._scale_font_size(124, min_value=52) * ratio))
+            try:
+                used_font_block_value = ImageFont.truetype(self.font_block_height, new_size)
+                # Re-measure after font size change
+                text_width = ImageRenderer._squeezed_text_width(formatted_height, used_font_block_value, _DOT_FRACTION)
+            except Exception as e:
+                print(f"Error scaling font: {e}")
 
         # Draw "Block Height" label
         # None
         
         if self.orientation == "vertical":
             # --- VERTICAL MODE (Legacy Logic) ---
-            # Draw at (x, y), black text, max width 760px
-            self.draw_hash_frame(draw, 12, y+3, block_hash, web_quality=web_quality)
-            y = y + 24
-            
+            # Draw hash frame centered using measured geometry
+            self.draw_hash_frame(draw, 12, y+3, block_hash, web_quality=web_quality, center=True)
+            y = y + self._scale_px(24, min_value=8)
+
+            # When the font is scaled down (7-digit number), shift the text down by
+            # half the height reduction so it stays vertically centred in the frame.
+            base_ascent = font_block_value.getmetrics()[0]
+            used_ascent = used_font_block_value.getmetrics()[0]
+            vertical_centering_offset = max(0, (base_ascent - used_ascent) // 2)
+
             # Draw block height with color based on current fees (move up by 10px)
-            value_y = y - 25
-            bbox = font_block_value.getbbox(formatted_height)
-            text_width = bbox[2] - bbox[0]
-            x = (self.width - text_width) // 2
-            self.draw_vertical_gradient_text(img, draw, formatted_height, x, value_y + 10, font_block_value, block_height_start_color, block_height_end_color)
+            value_y = y - self._scale_px(25, min_value=8) + vertical_centering_offset
+            x = (self.width - text_width) // 2  # text_width already squeezed+scaled above
+            self.draw_vertical_gradient_text(img, draw, formatted_height, x, value_y + self._scale_px(10, min_value=3),
+                                             used_font_block_value,
+                                             block_height_start_color, block_height_end_color,
+                                             dot_fraction=_DOT_FRACTION)
             
             # Add fee information as small text if available
             if configured_fee is not None:
@@ -2614,12 +3072,12 @@ class ImageRenderer:
                 fee_text = f"{fee_type_display}: {configured_fee} sat/vB"
                 
                 try:
-                    font_small = ImageFont.truetype(self.font_regular, 12)
+                    font_small = ImageFont.truetype(self.font_regular, self._scale_font_size(12, min_value=8))
                 except:
                     font_small = font_block_label
                     
-                bbox = font_block_value.getbbox(formatted_height)
-                fee_y = value_y + bbox[3] - bbox[1] + 42
+                bbox = used_font_block_value.getbbox(formatted_height)
+                fee_y = value_y + bbox[3] - bbox[1] + self._scale_px(42, min_value=14)
                 
                 color = block_height_start_color if web_quality else block_height_end_color
                 self.draw_centered(draw, fee_text, fee_y, font_small, color)
@@ -2627,19 +3085,19 @@ class ImageRenderer:
             return # Exit early for vertical
 
         # --- LANDSCAPE/RESPONSIVE MODE ---
-        # Hash frame 
+        # Draw hash frame centered using measured geometry.
         # width auto-scaled by draw_hash_frame if max_width passed
-        # User requested: "slightly moved to the right". Old x=24. Adjusted to 32 (halfway).
-        self.draw_hash_frame(draw, 32, y, block_hash, web_quality=web_quality, max_width=max_available_width)
+        self.draw_hash_frame(draw, 32, y, block_hash, web_quality=web_quality, max_width=max_available_width, center=True)
         
         # Center Block Height Text inside the frame (approx y+15)
         # User requested: "Can you even further move up the block height?". Old value_y=y+25. New = y+15.
-        value_y = y + 15
+        value_y = y + self._scale_px(15, min_value=5)
         
-        bbox = used_font_block_value.getbbox(formatted_height)
-        text_width = bbox[2] - bbox[0]
-        x = (self.width - text_width) // 2
-        self.draw_vertical_gradient_text(img, draw, formatted_height, x, value_y, used_font_block_value, block_height_start_color, block_height_end_color)
+        x = (self.width - text_width) // 2  # text_width already squeezed+scaled above
+        self.draw_vertical_gradient_text(img, draw, formatted_height, x, value_y,
+                                         used_font_block_value,
+                                         block_height_start_color, block_height_end_color,
+                                         dot_fraction=_DOT_FRACTION)
         
         # Add fee information as small text if available
         if configured_fee is not None:
@@ -2661,7 +3119,7 @@ class ImageRenderer:
             fee_text = f"{fee_type_display}: {configured_fee} sat/vB"
             
             try:
-                font_small = ImageFont.truetype(self.font_regular, 12)
+                font_small = ImageFont.truetype(self.font_regular, self._scale_font_size(12, min_value=8))
             except:
                 font_small = font_block_label
             
@@ -2669,7 +3127,7 @@ class ImageRenderer:
             bbox = used_font_block_value.getbbox(formatted_height)
             text_height = bbox[3] - bbox[1]
             # User requested to fix overlap: Increased gap from 15 to 25
-            fee_y = value_y + text_height + 25
+            fee_y = value_y + text_height + self._scale_px(25, min_value=8)
 
             # Use darker tone for e-ink, use brighter tone for web (TODO: use darker for light mode as well?)
             if web_quality:
@@ -2680,32 +3138,145 @@ class ImageRenderer:
         # Draw shortened hash
         # (covered by frame)
         
-        y += 105  # Moved up by 5px (was 110)
+        y += self._scale_px(105, min_value=35)
         # self.draw_centered(draw, short_hash, y, font_block_label)
     
-    def draw_vertical_gradient_text(self, img, draw, text, x, y, font, start_color, end_color):
+    @staticmethod
+    def _wrap_text_to_lines(text: str, font, max_width: float, max_lines: int):
+        """Word-wrap *text* into at most *max_lines* pixel-width-limited lines.
+
+        Returns a list of lines where ALL words fit cleanly, or None if the text
+        cannot be arranged without truncation (signalling the caller to reduce
+        font size and retry).
+        """
+        words = text.split()
+        lines = []
+        current = ""
+        for word in words:
+            if font.getlength(word) > max_width:
+                return None  # single word too wide — reduce font size
+            candidate = (current + " " + word).strip()
+            if font.getlength(candidate) <= max_width:
+                current = candidate
+            else:
+                if current:
+                    lines.append(current)
+                current = word
+                if len(lines) >= max_lines:
+                    return None  # would need more lines than allowed — reduce font size
+        if current and len(lines) < max_lines:
+            lines.append(current)
+        return lines
+
+    @staticmethod
+    def _wrap_text_truncated(text: str, font, max_width: float, max_lines: int) -> list:
+        """Fill up to *max_lines* with word-wrapped text, adding '…' at the last word
+        boundary if not all words fit.  Used as a last-resort fallback at minimum
+        font size when _wrap_text_to_lines cannot find a clean fit.
+        """
+        words = text.split()
+        lines = []
+        current = ""
+        for word in words:
+            # If a single word is too wide, squeeze it in alone (edge case at tiny sizes)
+            candidate = (current + " " + word).strip()
+            if font.getlength(candidate) <= max_width:
+                current = candidate
+            else:
+                if current:
+                    lines.append(current)
+                current = word
+                if len(lines) >= max_lines:
+                    break
+        if current and len(lines) < max_lines:
+            lines.append(current)
+        # Add ellipsis at word boundary if words were cut off
+        if lines and len(" ".join(lines).split()) < len(words):
+            last = lines[-1]
+            parts = last.split()
+            while parts:
+                candidate = " ".join(parts) + "…"
+                if font.getlength(candidate) <= max_width:
+                    lines[-1] = candidate
+                    break
+                parts.pop()
+            else:
+                lines[-1] = "…"
+        return lines or ["…"]
+
+    @staticmethod
+    def _squeezed_text_width(text: str, font, dot_fraction: float = 1.0) -> int:
+        """Measure rendered pixel width of *text* with optional dot-advance compression.
+
+        When dot_fraction < 1.0 each '.' is rendered with a symmetric fixed gap on
+        each side scaled from the font's natural side bearing.  This matches the
+        rendering done by draw_vertical_gradient_text exactly.
+        """
+        if dot_fraction >= 1.0:
+            bbox = font.getbbox(text)
+            return bbox[2] - bbox[0]
+        cx = 0.0
+        for ch in text:
+            if ch == '.' :
+                bb = font.getbbox(ch)
+                glyph_w = bb[2] - bb[0]
+                natural_gap = max(0.5, (font.getlength(ch) - glyph_w) / 2)
+                gap = max(1.0, natural_gap * dot_fraction)
+                cx += glyph_w + 2 * gap
+            else:
+                cx += font.getlength(ch)
+        return int(cx)
+
+    def draw_vertical_gradient_text(self, img, draw, text, x, y, font, start_color, end_color,
+                                    dot_fraction: float = 1.0):
+        """Draw *text* at (x, y) with a top-to-bottom colour gradient.
+
+        dot_fraction — when < 1.0 each '.' is rendered with that fraction of its
+        natural advance width, tightening the gap around thousand-separator dots.
+        Pass the same value to _squeezed_text_width() when calculating the x
+        position so centering stays accurate.
+        """
         ascent, descent = font.getmetrics()
-        text_width = font.getbbox(text)[2] - font.getbbox(text)[0]
-        text_height = ascent + descent + 8  # Add a few pixels for safety
+        text_height = ascent + descent + 8  # extra pixels for safety
+
+        if dot_fraction >= 1.0:
+            # Fast path: single draw.text() call, natural spacing
+            text_width = font.getbbox(text)[2] - font.getbbox(text)[0]
+            text_img = Image.new("L", (text_width, text_height), 0)
+            ImageDraw.Draw(text_img).text((0, 0), text, font=font, fill=255)
+        else:
+            # Char-by-char path: centre each dot glyph in its compressed slot so
+            # the gap on both sides of '.' is equal.
+            # gap = natural_side_bearing * dot_fraction  (min 1 px)
+            # advance = glyph_width + 2 * gap
+            # draw_x  = cx + gap - bb[0]  (left pixel of glyph lands at cx+gap)
+            text_width = ImageRenderer._squeezed_text_width(text, font, dot_fraction)
+            text_img = Image.new("L", (text_width, text_height), 0)
+            text_draw = ImageDraw.Draw(text_img)
+            cx = 0.0
+            for ch in text:
+                if ch == '.':
+                    adv = font.getlength(ch)
+                    bb = font.getbbox(ch)
+                    glyph_w = bb[2] - bb[0]
+                    natural_gap = max(0.5, (adv - glyph_w) / 2)
+                    gap = max(1.0, natural_gap * dot_fraction)
+                    text_draw.text((int(cx + gap - bb[0]), 0), ch, font=font, fill=255)
+                    cx += glyph_w + 2 * gap
+                else:
+                    text_draw.text((int(cx), 0), ch, font=font, fill=255)
+                    cx += font.getlength(ch)
+
         size = (text_width, text_height)
 
-        # Create a transparent image for the text
-        text_img = Image.new("L", size, 0)
-        text_draw = ImageDraw.Draw(text_img)
-        # Draw text at (0, ascent) for proper vertical alignment
-        text_draw.text((0, 0), text, font=font, fill=255)
-
-        # Create a vertical gradient image
+        # Vertical gradient mask
         gradient = Image.new("RGBA", size)
         for yy in range(size[1]):
             t = yy / max(size[1] - 1, 1)
             color = tuple(int(start_color[i] + ((end_color[i] - start_color[i]) * t)) for i in range(3)) + (255,)
             ImageDraw.Draw(gradient).line([(0, yy), (size[0], yy)], fill=color)
 
-        # Use the text image as an alpha mask
         gradient.putalpha(text_img)
-
-        # Paste onto the main image using alpha channel
         img.paste(gradient, (int(x), int(y)), gradient)
 
     def _render_fallback_content(self, img, draw, meme_top_y, available_height, 
@@ -2777,12 +3348,12 @@ class ImageRenderer:
         title_bbox = font_title.getbbox(title_text)
         title_height = title_bbox[3] - title_bbox[1]
             
-        # Calculate description lines with word wrapping at 50 characters
-        desc_lines = self._wrap_text_at_chars(desc_text, max_chars=50)
+        # Calculate description lines with adaptive font and wrapping
+        holiday_desc_font, desc_lines = self._get_holiday_description_layout(desc_text)
         print(f"   📝 Holiday description wrapped into {len(desc_lines)} line(s)")
             
         # Calculate total description height
-        desc_bbox = font_desc.getbbox("Ay")  # Sample text for line height
+        desc_bbox = holiday_desc_font.getbbox("Ay")  # Sample text for line height
         line_height = desc_bbox[3] - desc_bbox[1]
         desc_total_height = len(desc_lines) * line_height + (len(desc_lines) - 1) * LINE_SPACING_MULTILINE
             
@@ -2800,10 +3371,10 @@ class ImageRenderer:
         # Render the holiday description lines
         y += HOLIDAY_TITLE_DESC_GAP
         for line in desc_lines:
-            bbox = font_desc.getbbox(line)
+            bbox = holiday_desc_font.getbbox(line)
             text_height = bbox[3] - bbox[1]
             x = self.layout.get_text_centered_x(bbox)
-            draw.text((x, y), line, font=font_desc, fill=desc_color)
+            draw.text((x, y), line, font=holiday_desc_font, fill=desc_color)
             y += text_height + LINE_SPACING_MULTILINE
         #else:
         #    print(f"🚫 Holiday hidden due to prioritize_large_scaled_meme=True")

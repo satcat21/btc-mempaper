@@ -228,12 +228,29 @@ class MempaperApp:
         self.displayed_info_blocks = []  # List of block types shown: ['wallet', 'bitaxe', 'price']
         self.displayed_bitaxe_data = None  # Cache Bitaxe data shown in current image
         
+        # Lightning donation state: latest + history (most recent first)
+        self._donations_file = os.path.join("cache", "donations.json")
+        self._latest_donation = None   # {amount_sats, message, timestamp}
+        self._highest_donation = None  # donation with the highest amount_sats ever received
+        self._donation_history = []    # list of {amount_sats, message, timestamp}, newest first
+        # Block height at which the most-recent donation was received (used by "auto" display mode).
+        self._latest_donation_block_height = None
+        self._load_donations()
+        self._start_webhook_site_listener()
+
         # Block tracker for e-ink display race condition prevention
         self.block_tracker = {}
         
         # E-ink display process management for cancellation
         self.active_display_processes = {}  # {block_height: subprocess.Popen}
         self.display_process_lock = threading.Lock()
+
+        # Flag: an e-ink refresh was requested while the display was busy (e.g. donation during block update)
+        self._pending_eink_refresh = False
+
+        # Pre-fetched meme path ready for the next image generation (avoids blocking online fetch)
+        self._precached_meme_path = None
+        self._meme_prefetch_in_progress = False
         
         # Image generation lock to prevent concurrent generation
         self.generation_lock = threading.Lock()
@@ -284,6 +301,8 @@ class MempaperApp:
         mempool_rest_port = self.config.get("mempool_rest_port", "4081")
         mempool_use_https = self.config.get("mempool_use_https", False)
         mempool_verify_ssl = self.config.get("mempool_verify_ssl", True)
+        mempool_username = self.config.get("mempool_username", "")
+        mempool_password = self.config.get("mempool_password", "")
         
         protocol = 'HTTPS' if mempool_use_https else 'HTTP'
         print(f"🌐 Mempool API: {protocol}://{mempool_host}:{mempool_rest_port}/api")
@@ -292,7 +311,9 @@ class MempaperApp:
             host=mempool_host,
             port=mempool_rest_port,
             use_https=mempool_use_https,
-            verify_ssl=mempool_verify_ssl
+            verify_ssl=mempool_verify_ssl,
+            username=mempool_username or None,
+            password=mempool_password or None
         )
     
     def _init_websocket(self):
@@ -310,6 +331,8 @@ class MempaperApp:
         mempool_ws_path = self.config.get("mempool_ws_path", "/api/v1/ws")
         mempool_use_https = self.config.get("mempool_use_https", False)
         mempool_verify_ssl = self.config.get("mempool_verify_ssl", True)
+        mempool_username = self.config.get("mempool_username", "")
+        mempool_password = self.config.get("mempool_password", "")
         
         # WebSocket URL already logged by block_monitor
         # print(f"📶 Using mempool host for WebSocket: {mempool_host}")
@@ -321,7 +344,9 @@ class MempaperApp:
             path=mempool_ws_path,
             use_wss=mempool_use_https,  # Use WSS if HTTPS is enabled
             on_new_block_callback=self.on_new_block_received,
-            verify_ssl=mempool_verify_ssl
+            verify_ssl=mempool_verify_ssl,
+            username=mempool_username or None,
+            password=mempool_password or None
         )
         
         # Configure network outage tolerance (how long to retry before giving up)
@@ -330,6 +355,211 @@ class MempaperApp:
         
         # Connection details logged by websocket_client and block_monitor
     
+    def _load_donations(self):
+        """Load persisted donation history from disk on startup."""
+        try:
+            if os.path.exists(self._donations_file):
+                with open(self._donations_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                self._donation_history = data.get("history", [])
+                self._latest_donation = self._donation_history[0] if self._donation_history else None
+                if self._donation_history:
+                    self._highest_donation = max(
+                        self._donation_history,
+                        key=lambda d: d.get("amount_sats", 0)
+                    )
+                self._latest_donation_block_height = data.get("latest_donation_block_height", None)
+                print(f"⚡ Loaded {len(self._donation_history)} donation(s) from {self._donations_file}")
+        except Exception as e:
+            print(f"⚠️ Could not load donations file: {e}")
+
+    def _get_active_donation(self):
+        """Return the donation to display based on donation_display_mode config.
+
+        Modes:
+          latest  — always show the most-recent donation.
+          highest — always show the all-time largest donation.
+          auto    — show latest for 432 blocks after the last donation; fall back
+                    to highest when 432 blocks have passed without a new donation.
+        """
+        mode = self.config.get("donation_display_mode", "latest")
+        if mode == "highest":
+            return self._highest_donation
+        if mode == "auto":
+            if self._latest_donation is None:
+                d = self._highest_donation
+                effective = "highest"
+            else:
+                donation_bh = self._latest_donation_block_height
+                current_bh = self.current_block_height
+                if donation_bh is None or current_bh is None:
+                    d = self._latest_donation
+                    effective = "latest"
+                else:
+                    try:
+                        blocks_since = int(current_bh) - int(donation_bh)
+                    except (TypeError, ValueError):
+                        d = self._latest_donation
+                        effective = "latest"
+                    else:
+                        if blocks_since <= 432:
+                            d = self._latest_donation
+                            effective = "latest"
+                        else:
+                            d = self._highest_donation
+                            effective = "highest"
+            # Return a tagged copy so the renderer knows which label to show
+            if d is not None:
+                d = dict(d)
+                d["_effective_mode"] = effective
+            return d
+        # default: "latest"
+        return self._latest_donation
+
+    def _save_donations(self):
+        """Persist donation history to disk."""
+        try:
+            os.makedirs(os.path.dirname(self._donations_file), exist_ok=True)
+            with open(self._donations_file, "w", encoding="utf-8") as f:
+                json.dump({
+                    "history": self._donation_history,
+                    "latest_donation_block_height": self._latest_donation_block_height,
+                }, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"⚠️ Could not save donations file: {e}")
+
+    def _process_donation_payload(self, data: dict):
+        """Parse a raw LNbits payment payload and trigger display + socket updates."""
+        from datetime import datetime as _dt
+
+        # LNbits sends amount in millisatoshis.
+        # For LNURL-pay the user's comment is in extra.comment (not memo).
+        amount_msats = data.get("amount", 0)
+        amount_sats = max(1, round(amount_msats / 1000)) if amount_msats else 0
+        extra = data.get("extra") or {}
+        message = (
+            extra.get("comment")
+            or extra.get("description")
+            or data.get("memo")
+            or data.get("comment")
+            or ""
+        ).strip()
+
+        donation = {
+            "amount_sats": amount_sats,
+            "message": message,
+            "timestamp": _dt.utcnow().isoformat(),
+        }
+        self._latest_donation = donation
+        self._donation_history.insert(0, donation)
+        if len(self._donation_history) > 100:
+            self._donation_history = self._donation_history[:100]
+        if (self._highest_donation is None or
+                amount_sats > self._highest_donation.get("amount_sats", 0)):
+            self._highest_donation = donation
+        # Record block height for the "auto" display-mode countdown.
+        self._latest_donation_block_height = self.current_block_height
+        self._save_donations()
+
+        print(f"⚡ Donation received: {amount_sats} sats — \"{message}\" (block height: {self._latest_donation_block_height})")
+
+        if self.socketio:
+            self.socketio.emit('donation_received', donation)
+
+        # Refresh the display if the donation block is enabled
+        if self.config.get("show_donation_block", False):
+            self.image_renderer._donation_data = self._get_active_donation()
+            self.image_is_current = False
+            threading.Thread(
+                target=self._background_image_generation,
+                kwargs={"force_eink": True, "use_cached_block": True, "force_new_meme": True},
+                daemon=True
+            ).start()
+
+    def _start_webhook_site_listener(self):
+        """Start a background thread that connects to a webhook relay via WebSocket.
+
+        The thread reconnects automatically with exponential back-off whenever
+        the connection drops.  Call _restart_webhook_site_listener() to force an
+        immediate reconnect with a new URL (e.g. after config change).
+        """
+        import websocket as _ws
+
+        self._webhook_site_wake = threading.Event()  # set to interrupt sleep
+        self._webhook_site_ws = None                 # current WebSocketApp (for close on restart)
+
+        def _run():
+            backoff = 5
+            while True:
+                self._webhook_site_wake.clear()
+                url = self.config.get("webhook_relay_ws_url", "").strip()
+                if not url:
+                    # No URL — wait up to 30 s or until woken by a config change
+                    self._webhook_site_wake.wait(timeout=30)
+                    continue
+
+                print(f"⚡ webhook relay listener: connecting to {url}")
+
+                def _on_message(ws, raw):
+                    try:
+                        outer = json.loads(raw)
+                        # Check for payload field first (webhook relay format), then content/body
+                        data = outer.get("payload")
+                        if not data:
+                            content = outer.get("content") or outer.get("body") or ""
+                            data = json.loads(content) if content and isinstance(content, str) else content
+                        print(f"⚡ webhook relay event — data: {str(data)[:300]!r}")
+                        self._process_donation_payload(data)
+                    except Exception as e:
+                        print(f"⚠️ webhook relay parse error: {e} — raw: {raw[:200]!r}")
+
+                def _on_open(ws):
+                    backoff_ref[0] = 5  # reset back-off on successful connect
+                    print("✅ webhook relay WebSocket connected")
+
+                def _on_error(ws, err):
+                    print(f"⚠️ webhook relay WebSocket error: {err}")
+
+                def _on_close(ws, code, msg):
+                    print(f"⚡ webhook relay WebSocket closed (code={code})")
+
+                backoff_ref = [backoff]
+                try:
+                    ws = _ws.WebSocketApp(
+                        url,
+                        on_open=_on_open,
+                        on_message=_on_message,
+                        on_error=_on_error,
+                        on_close=_on_close,
+                    )
+                    self._webhook_site_ws = ws
+                    ws.run_forever(ping_interval=30, ping_timeout=10)
+                except Exception as e:
+                    print(f"⚠️ webhook relay listener exception: {e}")
+                finally:
+                    self._webhook_site_ws = None
+
+                backoff = backoff_ref[0]
+                # Wait before reconnecting, but allow early wake on URL change
+                print(f"⚡ webhook relay listener: reconnecting in {backoff} s…")
+                self._webhook_site_wake.wait(timeout=backoff)
+                backoff = min(backoff * 2, 60)
+
+        threading.Thread(target=_run, name="webhook-relay-listener", daemon=True).start()
+        print("⚡ webhook relay listener thread started")
+
+    def _restart_webhook_site_listener(self):
+        """Force an immediate reconnect (e.g. after the WebSocket URL changes in config)."""
+        ws = getattr(self, '_webhook_site_ws', None)
+        if ws:
+            try:
+                ws.close()
+            except Exception:
+                pass
+        wake = getattr(self, '_webhook_site_wake', None)
+        if wake:
+            wake.set()  # interrupt any sleep
+
     def _generate_initial_image(self):
         """Generate initial dashboard image on startup - optimized for fast start."""
         
@@ -546,7 +776,10 @@ class MempaperApp:
             
             # IMMEDIATE IMAGE GENERATION: Use cached wallet data for instant startup
             print(f"⚙️ [IMMEDIATE] Generating dashboard with cached data for block {block_info['block_height']}...")
-            
+
+            # Sync latest donation data to renderer
+            self.image_renderer._donation_data = self._get_active_donation()
+
             # Render both web and e-ink images using cached data (startup_mode=True)
             web_img, eink_img, meme_path, displayed_blocks = self.image_renderer.render_dual_images(
                 block_info['block_height'], 
@@ -765,9 +998,11 @@ class MempaperApp:
             except Exception as e:
                 print(f"⚠️ Wallet balance API warm-up failed: {e}")
         
-        # Warm up Bitaxe API (if configured) 
+        # Warm up Bitaxe API only when Bitaxe block is actually enabled for display.
         bitaxe_ip = self.config.get("bitaxe_ip", "")
-        if bitaxe_ip and bitaxe_ip != "192.168.1.1":
+        show_bitaxe_block = self.config.get("show_bitaxe_block", True)
+        bitaxe_enabled = self.config.get("bitaxe_enabled", True)
+        if show_bitaxe_block and bitaxe_enabled and bitaxe_ip and bitaxe_ip != "192.168.1.1":
             try:
                 bitaxe_data = self.image_renderer.fetch_bitaxe_stats()
                 # Silently warm up - only log errors
@@ -1014,6 +1249,19 @@ class MempaperApp:
                             print(f"💾 E-ink display tracking updated: Block {block_height}")
                         else:
                             print(f"📋 E-ink display tracking NOT updated: Block {block_height} is older than current {current_height}")
+
+                    # Pre-fetch the next meme in the background while display is idle
+                    threading.Thread(target=self._prefetch_next_meme, daemon=True).start()
+
+                    # Check if a refresh was requested while we were busy (e.g. donation arrived during block update)
+                    if getattr(self, '_pending_eink_refresh', False):
+                        self._pending_eink_refresh = False
+                        print(f"📌 Executing pending e-ink refresh (donation arrived during previous display)...")
+                        threading.Thread(
+                            target=self._display_on_epaper_async,
+                            args=(self.current_eink_image_path, self.current_block_height, self.current_block_hash),
+                            daemon=True
+                        ).start()
                     
                     # Emit success to WebSocket clients
                     if hasattr(self, 'socketio'):
@@ -1125,6 +1373,32 @@ class MempaperApp:
                     # Still remove from tracking even if cancellation failed
                     self.active_display_processes.pop(block_height, None)
     
+    def _prefetch_next_meme(self):
+        """Pre-fetch the next meme from einundzwanzig-memes.space in the background.
+
+        Called after every successful e-ink display so the meme is ready before
+        the next block or donation triggers image generation, avoiding the blocking
+        online fetch (~5-15 s) on the critical path.
+        Only runs when einundzwanzig_meme_source is enabled in config.
+        """
+        if not self.config.get("einundzwanzig_meme_source", False):
+            return
+        if self._meme_prefetch_in_progress:
+            return
+        self._meme_prefetch_in_progress = True
+        try:
+            print("🖼️ Pre-fetching next meme from einundzwanzig-memes.space...")
+            path = self.image_renderer._pick_online_meme()
+            if path:
+                self._precached_meme_path = path
+                print(f"✅ Next meme pre-fetched and ready: {os.path.basename(path)}")
+            else:
+                print("⚠️ Meme pre-fetch returned no path, will fetch on demand")
+        except Exception as e:
+            print(f"⚠️ Meme pre-fetch error: {e}")
+        finally:
+            self._meme_prefetch_in_progress = False
+
     def _extract_wallet_addresses_from_config(self, config):
         """
         Extract all wallet addresses from configuration.
@@ -1324,7 +1598,7 @@ class MempaperApp:
                 'display_width', 'display_height', 'show_btc_price_block',
                 'btc_price_currency', 'show_bitaxe_block', 'show_wallet_balances_block',
                 'wallet_balance_unit', 'wallet_balance_currency', 'color_mode_dark',
-                'moscow_time_unit'
+                'moscow_time_unit', 'show_donation_block'
             ]
             
             for setting in image_affecting_settings:
@@ -1377,38 +1651,59 @@ class MempaperApp:
         except Exception as e:
             print(f"⚠️ Failed to notify web clients: {e}")
     
-    def _background_image_generation(self):
-        """Generate image in background thread."""
+    def _background_image_generation(self, force_eink=False, use_cached_block=False, force_new_meme=False):
+        """Generate image in background thread.
+
+        Args:
+            force_eink: When True, the e-ink display is refreshed even if the
+                        block height hasn't changed (e.g. after a donation arrives).
+            use_cached_block: When True, skip the mempool API call and use the
+                              already-cached block height/hash (saves ~5 s for
+                              events like donations where the block hasn't changed).
+            force_new_meme: When True, always pick a new random meme even if the
+                            block height hasn't changed (e.g. after a donation arrives).
+        """
         # Use lock to prevent concurrent generation
         if not self.generation_lock.acquire(blocking=False):
             print("⚙️ Image generation already in progress, skipping")
             return
-            
+
         try:
             print("⚙️ Starting background image generation...")
-            block_info = self.mempool_api.get_current_block_info()
-            
+
+            if use_cached_block and self.current_block_height and self.current_block_hash:
+                # Skip API round-trip — block is unchanged (e.g. donation event)
+                block_info = {
+                    'block_height': self.current_block_height,
+                    'block_hash':   self.current_block_hash,
+                }
+                print(f"⚡ Using cached block info (skipping API): {self.current_block_height}")
+            else:
+                block_info = self.mempool_api.get_current_block_info()
+
             # Check if we already have this block
-            if (self.current_block_height == block_info['block_height'] and 
-                self.current_block_hash == block_info['block_hash'] and 
+            if (self.current_block_height == block_info['block_height'] and
+                self.current_block_hash == block_info['block_hash'] and
                 self.image_is_current):
                 print(f"✅ Image already current for block {block_info['block_height']}, skipping generation")
                 return
-            
+
             print(f"⚙️ Need to generate: cached_height={self.current_block_height}, current_height={block_info['block_height']}, is_current={self.image_is_current}")
-            
-            # Use new meme if block height changed, keep existing if same block
-            use_new_meme = (self.current_block_height != block_info['block_height'])
+
+            # Use new meme if block height changed OR explicitly requested (e.g. donation)
+            use_new_meme = force_new_meme or (self.current_block_height != block_info['block_height'])
             if use_new_meme:
-                print(f"🎭 Block changed ({self.current_block_height} → {block_info['block_height']}) - will select new meme")
+                reason = "donation" if force_new_meme else f"block changed ({self.current_block_height} → {block_info['block_height']})"
+                print(f"🎭 Selecting new meme ({reason})")
             else:
                 print(f"🎭 Same block ({block_info['block_height']}) - will keep existing meme if available")
-                
+
             self._generate_new_image(
                 block_info['block_height'],
                 block_info['block_hash'],
                 skip_epaper=False,  # Allow e-Paper update in background
-                use_new_meme=use_new_meme
+                use_new_meme=use_new_meme,
+                force_eink=force_eink
             )
             print("✅ Background image generation completed")
             
@@ -1589,10 +1884,10 @@ class MempaperApp:
                 except Exception as e:
                     print(f"⚠️ Failed to pre-cache price: {e}")
             
-            # Update Bitaxe data if enabled and stale
-            if self.config.get("bitaxe_enabled", False) and now - self._precache['bitaxe_last_update'] > update_interval:
+            # Update Bitaxe data only when Bitaxe block is enabled and stale.
+            if self.config.get("show_bitaxe_block", True) and self.config.get("bitaxe_enabled", True) and now - self._precache['bitaxe_last_update'] > update_interval:
                 try:
-                    bitaxe_data = self.image_renderer.fetch_bitaxe_info()
+                    bitaxe_data = self.image_renderer.bitaxe_api.fetch_bitaxe_stats()
                     if bitaxe_data:
                         self._precache['bitaxe_data'] = bitaxe_data
                         self._precache['bitaxe_last_update'] = now
@@ -1621,14 +1916,15 @@ class MempaperApp:
                 self._precache['price_data'] = price_data
                 self._precache['price_last_update'] = now
             
-            # Use cached Bitaxe if fresh (<120s old), otherwise fetch new
-            if self.config.get("bitaxe_enabled", False):
+            # Use cached Bitaxe if fresh (<120s old), otherwise fetch new.
+            # Skip entirely when Bitaxe block is disabled to avoid unnecessary network traffic.
+            if self.config.get("show_bitaxe_block", True) and self.config.get("bitaxe_enabled", True):
                 if self._precache['bitaxe_data'] and (now - self._precache['bitaxe_last_update'] < 120):
                     bitaxe_data = self._precache['bitaxe_data']
                     print("⚡ Using pre-cached Bitaxe data (fast!)")
                 else:
                     print("🔄 Pre-cache stale, fetching fresh Bitaxe...")
-                    bitaxe_data = self.image_renderer.fetch_bitaxe_info()
+                    bitaxe_data = self.image_renderer.bitaxe_api.fetch_bitaxe_stats()
                     self._precache['bitaxe_data'] = bitaxe_data
                     self._precache['bitaxe_last_update'] = now
             else:
@@ -1663,10 +1959,18 @@ class MempaperApp:
 
             # Mempool fee settings
             'fee_parameter',
+
+            # Donation display settings
+            'show_donation_block', 'donation_display_mode',
         }
 
         # Compare old and new config for image-affecting changes
         old_config = self.config
+
+        # Restart webhook relay listener immediately if its URL changed
+        if old_config.get("webhook_relay_ws_url") != new_config.get("webhook_relay_ws_url"):
+            print("⚡ webhook relay URL changed — restarting listener")
+            self._restart_webhook_site_listener()
         config_changed = False
         changed_settings = []
         opsec_toggled = old_config.get('opsec_mode_enabled') != new_config.get('opsec_mode_enabled')
@@ -1694,17 +1998,27 @@ class MempaperApp:
             # Recreate image renderer with new config
             self.image_renderer = ImageRenderer(self.config, self.translations)
 
-            # Check if we have a current image and cached meme to regenerate with
-            if (self.image_is_current and
-                self.current_block_height and
+            # Trigger immediate refresh regardless of image_is_current state.
+            # Run in a background thread to avoid blocking the save response.
+            if (self.current_block_height and
                 self.current_block_hash and
                 hasattr(self, 'current_meme_path') and
-                self.current_meme_path):
+                self.current_meme_path and
+                os.path.exists(self.current_meme_path)):
 
-                # Generate new images with cached meme
-                self._regenerate_image_with_cached_meme()
+                # Fast path: reuse cached meme, force e-ink update
+                threading.Thread(
+                    target=self._regenerate_image_with_cached_meme,
+                    daemon=True
+                ).start()
             else:
-                print("💾 No cached image state available, will regenerate on next update")
+                # No cached meme yet — full generation with forced e-ink
+                print("💾 No cached meme available, starting full background generation...")
+                threading.Thread(
+                    target=self._background_image_generation,
+                    kwargs={"force_eink": True, "use_cached_block": True},
+                    daemon=True
+                ).start()
         elif opsec_toggled:
             # OPSec mode changed but nothing else — fast path: only update e-ink display,
             # web image stays unchanged (data hasn't changed, no block update).
@@ -1772,6 +2086,7 @@ class MempaperApp:
                     return
                 
                 # Generate images with the cached meme
+                self.image_renderer._donation_data = self._get_active_donation()
                 web_img, eink_img, meme_path = self.image_renderer.render_dual_images_with_cached_meme(
                     self.current_block_height,
                     self.current_block_hash,
@@ -1788,6 +2103,7 @@ class MempaperApp:
                     print(f"💾 Regenerated e-ink image saved to {self.current_eink_image_path}")
                 
                 # Update cache metadata
+                self.image_is_current = True
                 self._save_cache_metadata()
 
                 # Display on e-Paper if enabled
@@ -1800,12 +2116,14 @@ class MempaperApp:
                         daemon=True
                     ).start()
                 
-                # Emit update to connected web clients
-                self.socketio.emit('image_updated', {
-                    'message': 'Image refreshed due to configuration change',
-                    'block_height': self.current_block_height,
-                    'timestamp': time.time()
-                })
+                # Push fresh image to connected web clients
+                try:
+                    with open(self.current_image_path, 'rb') as f:
+                        image_data = 'data:image/png;base64,' + base64.b64encode(f.read()).decode()
+                    self.socketio.emit('new_image', {'image': image_data})
+                    print("📡 Fresh image sent to web clients")
+                except Exception as e:
+                    print(f"⚠️ Failed to send image to web clients: {e}")
                 
                 print("✅ Image regeneration completed successfully")
                 
@@ -1932,10 +2250,10 @@ class MempaperApp:
             cached_btc = cached_wallet_data.get("total_btc", 0)
             wallet_changed = fresh_btc != cached_btc
             
-            # Compare Bitaxe data if enabled and displayed
+            # Compare Bitaxe data only if block is enabled and currently displayed.
             bitaxe_changed = False
-            if self.config.get("bitaxe_enabled", False) and 'bitaxe' in self.displayed_info_blocks:
-                fresh_bitaxe = self.image_renderer.fetch_bitaxe_info()
+            if self.config.get("show_bitaxe_block", True) and self.config.get("bitaxe_enabled", True) and 'bitaxe' in self.displayed_info_blocks:
+                fresh_bitaxe = self.image_renderer.bitaxe_api.fetch_bitaxe_stats()
                 cached_bitaxe = self.displayed_bitaxe_data or {}
                 
                 fresh_blocks = fresh_bitaxe.get('valid_blocks', 0) if fresh_bitaxe else 0
@@ -1980,7 +2298,10 @@ class MempaperApp:
                 
                 # Get pre-cached data for fast rendering
                 precached_price, precached_bitaxe = self._get_precached_data()
-                
+
+                # Sync latest donation data to renderer
+                self.image_renderer._donation_data = self._get_active_donation()
+
                 # Regenerate with SAME meme and info blocks (preserve_layout=True)
                 web_img, eink_img, content_path, displayed_blocks = self.image_renderer.render_dual_images(
                     block_height, block_hash,
@@ -2083,21 +2404,32 @@ class MempaperApp:
             import traceback
             traceback.print_exc()
 
-    def _generate_new_image(self, block_height: int, block_hash: str, skip_epaper: bool = False, use_new_meme: bool = True):
+    def _generate_new_image(self, block_height: int, block_hash: str, skip_epaper: bool = False, use_new_meme: bool = True, force_eink: bool = False):
         """Generate a new dashboard image and cache it."""
         print(f"⚙️ Generating new dashboard image for block {block_height} with CACHED wallet data...")
-        
+
+        # Sync latest donation data to renderer
+        self.image_renderer._donation_data = self._get_active_donation()
+
         # 🚀 Get pre-cached data for instant image generation
         precached_price, precached_bitaxe = self._get_precached_data()
         
         # Decide whether to use cached meme or pick a new one
         if use_new_meme or not hasattr(self, 'current_meme_path') or not self.current_meme_path or not os.path.exists(self.current_meme_path):
-            print("⚙️ Selecting new random meme for this block...")
+            # Use pre-fetched meme if available (avoids blocking online fetch)
+            precached_meme = getattr(self, '_precached_meme_path', None)
+            if precached_meme and os.path.exists(precached_meme):
+                print(f"⚡ Using pre-fetched meme (fast!): {os.path.basename(precached_meme)}")
+                self._precached_meme_path = None  # consume it
+            else:
+                print("⚙️ Selecting new random meme for this block...")
+                precached_meme = None  # will be selected inside render_dual_images
             web_img, eink_img, content_path, displayed_blocks = self.image_renderer.render_dual_images(
                 block_height,
                 block_hash,
                 mempool_api=self.mempool_api,
                 startup_mode=True,  # Use cached wallet data for instant response
+                override_content_path=precached_meme,  # None = pick randomly, path = use pre-fetched
                 precached_price=precached_price,  # Use pre-cached price
                 precached_bitaxe=precached_bitaxe  # Use pre-cached Bitaxe
             )
@@ -2146,7 +2478,7 @@ class MempaperApp:
         # This reduces total update time from web→eink by running them sequentially but without delay
         if self.e_ink_enabled and not skip_epaper:
             current_eink_height = getattr(self, 'last_eink_block_height', 0) or 0
-            if int(block_height or 0) != int(current_eink_height):
+            if int(block_height or 0) != int(current_eink_height) or force_eink:
                 print(f"⚡ Starting e-ink update for block {block_height}")
                 with self.display_process_lock:
                     active_blocks = list(self.active_display_processes.keys())
@@ -2159,6 +2491,9 @@ class MempaperApp:
                         ).start()
                     else:
                         print(f"⏳ E-ink display already in progress for block >= {block_height}")
+                        if force_eink:
+                            self._pending_eink_refresh = True
+                            print(f"📌 Pending e-ink refresh flagged (will update after current display finishes)")
         
         # Start wallet refresh in background (lower priority)
         def start_wallet_refresh():
@@ -2634,6 +2969,30 @@ class MempaperApp:
             """Handle logout requests."""
             self.auth_manager.logout()
             return jsonify({'success': True, 'message': 'Logout successful'})
+
+        # Lightning Donation Webhook
+        @self.app.route('/api/donation-webhook', methods=['POST'])
+        def donation_webhook():
+            """Receive LNbits payment webhook and broadcast donation to connected clients."""
+            # force=True parses JSON regardless of Content-Type header,
+            # which LNbits sometimes omits.
+            data = request.get_json(force=True, silent=True) or {}
+
+            # Debug: log raw body + parsed fields so misconfigured LNbits is easy to diagnose
+            raw_body = request.get_data(as_text=True)
+            print(f"⚡ Donation webhook received — body: {raw_body[:500]!r}")
+
+            self._process_donation_payload(data)
+            return jsonify({'success': True}), 200
+
+        @self.app.route('/api/donations', methods=['GET'])
+        @require_auth(self.auth_manager)
+        def get_donations():
+            """Return donation history (most recent first)."""
+            return jsonify({
+                'donations': self._donation_history,
+                'latest': self._latest_donation,
+            })
 
         # Mobile API Token Endpoints
         @self.app.route('/api/mobile/token/generate', methods=['POST'])
@@ -3121,16 +3480,16 @@ class MempaperApp:
                 # Get pagination parameters
                 page = request.args.get('page', 1, type=int)
                 per_page = request.args.get('per_page', 50, type=int)  # Limit to 50 memes per request
-                metadata_only = request.args.get('metadata_only', 'false').lower() == 'true'
                 
                 memes_dir = os.path.join('static', 'memes')
                 if not os.path.exists(memes_dir):
                     return jsonify({'memes': [], 'total': 0, 'page': page, 'per_page': per_page})
                 
-                # Get all meme files
+                # Get all meme files (skip internal cache files prefixed with _)
                 all_files = []
                 for filename in os.listdir(memes_dir):
-                    if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp')):
+                    if (filename.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp'))
+                            and not filename.startswith('_')):
                         all_files.append(filename)
                 
                 # Sort files for consistent pagination
@@ -3153,12 +3512,9 @@ class MempaperApp:
                             'filename': filename,
                             'size': file_size,
                             'url': f'/static/memes/{filename}',
+                            'thumb_url': f'/api/thumb/{filename}?v={int(file_stat.st_mtime)}',
                             'last_modified': file_stat.st_mtime
                         }
-                        
-                        # Only include full URL if not metadata_only mode
-                        if not metadata_only:
-                            meme_data['url'] = f'/static/memes/{filename}'
                         
                         memes.append(meme_data)
                     except OSError:
@@ -3177,6 +3533,65 @@ class MempaperApp:
             except Exception as e:
                 return jsonify({'success': False, 'message': str(e)}), 500
         
+        @self.app.route('/api/thumb/<filename>', methods=['GET'])
+        def serve_meme_thumb(filename):
+            """Serve a cached 200×200 WebP thumbnail, generating it on first request."""
+            # Auth check without session refresh — avoids Set-Cookie which blocks browser caching
+            if not self.auth_manager.is_authenticated():
+                return jsonify({'error': 'Authentication required'}), 401
+
+            from PIL import Image
+
+            filename = secure_filename(filename)
+            orig_path = os.path.join('static', 'memes', filename)
+            if not os.path.exists(orig_path):
+                return "Not found", 404
+
+            thumb_dir = os.path.join('static', 'memes', 'thumbs')
+            os.makedirs(thumb_dir, exist_ok=True)
+
+            # Thumbnails are always stored as webp for efficiency
+            stem = os.path.splitext(filename)[0]
+            thumb_path = os.path.join(thumb_dir, f'{stem}.webp')
+
+            orig_mtime = os.stat(orig_path).st_mtime
+            thumb_ok = (
+                os.path.exists(thumb_path)
+                and os.stat(thumb_path).st_mtime >= orig_mtime
+            )
+
+            if not thumb_ok:
+                try:
+                    with Image.open(orig_path) as img:
+                        # Preserve animation frames for GIFs by only taking frame 0
+                        img.seek(0) if hasattr(img, 'seek') else None
+                        img = img.convert('RGBA') if img.mode in ('P', 'RGBA') else img.convert('RGB')
+                        img.thumbnail((200, 200), Image.LANCZOS)
+                        img.save(thumb_path, 'WEBP', quality=70, method=4)
+                except Exception:
+                    # Thumbnail generation failed — fall back to the original
+                    response = send_file(orig_path)
+                    response.headers['Cache-Control'] = 'private, max-age=3600'
+                    return response
+
+            # Build an ETag from the thumb file's mtime
+            thumb_mtime = int(os.stat(thumb_path).st_mtime)
+            etag = f'"{thumb_mtime}"'
+
+            # Return 304 if the browser already has this version
+            if request.headers.get('If-None-Match') == etag:
+                from flask import Response as _Response
+                return _Response(status=304, headers={
+                    'ETag': etag,
+                    'Cache-Control': 'private, max-age=31536000, immutable',
+                })
+
+            response = send_file(thumb_path, mimetype='image/webp')
+            response.headers['ETag'] = etag
+            # immutable + long max-age: browser skips the request entirely until ?v=mtime changes
+            response.headers['Cache-Control'] = 'private, max-age=31536000, immutable'
+            return response
+
         @self.app.route('/api/download-meme/<filename>', methods=['GET'])
         @require_auth(self.auth_manager)
         def download_meme(filename):
@@ -3288,6 +3703,206 @@ class MempaperApp:
             except Exception as e:
                 return jsonify({'success': False, 'message': str(e)}), 500
         
+        @self.app.route('/api/download-einundzwanzig', methods=['POST'])
+        @require_auth(self.auth_manager)
+        def download_einundzwanzig_memes():
+            """Start a background bulk-download from einundzwanzig-memes.space."""
+            if getattr(self, '_einundzwanzig_download_running', False):
+                return jsonify({'success': False, 'message': 'Download already in progress'}), 409
+
+            def _run():
+                self._einundzwanzig_download_running = True
+                try:
+                    import sys as _sys
+                    import re as _re
+                    import hashlib
+                    _scripts_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'scripts')
+                    if _scripts_dir not in _sys.path:
+                        _sys.path.insert(0, _scripts_dir)
+                    from einundzwanzig_memes import collect_all_ids, fetch_image_bytes, image_url as get_image_url
+
+                    memes_dir = os.path.join('static', 'memes')
+                    os.makedirs(memes_dir, exist_ok=True)
+
+                    # Duplicate detection strategy:
+                    #   UUID-named files ({uuid}.webp) → fast filename check, no download needed.
+                    #   Manually uploaded files (any other name) → SHA-256 hash so a re-upload
+                    #   of the same image under a different filename is detected.
+                    _UUID_RE = _re.compile(
+                        r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+                        _re.I,
+                    )
+                    _IMG_EXTS = {'.webp', '.png', '.jpg', '.jpeg', '.gif'}
+
+                    existing_ids: set[str] = set()    # stems of UUID-named files
+                    existing_hashes: set[str] = set() # SHA-256 of manually-uploaded files
+
+                    manual_files = []
+                    for fname in os.listdir(memes_dir):
+                        stem, ext = os.path.splitext(fname)
+                        if ext.lower() not in _IMG_EXTS or fname.startswith('_'):
+                            continue
+                        if _UUID_RE.match(stem):
+                            existing_ids.add(stem)
+                        else:
+                            manual_files.append(fname)
+
+                    if manual_files:
+                        self.socketio.emit('einundzwanzig_download_progress', {
+                            'stage': 'hashing',
+                            'message': f'Hashing {len(manual_files)} manually-uploaded file(s)…',
+                        })
+                        for fname in manual_files:
+                            try:
+                                h = hashlib.sha256()
+                                with open(os.path.join(memes_dir, fname), 'rb') as f:
+                                    for chunk in iter(lambda: f.read(65536), b''):
+                                        h.update(chunk)
+                                existing_hashes.add(h.hexdigest())
+                            except Exception:
+                                pass
+
+                    # Discovery — tag-based semantic search (~5 800 tags).
+                    # workers=2 keeps the API request rate reasonable.
+                    _last_emit = [0]
+
+                    def _on_discovery_progress(tag, page, new_count, total):
+                        # Throttle socketio emits to at most one per second
+                        now = time.time()
+                        if new_count > 0 and now - _last_emit[0] >= 1.0:
+                            _last_emit[0] = now
+                            self.socketio.emit('einundzwanzig_download_progress', {
+                                'stage': 'discovering',
+                                'message': f'{total} memes discovered so far…',
+                                'discovered': total,
+                            })
+
+                    self.socketio.emit('einundzwanzig_download_progress', {
+                        'stage': 'discovering',
+                        'message': 'Fetching tag list and searching…',
+                        'discovered': 0,
+                    })
+
+                    all_memes = collect_all_ids(
+                        verbose=False,
+                        on_progress=_on_discovery_progress,
+                        workers=2,
+                        state_dir=memes_dir,
+                    )
+                    total = len(all_memes)
+
+                    self.socketio.emit('einundzwanzig_download_progress', {
+                        'stage': 'downloading',
+                        'message': f'Found {total} memes, downloading new ones…',
+                        'total': total, 'done': 0,
+                        'downloaded': 0, 'duplicates': 0, 'failed': 0
+                    })
+
+                    # Download — fast filename check first; SHA-256 only when
+                    # manually-uploaded files exist (to catch content duplicates).
+                    downloaded = 0
+                    duplicates = 0
+                    failed = 0
+
+                    for i, (uid, _) in enumerate(all_memes.items(), 1):
+                        if uid in existing_ids:
+                            # UUID file already on disk — instant skip
+                            duplicates += 1
+                        else:
+                            try:
+                                img_bytes = fetch_image_bytes(get_image_url(uid))
+                                if existing_hashes:
+                                    file_hash = hashlib.sha256(img_bytes).hexdigest()
+                                    if file_hash in existing_hashes:
+                                        duplicates += 1
+                                        continue
+                                dest = os.path.join(memes_dir, f'{uid}.webp')
+                                with open(dest, 'wb') as f:
+                                    f.write(img_bytes)
+                                existing_ids.add(uid)
+                                downloaded += 1
+                            except Exception:
+                                failed += 1
+
+                        if i % 20 == 0 or i == total:
+                            self.socketio.emit('einundzwanzig_download_progress', {
+                                'stage': 'downloading',
+                                'message': f'Downloading… {i}/{total}',
+                                'total': total, 'done': i,
+                                'downloaded': downloaded, 'duplicates': duplicates, 'failed': failed
+                            })
+
+                    self.socketio.emit('einundzwanzig_download_complete', {
+                        'success': True,
+                        'total': total,
+                        'downloaded': downloaded,
+                        'duplicates': duplicates,
+                        'failed': failed
+                    })
+
+                except Exception as exc:
+                    self.socketio.emit('einundzwanzig_download_complete', {
+                        'success': False,
+                        'message': str(exc)
+                    })
+                finally:
+                    self._einundzwanzig_download_running = False
+
+            threading.Thread(target=_run, daemon=True).start()
+            return jsonify({'success': True, 'message': 'Download started'})
+
+        @self.app.route('/api/opsec-thumb/<filename>', methods=['GET'])
+        def serve_opsec_thumb(filename):
+            """Serve a cached 200×200 WebP thumbnail for an OPSec image, generating on first request."""
+            if not self.auth_manager.is_authenticated():
+                return jsonify({'error': 'Authentication required'}), 401
+
+            from PIL import Image
+
+            filename = secure_filename(filename)
+            orig_path = os.path.join('static', 'opsec', filename)
+            if not os.path.exists(orig_path):
+                return "Not found", 404
+
+            thumb_dir = os.path.join('static', 'opsec', 'thumbs')
+            os.makedirs(thumb_dir, exist_ok=True)
+
+            stem = os.path.splitext(filename)[0]
+            thumb_path = os.path.join(thumb_dir, f'{stem}.webp')
+
+            orig_mtime = os.stat(orig_path).st_mtime
+            thumb_ok = (
+                os.path.exists(thumb_path)
+                and os.stat(thumb_path).st_mtime >= orig_mtime
+            )
+
+            if not thumb_ok:
+                try:
+                    with Image.open(orig_path) as img:
+                        img.seek(0) if hasattr(img, 'seek') else None
+                        img = img.convert('RGBA') if img.mode in ('P', 'RGBA') else img.convert('RGB')
+                        img.thumbnail((200, 200), Image.LANCZOS)
+                        img.save(thumb_path, 'WEBP', quality=70, method=4)
+                except Exception:
+                    response = send_file(orig_path)
+                    response.headers['Cache-Control'] = 'private, max-age=3600'
+                    return response
+
+            thumb_mtime = int(os.stat(thumb_path).st_mtime)
+            etag = f'"{thumb_mtime}"'
+
+            if request.headers.get('If-None-Match') == etag:
+                from flask import Response as _Response
+                return _Response(status=304, headers={
+                    'ETag': etag,
+                    'Cache-Control': 'private, max-age=31536000, immutable',
+                })
+
+            response = send_file(thumb_path, mimetype='image/webp')
+            response.headers['ETag'] = etag
+            response.headers['Cache-Control'] = 'private, max-age=31536000, immutable'
+            return response
+
         @self.app.route('/api/upload-opsec', methods=['POST'])
         @require_auth(self.auth_manager)
         def upload_opsec():
@@ -3349,10 +3964,13 @@ class MempaperApp:
                 for filename in page_filenames:
                     file_path = os.path.join(opsec_dir, filename)
                     try:
-                        file_size = os.path.getsize(file_path)
+                        file_stat = os.stat(file_path)
+                        file_size = file_stat.st_size
+                        file_mtime = int(file_stat.st_mtime)
                     except Exception:
                         file_size = 0
-                    images.append({'filename': filename, 'size': file_size, 'url': f'/static/opsec/{filename}'})
+                        file_mtime = 0
+                    images.append({'filename': filename, 'size': file_size, 'url': f'/static/opsec/{filename}', 'thumb_url': f'/api/opsec-thumb/{filename}?v={file_mtime}'})
 
                 return jsonify({
                     'images': images,

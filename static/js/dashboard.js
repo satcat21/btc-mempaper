@@ -139,6 +139,20 @@ function setupSocketHandlers() {
         tempImg.src = data.image;
     });
 
+    // Lightning donation received
+    socket.on('donation_received', (data) => {
+        const sats = data.amount_sats ? data.amount_sats.toLocaleString() : '?';
+        const satLabel = data.amount_sats === 1 ? 'sat' : 'sats';
+        const msg = data.message ? ` — "${data.message}"` : '';
+        console.log(`⚡ Donation received: ${sats} ${satLabel}${msg}`);
+
+        // Show notification banner on the dashboard
+        showNotification(`⚡ Donation: ${sats} ${satLabel}${msg}`, 'success');
+
+        // Request fresh dashboard image to show updated donation block
+        socket.emit('request_latest_image');
+    });
+
     // ... other socket event handlers ...
 }
 

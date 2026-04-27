@@ -8,12 +8,13 @@ This module handles all interactions with the Bitcoin mempool API including:
 """
 
 import requests
+from requests.auth import HTTPBasicAuth
 
 
 class MempoolAPI:
     """Handles communication with Bitcoin mempool API."""
     
-    def __init__(self, host="127.0.0.1", port="4081", use_https=False, verify_ssl=True):
+    def __init__(self, host="127.0.0.1", port="4081", use_https=False, verify_ssl=True, username=None, password=None):
         """
         Initialize Mempool API client.
         
@@ -22,11 +23,16 @@ class MempoolAPI:
             port (str): REST API port
             use_https (bool): Whether to use HTTPS protocol
             verify_ssl (bool): Whether to verify SSL certificates
+            username (str): Optional username for Basic authentication
+            password (str): Optional password for Basic authentication
         """
         self.host = host
         self.port = port
         self.use_https = use_https
         self.verify_ssl = verify_ssl
+        self.username = username
+        self.password = password
+        self.auth = HTTPBasicAuth(username, password) if username and password else None
         
         # Build base URL with proper protocol
         protocol = "https" if use_https else "http"
@@ -57,7 +63,7 @@ class MempoolAPI:
         """
         try:
             url = f"{self.base_url}/blocks/tip/height"
-            response = requests.get(url, timeout=5, verify=self.verify_ssl)
+            response = requests.get(url, timeout=5, verify=self.verify_ssl, auth=self.auth)
             response.raise_for_status()
             height_str = response.text.strip()
             
@@ -84,7 +90,7 @@ class MempoolAPI:
         """
         try:
             url = f"{self.base_url}/blocks/tip/hash"
-            response = requests.get(url, timeout=5, verify=self.verify_ssl)
+            response = requests.get(url, timeout=5, verify=self.verify_ssl, auth=self.auth)
             response.raise_for_status()
             return response.text.strip()
         except requests.RequestException as e:
@@ -103,7 +109,7 @@ class MempoolAPI:
         """
         try:
             url = f"{self.base_url}/block/{block_hash}"
-            response = requests.get(url, timeout=5, verify=self.verify_ssl)
+            response = requests.get(url, timeout=5, verify=self.verify_ssl, auth=self.auth)
             response.raise_for_status()
             data = response.json()
             return int(data.get("height", 0))
@@ -192,7 +198,7 @@ class MempoolAPI:
         """
         try:
             url = f"{self.base_url}/v1/fees/recommended"
-            response = requests.get(url, timeout=10, verify=self.verify_ssl)
+            response = requests.get(url, timeout=10, verify=self.verify_ssl, auth=self.auth)
             response.raise_for_status()
             return response.json()
         except requests.RequestException as e:

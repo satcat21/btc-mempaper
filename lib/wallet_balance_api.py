@@ -142,7 +142,9 @@ class WalletBalanceAPI:
             host=mempool_host, 
             port=str(mempool_port), 
             use_https=mempool_use_https, 
-            verify_ssl=self.mempool_verify_ssl
+            verify_ssl=self.mempool_verify_ssl,
+            username=self.config.get("mempool_username") or None,
+            password=self.config.get("mempool_password") or None
         )
         
         # Initialize requests session with robust retry logic

@@ -37,32 +37,40 @@ except ImportError:
 
 class ConfigFileHandler(FileSystemEventHandler if WATCHDOG_AVAILABLE else object):
     """Handles file system events for configuration file changes."""
-    
+
     def __init__(self, config_manager):
         """Initialize with reference to config manager."""
         super().__init__() if WATCHDOG_AVAILABLE else None
         self.config_manager = config_manager
-        self.last_modified = time.time()
-        self.debounce_delay = 1.0  # 1 second debounce to avoid multiple reloads
-    
+        self._debounce_lock = threading.Lock()
+        self._debounce_timer = None
+        self.debounce_delay = 1.0  # seconds to wait after last event before reloading
+
     def on_modified(self, event):
         """Handle file modification events."""
         if not WATCHDOG_AVAILABLE:
             return
-            
+
         if event.is_directory:
             return
-            
+
         # Check if it's our config file
         if os.path.abspath(event.src_path) == os.path.abspath(self.config_manager.config_path):
-            current_time = time.time()
-            
-            # Debounce multiple rapid changes
-            if current_time - self.last_modified > self.debounce_delay:
-                self.last_modified = current_time
-                
-                # Reload configuration after a short delay
-                threading.Timer(0.5, self.config_manager._reload_config_from_file).start()
+            # Cancel any pending reload and restart the timer — only the last
+            # event in a burst triggers a reload (cancel-and-restart debounce).
+            with self._debounce_lock:
+                if self._debounce_timer is not None:
+                    self._debounce_timer.cancel()
+                self._debounce_timer = threading.Timer(
+                    self.debounce_delay, self._fire_reload
+                )
+                self._debounce_timer.start()
+
+    def _fire_reload(self):
+        """Called once after the debounce window; clears the timer and reloads."""
+        with self._debounce_lock:
+            self._debounce_timer = None
+        self.config_manager._reload_config_from_file()
 
 
 class ConfigManager:
@@ -316,7 +324,7 @@ class ConfigManager:
                 # print(f"✅ Secure configuration loaded from encrypted files")
                 # Only update with sensitive fields from secure config
                 sensitive_fields = {'wallet_balance_addresses_with_comments', 
-                                  'block_reward_addresses_table', 'admin_password_hash', 'secret_key'}
+                                  'block_reward_addresses_table', 'admin_password_hash', 'secret_key', 'mempool_password'}
                 for key, value in secure_config.items():
                     if key in sensitive_fields:
                         merged_config[key] = value
@@ -344,10 +352,13 @@ class ConfigManager:
             "mempool_ws_path": "/api/v1/ws",
             "mempool_use_https": False,
             "mempool_verify_ssl": True,
+            "mempool_username": "",
+            "mempool_password": "",
             "network_outage_tolerance_minutes": 45,  # Time to retry connection before giving up
             "fee_parameter": "minimumFee",
             "display_width": 800,
             "display_height": 480,
+            "ui_scale_override": 1.0,
             "e-ink-display-connected": True,
             "omni_device_name": "waveshare_epd.epd7in3f",
             "admin_username": "admin",
@@ -366,7 +377,14 @@ class ConfigManager:
             "prioritize_large_scaled_meme": False,
             "color_mode_dark": True,
             "live_block_notifications_enabled": True,  # Enable live block notifications by default
-            "opsec_mode_enabled": False
+            "opsec_mode_enabled": False,
+            "einundzwanzig_meme_source": False,
+            # --- Donation block ---
+            "show_donation_block": False,
+            "donation_display_mode": "latest",
+            "webhook_relay_ws_url": "",
+            "color_donation_light": "#F7931A",
+            "color_donation_dark": "#F7931A",
         }
     
     def save_config(self, config: Dict[str, Any] = None) -> bool:
@@ -465,12 +483,14 @@ class ConfigManager:
             "show_btc_price_block",
             "show_bitaxe_block",
             "show_wallet_balances_block",
+            "show_donation_block",
             "color_mode_dark",
             "eink_dark_mode",
             "live_block_notifications_enabled",
             "mempool_use_https",
             "mempool_verify_ssl",
-            "opsec_mode_enabled"
+            "opsec_mode_enabled",
+            "einundzwanzig_meme_source",
         ]
         for setting in bool_settings:
             if setting in config:
@@ -546,6 +566,8 @@ class ConfigManager:
         string_settings = [
             "mempool_host",
             "mempool_ws_path",
+            "mempool_username",
+            "mempool_password",
             "omni_device_name",
             "admin_username",
             "admin_password"
@@ -568,6 +590,19 @@ class ConfigManager:
                     value = int(config[setting])
                     if min_val <= value <= max_val:
                         validated[setting] = value
+                except (ValueError, TypeError):
+                    pass
+
+        # Float settings with validation
+        float_settings = {
+            "ui_scale_override": (0.5, 2.0)
+        }
+        for setting, (min_val, max_val) in float_settings.items():
+            if setting in config:
+                try:
+                    value = float(config[setting])
+                    if min_val <= value <= max_val:
+                        validated[setting] = round(value, 2)
                 except (ValueError, TypeError):
                     pass
         
@@ -657,7 +692,9 @@ class ConfigManager:
             "color_holiday_light", "color_holiday_dark",
             "color_btc_price_light", "color_btc_price_dark",
             "color_bitaxe_stats_light", "color_bitaxe_stats_dark",
-            "color_wallets_light", "color_wallets_dark"
+            "color_wallets_light", "color_wallets_dark",
+            "webhook_relay_ws_url", "donation_display_mode",
+            "color_donation_light", "color_donation_dark",
         ]
         for setting in passthrough_settings:
             if setting in config:
@@ -702,6 +739,38 @@ class ConfigManager:
         """
         # Use English as fallback if no translations provided
         t = translations or {}
+
+        # Build donation webhook hint HTML.
+        # Pre-extract translations so no backslashes appear inside f-string {} expressions
+        # (Python < 3.12 forbids backslashes in f-string expressions).
+        _wh_opt_title = t.get('webhook_options_title', 'Choose how to receive donations:')
+        _wh_a_title   = t.get('webhook_option_a_title', 'Option A \u2014 Direct webhook')
+        _wh_a_sub     = t.get('webhook_option_a_subtitle', '(same network)')
+        _wh_a_desc    = t.get('webhook_option_a_desc', 'In LNbits open <em>Pay Links</em> &rarr; <em>New Pay Link</em> &rarr; <em>Advanced options</em> &rarr; <em>Webhook URL</em> and enter:')
+        _wh_a_note    = t.get('webhook_option_a_note', 'Click to copy &middot; Only works if mempaper is reachable from your wallet server.')
+        _wh_b_title   = t.get('webhook_option_b_title', 'Option B \u2014 Self-hosted webhook-tester')
+        _wh_b_sub     = t.get('webhook_option_b_subtitle', '(works over the internet)')
+        _wh_b_step1   = t.get('webhook_option_b_step1', 'Deploy <a href="https://github.com/satcat21/event-hub" target="_blank" style="color:inherit">event-hub</a> on a server reachable from the internet.')
+        _wh_b_step2   = t.get('webhook_option_b_step2', 'Create a session \u2014 note the token UUID. Set the LNbits Webhook URL to <code>https://your-host/{token}</code>.')
+        _wh_b_step3   = t.get('webhook_option_b_step3', 'Paste the full WebSocket URL (e.g. <code>wss://your-host/ws/{token}</code>) in the field below.')
+        _donation_webhook_hint_html = (
+            f'<div style="margin-bottom:8px"><strong>{_wh_opt_title}</strong></div>'
+            '<div style="border:1px solid rgba(128,128,128,.3);border-radius:6px;padding:10px 12px;margin-bottom:10px">'
+            f'<div style="font-weight:600;margin-bottom:4px">{_wh_a_title} <small style="opacity:.65;font-weight:400">{_wh_a_sub}</small></div>'
+            f'<div style="margin-bottom:6px;font-size:.9em">{_wh_a_desc}</div>'
+            '<code class="info-copyable" onclick="navigator.clipboard.writeText(this.textContent).then(()=>this.classList.add(\'copied\'))" title="Click to copy">{BASE_URL}/api/donation-webhook</code>'
+            f'<div style="font-size:.8em;opacity:.6;margin-top:4px">{_wh_a_note}</div>'
+            '</div>'
+            '<div style="border:1px solid rgba(128,128,128,.3);border-radius:6px;padding:10px 12px">'
+            f'<div style="font-weight:600;margin-bottom:6px">{_wh_b_title} <small style="opacity:.65;font-weight:400">{_wh_b_sub}</small></div>'
+            '<ol style="margin:0;padding-left:1.4em;font-size:.9em;line-height:1.7">'
+            f'<li>{_wh_b_step1}</li>'
+            f'<li>{_wh_b_step2}</li>'
+            f'<li>{_wh_b_step3}</li>'
+            '</ol>'
+            '</div>'
+        )
+
         return {
             # --- Info block config additions ---
             "show_btc_price_block": {
@@ -945,6 +1014,21 @@ class ConfigManager:
                 "default": "/api/v1/ws",
                 "category": "mempool"
             },
+            "mempool_username": {
+                "type": "text",
+                "label": t.get("mempool_username", "Mempool Username"),
+                "placeholder": "mempool",
+                "description": t.get("mempool_username_desc", "Optional username for Basic authentication (leave empty if not required)"),
+                "category": "mempool"
+            },
+            "mempool_password": {
+                "type": "password",
+                "label": t.get("mempool_password", "Mempool Password"),
+                "placeholder": "your-secret-password",
+                "description": t.get("mempool_password_desc", "Optional password for Basic authentication (leave empty if not required)"),
+                "category": "mempool",
+                "secure": True
+            },
             "e-ink-display-connected": {
                 "type": "boolean",
                 "label": t.get("display_connected", "e-Paper Display Connected"),
@@ -993,39 +1077,7 @@ class ConfigManager:
                     # Mock Display
                     {"value": "omni_epd.mock", "label": "Mock Display (Testing - No Hardware)"},
                     
-                    # Waveshare Small Displays (1-2 inch)
-                    {"value": "waveshare_epd.epd1in02", "label": "Waveshare 1.02\" E-Ink"},
-                    {"value": "waveshare_epd.epd1in54", "label": "Waveshare 1.54\" E-Ink"},
-                    {"value": "waveshare_epd.epd1in54_V2", "label": "Waveshare 1.54\" E-Ink V2"},
-                    {"value": "waveshare_epd.epd1in54b", "label": "Waveshare 1.54\" B (Red)"},
-                    {"value": "waveshare_epd.epd1in54b_V2", "label": "Waveshare 1.54\" B V2 (Red)"},
-                    {"value": "waveshare_epd.epd1in54c", "label": "Waveshare 1.54\" C (Yellow)"},
-                    {"value": "waveshare_epd.epd1in64g", "label": "Waveshare 1.64\" G (4-Color)"},
-                    
-                    # Waveshare 2 inch Displays
-                    {"value": "waveshare_epd.epd2in13", "label": "Waveshare 2.13\" E-Paper HAT"},
-                    {"value": "waveshare_epd.epd2in13_V2", "label": "Waveshare 2.13\" V2"},
-                    {"value": "waveshare_epd.epd2in13_V3", "label": "Waveshare 2.13\" V3"},
-                    {"value": "waveshare_epd.epd2in13b", "label": "Waveshare 2.13\" B (Red)"},
-                    {"value": "waveshare_epd.epd2in13b_V3", "label": "Waveshare 2.13\" B V3 (Red)"},
-                    {"value": "waveshare_epd.epd2in13c", "label": "Waveshare 2.13\" C (Yellow)"},
-                    {"value": "waveshare_epd.epd2in13d", "label": "Waveshare 2.13\" D"},
-                    {"value": "waveshare_epd.epd2in36g", "label": "Waveshare 2.36\" G (4-Color)"},
-                    {"value": "waveshare_epd.epd2in66", "label": "Waveshare 2.66\" E-Paper"},
-                    {"value": "waveshare_epd.epd2in66b", "label": "Waveshare 2.66\" B (Red)"},
-                    {"value": "waveshare_epd.epd2in7", "label": "Waveshare 2.7\" E-Paper HAT"},
-                    {"value": "waveshare_epd.epd2in7b", "label": "Waveshare 2.7\" B (Red)"},
-                    {"value": "waveshare_epd.epd2in7b_V2", "label": "Waveshare 2.7\" B V2 (Red)"},
-                    {"value": "waveshare_epd.epd2in9", "label": "Waveshare 2.9\" E-Paper"},
-                    {"value": "waveshare_epd.epd2in9_V2", "label": "Waveshare 2.9\" V2"},
-                    {"value": "waveshare_epd.epd2in9b", "label": "Waveshare 2.9\" B (Red)"},
-                    {"value": "waveshare_epd.epd2in9b_V3", "label": "Waveshare 2.9\" B V3 (Red)"},
-                    {"value": "waveshare_epd.epd2in9c", "label": "Waveshare 2.9\" C (Yellow)"},
-                    {"value": "waveshare_epd.epd2in9d", "label": "Waveshare 2.9\" D"},
-                    
-                    # Waveshare 3-4 inch Displays
-                    {"value": "waveshare_epd.epd3in0g", "label": "Waveshare 3\" G (4-Color)"},
-                    {"value": "waveshare_epd.epd3in7", "label": "Waveshare 3.7\" E-Paper HAT"},
+                    # Waveshare 4 inch Displays
                     {"value": "waveshare_epd.epd4in01f", "label": "Waveshare 4.01\" 7-Color HAT"},
                     {"value": "waveshare_epd.epd4in2", "label": "Waveshare 4.2\" E-Paper"},
                     {"value": "waveshare_epd.epd4in2b", "label": "Waveshare 4.2\" B (Red)"},
@@ -1054,7 +1106,13 @@ class ConfigManager:
                     {"value": "waveshare_epd.epd7in5b", "label": "Waveshare 7.5\" B (Red)"},
                     {"value": "waveshare_epd.epd7in5b_V2", "label": "Waveshare 7.5\" B V2 (Red)"},
                     {"value": "waveshare_epd.epd7in5b_HD", "label": "Waveshare 7.5\" HD B (Red)"},
-                    {"value": "waveshare_epd.epd7in5c", "label": "Waveshare 7.5\" C (Yellow)"}
+                    {"value": "waveshare_epd.epd7in5c", "label": "Waveshare 7.5\" C (Yellow)"},
+
+                    # Waveshare Large Displays (10"+)
+                    {"value": "waveshare_epd.epd10in2", "label": "Waveshare 10.2\" E-Paper - 960x640"},
+                    {"value": "waveshare_epd.epd12in48", "label": "Waveshare 12.48\" E-Paper - 1304x984"},
+                    {"value": "waveshare_epd.epd13in3k", "label": "Waveshare 13.3\" K (Spectra 6 E6) Full Color - 1600x1200 ⭐"},
+                    {"value": "waveshare_epd.epd13in3e", "label": "Waveshare 13.3\" E (4-Color) - 1600x1200"}
                 ],
                 "category": "eink_display"
             },
@@ -1072,6 +1130,16 @@ class ConfigManager:
                 "description": t.get("height_desc", "Display height in pixels"),
                 "min": 100,
                 "max": 2000,
+                "category": "eink_display"
+            },
+            "ui_scale_override": {
+                "type": "number",
+                "label": t.get("ui_scale_override", "UI Scale Multiplier"),
+                "description": t.get("ui_scale_override_desc", "Global UI size multiplier for renderer scaling (e.g. 0.9, 1.0, 1.15)."),
+                "min": 0.5,
+                "max": 2.0,
+                "step": 0.05,
+                "default": 1.0,
                 "category": "eink_display"
             },
             "eink_dark_mode": {
@@ -1109,6 +1177,13 @@ class ConfigManager:
                 "default": True,
                 "category": "general"
             },
+            "einundzwanzig_meme_source": {
+                "type": "boolean",
+                "label": t.get("einundzwanzig_meme_source", "Einundzwanzig Memes (Live)"),
+                "description": t.get("einundzwanzig_meme_source_desc", "Fetch memes live from einundzwanzig-memes.space instead of using locally downloaded images. Requires an active internet connection, but always has the latest memes available."),
+                "default": False,
+                "category": "meme_management"
+            },
             "meme_management": {
                 "type": "meme_management",
                 "label": t.get("meme_management", "Meme Management"),
@@ -1125,9 +1200,63 @@ class ConfigManager:
                 "type": "opsec_management",
                 "label": t.get("opsec_management", "OPSec Images"),
                 "category": "opsec"
-            }
+            },
+            # --- Donation block ---
+            "show_donation_block": {
+                "type": "boolean",
+                "label": t.get("show_donation_block", "Show Donation Block"),
+                "description": t.get("show_donation_block_desc", "Display the latest Lightning donation (amount + message) as an info block on the dashboard."),
+                "default": False,
+                "category": "donation"
+            },
+            "donation_display_mode": {
+                "type": "select",
+                "label": t.get("donation_display_mode", "Display mode"),
+                "description": t.get("donation_display_mode_desc", "Choose whether to show the most recent donation or the largest one ever received."),
+                "options": [
+                    {"value": "latest",  "label": t.get("donation_mode_latest",  "Latest donation")},
+                    {"value": "highest", "label": t.get("donation_mode_highest", "Largest donation")},
+                    {"value": "auto",    "label": t.get("donation_mode_auto",    "Auto (latest → largest after 432 blocks)")},
+                ],
+                "default": "latest",
+                "category": "donation"
+            },
+            "donation_webhook_hint": {
+                "type": "info_text",
+                "html": _donation_webhook_hint_html,
+                "category": "donation",
+                "always_visible": True
+            },
+            "webhook_relay_ws_url": {
+                "type": "string",
+                "label": t.get("webhook_relay_ws_url", "Webhook Relay WebSocket URL"),
+                "placeholder": t.get("webhook_relay_ws_url_placeholder", "wss://your-host/ws/your-token"),
+                "description": t.get("webhook_relay_ws_url_desc", "For Option B \u2014 paste the full WebSocket URL from your webhook-tester instance."),
+                "default": "",
+                "category": "donation",
+                "sensitive": False
+            },
+            "color_donation_light": {
+                "type": "color",
+                "label": t.get("color_donation_light", "Donation (Light Mode)"),
+                "description": t.get("color_donation_light_desc", "Color for donation amount and message text in light mode"),
+                "default": "#F7931A",
+                "category": "donation"
+            },
+            "color_donation_dark": {
+                "type": "color",
+                "label": t.get("color_donation_dark", "Donation (Dark Mode)"),
+                "description": t.get("color_donation_dark_desc", "Color for donation amount and message text in dark mode"),
+                "default": "#F7931A",
+                "category": "donation"
+            },
+            "donation_history": {
+                "type": "donation_history",
+                "label": t.get("donation_history", "Donation History"),
+                "category": "donation"
+            },
         }
-    
+
     def get_categories(self, translations: Dict[str, str] = None) -> List[Dict[str, str]]:
         """
         Get configuration categories for organized display.
@@ -1147,8 +1276,9 @@ class ConfigManager:
             {"id": "price_stats", "label": t.get("price_stats", "Price Stats"), "icon": "/static/icons/price_change.svg"},
             {"id": "wallet_monitoring", "label": t.get("wallet_monitoring", "Wallet Monitoring"), "icon": "/static/icons/wallet.svg"},
             {"id": "bitaxe_stats", "label": t.get("bitaxe_stats", "Bitaxe Stats"), "icon": "/static/icons/calculate.svg"},
+            {"id": "donation", "label": t.get("donation_settings", "Lightning Donation"), "icon": "/static/icons/price_change.svg"},
             {"id": "meme_management", "label": t.get("meme_management", "Meme Management"), "icon": "/static/icons/mood.svg"},
-            {"id": "opsec", "label": t.get("opsec_settings", "OPSec"), "icon": "/static/icons/opsec.svg"}
+            {"id": "opsec", "label": t.get("opsec_settings", "OPSec"), "icon": "/static/icons/opsec.svg"},
         ]
     
     def get_color_options(self) -> List[Dict[str, str]]:

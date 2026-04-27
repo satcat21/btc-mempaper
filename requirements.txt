@@ -13,8 +13,8 @@ schedule==1.2.2  # For daily XPUB optimization scheduling
 
 # Production WSGI server
 gunicorn==23.0.0  # Production WSGI server for Flask apps
-gevent==24.11.1  # Async networking library for SocketIO (replaces eventlet)
-# Note: gevent-websocket is NOT needed - Flask-SocketIO handles WebSocket natively
+gevent==25.8.2  # Async networking library for SocketIO (replaces eventlet)
+gevent-websocket==0.10.1  # Required for WebSocket upgrade support with gunicorn geventwebsocket worker
 # websocket-client (above) is used for outgoing connections to mempool API
 
 # Security dependencies for configuration encryption

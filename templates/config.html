@@ -152,7 +152,7 @@
                 </div>
                 <div class="meme-info">
                     <div class="meme-info-row" style="align-items: center;">
-                        <strong>{{ translations.filename }}</strong> 
+                        <strong>{{ translations.filename }}</strong>
                         <span id="meme-modal-filename-display" style="display: inline;"></span>
                         <input type="text" id="meme-modal-filename-input" class="form-input" style="display: none; flex: 1; margin: 0 10px; padding: 4px 8px;">
                         <button id="meme-modal-edit-btn" class="icon-button" onclick="startRenameInModal()" title="{{ translations.rename_meme }}" style="padding: 4px 8px; margin-left: 8px;">
@@ -165,6 +165,7 @@
                             <img src="/static/icons/cancel.svg" alt="Cancel" style="width: 16px; height: 16px;" />
                         </button>
                     </div>
+                    <div id="meme-modal-rename-warning" style="display: none; font-size: 0.82rem; color: #dc3545; margin-top: 4px; padding-left: 4px;"></div>
                     <div class="meme-info-row">
                         <strong>{{ translations.dimensions }}</strong> <span id="meme-modal-dimensions">{{ translations.loading }}</span>
                     </div>

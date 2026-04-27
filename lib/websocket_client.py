@@ -14,12 +14,13 @@ import websocket
 import time
 import ssl
 from datetime import datetime
+from urllib.parse import urlsplit, urlunsplit
 
 
 class MempoolWebSocket:
     """Handles WebSocket connection to mempool for real-time block updates with auto-reconnection."""
     
-    def __init__(self, host, port, path="/api/v1/ws", use_wss=False, on_new_block_callback=None, verify_ssl=True):
+    def __init__(self, host, port, path="/api/v1/ws", use_wss=False, on_new_block_callback=None, verify_ssl=True, username=None, password=None):
         """
         Initialize WebSocket connection.
         
@@ -30,6 +31,8 @@ class MempoolWebSocket:
             use_wss (bool): Whether to use WSS (secure) protocol
             on_new_block_callback (callable): Function to call when new block received
             verify_ssl (bool): Whether to verify SSL certificates
+            username (str): Optional username for Basic authentication
+            password (str): Optional password for Basic authentication
         """
         self.host = host
         self.port = port
@@ -37,6 +40,8 @@ class MempoolWebSocket:
         self.use_wss = use_wss
         self.on_new_block_callback = on_new_block_callback
         self.verify_ssl = verify_ssl
+        self.username = username
+        self.password = password
         
         # Build WebSocket URL
         protocol = "wss" if use_wss else "ws"
@@ -48,10 +53,15 @@ class MempoolWebSocket:
         # This applies to both domains and IP addresses
         is_standard_port = (use_wss and port_str == "443") or (not use_wss and port_str == "80")
         
+        # Add authentication credentials to URL if provided
+        auth_prefix = ""
+        if username and password:
+            auth_prefix = f"{username}:{password}@"
+        
         if is_standard_port:
-            self.ws_url = f"{protocol}://{host}{path}"
+            self.ws_url = f"{protocol}://{auth_prefix}{host}{path}"
         else:
-            self.ws_url = f"{protocol}://{host}:{port}{path}"
+            self.ws_url = f"{protocol}://{auth_prefix}{host}:{port}{path}"
         
         self.ws = None
         self.is_connected = False
@@ -66,6 +76,20 @@ class MempoolWebSocket:
         self.max_outage_duration = 30 * 60  # 30 minutes max outage tolerance
         self.dns_error_count = 0  # Track DNS resolution failures
         self.last_error_type = None  # Track error type for smarter logging
+
+    def _safe_ws_url_for_log(self):
+        """Return WebSocket URL with any credentials redacted for logs."""
+        try:
+            parts = urlsplit(self.ws_url)
+            hostname = parts.hostname or ""
+            if parts.port is not None:
+                netloc = f"{hostname}:{parts.port}"
+            else:
+                netloc = hostname
+            return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
+        except Exception:
+            # Conservative fallback: avoid leaking credentials in unexpected parsing errors.
+            return "[redacted websocket url]"
     
     def on_message(self, ws, message):
         """
@@ -222,14 +246,14 @@ class MempoolWebSocket:
         # Calculate outage duration if we were in outage mode
         if self.outage_mode and self.outage_start_time:
             outage_duration = current_time - self.outage_start_time
-            print(f"✅ WebSocket connected and subscribed ({self.ws_url})")
+            print(f"✅ WebSocket connected and subscribed ({self._safe_ws_url_for_log()})")
             print(f"✅ Outage lasted {outage_duration/60:.1f} minutes. Connection restored!")
             
             # Reset outage mode
             self.outage_mode = False
             self.outage_start_time = None
         else:
-            print(f"✅ WebSocket connected and subscribed ({self.ws_url})")
+            print(f"✅ WebSocket connected and subscribed ({self._safe_ws_url_for_log()})")
         
         self.is_connected = True
         self.reconnect_attempts = 0  # Reset counter on successful connection
@@ -312,7 +336,7 @@ class MempoolWebSocket:
             "should_reconnect": self.should_reconnect,
             "reconnect_attempts": self.reconnect_attempts,
             "max_attempts": self.max_reconnect_attempts,
-            "url": self.ws_url,
+            "url": self._safe_ws_url_for_log(),
             "outage_mode": self.outage_mode
         }
         
