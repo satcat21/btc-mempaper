@@ -2810,49 +2810,11 @@ class MempaperApp:
                     response.headers['Access-Control-Allow-Origin'] = '*'
                 response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
                 response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
-                
-                if '/api/login' in request.path:
-                    print(f"🔒 CORS headers added to response")
-                    print(f"🔒 Origin: {origin}")
-                    print(f"🔒 CORS headers: Access-Control-Allow-Origin={response.headers.get('Access-Control-Allow-Origin')}")
             except Exception as e:
                 print(f"❌ Error adding CORS headers: {type(e).__name__}: {str(e)}")
                 import traceback
                 traceback.print_exc()
             return response
-        
-        # Add response debugging for login endpoint
-        @self.app.after_request
-        def log_response(response):
-            """Log response details for debugging."""
-            try:
-                if '/api/login' in request.path:
-                    print(f"📤 === RESPONSE BEING SENT ===")
-                    print(f"📤 Path: {request.path}")
-                    print(f"📤 Status: {response.status}")
-                    print(f"📤 Status Code: {response.status_code}")
-                    print(f"📤 Content-Type: {response.content_type}")
-                    print(f"📤 Content-Length: {response.content_length}")
-                    print(f"📤 Headers (ALL): {dict(response.headers)}")
-                    try:
-                        body = response.get_data(as_text=True)
-                        print(f"📤 Body (length={len(body)}): {body[:500]}")
-                        # Verify it's valid JSON
-                        if response.content_type and 'json' in response.content_type:
-                            import json
-                            json.loads(body)  # Will throw if invalid
-                            print(f"✅ Response body is valid JSON")
-                    except Exception as e:
-                        print(f"❌ Error reading/parsing response body: {type(e).__name__}: {str(e)}")
-                    # Ensure response is properly configured for immediate return
-                    response.direct_passthrough = False
-                    print(f"📤 === RESPONSE END ===")
-            except Exception as e:
-                print(f"❌ Error in log_response: {type(e).__name__}: {str(e)}")
-                import traceback
-                traceback.print_exc()
-            finally:
-                return response
         
         # Add optimized static file serving with cache headers for memes
         @self.app.route('/static/memes/<filename>')
@@ -3018,58 +2980,39 @@ class MempaperApp:
         @require_rate_limit(self.auth_manager)
         def login():
             """Handle login requests."""
-            print(f"🔐 === LOGIN HANDLER CALLED ===")
             
             # Handle CORS preflight
             if request.method == 'OPTIONS':
-                print(f"🔐 OPTIONS preflight request for /api/login")
                 response = jsonify({'status': 'ok'})
                 response.headers['Access-Control-Allow-Origin'] = '*'
                 response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
                 response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
-                print(f"🔐 Returning OPTIONS response")
                 return response
-            
-            print(f"🔐 === LOGIN REQUEST START ===")
-            print(f"🔐 Method: {request.method}")
-            print(f"🔐 Content-Type: {request.content_type}")
-            print(f"🔐 Content-Length: {request.content_length}")
-            print(f"🔐 Headers: {dict(request.headers)}")
             
             try:
                 # Try to parse JSON
                 try:
                     data = request.json
-                    print(f"🔐 JSON parsed successfully: {data}")
                 except Exception as json_err:
-                    print(f"❌ JSON parsing failed: {type(json_err).__name__}: {str(json_err)}")
-                    print(f"🔐 Raw data: {request.get_data(as_text=True)[:500]}")
                     return jsonify({'success': False, 'message': 'Invalid JSON in request'}), 400
                 
                 username = data.get('username', '')
                 password = data.get('password', '')
-                print(f"🔐 Username: {username}, Password length: {len(password)}")
                 
                 # Try to authenticate
                 try:
                     auth_result = self.auth_manager.login(username, password)
-                    print(f"🔐 Auth result: {auth_result}")
                 except Exception as auth_err:
-                    print(f"❌ Auth failed with exception: {type(auth_err).__name__}: {str(auth_err)}")
                     import traceback
                     traceback.print_exc()
                     return jsonify({'success': False, 'message': f'Authentication error: {str(auth_err)}'}), 500
                 
                 if auth_result:
                     response_data = {'success': True, 'message': 'Login successful'}
-                    print(f"✅ Login successful, preparing response: {response_data}")
-                    print(f"✅ Session data after login: {dict(session)}")
                     
                     # Create response with explicit handling
                     try:
-                        print(f"🔐 Creating JSON response...")
                         response = jsonify(response_data)
-                        print(f"✅ jsonify() succeeded")
                         
                         # Explicitly set headers
                         response.headers['Content-Type'] = 'application/json'
@@ -3077,17 +3020,10 @@ class MempaperApp:
                         
                         # Force session to be saved
                         session.modified = True
-                        print(f"✅ Session modified flag set: {session.modified}")
-                        
-                        print(f"✅ Response status: {response.status}")
-                        print(f"✅ Response headers before return: {dict(response.headers)}")
-                        print(f"🔐 === RETURNING RESPONSE NOW ===")
-                        print(f"🔐 === LOGIN REQUEST END (SUCCESS) ===")
                         
                         return response
                         
                     except Exception as resp_err:
-                        print(f"❌ jsonify() or response creation failed: {type(resp_err).__name__}: {str(resp_err)}")
                         import traceback
                         traceback.print_exc()
                         # Try to return a simple response
@@ -3096,15 +3032,11 @@ class MempaperApp:
                         except:
                             raise resp_err
                 else:
-                    print(f"❌ Invalid credentials for user: {username}")
-                    print(f"🔐 === LOGIN REQUEST END (INVALID CREDS) ===")
                     return jsonify({'success': False, 'message': 'Invalid credentials'}), 401
                     
             except Exception as e:
-                print(f"❌ Unexpected exception in login: {type(e).__name__}: {str(e)}")
                 import traceback
                 traceback.print_exc()
-                print(f"🔐 === LOGIN REQUEST END (EXCEPTION) ===")
                 try:
                     return jsonify({'success': False, 'message': f'Server error: {str(e)}'}), 500
                 except:
