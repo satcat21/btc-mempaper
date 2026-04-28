@@ -174,12 +174,23 @@ pip install -r requirements.txt
 2. **Application Setup and Service Configuration**
 
    ```bash
-   # Download memes
+   # Download all memes (first time — takes a while, resumable if interrupted)
    python scripts/download_all_memes.py
 
    # Start application to set admin user password for web login
    python serve.py
    ```
+
+   > **Keeping memes up to date:** Once the initial download is done, run with `--update` to fetch only newly added memes — takes a few seconds.
+   > ```bash
+   > python scripts/download_all_memes.py --update
+   > ```
+   > To automate this, add a crontab entry (`crontab -e`):
+   > ```
+   > # Check for new memes every 3 days at 3 AM
+   > 0 3 */3 * * cd /home/pi/btc-mempaper && .venv/bin/python scripts/download_all_memes.py --update >> /var/log/meme-update.log 2>&1
+   > ```
+   > Adjust the path to match your installation directory.
    Complete the initial password setup via CLI.
 
    Access the dashboard at [http://mempaper-ip:5000](http://mempaper-ip:5000)

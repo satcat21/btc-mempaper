@@ -140,7 +140,23 @@ def image_url(meme_id: str) -> str:
 
 
 def fetch_image_bytes(url: str, timeout: int = 15) -> bytes:
-    """Download raw image bytes from *url*, retrying up to 3 times."""
+    """Download raw image bytes from *url*, retrying up to 3 times.
+
+    Uses the same global rate limiter as _request() since both hit the same
+    host, preventing connection-refused cascades from concurrent downloads.
+    """
+    global _last_request_time
+    with _rate_lock:
+        now = time.monotonic()
+        scheduled = max(now, _last_request_time + _MIN_REQUEST_INTERVAL * _rate_backoff)
+        _last_request_time = scheduled
+        wait = scheduled - now
+    if wait > 0:
+        if _stop_event is not None and _stop_event.wait(wait):
+            raise RuntimeError("Stopped")
+        elif _stop_event is None:
+            time.sleep(wait)
+
     req = urllib.request.Request(
         url,
         headers={"User-Agent": "einundzwanzig-memes-python/1.0"},
@@ -152,19 +168,52 @@ def fetch_image_bytes(url: str, timeout: int = 15) -> bytes:
         except (urllib.error.URLError, TimeoutError) as exc:
             if attempt == 2:
                 raise RuntimeError(f"Download failed for {url}: {exc}") from exc
-            time.sleep(1.5 ** attempt)
+            wait = 1.5 ** attempt
+            if _stop_event is not None:
+                if _stop_event.wait(wait):
+                    raise RuntimeError("Stopped") from exc
+            else:
+                time.sleep(wait)
 
 
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+# Global rate limiter — enforces a minimum gap between any two API requests
+# regardless of how many worker threads are running.  Prevents HTTP 429s.
+_rate_lock = threading.Lock()
+_last_request_time: float = 0.0
+_MIN_REQUEST_INTERVAL = 0.5  # base seconds between requests (2 req/s)
+_rate_backoff: float = 1.0   # dynamic multiplier; doubles on HTTP 429, recovers on success
+_MAX_BACKOFF: float = 8.0    # cap at 8× = one request per 4 s
+
+# Set by the caller (e.g. download_all_memes.py) so retry sleeps can be
+# interrupted immediately when the user presses Ctrl+C.
+_stop_event: threading.Event | None = None
+
+
 def _request(path: str, timeout: int = 10) -> dict:
     """Fetch JSON from the API, retrying up to 5 times on transient errors.
 
     DNS failures (Errno -3) get a longer back-off (30 s) so a temporary
     network hiccup on a Pi doesn't permanently skip queries.
+
+    A global rate limiter ensures at most ~3 requests/s across all threads,
+    which avoids HTTP 429 responses from the server.
     """
+    global _last_request_time, _rate_backoff
+    with _rate_lock:
+        now = time.monotonic()
+        scheduled = max(now, _last_request_time + _MIN_REQUEST_INTERVAL * _rate_backoff)
+        _last_request_time = scheduled
+        wait = scheduled - now
+    if wait > 0:
+        if _stop_event is not None and _stop_event.wait(wait):
+            raise RuntimeError("Stopped")
+        elif _stop_event is None:
+            time.sleep(wait)
+
     url = f"{API_BASE}{path}"
     req = urllib.request.Request(
         url,
@@ -173,8 +222,27 @@ def _request(path: str, timeout: int = 10) -> dict:
     for attempt in range(5):
         try:
             with urllib.request.urlopen(req, timeout=timeout) as resp:
-                return json.loads(resp.read().decode())
+                raw = resp.read()
+            # Successful response — slowly recover the backoff toward 1.0
+            with _rate_lock:
+                if _rate_backoff > 1.0:
+                    _rate_backoff = max(1.0, _rate_backoff * 0.9)
+            return json.loads(raw.decode())
         except urllib.error.HTTPError as exc:
+            if exc.code == 429:
+                with _rate_lock:
+                    _rate_backoff = min(_rate_backoff * 2, _MAX_BACKOFF)
+                    effective = _MIN_REQUEST_INTERVAL * _rate_backoff
+                print(
+                    f"  [429] rate limit — interval→{effective:.2f}s, pausing 60s …",
+                    file=sys.stderr,
+                )
+                if _stop_event is not None:
+                    if _stop_event.wait(60):
+                        raise RuntimeError("Stopped") from exc
+                else:
+                    time.sleep(60)
+                continue
             raise RuntimeError(f"HTTP {exc.code} fetching {url}") from exc
         except (urllib.error.URLError, TimeoutError,
                 http.client.RemoteDisconnected, ConnectionResetError) as exc:
@@ -184,7 +252,11 @@ def _request(path: str, timeout: int = 10) -> dict:
             is_dns = "Name or service not known" in str(exc) or "Errno -3" in str(exc)
             wait = 30 if is_dns else 2 ** attempt
             print(f"  [retry {attempt+1}/5] {exc!s:.80}  waiting {wait}s…", file=sys.stderr)
-            time.sleep(wait)
+            if _stop_event is not None:
+                if _stop_event.wait(wait):
+                    raise RuntimeError("Stopped") from exc
+            else:
+                time.sleep(wait)
 
 
 def _parse_meme(data: dict) -> Meme:
@@ -389,7 +461,8 @@ def collect_all_ids(
                         f"  [warn] tag={tag!r} page={page}: {exc}"
                         f"  — retrying in 60s ({tag_retries}/2)", file=sys.stderr
                     )
-                    time.sleep(60)
+                    if stop_event and stop_event.wait(60):
+                        break
                     continue
                 print(f"  [skip] tag={tag!r}: giving up after repeated failures", file=sys.stderr)
                 break
@@ -467,9 +540,9 @@ def get_new_meme_ids(memes_dir: str, verbose: bool = True) -> list[str]:
     """
     Return UUIDs of memes on the site that are not yet downloaded to *memes_dir*.
 
-    Checks the /newest?count=50 endpoint (the 50 most recently added memes)
-    against the files already on disk.  Use this for periodic updates instead
-    of running a full collect_all_ids() each time.
+    Paginates /newest with cursor until it encounters a meme already on disk,
+    meaning it has gone far enough back in time.  This handles any number of
+    new memes added between runs — not just the first 50.
 
     Parameters
     ----------
@@ -482,18 +555,42 @@ def get_new_meme_ids(memes_dir: str, verbose: bool = True) -> list[str]:
     list[str]
         UUIDs of memes that exist on the site but not on disk.
     """
-    data = _request("/newest?count=50&full=true")
-    newest = data.get("results", [])
-
     existing = {
         f.stem for f in Path(memes_dir).glob("*.webp")
         if not f.name.startswith("_")
     }
 
-    missing = [m["id"] for m in newest if m["id"] not in existing]
+    missing: list[str] = []
+    fetched = 0
+    cursor: str | None = None
+
+    while True:
+        params: dict[str, str] = {"count": "50", "full": "true"}
+        if cursor:
+            params["cursor"] = cursor
+        data = _request("/newest?" + urllib.parse.urlencode(params))
+        results = data.get("results", [])
+        fetched += len(results)
+
+        hit_existing = False
+        for meme in results:
+            uid = meme["id"]
+            if uid in existing:
+                hit_existing = True
+            else:
+                missing.append(uid)
+
+        cursor = data.get("next_cursor")
+
+        # Stop once we've overlapped with what's already on disk, or no more pages
+        if not results or not cursor or hit_existing:
+            break
 
     if verbose:
-        print(f"  [get_new_meme_ids] newest={len(newest)}  on_disk={len(existing)}  missing={len(missing)}")
+        print(
+            f"  [get_new_meme_ids] fetched={fetched}  on_disk={len(existing)}"
+            f"  missing={len(missing)}"
+        )
 
     return missing
 

@@ -80,9 +80,10 @@ import json
 import signal
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, wait as _fut_wait, FIRST_COMPLETED
 from pathlib import Path
 
+import einundzwanzig_memes as _ew_mod
 from einundzwanzig_memes import collect_all_ids, fetch_image_bytes, get_new_meme_ids, image_url
 
 _STATUS_FILE = "_state_status.txt"
@@ -154,12 +155,12 @@ def main() -> None:
         "--out-dir", default="static/memes", help="Output directory (default: static/memes)"
     )
     parser.add_argument(
-        "--workers", type=int, default=4,
-        help="Concurrent download threads (default: 4)"
+        "--workers", type=int, default=1,
+        help="Concurrent download threads (default: 1)"
     )
     parser.add_argument(
-        "--search-workers", type=int, default=4,
-        help="Parallel tag-search workers (default: 4)"
+        "--search-workers", type=int, default=2,
+        help="Parallel tag-search workers (default: 2)"
     )
     parser.add_argument(
         "--max-zero-pages", type=int, default=0,
@@ -230,6 +231,9 @@ def main() -> None:
         signal.signal(signal.SIGTERM, _on_signal)
     except (OSError, ValueError):
         pass  # SIGTERM not available on all platforms (e.g. Windows)
+
+    # Share the stop event with the library so retry sleeps can be interrupted.
+    _ew_mod._stop_event = stop_event
 
     # Background thread: watch for _state_stop sentinel file
     stop_file = out_dir / _STOP_FILE
@@ -352,24 +356,35 @@ def main() -> None:
             print(f"Waiting for {total} download task(s) to finish …\n")
 
         done_count = 0
-        for future in as_completed(download_futures):
-            uid, ok, msg = future.result()
-            done_count += 1
-            with stats_lock:
-                if not ok:
-                    stats["failed"] += 1
-                    print(f"  [FAIL] {uid}: {msg}")
-                elif msg == "skipped":
-                    stats["skipped"] += 1
-                else:
-                    stats["success"] += 1
-
-            if done_count % 200 == 0 or done_count == total:
+        remaining_futures = set(download_futures)
+        while remaining_futures and not stop_event.is_set():
+            done, remaining_futures = _fut_wait(
+                remaining_futures, timeout=1.0, return_when=FIRST_COMPLETED
+            )
+            for future in done:
+                uid, ok, msg = future.result()
+                done_count += 1
                 with stats_lock:
-                    print(
-                        f"  {done_count:>5}/{total}  "
-                        f"✓ {stats['success']}  skip {stats['skipped']}  ✗ {stats['failed']}"
-                    )
+                    if not ok:
+                        stats["failed"] += 1
+                        print(f"  [FAIL] {uid}: {msg}")
+                    elif msg == "skipped":
+                        stats["skipped"] += 1
+                    else:
+                        stats["success"] += 1
+
+                if done_count % 200 == 0 or done_count == total:
+                    with stats_lock:
+                        print(
+                            f"  {done_count:>5}/{total}  "
+                            f"✓ {stats['success']}  skip {stats['skipped']}  ✗ {stats['failed']}"
+                        )
+
+        # Cancel futures still waiting in the queue (not yet started) so the
+        # executor shuts down immediately instead of running all 1500+ tasks.
+        if stop_event.is_set():
+            for f in remaining_futures:
+                f.cancel()
 
     write_index(all_memes, index_path)
 
