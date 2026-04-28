@@ -24,9 +24,9 @@ class SecurePasswordManager:
     """
     Manages secure password hashing and verification using Argon2id.
     
-    Uses recommended security parameters:
-    - time_cost=3 (iterations)
-    - memory_cost=65536 (64 MB memory usage)
+    Uses parameters tuned for Raspberry Pi Zero WH:
+    - time_cost=2 (iterations)
+    - memory_cost=19456 (19 MB memory usage — OWASP minimum)
     - parallelism=1 (single thread)
     - hash_len=32 (32 byte output)
     - salt_len=16 (16 byte salt)

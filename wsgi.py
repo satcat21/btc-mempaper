@@ -13,6 +13,9 @@ monkey.patch_all()
 import os
 import sys
 
+# Tell Flask-SocketIO to use gevent mode (matches monkey.patch_all() above)
+os.environ.setdefault('FLASK_ENV', 'production')
+
 # Add the current directory to the Python path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 

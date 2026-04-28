@@ -1,6 +1,5 @@
 {
   "language": "en",
-  "admin_username": "admin",
 
   "mempool_use_https": true,
   "mempool_host": "mempool.space",
