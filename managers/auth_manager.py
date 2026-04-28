@@ -98,12 +98,15 @@ class AuthManager:
         try:
             # First, try to migrate any existing cleartext password
             migration_success = self.password_manager.migrate_cleartext_password()
-            
+
             if not migration_success:
                 logger.error("Password migration failed")
                 return False
-            
-            # If no password is set up, trigger first-time setup
+
+            # Migrate legacy single-user format to admin_users dict
+            self.password_manager._migrate_to_multi_user()
+
+            # If no user is set up, trigger first-time setup
             if not self.password_manager.is_password_set():
                 logger.info("No admin password configured - starting first-time setup")
                 setup_success = self.password_manager.setup_first_time_password()

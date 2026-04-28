@@ -2970,6 +2970,90 @@ class MempaperApp:
             self.auth_manager.logout()
             return jsonify({'success': True, 'message': 'Logout successful'})
 
+        # User management endpoints
+        @self.app.route('/api/users', methods=['GET'])
+        @require_auth(self.auth_manager)
+        def list_users():
+            try:
+                users = self.auth_manager.password_manager.list_users()
+                return jsonify({'success': True, 'users': users})
+            except Exception as e:
+                return jsonify({'success': False, 'message': str(e)}), 500
+
+        @self.app.route('/api/users', methods=['POST'])
+        @require_auth(self.auth_manager)
+        def create_user():
+            try:
+                data = request.json or {}
+                username = (data.get('username') or '').strip()
+                password = data.get('password', '')
+                if not username:
+                    return jsonify({'success': False, 'message': 'Username is required'}), 400
+                if len(password) < 8:
+                    return jsonify({'success': False, 'message': 'Password must be at least 8 characters'}), 400
+                if self.auth_manager.password_manager.create_user(username, password):
+                    return jsonify({'success': True})
+                return jsonify({'success': False, 'message': 'Failed to create user'}), 500
+            except Exception as e:
+                return jsonify({'success': False, 'message': str(e)}), 400
+
+        @self.app.route('/api/users/<username>/password', methods=['POST'])
+        @require_auth(self.auth_manager)
+        def change_user_password(username):
+            try:
+                data = request.json or {}
+                password = data.get('password', '')
+                if len(password) < 8:
+                    return jsonify({'success': False, 'message': 'Password must be at least 8 characters'}), 400
+                users = self.auth_manager.password_manager.list_users()
+                if username not in users:
+                    return jsonify({'success': False, 'message': 'User not found'}), 404
+                if self.auth_manager.password_manager.create_user(username, password):
+                    return jsonify({'success': True})
+                return jsonify({'success': False, 'message': 'Failed to update password'}), 500
+            except Exception as e:
+                return jsonify({'success': False, 'message': str(e)}), 400
+
+        @self.app.route('/api/users/<username>/rename', methods=['POST'])
+        @require_auth(self.auth_manager)
+        def rename_user(username):
+            try:
+                data = request.json or {}
+                new_username = (data.get('new_username') or '').strip()
+                if not new_username:
+                    return jsonify({'success': False, 'message': 'New username is required'}), 400
+                users_dict = self.auth_manager.password_manager._get_users()
+                if username not in users_dict:
+                    return jsonify({'success': False, 'message': 'User not found'}), 404
+                if new_username in users_dict and new_username != username:
+                    return jsonify({'success': False, 'message': 'Username already taken'}), 409
+                with self.config_manager.config_lock:
+                    u = dict(self.config_manager.config.get('admin_users') or {})
+                    u[new_username] = u.pop(username)
+                    self.config_manager.config['admin_users'] = u
+                self.config_manager.save_config()
+                return jsonify({'success': True})
+            except Exception as e:
+                return jsonify({'success': False, 'message': str(e)}), 400
+
+        @self.app.route('/api/users/<username>', methods=['DELETE'])
+        @require_auth(self.auth_manager)
+        def delete_user(username):
+            try:
+                users = self.auth_manager.password_manager.list_users()
+                if username not in users:
+                    return jsonify({'success': False, 'message': 'User not found'}), 404
+                if len(users) <= 1:
+                    return jsonify({'success': False, 'message': 'Cannot delete the last user'}), 400
+                with self.config_manager.config_lock:
+                    u = dict(self.config_manager.config.get('admin_users') or {})
+                    u.pop(username, None)
+                    self.config_manager.config['admin_users'] = u
+                self.config_manager.save_config()
+                return jsonify({'success': True})
+            except Exception as e:
+                return jsonify({'success': False, 'message': str(e)}), 400
+
         # Lightning Donation Webhook
         @self.app.route('/api/donation-webhook', methods=['POST'])
         def donation_webhook():
@@ -3366,11 +3450,13 @@ class MempaperApp:
                 else:
                     print("📋 [DEBUG] No wallet API or secure config manager available")
                 
+                from flask import session as _session
                 return jsonify({
                     'config': config_data,
                     'schema': self.config_manager.get_config_schema(current_translations),
                     'categories': self.config_manager.get_categories(current_translations),
-                    'color_options': self.config_manager.get_color_options()
+                    'color_options': self.config_manager.get_color_options(),
+                    'current_user': _session.get('username', '')
                 })
             except Exception as e:
                 print(f"Error in get_config: {e}")
@@ -3403,8 +3489,45 @@ class MempaperApp:
                 # Store old config for comparison
                 old_config = dict(self.config) if hasattr(self, 'config') else None
                 
-                new_config = request.json
+                new_config = request.json or {}
+                if not isinstance(new_config, dict):
+                    return jsonify({'success': False, 'message': 'Invalid configuration payload'}), 400
+
+                # Handle admin username rename server-side so the admin_users mapping and
+                # the current session stay in sync even for legacy sessions missing username.
+                old_admin_username = str((old_config or {}).get('admin_username') or '').strip()
+                requested_admin_username = str(new_config.get('admin_username') or '').strip()
+                session_username = str(session.get('username') or '').strip()
+
+                if requested_admin_username:
+                    new_config['admin_username'] = requested_admin_username
+
+                if old_admin_username and requested_admin_username and requested_admin_username != old_admin_username:
+                    with self.config_manager.config_lock:
+                        admin_users = dict(self.config_manager.config.get('admin_users') or {})
+
+                    if admin_users:
+                        if not session_username:
+                            return jsonify({'success': False, 'message': 'Session username is missing'}), 401
+
+                        if session_username not in admin_users:
+                            return jsonify({'success': False, 'message': 'Authenticated user not found'}), 403
+
+                        rename_source = session_username
+
+                        if requested_admin_username in admin_users and requested_admin_username != rename_source:
+                            return jsonify({'success': False, 'message': 'Username already taken'}), 409
+
+                        if requested_admin_username != rename_source:
+                            admin_users[requested_admin_username] = admin_users.pop(rename_source)
+                        new_config['admin_users'] = admin_users
+
                 if self.config_manager.save_config(new_config):
+                    if requested_admin_username and (
+                        requested_admin_username != old_admin_username or not session_username
+                    ):
+                        session['username'] = requested_admin_username
+
                     # Get validated new config from manager
                     validated_new_config = self.config_manager.get_current_config()
 
@@ -3425,7 +3548,11 @@ class MempaperApp:
                     # Reinitialize components if needed
                     self._reinitialize_after_config_change(old_config)
 
-                    return jsonify({'success': True, 'message': 'Configuration saved successfully'})
+                    return jsonify({
+                        'success': True,
+                        'message': 'Configuration saved successfully',
+                        'current_user': session.get('username', '')
+                    })
                 else:
                     return jsonify({'success': False, 'message': 'Failed to save configuration'}), 500
             except Exception as e:
@@ -3713,13 +3840,9 @@ class MempaperApp:
             def _run():
                 self._einundzwanzig_download_running = True
                 try:
-                    import sys as _sys
                     import re as _re
                     import hashlib
-                    _scripts_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'scripts')
-                    if _scripts_dir not in _sys.path:
-                        _sys.path.insert(0, _scripts_dir)
-                    from einundzwanzig_memes import collect_all_ids, fetch_image_bytes, image_url as get_image_url
+                    from scripts.einundzwanzig_memes import collect_all_ids, fetch_image_bytes, image_url as get_image_url
 
                     memes_dir = os.path.join('static', 'memes')
                     os.makedirs(memes_dir, exist_ok=True)

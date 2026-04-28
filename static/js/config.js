@@ -89,6 +89,7 @@ let currentConfig = {};
 let configSchema = {};
 let categories = [];
 let colorOptions = [];
+let configCurrentUser = '';
 let pendingLanguageChange = null;
 let memeToDelete = null;
 
@@ -1539,6 +1540,7 @@ async function loadConfiguration() {
         configSchema = data.schema;
         categories = data.categories;
         colorOptions = data.color_options || [];
+        configCurrentUser = data.current_user || '';
         
         // Check wallet configuration data
         colorOptions = data.color_options || [];
@@ -1559,6 +1561,162 @@ async function loadConfiguration() {
         showNotification(`${failedMessage}: ${error.message}`, 'error');
     }
 }
+
+// ─── Current-user credential fields (injected into General section) ──────────
+
+function createCurrentUserUsernameField() {
+    const formGroup = document.createElement('div');
+    formGroup.className = 'form-group';
+
+    const label = document.createElement('label');
+    label.className = 'form-label';
+    label.textContent = window.translations?.admin_username || 'Admin Username';
+    formGroup.appendChild(label);
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'form-input';
+    input.value = configCurrentUser;
+    input.setAttribute('autocomplete', 'off');
+    input.setAttribute('data-config-key', 'admin_username');
+    formGroup.appendChild(input);
+
+    return formGroup;
+}
+
+function createCurrentUserPasswordField() {
+    const formGroup = document.createElement('div');
+    formGroup.className = 'form-group';
+
+    const label = document.createElement('label');
+    label.className = 'form-label';
+    label.textContent = window.translations?.admin_password || 'Admin Password';
+    formGroup.appendChild(label);
+
+    const pwInterface = createCurrentUserPasswordInterface();
+    formGroup.appendChild(pwInterface);
+    return formGroup;
+}
+
+function createCurrentUserPasswordInterface() {
+    const container = document.createElement('div');
+    container.className = 'password-change-container';
+
+    const buttonWrapper = document.createElement('div');
+    buttonWrapper.className = 'password-button-wrapper';
+    buttonWrapper.style.cssText = 'padding:15px;border:1px solid #ddd;border-radius:4px;background:var(--bg-color);text-align:center;';
+
+    const changeButton = document.createElement('button');
+    changeButton.type = 'button';
+    changeButton.className = 'form-button';
+    changeButton.style.cssText = 'background:#667eea;color:white;border:none;padding:8px 16px;border-radius:4px;cursor:pointer;';
+    changeButton.textContent = window.translations?.change_password || 'Change Password';
+
+    const passwordForm = document.createElement('div');
+    passwordForm.className = 'password-change-form';
+    passwordForm.style.cssText = 'display:none;margin-top:10px;padding:15px;border:1px solid #ddd;border-radius:4px;background:var(--bg-color);';
+
+    const newPasswordInput = document.createElement('input');
+    newPasswordInput.type = 'password';
+    newPasswordInput.className = 'form-input';
+    newPasswordInput.placeholder = window.translations?.new_password || 'New Password';
+    newPasswordInput.style.marginBottom = '10px';
+
+    const confirmPasswordInput = document.createElement('input');
+    confirmPasswordInput.type = 'password';
+    confirmPasswordInput.className = 'form-input';
+    confirmPasswordInput.placeholder = window.translations?.confirm_password || 'Confirm Password';
+    confirmPasswordInput.style.marginBottom = '15px';
+
+    const errorMessage = document.createElement('div');
+    errorMessage.className = 'password-error';
+    errorMessage.style.cssText = 'color:red;margin-bottom:10px;display:none;';
+
+    const buttonContainer = document.createElement('div');
+    buttonContainer.style.cssText = 'display:flex;gap:10px;';
+
+    const saveButton = document.createElement('button');
+    saveButton.type = 'button';
+    saveButton.className = 'form-button';
+    saveButton.style.cssText = 'background:#667eea;color:white;border:none;padding:8px 16px;border-radius:4px;cursor:pointer;';
+    saveButton.textContent = window.translations?.save || 'Save';
+
+    const cancelButton = document.createElement('button');
+    cancelButton.type = 'button';
+    cancelButton.className = 'form-button';
+    cancelButton.style.cssText = 'background:#666;color:white;border:none;padding:8px 16px;border-radius:4px;cursor:pointer;';
+    cancelButton.textContent = window.translations?.cancel || 'Cancel';
+
+    changeButton.addEventListener('click', () => {
+        passwordForm.style.display = 'block';
+        buttonWrapper.style.display = 'none';
+        newPasswordInput.focus();
+    });
+    cancelButton.addEventListener('click', () => {
+        passwordForm.style.display = 'none';
+        buttonWrapper.style.display = '';
+        newPasswordInput.value = '';
+        confirmPasswordInput.value = '';
+        errorMessage.style.display = 'none';
+    });
+    saveButton.addEventListener('click', async () => {
+        const newPassword = newPasswordInput.value;
+        const confirmPassword = confirmPasswordInput.value;
+        if (!newPassword || !confirmPassword) {
+            errorMessage.textContent = 'Please fill in both password fields';
+            errorMessage.style.display = '';
+            return;
+        }
+        if (newPassword !== confirmPassword) {
+            errorMessage.textContent = window.translations?.passwords_do_not_match || 'Passwords do not match';
+            errorMessage.style.display = '';
+            return;
+        }
+        if (newPassword.length < 8) {
+            errorMessage.textContent = 'Password must be at least 8 characters';
+            errorMessage.style.display = '';
+            return;
+        }
+        errorMessage.style.display = 'none';
+        saveButton.disabled = true;
+        saveButton.textContent = '...';
+        try {
+            const resp = await fetch(`/api/users/${encodeURIComponent(configCurrentUser)}/password`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({password: newPassword})
+            });
+            const result = await resp.json();
+            if (result.success) {
+                cancelButton.click();
+                showNotification(window.translations?.password_changed_successfully || 'Password changed successfully', 'success');
+            } else {
+                errorMessage.textContent = result.message || 'Failed to change password';
+                errorMessage.style.display = '';
+            }
+        } catch (e) {
+            errorMessage.textContent = 'Request failed';
+            errorMessage.style.display = '';
+        } finally {
+            saveButton.disabled = false;
+            saveButton.textContent = window.translations?.save || 'Save';
+        }
+    });
+
+    buttonContainer.appendChild(saveButton);
+    buttonContainer.appendChild(cancelButton);
+    passwordForm.appendChild(newPasswordInput);
+    passwordForm.appendChild(confirmPasswordInput);
+    passwordForm.appendChild(errorMessage);
+    passwordForm.appendChild(buttonContainer);
+    buttonWrapper.appendChild(changeButton);
+    container.appendChild(buttonWrapper);
+    container.appendChild(passwordForm);
+    return container;
+}
+
+// (removed — user management is now inline in the General section)
+function renderUserManagementSection(grid) { /* no-op */ }
 
 function renderConfigurationForm() {
     const container = document.getElementById('config-container');
@@ -1674,9 +1832,16 @@ function renderConfigurationForm() {
                 }
             }
         });
-        
+
+        // Append user credential fields (username + password) to the General section
+        if (category.id === 'general' && configCurrentUser) {
+            section.appendChild(createCurrentUserUsernameField());
+            section.appendChild(createCurrentUserPasswordField());
+            fieldsAdded += 2;
+        }
+
         //console.log(`Category ${category.id} has ${fieldsAdded} fields`);
-        
+
         // Add section if it has fields OR if it has a toggle (like sections that only contain a toggle)
         if (fieldsAdded > 0 || enableToggleKey) {
             grid.appendChild(section);
@@ -1684,10 +1849,10 @@ function renderConfigurationForm() {
             //console.warn(`Category ${category.id} has no fields!`);
         }
     });
-    
+
     container.appendChild(grid);
     // Render the configuration form
-    
+
     // Load cached balances for any existing wallet entries after form is rendered
     setTimeout(() => {
         const walletTable = document.querySelector('.wallet-table tbody');
@@ -4122,7 +4287,7 @@ async function saveConfiguration() {
         
         // Merge form values with current config to preserve non-form fields
         const newConfig = { ...currentConfig, ...formConfig };
-        
+
         const response = await fetch('/api/config', {
             method: 'POST',
             headers: {

@@ -323,8 +323,12 @@ class ConfigManager:
             if secure_config is not None:
                 # print(f"✅ Secure configuration loaded from encrypted files")
                 # Only update with sensitive fields from secure config
-                sensitive_fields = {'wallet_balance_addresses_with_comments', 
-                                  'block_reward_addresses_table', 'admin_password_hash', 'secret_key', 'mempool_password'}
+                if self.secure_manager:
+                    sensitive_fields = self.secure_manager.sensitive_fields
+                else:
+                    sensitive_fields = {'wallet_balance_addresses_with_comments',
+                                        'block_reward_addresses_table', 'admin_password_hash',
+                                        'admin_users', 'secret_key', 'mempool_password'}
                 for key, value in secure_config.items():
                     if key in sensitive_fields:
                         merged_config[key] = value
@@ -684,7 +688,16 @@ class ConfigManager:
         elif "admin_password" in config:
             if isinstance(config["admin_password"], str):
                 validated["admin_password"] = config["admin_password"].strip()
-        
+
+        # Preserve admin_users dict (multi-user format: {username: argon2_hash})
+        if "admin_users" in config and isinstance(config["admin_users"], dict):
+            validated["admin_users"] = {
+                k: v for k, v in config["admin_users"].items()
+                if isinstance(k, str) and k.strip() and isinstance(v, str) and v.strip()
+            }
+        elif current_config and isinstance(current_config.get("admin_users"), dict):
+            validated["admin_users"] = dict(current_config["admin_users"])
+
         # Single value settings that should be passed through directly
         passthrough_settings = [
             "language", "web_orientation", "eink_orientation", "fee_parameter", 
@@ -1148,20 +1161,6 @@ class ConfigManager:
                 "description": t.get("eink_dark_mode_desc", "Enable dark mode for the e-ink display."),
                 "default": False,
                 "category": "eink_display"
-            },
-            "admin_username": {
-                "type": "text",
-                "label": t.get("admin_username", "Admin Username"),
-                "placeholder": "Administrator username",
-                "description": t.get("admin_username_desc", "Username for accessing the settings page"),
-                "category": "general"
-            },
-            "admin_password": {
-                "type": "password",
-                "label": t.get("admin_password", "Admin Password"),
-                "placeholder": "Administrator password",
-                "description": t.get("admin_password_desc", "Password for admin authentication"),
-                "category": "general"
             },
             "color_mode_dark": {
                 "type": "boolean",

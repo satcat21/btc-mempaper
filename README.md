@@ -164,20 +164,27 @@ pip install -r requirements.txt
    # Windows: copy config\config.json.example config\config.json
    ```
 
-   > **⚠️ IMPORTANT:** Open `config/config.json` now.
-   > - Change `admin_username` if you don't want the default "admin".
-   > - Review other keys: `language`, `web_orientation`, `eink_orientation`, `mempool_host` etc.
+   > **⚠️ IMPORTANT:** Open `config/config.json` now and review:
+   > - `language`, `web_orientation`, `eink_orientation`, `mempool_host`, etc.
    ```bash
    nano config/config.json
    ```
 
-2. **Application Setup and Service Configuration**
+2. **Create the first admin user**
+
+   ```bash
+   python scripts/setup_user.py
+   ```
+
+   You will be prompted for a username and password. The password is hashed with Argon2id and stored in the config — the plain text is never saved.
+
+3. **Application Setup and Service Configuration**
 
    ```bash
    # Download all memes (first time — takes a while, resumable if interrupted)
    python scripts/download_all_memes.py
 
-   # Start application to set admin user password for web login
+   # Start the application
    python serve.py
    ```
 
@@ -191,10 +198,9 @@ pip install -r requirements.txt
    > 0 3 */3 * * cd /home/pi/btc-mempaper && .venv/bin/python scripts/download_all_memes.py --update >> /var/log/meme-update.log 2>&1
    > ```
    > Adjust the path to match your installation directory.
-   Complete the initial password setup via CLI.
 
    Access the dashboard at [http://mempaper-ip:5000](http://mempaper-ip:5000)
-   
+
    **After setup is complete**, press `Ctrl+C` to stop the server.
 
 3. **Enable Background Service (Linux Systems)**
@@ -336,6 +342,7 @@ btc-mempaper/
 │
 ├── 🔧 scripts/                # Administration & Setup
 │   ├── configure_display.py   # Display configuration wizard
+│   ├── setup_user.py          # Create / update / delete admin users
 │   ├── einundzwanzig_memes.py # API library for einundzwanzig-memes.space (random fetch, bulk discovery)
 │   ├── download_all_memes.py  # Bulk-download all memes from einundzwanzig-memes.space → static/memes/
 │   ├── backup_manager.py      # Backup & maintenance utility
@@ -381,6 +388,33 @@ btc-mempaper/
 - **managers/** handle all security, authentication, and configuration management
 - **utils/** provide shared functionality across the application
 - **scripts/** are standalone tools for setup and maintenance
+
+---
+
+## 👤 User Management
+
+Multiple admin users are supported. Users are stored as Argon2id hashes in `config/config.json` under the `admin_users` key.
+
+**Create or update a user** (prompted interactively):
+```bash
+python scripts/setup_user.py
+```
+
+**List all configured users:**
+```bash
+python scripts/setup_user.py --list
+```
+
+**Delete a user:**
+```bash
+python scripts/setup_user.py --delete alice
+```
+
+> The script refuses to delete the last remaining user to prevent lockout.
+>
+> The script can be run while the service is running — the application picks up the config change automatically. For password resets it is safer to stop the service first: `sudo systemctl stop mempaper`.
+
+**Existing installations** are migrated automatically on first startup: the single `admin_username` / `admin_password_hash` fields in the config are moved into the `admin_users` dict — no manual action required.
 
 ---
 

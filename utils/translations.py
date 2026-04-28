@@ -83,9 +83,7 @@ translations = {
         
         # Security Settings
         "admin_username": "Admin Username",
-        "admin_username_desc": "Username for accessing the settings page",
         "admin_password": "Admin Password", 
-        "admin_password_desc": "Password for admin authentication",
         "change_password": "Change Password",
         "new_password": "New Password",
         "confirm_password": "Confirm Password",
@@ -446,9 +444,7 @@ translations = {
         
         # Security Settings
         "admin_username": "Administrator-Benutzername",
-        "admin_username_desc": "Benutzername für den Zugang zu den Einstellungen",
         "admin_password": "Administrator-Passwort",
-        "admin_password_desc": "Passwort für Administrator-Authentifizierung",
         "change_password": "Passwort ändern",
         "new_password": "Neues Passwort",
         "confirm_password": "Passwort bestätigen",
@@ -811,9 +807,7 @@ translations = {
         
         # Security Settings
         "admin_username": "Usuario Administrador",
-        "admin_username_desc": "Nombre de usuario para acceder a la página de configuración",
         "admin_password": "Contraseña de Administrador",
-        "admin_password_desc": "Contraseña para autenticación de administrador",
         "change_password": "Cambiar Contraseña",
         "new_password": "Nueva Contraseña",
         "confirm_password": "Confirmar Contraseña",
@@ -1161,9 +1155,7 @@ translations = {
         
         # Security Settings
         "admin_username": "Nom d'Utilisateur Admin",
-        "admin_username_desc": "Nom d'utilisateur pour accéder à la page des paramètres",
         "admin_password": "Mot de Passe Admin",
-        "admin_password_desc": "Mot de passe pour l'authentification admin",
         "change_password": "Changer le Mot de Passe",
         "new_password": "Nouveau Mot de Passe",
         "confirm_password": "Confirmer le Mot de Passe",
@@ -1512,9 +1504,7 @@ translations = {
         
         # Security Settings
         "admin_username": "Nome Utente Amministratore",
-        "admin_username_desc": "Nome utente per accedere alla pagina delle impostazioni",
         "admin_password": "Password Amministratore",
-        "admin_password_desc": "Password per l'autenticazione dell'amministratore",
         "change_password": "Cambia Password",
         "new_password": "Nuova Password",
         "confirm_password": "Conferma Password",

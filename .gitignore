@@ -1,24 +1,11 @@
-# Python bytecode and cache files
+# Python
 __pycache__/
 *.py[cod]
-*.pyo
-*.pyd
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-#lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
 *.egg-info/
-.installed.cfg
 *.egg
+build/
+dist/
+.eggs/
 
 # Virtual environments
 .venv/
@@ -27,7 +14,7 @@ env/
 ENV/
 .env
 
-# IDE and editor files
+# Editors and OS files
 .vscode/
 .idea/
 *.swp
@@ -36,41 +23,36 @@ ENV/
 .DS_Store
 Thumbs.db
 
-# Configuration and sensitive files
+# Sensitive and local config
 config.json
 config.json.backup
 config/.secret_key
+config/.config_key
 
-# Cache files (all cache data now encrypted in cache.secure.json)
-cache/async_wallet_address_cache.secure.json
-cache/cache.secure.json
-cache/block_reward_cache.json
-cache/optimized_balance_cache.json
-cache/wallet_balance_cache.json
-cache/cache_metadata.json
-wallet_balance_cache.json
+# Runtime/cache artifacts
+cache/
 cache.json
+wallet_balance_cache.json
 optimized_balance_cache.json
 *.secure.json
 *.backup
 *.migrated_backup
-current.png
-current_eink.png
 *.log
 
-# User uploaded content
+# Generated images
+current.png
+current_eink.png
+current_processed.png
+
+# User content
 static/memes/*
 static/opsec/*
 
-# generated images
-current_processed.png
-
-# Test files and temporary files
+# Temporary/dev files
 demo_*.py
 temp/
 tmp/
 *.tmp
-config/.config_key
 
-# generated service file
+# Generated service file
 mempaper.service

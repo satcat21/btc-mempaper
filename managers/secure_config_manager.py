@@ -46,9 +46,10 @@ class SecureConfigManager:
         
         # Define sensitive fields that should be encrypted
         self.sensitive_fields = {
-            'wallet_balance_addresses_with_comments', 
+            'wallet_balance_addresses_with_comments',
             'block_reward_addresses_table',
             'admin_password_hash',
+            'admin_users',
             'secret_key',
             'mempool_password'
         }

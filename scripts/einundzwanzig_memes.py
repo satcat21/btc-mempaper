@@ -184,9 +184,9 @@ def fetch_image_bytes(url: str, timeout: int = 15) -> bytes:
 # regardless of how many worker threads are running.  Prevents HTTP 429s.
 _rate_lock = threading.Lock()
 _last_request_time: float = 0.0
-_MIN_REQUEST_INTERVAL = 0.5  # base seconds between requests (2 req/s)
+_MIN_REQUEST_INTERVAL = 1.5  # base seconds between requests (~0.67 req/s)
 _rate_backoff: float = 1.0   # dynamic multiplier; doubles on HTTP 429, recovers on success
-_MAX_BACKOFF: float = 8.0    # cap at 8× = one request per 4 s
+_MAX_BACKOFF: float = 8.0    # cap at 8× = one request per 12 s
 
 # Set by the caller (e.g. download_all_memes.py) so retry sleeps can be
 # interrupted immediately when the user presses Ctrl+C.
@@ -226,7 +226,7 @@ def _request(path: str, timeout: int = 10) -> dict:
             # Successful response — slowly recover the backoff toward 1.0
             with _rate_lock:
                 if _rate_backoff > 1.0:
-                    _rate_backoff = max(1.0, _rate_backoff * 0.9)
+                    _rate_backoff = max(1.0, _rate_backoff * 0.95)
             return json.loads(raw.decode())
         except urllib.error.HTTPError as exc:
             if exc.code == 429:
@@ -441,8 +441,9 @@ def collect_all_ids(
         page = 0
         tag_retries = 0
         zero_streak = 0
-        tag_new_total = 0   # new memes found across all pages for this tag
-        last_total = 0      # global total after this tag finishes
+        tag_new_total = 0    # new memes found across all pages for this tag
+        tag_found_total = 0  # all results seen for this tag (new + already known)
+        last_total = 0       # global total after this tag finishes
 
         while True:
             if stop_event and stop_event.is_set():
@@ -482,6 +483,8 @@ def collect_all_ids(
                         new_memes.append(meme)
                 last_total = len(all_memes)
 
+            tag_found_total += len(results)
+
             # Persist new memes and notify caller — both outside the main lock
             if new_memes:
                 if _memes_file:
@@ -515,12 +518,19 @@ def collect_all_ids(
         # Only mark the tag as completed if we weren't stopped mid-scan
         was_stopped = stop_event and stop_event.is_set()
 
-        if verbose and tag_new_total > 0:
-            print(
-                f"  tag {i:4d}/{n_tags} {tag!r:35s}  "
-                f"pages={page}  new={tag_new_total:3d}  total={last_total:5d}"
-                + ("  [stopped]" if was_stopped else "")
-            )
+        if verbose:
+            if tag_new_total > 0:
+                print(
+                    f"  tag {i:4d}/{n_tags} {tag!r:35s}  "
+                    f"pages={page}  images={tag_found_total:4d}  new={tag_new_total:3d}  total={last_total:5d}"
+                    + ("  [stopped]" if was_stopped else "")
+                )
+            else:
+                print(
+                    f"  tag {i:4d}/{n_tags} {tag!r:35s}  "
+                    f"pages={page}  images={tag_found_total:4d}  new=  0  (no new images)"
+                    + ("  [stopped]" if was_stopped else "")
+                )
 
         with lock:
             tags_done[0] += 1

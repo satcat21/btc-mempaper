@@ -41,26 +41,92 @@ class SecurePasswordManager:
         """
         self.config_manager = config_manager
         
-        # Initialize Argon2 password hasher with security-recommended parameters
-        # These parameters provide good security vs performance balance
+        # Argon2id parameters tuned for Raspberry Pi Zero WH (512 MB RAM, single core).
+        # memory_cost=19456 KB (19 MB) meets OWASP minimum recommendation while leaving
+        # enough headroom for the rest of the application. time_cost=2 compensates for
+        # the lower memory cost to keep the overall work factor reasonable.
         self.ph = PasswordHasher(
-            time_cost=3,       # Number of iterations (3 is recommended minimum)
-            memory_cost=65536, # Memory usage in KB (64 MB - good security/performance balance)
-            parallelism=1,     # Number of parallel threads (1 for consistency)
-            hash_len=32,       # Output hash length in bytes (32 is standard)
-            salt_len=16        # Salt length in bytes (16 is recommended)
+            time_cost=2,       # Iterations (increased slightly to offset lower memory cost)
+            memory_cost=19456, # Memory in KB (19 MB — OWASP minimum, Pi Zero safe)
+            parallelism=1,     # Single thread for single-core CPU
+            hash_len=32,       # 32-byte output (standard)
+            salt_len=16        # 16-byte salt (recommended)
         )
     
     def is_password_set(self):
         """
-        Check if a password is already configured.
-        
+        Check if at least one user is configured.
+
         Returns:
-            bool: True if admin_password_hash exists in config, False otherwise
+            bool: True if admin_users has entries or legacy admin_password_hash exists
         """
+        if self._get_users():
+            return True
+        # Legacy single-user fallback
         password_hash = self.config_manager.get('admin_password_hash')
         return password_hash is not None and password_hash.strip() != ""
-    
+
+    def _get_users(self) -> dict:
+        """Return a copy of the admin_users dict (thread-safe)."""
+        with self.config_manager.config_lock:
+            users = self.config_manager.config.get('admin_users')
+            return dict(users) if users else {}
+
+    def list_users(self) -> list:
+        """Return the list of configured usernames."""
+        return list(self._get_users().keys())
+
+    def create_user(self, username: str, password: str) -> bool:
+        """
+        Create or update an admin user.
+
+        Args:
+            username (str): Username (must be non-empty)
+            password (str): Plain text password (minimum 8 characters)
+
+        Returns:
+            bool: True if the user was saved successfully
+        """
+        username = (username or "").strip()
+        if not username:
+            logger.error("Username cannot be empty")
+            return False
+        if len(password) < 8:
+            logger.error("Password must be at least 8 characters")
+            return False
+        password_hash = self.hash_password(password)
+        if not password_hash:
+            return False
+        with self.config_manager.config_lock:
+            users = dict(self.config_manager.config.get('admin_users') or {})
+            users[username] = password_hash
+            self.config_manager.config['admin_users'] = users
+        self.config_manager.save_config()
+        logger.info(f"User '{username}' created/updated successfully")
+        return True
+
+    def _migrate_to_multi_user(self) -> bool:
+        """
+        Migrate legacy single-user config (admin_username + admin_password_hash)
+        into the admin_users dict format.  No-op if already migrated.
+        """
+        if self._get_users():
+            return True  # Already in multi-user format
+
+        with self.config_manager.config_lock:
+            stored_hash = self.config_manager.config.get('admin_password_hash')
+            stored_username = self.config_manager.config.get('admin_username')
+
+        if not stored_hash or not stored_username:
+            return True  # Nothing to migrate
+
+        logger.info(f"Migrating user '{stored_username}' to multi-user format")
+        with self.config_manager.config_lock:
+            self.config_manager.config['admin_users'] = {stored_username: stored_hash}
+        self.config_manager.save_config()
+        logger.info("Migration to multi-user format complete")
+        return True
+
     def hash_password(self, password):
         """
         Hash a password using Argon2id.
@@ -169,56 +235,46 @@ class SecurePasswordManager:
             logger.info("Admin password already configured")
             return True
 
-        logger.info("No admin password found - starting first-time setup")
+        logger.info("No admin user found - starting first-time setup")
 
         # Stop config file watching to avoid console prompt issues
         if hasattr(self.config_manager, 'stop_file_watching'):
             self.config_manager.stop_file_watching()
 
-        # Prompt for new password
-        new_password = self.prompt_for_new_password()
-        if not new_password:
-            logger.error("Password setup cancelled or failed")
-            # Optionally restart file watching after failed setup
-            if hasattr(self.config_manager, 'start_file_watching'):
-                self.config_manager.start_file_watching()
-            return False
-
-        # Hash the password
-        password_hash = self.hash_password(new_password)
-        if not password_hash:
-            logger.error("Failed to hash password")
-            print("❌ Failed to hash password. Please try again.")
-            if hasattr(self.config_manager, 'start_file_watching'):
-                self.config_manager.start_file_watching()
-            return False
-
-        # Store the hash and remove old cleartext password
         try:
-            self.config_manager.set('admin_password_hash', password_hash)
+            # Prompt for username
+            try:
+                new_username = input("Enter admin username [admin]: ").strip() or "admin"
+            except (EOFError, KeyboardInterrupt):
+                print("\n❌ Setup cancelled.")
+                return False
 
-            # Remove old cleartext password if it exists
+            # Prompt for password
+            new_password = self.prompt_for_new_password()
+            if not new_password:
+                logger.error("Password setup cancelled or failed")
+                return False
+
+            if not self.create_user(new_username, new_password):
+                print("❌ Failed to save user.")
+                return False
+
+            # Remove legacy cleartext password if present
             if self.config_manager.get('admin_password'):
                 self.config_manager.remove('admin_password')
-                logger.info("Removed old cleartext password from config")
 
-            self.config_manager.save_config()
-
-            print("✅ Password successfully hashed and stored securely!")
-            print("🔒 Your password is now protected with Argon2id encryption.")
-            logger.info("First-time password setup completed successfully")
-
-            # Optionally restart file watching after setup
-            if hasattr(self.config_manager, 'start_file_watching'):
-                self.config_manager.start_file_watching()
+            print(f"✅ User '{new_username}' created and stored securely!")
+            print("🔒 Password protected with Argon2id.")
+            logger.info("First-time user setup completed successfully")
             return True
 
         except Exception as e:
-            logger.error(f"Failed to save password hash to config: {e}")
-            print(f"❌ Failed to save password configuration: {e}")
+            logger.error(f"Failed during first-time setup: {e}")
+            print(f"❌ Setup failed: {e}")
+            return False
+        finally:
             if hasattr(self.config_manager, 'start_file_watching'):
                 self.config_manager.start_file_watching()
-            return False
     
     def authenticate_user(self, username, password):
         """
@@ -231,20 +287,51 @@ class SecurePasswordManager:
         Returns:
             bool: True if authentication successful, False otherwise
         """
-        # Check username
+        users = self._get_users()
+        if users:
+            # Multi-user format
+            stored_hash = users.get(username)
+            if not stored_hash:
+                logger.warning(f"Authentication failed - unknown user: {username}")
+                return False
+            if not self.verify_password(password, stored_hash):
+                return False
+            # Rehash if stored hash used different parameters
+            try:
+                if self.ph.check_needs_rehash(stored_hash):
+                    new_hash = self.hash_password(password)
+                    if new_hash:
+                        with self.config_manager.config_lock:
+                            u = dict(self.config_manager.config.get('admin_users') or {})
+                            u[username] = new_hash
+                            self.config_manager.config['admin_users'] = u
+                        self.config_manager.save_config()
+                        logger.info(f"Password rehashed for user '{username}'")
+            except Exception as e:
+                logger.warning(f"Password rehash skipped: {e}")
+            return True
+
+        # Legacy single-user fallback
         stored_username = self.config_manager.get('admin_username')
         if not stored_username or username != stored_username:
             logger.warning(f"Authentication failed - invalid username: {username}")
             return False
-        
-        # Check if password is configured
-        if not self.is_password_set():
+        stored_hash = self.config_manager.get('admin_password_hash')
+        if not stored_hash:
             logger.error("No password configured - authentication impossible")
             return False
-        
-        # Verify password
-        stored_hash = self.config_manager.get('admin_password_hash')
-        return self.verify_password(password, stored_hash)
+        if not self.verify_password(password, stored_hash):
+            return False
+        try:
+            if self.ph.check_needs_rehash(stored_hash):
+                new_hash = self.hash_password(password)
+                if new_hash:
+                    self.config_manager.set('admin_password_hash', new_hash)
+                    self.config_manager.save_config()
+                    logger.info("Password rehashed with updated parameters")
+        except Exception as e:
+            logger.warning(f"Password rehash skipped: {e}")
+        return True
     
     def migrate_cleartext_password(self):
         """
