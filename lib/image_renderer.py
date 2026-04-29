@@ -1172,7 +1172,76 @@ class ImageRenderer:
         """
         if self.config.get("einundzwanzig_meme_source", False):
             return self._pick_online_meme()
+
+        # Offline mode: try holiday-themed selection first
+        holiday = self.get_today_btc_holiday()
+        if holiday:
+            holiday_title = holiday.get("en", {}).get("title", "")
+            keywords = self._holiday_keywords(holiday_title)
+            if keywords:
+                result = self._pick_local_meme_by_keywords(keywords)
+                if result:
+                    return result
         return self._pick_local_meme()
+
+    @staticmethod
+    def _holiday_keywords(title: str) -> list:
+        """Extract search keywords from a holiday title.
+
+        Strips common stopwords, 'bitcoin'/'btc'/'day', '#N' tokens,
+        and words shorter than 3 characters.
+        """
+        import re
+        STOPWORDS = {'bitcoin', 'btc', 'day', 'the', 'of', 'a', 'an', 'is', 'this', 'in', 'on'}
+        cleaned = re.sub(r"[^a-z0-9 ]", " ", title.lower())
+        return [w for w in cleaned.split()
+                if w not in STOPWORDS and not w.startswith('#') and len(w) >= 3]
+
+    def _pick_local_meme_by_keywords(self, keywords: list) -> str | None:
+        """Return a random local meme whose tags contain any of the keywords.
+
+        Loads index.jsonl (written by the bulk downloader) and filters to
+        memes whose tag list contains at least one keyword as a substring.
+        Only returns memes whose .webp file is actually on disk.
+        Falls back to None if the index is missing or no matches found.
+        """
+        import json as _json
+        index_path = os.path.join(self.meme_dir, "index.jsonl")
+        if not os.path.exists(index_path):
+            return None
+        try:
+            on_disk = {
+                os.path.splitext(f)[0]
+                for f in os.listdir(self.meme_dir)
+                if f.lower().endswith('.webp') and not f.startswith('_')
+            }
+            matches = []
+            with open(index_path, encoding="utf-8") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        meme = _json.loads(line)
+                    except _json.JSONDecodeError:
+                        continue
+                    uid = meme.get("id", "")
+                    if uid not in on_disk:
+                        continue
+                    tags = [t.lower() for t in meme.get("tags", [])]
+                    if any(kw in tag for kw in keywords for tag in tags):
+                        matches.append(uid)
+
+            if not matches:
+                print(f"No local memes matched keywords {keywords}, using random")
+                return None
+
+            chosen = random.choice(matches)
+            print(f"Holiday meme match (keywords={keywords}): {chosen}")
+            return os.path.join(self.meme_dir, f"{chosen}.webp")
+        except Exception as e:
+            print(f"Error in holiday meme selection: {e}")
+            return None
 
     def _pick_local_meme(self):
         """Select a random meme from the local memes directory."""
