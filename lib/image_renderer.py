@@ -1176,7 +1176,7 @@ class ImageRenderer:
         # Offline mode: try holiday-themed selection first
         holiday = self.get_today_btc_holiday()
         if holiday:
-            holiday_title = holiday.get("en", {}).get("title", "")
+            holiday_title = holiday.get("title", "")
             keywords = self._holiday_keywords(holiday_title)
             if keywords:
                 result = self._pick_local_meme_by_keywords(keywords)
@@ -1272,7 +1272,7 @@ class ImageRenderer:
         try:
             # Check for a BTC holiday today and use its title as search query
             holiday = self.get_today_btc_holiday()
-            holiday_title = holiday.get("en", {}).get("title") if holiday else None
+            holiday_title = holiday.get("title") if holiday else None
 
             if holiday_title:
                 query = urllib.parse.urlencode({"q": holiday_title, "limit": "20", "full": "true"})

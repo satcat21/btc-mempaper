@@ -195,7 +195,7 @@ pip install -r requirements.txt
    > To automate this, add a crontab entry (`crontab -e`):
    > ```
    > # Check for new memes every 3 days at 3 AM
-   > 0 3 */3 * * cd /home/pi/btc-mempaper && .venv/bin/python scripts/download_all_memes.py --update >> /var/log/meme-update.log 2>&1
+   > 0 3 */3 * * cd /home/pi/btc-mempaper && .venv/bin/python scripts/download_all_memes.py --update > /dev/null 2>&1
    > ```
    > Adjust the path to match your installation directory.
 

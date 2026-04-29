@@ -372,10 +372,11 @@ class MempaperApp:
                 self._donation_history = data.get("history", [])
                 self._latest_donation = self._donation_history[0] if self._donation_history else None
                 if self._donation_history:
-                    self._highest_donation = max(
-                        self._donation_history,
-                        key=lambda d: d.get("amount_sats", 0)
-                    )
+                    self._highest_donation = None
+                    for d in reversed(self._donation_history):
+                        if (self._highest_donation is None or
+                                d.get("amount_sats", 0) > self._highest_donation.get("amount_sats", 0)):
+                            self._highest_donation = d
                 self._latest_donation_block_height = data.get("latest_donation_block_height", None)
                 print(f"⚡ Loaded {len(self._donation_history)} donation(s) from {self._donations_file}")
         except Exception as e:
