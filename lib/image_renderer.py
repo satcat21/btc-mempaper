@@ -1190,22 +1190,48 @@ class ImageRenderer:
             return None
 
     def _pick_online_meme(self):
-        """Fetch a random meme live from einundzwanzig-memes.space."""
+        """Fetch a random meme live from einundzwanzig-memes.space.
+
+        If today is a BTC holiday, searches by the holiday's English title so
+        the meme shown is thematically relevant.  Falls back to /random if the
+        search returns no results.
+        """
         import urllib.request
+        import urllib.parse
         import json as _json
 
         try:
-            api_url = "https://einundzwanzig-memes.space/api/v1/random?count=1&full=true"
+            # Check for a BTC holiday today and use its title as search query
+            holiday = self.get_today_btc_holiday()
+            holiday_title = holiday.get("en", {}).get("title") if holiday else None
+
+            if holiday_title:
+                query = urllib.parse.urlencode({"q": holiday_title, "limit": "20", "full": "true"})
+                api_url = f"https://einundzwanzig-memes.space/api/v1/search?{query}"
+                print(f"BTC holiday '{holiday_title}' — searching memes for: {holiday_title!r}")
+            else:
+                api_url = "https://einundzwanzig-memes.space/api/v1/random?count=20&full=true"
+
             req = urllib.request.Request(api_url, headers={"User-Agent": "btc-mempaper/1.0"})
             with urllib.request.urlopen(req, timeout=10) as resp:
                 data = _json.loads(resp.read().decode())
 
             results = data.get("results", [])
+
+            # If holiday search returned nothing, fall back to /random
+            if not results and holiday_title:
+                print(f"No search results for {holiday_title!r}, falling back to /random")
+                api_url = "https://einundzwanzig-memes.space/api/v1/random?count=20&full=true"
+                req = urllib.request.Request(api_url, headers={"User-Agent": "btc-mempaper/1.0"})
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    data = _json.loads(resp.read().decode())
+                results = data.get("results", [])
+
             if not results:
                 print("Einundzwanzig API returned no memes, falling back to local")
                 return self._pick_local_meme()
 
-            meme = results[0]
+            meme = random.choice(results)
             meme_id = meme["id"]
             image_url = f"https://einundzwanzig-memes.space/images/medium/{meme_id}.webp"
 
