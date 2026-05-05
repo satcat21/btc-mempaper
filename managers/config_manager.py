@@ -1124,8 +1124,8 @@ class ConfigManager:
                     # Waveshare Large Displays (10"+)
                     {"value": "waveshare_epd.epd10in2", "label": "Waveshare 10.2\" E-Paper - 960x640"},
                     {"value": "waveshare_epd.epd12in48", "label": "Waveshare 12.48\" E-Paper - 1304x984"},
-                    {"value": "waveshare_epd.epd13in3k", "label": "Waveshare 13.3\" K (Spectra 6 E6) Full Color - 1600x1200 ⭐"},
-                    {"value": "waveshare_epd.epd13in3e", "label": "Waveshare 13.3\" E (4-Color) - 1600x1200"}
+                    {"value": "waveshare_epd.epd13in3E", "label": "Waveshare 13.3\" E (Spectra 6 E6) 6-Color - 1600x1200 ⭐"},
+                    {"value": "waveshare_epd.epd13in3k", "label": "Waveshare 13.3\" K (Black & White) - 1600x1200"}
                 ],
                 "category": "eink_display"
             },

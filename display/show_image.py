@@ -10,21 +10,44 @@ from prepare_image import Processor
 from argparse import ArgumentParser
 from PIL import Image
 
-def quantize_to_exact_epd_colors(img):
+def quantize_to_exact_epd_colors(img, config=None):
     """
     Quantize image to exact Waveshare EPD colors using nearest-neighbor mapping.
-    This ensures every pixel uses exactly one of the 7 EPD colors.
+    This ensures every pixel uses exactly one of the EPD colors (6 or 7 colors).
+    
+    Args:
+        img: PIL Image to quantize
+        config: Optional config dict to determine display type
     """
-    # Exact Waveshare 7.3F colors (from official driver)
-    epd_colors = [
-        (0, 0, 0),       # Black
-        (255, 255, 255), # White  
-        (0, 255, 0),     # Green
-        (0, 0, 255),     # Blue
-        (255, 0, 0),     # Red
-        (255, 255, 0),   # Yellow
-        (255, 128, 0),   # Orange
-    ]
+    # Determine if display supports orange (7.3F) or not (13.3E)
+    if config:
+        device_name = config.get("omni_device_name", "waveshare_epd.epd7in3f")
+        module_name = device_name.split('.')[-1] if '.' in device_name else device_name
+        supports_orange = module_name == 'epd7in3f'
+    else:
+        supports_orange = True  # Default to 7-color for backward compatibility
+    
+    if supports_orange:
+        # Exact Waveshare 7.3F colors (7 colors including orange)
+        epd_colors = [
+            (0, 0, 0),       # Black
+            (255, 255, 255), # White  
+            (0, 255, 0),     # Green
+            (0, 0, 255),     # Blue
+            (255, 0, 0),     # Red
+            (255, 255, 0),   # Yellow
+            (255, 128, 0),   # Orange
+        ]
+    else:
+        # Waveshare 13.3E colors (6 colors, no orange)
+        epd_colors = [
+            (0, 0, 0),       # Black
+            (255, 255, 255), # White
+            (255, 0, 0),     # Red
+            (255, 255, 0),   # Yellow
+            (0, 255, 0),     # Green
+            (0, 0, 255),     # Blue
+        ]
     
     # Convert image to RGB if not already
     if img.mode != 'RGB':

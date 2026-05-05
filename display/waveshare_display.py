@@ -16,24 +16,67 @@ import threading
 import queue
 from PIL import Image, ImageDraw
 
-# Add the Waveshare library path to sys.path
-epaper_lib_path_parallel = os.path.join(os.path.dirname(__file__), '..', '..', 'e-Paper', 'RaspberryPi_JetsonNano', 'python', 'lib')
+# Add the Waveshare library paths to sys.path
+# Try multiple common locations where Waveshare modules might be installed
+waveshare_lib_paths = [
+    # Location 1: User's home directory - separate programs structure (13.3E actual location)
+    os.path.expanduser('~/e-Paper/E-paper_Separate_Program/13.3inch_e-Paper_E/RaspberryPi/python/lib'),
+    # Location 2: User's home directory - unified structure (7.3F location)
+    os.path.expanduser('~/e-Paper/RaspberryPi_JetsonNano/python/lib'),
+    # Location 3: Parallel to project - separate programs structure
+    os.path.join(os.path.dirname(__file__), '..', '..', 'e-Paper', 'E-paper_Separate_Program', '13.3inch_e-Paper_E', 'RaspberryPi', 'python', 'lib'),
+    # Location 4: Parallel to project - unified structure
+    os.path.join(os.path.dirname(__file__), '..', '..', 'e-Paper', 'RaspberryPi_JetsonNano', 'python', 'lib'),
+    # Location 5: Project's lib directory (if modules were copied there)
+    os.path.join(os.path.dirname(__file__), '..', 'lib'),
+    # Location 6: Directly in display directory
+    os.path.dirname(__file__),
+]
 
-if os.path.exists(epaper_lib_path_parallel):
-    sys.path.append(epaper_lib_path_parallel)
+for lib_path in waveshare_lib_paths:
+    if os.path.exists(lib_path) and lib_path not in sys.path:
+        sys.path.append(lib_path)
 
+# Dynamic module loading - import each module individually
+# This allows partial availability (only some displays work)
+WAVESHARE_AVAILABLE = False
+WAVESHARE_MODULES = {}
+
+# Try to import 7.3F display
 try:
-    from waveshare_epd import epd7in3f
+    import epd7in3f
+    WAVESHARE_MODULES['epd7in3f'] = epd7in3f
     WAVESHARE_AVAILABLE = True
-except ImportError as e:
-    WAVESHARE_AVAILABLE = False
-    print(f"❌ Waveshare EPD library not available: {e}")
-except Exception as e:
-    WAVESHARE_AVAILABLE = False
-    print(f"❌ Waveshare EPD library error: {e}")
+except ImportError:
+    pass  # Module not available, skip
+
+# Try to import 13.3E display
+try:
+    import epd13in3E
+    WAVESHARE_MODULES['epd13in3E'] = epd13in3E
+    WAVESHARE_AVAILABLE = True
+except ImportError:
+    pass  # Module not available, skip
+
+# Try to import 13.3k display (Black & White)
+try:
+    import epd13in3k
+    WAVESHARE_MODULES['epd13in3k'] = epd13in3k
+    WAVESHARE_AVAILABLE = True
+except ImportError:
+    pass  # Module not available, skip
+
+if not WAVESHARE_AVAILABLE:
+    print(f"❌ No Waveshare EPD modules available")
+    print(f"   Searched paths:")
+    for path in waveshare_lib_paths:
+        exists = "✓" if os.path.exists(path) else "✗"
+        print(f"   [{exists}] {path}")
+else:
+    pass  # Modules loaded successfully
 
 class WaveshareDisplay:
-    """Direct interface to Waveshare 7.3" F 7-color e-paper display."""
+    """Dynamic interface to Waveshare e-paper displays (7.3F and 13.3E supported)."""
     
     def __init__(self, config=None):
         """
@@ -44,10 +87,34 @@ class WaveshareDisplay:
         """
         self.config = config or {}
         self.epd = None
-        self.width = 800
-        self.height = 480
+        
+        # Read display dimensions from config
+        self.width = self.config.get("display_width", 800)
+        self.height = self.config.get("display_height", 480)
+        
+        # Parse device name from config (e.g., "waveshare_epd.epd7in3f" -> "epd7in3f")
+        device_name = self.config.get("omni_device_name", "waveshare_epd.epd7in3f")
+        self.module_name = device_name.split('.')[-1] if '.' in device_name else device_name
+        
+        # Normalize module name - handle case variations (e.g., epd13in3e -> epd13in3E)
+        # Create alias for lowercase variant to uppercase (the actual module name)
+        if self.module_name == 'epd13in3e':  # Old config value
+            self.module_name = 'epd13in3E'  # Correct module name
+        
         self.enabled = self.config.get("e-ink-display-connected", True)
         self.skip_clear = self.config.get("skip_clear_display", True)  # Skip clear by default (saves ~31s)
+        
+        # Determine color support based on module
+        self.supports_orange = self.module_name == 'epd7in3f'  # Only 7.3F has orange
+        # 13.3K is black & white only (2 colors), 13.3E is 6 colors, 7.3F is 7 colors
+        if self.module_name == 'epd13in3k':
+            self.color_count = 2  # Black & White only
+        elif self.module_name == 'epd13in3E':
+            self.color_count = 6  # Spectra 6 colors
+        elif self.supports_orange:
+            self.color_count = 7  # 7.3F with orange
+        else:
+            self.color_count = 6  # Default for other displays
         
         # Don't initialize display in constructor to avoid blocking
         # Initialize only when needed in display_image method
@@ -55,18 +122,21 @@ class WaveshareDisplay:
             print("⚠️ Waveshare library not available - display will use fallback only")
         elif not self.enabled:
             print("⚙️ E-paper display disabled in configuration")
+        else:
+            pass  # Display configured
         
         # Color constants from the EPD library
-        if WAVESHARE_AVAILABLE:
+        if WAVESHARE_AVAILABLE and self.module_name in WAVESHARE_MODULES:
             try:
-                # Get color constants from the module
-                self.BLACK = getattr(epd7in3f, 'BLACK', 0x000000)
-                self.WHITE = getattr(epd7in3f, 'WHITE', 0xFFFFFF)
-                self.RED = getattr(epd7in3f, 'RED', 0xFF0000)
-                self.GREEN = getattr(epd7in3f, 'GREEN', 0x00FF00)
-                self.BLUE = getattr(epd7in3f, 'BLUE', 0x0000FF)
-                self.YELLOW = getattr(epd7in3f, 'YELLOW', 0xFFFF00)
-                self.ORANGE = getattr(epd7in3f, 'ORANGE', 0xFF8000)
+                # Get color constants from the configured module
+                epd_module = WAVESHARE_MODULES[self.module_name]
+                self.BLACK = getattr(epd_module, 'BLACK', 0x000000)
+                self.WHITE = getattr(epd_module, 'WHITE', 0xFFFFFF)
+                self.RED = getattr(epd_module, 'RED', 0xFF0000)
+                self.GREEN = getattr(epd_module, 'GREEN', 0x00FF00)
+                self.BLUE = getattr(epd_module, 'BLUE', 0x0000FF)
+                self.YELLOW = getattr(epd_module, 'YELLOW', 0xFFFF00)
+                self.ORANGE = getattr(epd_module, 'ORANGE', 0xFF8000) if self.supports_orange else None
             except:
                 # Fallback to standard color values
                 self.BLACK = 0x000000
@@ -75,7 +145,7 @@ class WaveshareDisplay:
                 self.GREEN = 0x00FF00
                 self.BLUE = 0x0000FF
                 self.YELLOW = 0xFFFF00
-                self.ORANGE = 0xFF8000
+                self.ORANGE = 0xFF8000 if self.supports_orange else None
         else:
             # Fallback color values
             self.BLACK = 0x000000
@@ -84,7 +154,61 @@ class WaveshareDisplay:
             self.GREEN = 0x00FF00
             self.BLUE = 0x0000FF
             self.YELLOW = 0xFFFF00
-            self.ORANGE = 0xFF8000
+            self.ORANGE = 0xFF8000 if self.supports_orange else None
+
+    def _detect_epd_methods(self):
+        """
+        Detect which method naming convention the EPD uses.
+        Different displays use different case conventions (init vs Init, Clear vs clear).
+        """
+        if not self.epd:
+            return
+        
+        # Detect init method (init vs Init)
+        if hasattr(self.epd, 'Init'):
+            self._init_method = 'Init'
+        elif hasattr(self.epd, 'init'):
+            self._init_method = 'init'
+        else:
+            self._init_method = None
+            print(f"⚠️ No init/Init method found on EPD")
+        
+        # Detect clear method (Clear vs clear)
+        if hasattr(self.epd, 'Clear'):
+            self._clear_method = 'Clear'
+        elif hasattr(self.epd, 'clear'):
+            self._clear_method = 'clear'
+        else:
+            self._clear_method = None
+        
+        # Detect sleep method (sleep vs Sleep)
+        if hasattr(self.epd, 'sleep'):
+            self._sleep_method = 'sleep'
+        elif hasattr(self.epd, 'Sleep'):
+            self._sleep_method = 'Sleep'
+        else:
+            self._sleep_method = None
+    
+    def _call_epd_init(self):
+        """Call the appropriate init method based on detected naming."""
+        if self._init_method:
+            return getattr(self.epd, self._init_method)()
+        else:
+            raise AttributeError(f"EPD object has no init method")
+    
+    def _call_epd_clear(self):
+        """Call the appropriate clear method based on detected naming."""
+        if self._clear_method:
+            return getattr(self.epd, self._clear_method)()
+        else:
+            raise AttributeError(f"EPD object has no clear method")
+    
+    def _call_epd_sleep(self):
+        """Call the appropriate sleep method based on detected naming."""
+        if self._sleep_method:
+            return getattr(self.epd, self._sleep_method)()
+        else:
+            raise AttributeError(f"EPD object has no sleep method")
 
     def init_display(self):
         """Initialize the e-paper display hardware."""
@@ -94,7 +218,7 @@ class WaveshareDisplay:
             
         try:
             print("Initializing e-paper display...")
-            self.epd.init()
+            self._call_epd_init()
             print("✅ E-paper display initialized")
             return True
         except Exception as e:
@@ -109,31 +233,43 @@ class WaveshareDisplay:
             
         try:
             print("Clearing e-paper display...")
-            self.epd.Clear()
+            self._call_epd_clear()
             print("✅ E-paper display cleared")
         except Exception as e:
             print(f"❌ Failed to clear display: {e}")
 
-    def convert_to_7color_palette(self, image):
+    def convert_to_epd_palette(self, image):
         """
-        Convert image to 7-color palette suitable for Waveshare 7.3F display.
+        Convert image to EPD color palette (6 or 7 colors based on display).
         
         Args:
             image (PIL.Image): Input image
             
         Returns:
-            PIL.Image: Image with 7-color palette
+            PIL.Image: Image with EPD palette
         """
-        # Define the 7-color palette for Waveshare 7.3F
-        palette_colors = [
-            (0, 0, 0),        # Black
-            (255, 255, 255),  # White
-            (255, 0, 0),      # Red
-            (0, 255, 0),      # Green
-            (0, 0, 255),      # Blue
-            (255, 255, 0),    # Yellow
-            (255, 165, 0),    # Orange
-        ]
+        # Define color palette based on display capabilities
+        if self.supports_orange:
+            # 7-color palette for Waveshare 7.3F
+            palette_colors = [
+                (0, 0, 0),        # Black
+                (255, 255, 255),  # White
+                (255, 0, 0),      # Red
+                (0, 255, 0),      # Green
+                (0, 0, 255),      # Blue
+                (255, 255, 0),    # Yellow
+                (255, 165, 0),    # Orange
+            ]
+        else:
+            # 6-color palette for Waveshare 13.3E and similar
+            palette_colors = [
+                (0, 0, 0),        # Black
+                (255, 255, 255),  # White
+                (255, 0, 0),      # Red
+                (255, 255, 0),    # Yellow
+                (0, 255, 0),      # Green
+                (0, 0, 255),      # Blue
+            ]
         
         # Create palette image
         pal_image = Image.new('P', (1, 1))
@@ -210,6 +346,47 @@ class WaveshareDisplay:
             bool: True if successful, False otherwise
         """
         try:
+            # Check if hardware display is available and enabled
+            if not WAVESHARE_AVAILABLE:
+                return True
+                
+            if not self.enabled:
+                return True
+            
+            # Initialize EPD hardware FIRST to get correct dimensions
+            if not self.epd:
+                try:
+                    if self.module_name not in WAVESHARE_MODULES:
+                        print(f"❌ Module {self.module_name} not available in loaded modules")
+                        print(f"Available modules: {list(WAVESHARE_MODULES.keys())}")
+                        return False
+                    
+                    epd_module = WAVESHARE_MODULES[self.module_name]
+                    self.epd = epd_module.EPD()
+
+                    # Read actual display dimensions from the EPD module/object
+                    # This ensures we use the correct native orientation
+                    if hasattr(self.epd, 'width') and hasattr(self.epd, 'height'):
+                        epd_width = self.epd.width
+                        epd_height = self.epd.height
+                        if (self.width, self.height) != (epd_width, epd_height):
+                            self.width = epd_width
+                            self.height = epd_height
+                    elif hasattr(epd_module, 'EPD_WIDTH') and hasattr(epd_module, 'EPD_HEIGHT'):
+                        epd_width = epd_module.EPD_WIDTH
+                        epd_height = epd_module.EPD_HEIGHT
+                        if (self.width, self.height) != (epd_width, epd_height):
+                            self.width = epd_width
+                            self.height = epd_height
+                    
+                    # Detect method naming convention (init vs Init, Clear vs clear, etc.)
+                    self._detect_epd_methods()
+                    
+                except Exception as e:
+                    print(f"❌ EPD initialization failed: {e}")
+                    return False
+            
+            # Now load and process the image with correct dimensions
             # Load the image
             if isinstance(image_path, str):
                 img = Image.open(image_path)
@@ -238,72 +415,69 @@ class WaveshareDisplay:
             
             # Ensure image is the correct size for the display
             if img.size != (self.width, self.height):
+                print(f"⚙️ Resizing image from {img.size} to {self.width}×{self.height}")
                 img = img.resize((self.width, self.height), Image.Resampling.LANCZOS)
-            
-            # Convert to 7-color palette
-            img = self.convert_to_7color_palette(img)
+
+            # Convert to EPD color palette (6 or 7 colors)
+            img = self.convert_to_epd_palette(img)
             
             # Save processed image for debugging
             debug_path = "current_processed.png"
             img.save(debug_path)
             
-            # Check if hardware display is available and enabled
-            if not WAVESHARE_AVAILABLE:
-                return True
-                
-            if not self.enabled:
-                return True
-            
-            # Lazy initialization of EPD hardware
-            if not self.epd:
-                try:
-                    self.epd = epd7in3f.EPD()
-                except Exception as e:
-                    print(f"❌ EPD initialization failed: {e}")
-                    return False
-            
             # Display on hardware
             try:
                 total_start = time.time()
-                
+
                 # Initialize display
-                self.epd.init()
-                
+                self._call_epd_init()
+
                 # Clear display (optional - skipping saves ~31s)
                 if not self.skip_clear:
-                    self.epd.Clear()
-                
+                    self._call_epd_clear()
+
                 # Display the image
-                self.epd.display(self.epd.getbuffer(img))
-                
+                buffer_data = self.epd.getbuffer(img)
+                self.epd.display(buffer_data)
+
                 # Put display to sleep
                 time.sleep(1)
-                self.epd.sleep()
+                self._call_epd_sleep()
                 
-                # total_time = time.time() - total_start
+                total_time = time.time() - total_start
+                print(f"✅ Display update completed in {total_time:.2f}s")
                 return True
                 
             except Exception as e:
-                print(f"❌ Display error: {e}")
+                import traceback
+                print(f"❌ Display hardware error: {e}")
+                print(f"   Error type: {type(e).__name__}")
+                print(f"   Traceback:")
+                traceback.print_exc()
                 
                 # Try to clean up if there was an error
                 try:
-                    if hasattr(self.epd, 'sleep'):
-                        self.epd.sleep()
-                except:
-                    pass
+                    if hasattr(self.epd, 'sleep') or hasattr(self.epd, 'Sleep'):
+                        print(f"🔧 Attempting emergency sleep...")
+                        self._call_epd_sleep()
+                except Exception as cleanup_error:
+                    print(f"⚠️ Cleanup also failed: {cleanup_error}")
                 
                 return False
                 
         except Exception as e:
-            print(f"❌ Display error: {e}")
+            import traceback
+            print(f"❌ Display image processing error: {e}")
+            print(f"   Error type: {type(e).__name__}")
+            print(f"   Traceback:")
+            traceback.print_exc()
             return False
 
     def sleep(self):
         """Put the display to sleep to save power."""
         if self.epd:
             try:
-                self.epd.sleep()
+                self._call_epd_sleep()
                 print("✅ Display put to sleep")
             except Exception as e:
                 print(f"❌ Error putting display to sleep: {e}")
@@ -312,8 +486,10 @@ class WaveshareDisplay:
         """Clean up display resources."""
         if self.epd:
             try:
-                if WAVESHARE_AVAILABLE:
-                    epd7in3f.epdconfig.module_exit(cleanup=True)
+                if WAVESHARE_AVAILABLE and self.module_name in WAVESHARE_MODULES:
+                    epd_module = WAVESHARE_MODULES[self.module_name]
+                    if hasattr(epd_module, 'epdconfig'):
+                        epd_module.epdconfig.module_exit(cleanup=True)
                 print("✅ Display cleanup completed")
             except Exception as e:
                 print(f"❌ Error during cleanup: {e}")
@@ -323,7 +499,7 @@ def main():
     """Test the Waveshare display functionality."""
     import argparse
     
-    parser = argparse.ArgumentParser(description='Display image on Waveshare 7.3F e-paper')
+    parser = argparse.ArgumentParser(description='Display image on Waveshare e-paper display')
     parser.add_argument('image_path', help='Path to image file')
     parser.add_argument('--message', help='Text message to overlay')
     parser.add_argument('--no-vertical', action='store_true', 
@@ -331,8 +507,18 @@ def main():
     
     args = parser.parse_args()
     
-    # Create display instance
-    display = WaveshareDisplay()
+    # Try to load config for proper display settings
+    try:
+        from managers.config_manager import ConfigManager
+        config_manager = ConfigManager()
+        config = config_manager.config
+        print(f"✅ Loaded config: {config.get('display_width')}x{config.get('display_height')}, {config.get('omni_device_name')}")
+    except Exception as e:
+        print(f"⚠️  Could not load config, using defaults: {e}")
+        config = {}
+    
+    # Create display instance with config
+    display = WaveshareDisplay(config=config)
     
     try:
         # Display the image

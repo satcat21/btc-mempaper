@@ -7,6 +7,7 @@ This script runs the Waveshare display in isolation.
 """
 
 import sys
+import traceback
 
 def main():
     if len(sys.argv) < 2:
@@ -16,11 +17,16 @@ def main():
     image_path = sys.argv[1]
     
     try:
-        # Import and run the display
+        # Import display and config manager
         from display.waveshare_display import WaveshareDisplay
+        from managers.config_manager import ConfigManager
         
-        # Create display with default config
-        display = WaveshareDisplay()
+        # Load configuration
+        config_manager = ConfigManager()
+        config = config_manager.config
+        
+        # Create display with config (includes display dimensions and device name)
+        display = WaveshareDisplay(config=config)
         
         # Display the image
         success = display.display_image(image_path)
@@ -33,7 +39,9 @@ def main():
             sys.exit(1)
             
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"❌ Display subprocess error: {e}")
+        print(f"   Traceback:")
+        traceback.print_exc()
         sys.exit(1)
 
 if __name__ == "__main__":

@@ -461,8 +461,6 @@ class MempaperApp:
         }
         self._latest_donation = donation
         self._donation_history.insert(0, donation)
-        if len(self._donation_history) > 100:
-            self._donation_history = self._donation_history[:100]
         if (self._highest_donation is None or
                 amount_sats > self._highest_donation.get("amount_sats", 0)):
             self._highest_donation = donation
@@ -3828,11 +3826,15 @@ class MempaperApp:
                 if not os.path.exists(file_path):
                     return jsonify({'success': False, 'message': 'File not found'}), 404
                 
-                # Delete the file
+                # Delete the file and its thumbnail
                 os.remove(file_path)
-                
+                stem = os.path.splitext(filename)[0]
+                thumb_path = os.path.join('static', 'memes', 'thumbs', f'{stem}.webp')
+                if os.path.exists(thumb_path):
+                    os.remove(thumb_path)
+
                 return jsonify({
-                    'success': True, 
+                    'success': True,
                     'message': f'Meme deleted successfully: {filename}'
                 })
                 
@@ -4199,6 +4201,10 @@ class MempaperApp:
                     return jsonify({'success': False, 'message': 'File not found'}), 404
 
                 os.remove(file_path)
+                stem = os.path.splitext(filename)[0]
+                thumb_path = os.path.join('static', 'opsec', 'thumbs', f'{stem}.webp')
+                if os.path.exists(thumb_path):
+                    os.remove(thumb_path)
                 return jsonify({'success': True, 'message': f'OPSec image deleted: {filename}'})
 
             except Exception as e:

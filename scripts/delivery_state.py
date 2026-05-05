@@ -66,9 +66,9 @@ def render_delivery_image(config):
     # Zero-out all data so no stale API values appear
     renderer._donation_data = None
 
-    # Fake block data: height 0, a neutral placeholder hash
+    # Genesis block data: block 0 with actual Genesis block hash
     BLOCK_HEIGHT = "0"
-    BLOCK_HASH   = "0000000000000000000000000000000000000000000000000000000000000000"
+    BLOCK_HASH   = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"
 
     print(f"🎨 Rendering delivery image with {os.path.basename(MEME_PATH)}…")
     web_img, eink_img, _, _ = renderer.render_dual_images(
@@ -108,7 +108,17 @@ def show_on_eink(image_path):
 
     print("🖥️  Sending image to e-ink display (this takes ~40 s)…")
     start = time.time()
-    display = WaveshareDisplay()
+    
+    # Load config for display dimensions and device name
+    try:
+        from managers.config_manager import ConfigManager
+        config_manager = ConfigManager()
+        config = config_manager.config
+    except Exception as e:
+        print(f"⚠️  Could not load config, using defaults: {e}")
+        config = {}
+    
+    display = WaveshareDisplay(config=config)
     success = display.display_image(image_path)
     elapsed = time.time() - start
 

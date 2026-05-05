@@ -343,6 +343,9 @@ btc-mempaper/
 ├── 🔧 scripts/                # Administration & Setup
 │   ├── configure_display.py   # Display configuration wizard
 │   ├── setup_user.py          # Create / update / delete admin users
+│   ├── delivery_state.py      # Prepare device for delivery with factory default image
+│   ├── diagnose_mempool_api.py # Mempool API connectivity diagnostics
+│   ├── generate_service_file.py # Generate systemd service configuration
 │   ├── einundzwanzig_memes.py # API library for einundzwanzig-memes.space (random fetch, bulk discovery)
 │   ├── download_all_memes.py  # Bulk-download all memes from einundzwanzig-memes.space → static/memes/
 │   ├── backup_manager.py      # Backup & maintenance utility

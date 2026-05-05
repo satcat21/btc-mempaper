@@ -7,12 +7,21 @@ from PIL import ImageFont
 from PIL import ImageDraw 
 
 class Processor():
-    def __init__(self, img_path = None, display_width = None, display_height = None, textmsg = None, padding_color = (0, 0, 0)):
+    def __init__(self, img_path = None, display_width = None, display_height = None, textmsg = None, padding_color = (0, 0, 0), config = None):
         self.img = Image.open(img_path)
         self.display_width = display_width
         self.display_height = display_height
         self.textmsg = textmsg
         self.padding_color = padding_color
+        self.config = config
+        
+        # Determine if display supports orange (7.3F) or not (13.3E)
+        if config:
+            device_name = config.get("omni_device_name", "waveshare_epd.epd7in3f")
+            module_name = device_name.split('.')[-1] if '.' in device_name else device_name
+            self.supports_orange = module_name == 'epd7in3f'
+        else:
+            self.supports_orange = True  # Default to 7-color for backward compatibility
 
     def process(self):
         # Manages the overall preparation of the image, from scaling, centering,
@@ -36,18 +45,29 @@ class Processor():
     def quantize_to_exact_epd_colors(self, img):
         """
         Quantize to exact Waveshare EPD colors using nearest-neighbor mapping.
-        This ensures every pixel uses exactly one of the 7 EPD colors.
+        This ensures every pixel uses exactly one of the EPD colors (6 or 7 colors).
         """
-        # Exact Waveshare 7.3F colors (from official driver)
-        epd_colors = [
-            (0, 0, 0),       # Black
-            (255, 255, 255), # White  
-            (0, 255, 0),     # Green
-            (0, 0, 255),     # Blue
-            (255, 0, 0),     # Red
-            (255, 255, 0),   # Yellow
-            (255, 128, 0),   # Orange
-        ]
+        if self.supports_orange:
+            # Exact Waveshare 7.3F colors (7 colors including orange)
+            epd_colors = [
+                (0, 0, 0),       # Black
+                (255, 255, 255), # White  
+                (0, 255, 0),     # Green
+                (0, 0, 255),     # Blue
+                (255, 0, 0),     # Red
+                (255, 255, 0),   # Yellow
+                (255, 128, 0),   # Orange
+            ]
+        else:
+            # Waveshare 13.3E colors (6 colors, no orange)
+            epd_colors = [
+                (0, 0, 0),       # Black
+                (255, 255, 255), # White
+                (255, 0, 0),     # Red
+                (255, 255, 0),   # Yellow
+                (0, 255, 0),     # Green
+                (0, 0, 255),     # Blue
+            ]
         
         # Convert image to RGB if not already
         if img.mode != 'RGB':
