@@ -262,21 +262,19 @@ sudo raspi-config
 
 ### 2. Install Display Drivers
 
-**Option A: Waveshare Native (Recommended)**
-This is the most stable method for the 7.3" (F) display.
+The easiest way is to run the bundled install script, which downloads the official Waveshare files and places them directly into the project:
 
 ```bash
-# 1. Clone the drivers
-cd ~
-git clone https://github.com/waveshare/e-Paper.git
-
-# 2. Test the connection
-cd e-Paper/RaspberryPi_JetsonNano/python/examples
-python3 epd_7in3f_test.py
+bash scripts/install_waveshare_drivers.sh
 ```
-*If the test script updates your screen, the hardware is working.*
 
-**Option B: Omni-EPD**
+This installs drivers for both supported displays:
+- **13.3" E-Paper E (Spectra 6 / epd13in3E)** — 6-color, recommended
+- **7.3" F (7-color / epd7in3f)**
+
+The files are placed in `display/drivers/` and loaded automatically. Driver files are MIT licensed by Waveshare Electronics (see [display/drivers/README.md](display/drivers/README.md)).
+
+**Option: Omni-EPD**
 Use this if you need support for many different display types or prefer the abstraction layer.
 
 ```bash
@@ -357,7 +355,11 @@ btc-mempaper/
 │   ├── waveshare_display.py   # Native Waveshare driver integration
 │   ├── show_image.py          # Image display handler
 │   ├── prepare_image.py       # Image preparation pipeline
-│   └── waveshare_epd.epd7in3f.ini  # 7.3" F display configuration
+│   ├── waveshare_epd.epd7in3f.ini  # 7.3" F display configuration
+│   └── drivers/               # Bundled Waveshare EPD drivers (MIT license)
+│       ├── epd13in3E.py       # 13.3" 6-color driver
+│       ├── epd7in3f.py        # 7.3" 7-color driver
+│       └── epdconfig.py       # Shared SPI/GPIO config
 │
 ├── 📁 Data & Configuration
 │   ├── config/                # User configuration

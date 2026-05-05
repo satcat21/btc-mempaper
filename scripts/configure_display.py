@@ -4,221 +4,331 @@ Display Device Configuration Helper
 
 Utility script to set up different e-Paper display devices.
 Shows available device types and updates configuration accordingly.
+For native Waveshare displays, downloads driver files automatically.
 """
 
 import json
 import os
 import sys
+import urllib.request
+import zipfile
+import tempfile
+
+# Path to bundled driver directory (relative to project root)
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_PROJECT_ROOT = os.path.dirname(_SCRIPT_DIR)
+DRIVERS_DIR = os.path.join(_PROJECT_ROOT, 'display', 'drivers')
 
 # Common device configurations with typical display dimensions
 DEVICE_CONFIGS = {
-    "waveshare_epd.epd7in3f": {
+    "epd13in3E": {
+        "name": "Waveshare 13.3\" 6-color (Spectra 6)",
+        "width": 1200,
+        "height": 1600,
+        "description": "13.3 inch 6-color e-ink display (recommended for mempaper)",
+        "driver_files": ["epd13in3E.py", "epdconfig.py"],
+    },
+    "epd7in3f": {
         "name": "Waveshare 7.3\" 7-color",
         "width": 800,
         "height": 480,
-        "description": "Large 7.3 inch display with 7-color support"
+        "description": "7.3 inch 7-color e-ink display",
+        "driver_files": ["epd7in3f.py", "epdconfig.py"],
     },
     "waveshare_epd.epd5in83_v2": {
-        "name": "Waveshare 5.83\" V2",
+        "name": "Waveshare 5.83\" V2 (via omni-epd)",
         "width": 648,
         "height": 480,
-        "description": "Medium sized black/white display"
+        "description": "Medium sized black/white display",
     },
     "waveshare_epd.epd4in2": {
-        "name": "Waveshare 4.2\"",
+        "name": "Waveshare 4.2\" (via omni-epd)",
         "width": 400,
         "height": 300,
-        "description": "Popular 4.2 inch black/white display"
+        "description": "Popular 4.2 inch black/white display",
     },
     "waveshare_epd.epd2in7": {
-        "name": "Waveshare 2.7\"",
+        "name": "Waveshare 2.7\" (via omni-epd)",
         "width": 264,
         "height": 176,
-        "description": "Compact black/white display"
+        "description": "Compact black/white display",
     },
     "inky.impression": {
         "name": "Inky Impression 7-color",
         "width": 448,
         "height": 600,
-        "description": "Pimoroni 7-color e-ink display"
+        "description": "Pimoroni 7-color e-ink display",
     },
     "inky.auto": {
         "name": "Inky Auto-detect",
         "width": 400,
         "height": 300,
-        "description": "Auto-detect connected Inky display"
+        "description": "Auto-detect connected Inky display",
     },
     "omni_epd.mock": {
         "name": "Mock Display (Testing)",
         "width": 800,
         "height": 600,
-        "description": "Virtual display for testing (no hardware)"
-    }
+        "description": "Virtual display for testing (no hardware)",
+    },
 }
 
+# Download sources for native Waveshare drivers
+DRIVER_DOWNLOADS = {
+    "epd13in3E": {
+        "url": "https://files.waveshare.com/wiki/13.3inch%20e-Paper%20HAT%2B/13.3inch_e-Paper_E.zip",
+        "files": {
+            "epd13in3E.py": None,   # searched by name inside zip
+            "epdconfig.py": None,
+        },
+    },
+    "epd7in3f": {
+        "url": "https://github.com/waveshare/e-Paper/archive/refs/heads/master.zip",
+        "files": {
+            "epd7in3f.py": None,
+            "epdconfig.py": None,
+        },
+    },
+}
+
+
 def load_config():
-    """Load current configuration."""
+    config_path = os.path.join(_PROJECT_ROOT, "config", "config.json")
     try:
-        with open("config/config.json") as f:
+        with open(config_path) as f:
             return json.load(f)
     except FileNotFoundError:
-        print("❌ config/config.json not found")
+        print(f"❌ config/config.json not found")
         return None
     except json.JSONDecodeError as e:
         print(f"❌ Invalid JSON in config/config.json: {e}")
         return None
 
+
 def save_config(config):
-    """Save configuration to file."""
+    config_path = os.path.join(_PROJECT_ROOT, "config", "config.json")
     try:
-        with open("config/config.json", "w") as f:
+        with open(config_path, "w") as f:
             json.dump(config, f, indent=2)
         return True
     except Exception as e:
         print(f"❌ Error saving config: {e}")
         return False
 
+
 def show_current_device(config):
-    """Show current device configuration."""
     if not config:
         return
-    
-    device_name = config.get("omni_device_name", "waveshare_epd.epd7in3f")
+    device_name = config.get("omni_device_name", "epd13in3E")
     display_enabled = config.get("e-ink-display-connected", True)
     width = config.get("display_width", 800)
     height = config.get("display_height", 480)
-    
-    print(f"\n📺 Current Display Configuration:")
+
+    print(f"\nCurrent Display Configuration:")
     print(f"  Device: {device_name}")
     if device_name in DEVICE_CONFIGS:
-        device_info = DEVICE_CONFIGS[device_name]
-        print(f"  Name: {device_info['name']}")
-        print(f"  Description: {device_info['description']}")
+        info = DEVICE_CONFIGS[device_name]
+        print(f"  Name: {info['name']}")
+        print(f"  Description: {info['description']}")
     print(f"  Status: {'ENABLED' if display_enabled else 'DISABLED'}")
     print(f"  Dimensions: {width}x{height}")
 
+
 def list_available_devices():
-    """List all available device types."""
-    print("\n🖥️  Available Display Devices:")
-    print("=" * 50)
-    
-    for i, (device_id, device_info) in enumerate(DEVICE_CONFIGS.items(), 1):
-        print(f"{i:2}. {device_info['name']}")
+    print("\nAvailable Display Devices:")
+    print("=" * 55)
+    for i, (device_id, info) in enumerate(DEVICE_CONFIGS.items(), 1):
+        driver_note = " [auto-install drivers]" if device_id in DRIVER_DOWNLOADS else ""
+        print(f"{i:2}. {info['name']}{driver_note}")
         print(f"    ID: {device_id}")
-        print(f"    Size: {device_info['width']}x{device_info['height']}")
-        print(f"    {device_info['description']}")
+        print(f"    Size: {info['width']}x{info['height']}")
+        print(f"    {info['description']}")
         print()
 
+
+def _drivers_missing(device_id):
+    """Return list of driver files that are not yet installed."""
+    info = DEVICE_CONFIGS.get(device_id, {})
+    missing = []
+    for fname in info.get("driver_files", []):
+        if not os.path.exists(os.path.join(DRIVERS_DIR, fname)):
+            missing.append(fname)
+    return missing
+
+
+def _extract_files_from_zip(zip_path, target_files, dest_dir):
+    """Extract named files from a zip, searching all paths inside."""
+    installed = []
+    with zipfile.ZipFile(zip_path) as zf:
+        # Build a map: basename -> full zip path (last one wins if duplicates)
+        name_map = {}
+        for member in zf.namelist():
+            basename = os.path.basename(member)
+            if basename in target_files:
+                name_map[basename] = member
+
+        for fname in target_files:
+            if fname in name_map:
+                member = name_map[fname]
+                dest = os.path.join(dest_dir, fname)
+                with zf.open(member) as src, open(dest, 'wb') as dst:
+                    dst.write(src.read())
+                installed.append(fname)
+            else:
+                print(f"   WARNING: {fname} not found in zip")
+    return installed
+
+
+def install_drivers(device_id):
+    """Download and install driver files for a native Waveshare display."""
+    if device_id not in DRIVER_DOWNLOADS:
+        return True  # Nothing to install for non-native devices
+
+    missing = _drivers_missing(device_id)
+    if not missing:
+        print(f"   Drivers already installed.")
+        return True
+
+    dl = DRIVER_DOWNLOADS[device_id]
+    url = dl["url"]
+    target_files = list(dl["files"].keys())
+
+    os.makedirs(DRIVERS_DIR, exist_ok=True)
+
+    print(f"   Downloading drivers from {url.split('/')[2]}...")
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
+            tmp_path = tmp.name
+
+        # Download with progress
+        def _report(count, block_size, total):
+            if total > 0:
+                pct = min(100, count * block_size * 100 // total)
+                print(f"\r   Downloading... {pct}%", end="", flush=True)
+
+        urllib.request.urlretrieve(url, tmp_path, reporthook=_report)
+        print()  # newline after progress
+
+        installed = _extract_files_from_zip(tmp_path, target_files, DRIVERS_DIR)
+        for fname in installed:
+            print(f"   Installed: {fname}")
+
+        os.unlink(tmp_path)
+        return len(installed) > 0
+
+    except Exception as e:
+        print(f"   ❌ Driver download failed: {e}")
+        print(f"   Run manually: bash scripts/install_waveshare_drivers.sh")
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
+        return False
+
+
 def set_device(config, device_id):
-    """Set device configuration."""
     if device_id not in DEVICE_CONFIGS:
         print(f"❌ Unknown device: {device_id}")
         return False
-    
-    device_info = DEVICE_CONFIGS[device_id]
-    
-    # Update configuration
+
+    info = DEVICE_CONFIGS[device_id]
+
+    # Install drivers if needed
+    if device_id in DRIVER_DOWNLOADS:
+        missing = _drivers_missing(device_id)
+        if missing:
+            print(f"\nInstalling drivers for {info['name']}...")
+            if not install_drivers(device_id):
+                print(f"   Continuing with config update anyway.")
+        else:
+            print(f"   Drivers already present.")
+
     config["omni_device_name"] = device_id
-    config["display_width"] = device_info["width"]
-    config["display_height"] = device_info["height"]
-    
-    # Enable display if setting a real device
+    config["display_width"] = info["width"]
+    config["display_height"] = info["height"]
+
     if device_id != "omni_epd.mock":
         config["e-ink-display-connected"] = True
-    
+
     if save_config(config):
-        print(f"✅ Display device updated to: {device_info['name']}")
+        print(f"✅ Display device updated to: {info['name']}")
         print(f"   Device ID: {device_id}")
-        print(f"   Dimensions: {device_info['width']}x{device_info['height']}")
+        print(f"   Dimensions: {info['width']}x{info['height']}")
         return True
-    
+
     return False
 
+
 def main():
-    """Main function."""
-    print("🔧 Mempaper Display Device Configurator")
+    print("Mempaper Display Device Configurator")
     print("=" * 45)
-    
+
     config = load_config()
     if not config:
         sys.exit(1)
-    
-    # Show current configuration
+
     show_current_device(config)
-    
-    # Handle command line arguments
+
     if len(sys.argv) > 1:
         device_arg = sys.argv[1]
-        
-        # Check if it's a number (device selection)
+
         if device_arg.isdigit():
             device_num = int(device_arg)
             device_list = list(DEVICE_CONFIGS.keys())
             if 1 <= device_num <= len(device_list):
-                device_id = device_list[device_num - 1]
-                set_device(config, device_id)
+                set_device(config, device_list[device_num - 1])
             else:
                 print(f"❌ Invalid device number: {device_num}")
                 list_available_devices()
-        
-        # Check if it's a device ID
         elif device_arg in DEVICE_CONFIGS:
             set_device(config, device_arg)
-        
-        # Special commands
         elif device_arg in ["list", "show", "devices"]:
             list_available_devices()
-        
         else:
             print(f"❌ Unknown device or command: {device_arg}")
             list_available_devices()
-        
+
         sys.exit(0)
-    
+
     # Interactive mode
     while True:
         list_available_devices()
-        
         print("Options:")
-        print("  • Enter device number (1-7)")
-        print("  • Enter device ID directly")
-        print("  • 'q' to quit")
-        
+        print("  Enter device number or device ID")
+        print("  'q' to quit")
+
         try:
             choice = input("\nSelect device: ").strip()
-            
+
             if choice.lower() in ['q', 'quit', 'exit']:
-                print("👋 Goodbye!")
+                print("Goodbye!")
                 break
-            
-            # Check if it's a number
+
             if choice.isdigit():
                 device_num = int(choice)
                 device_list = list(DEVICE_CONFIGS.keys())
                 if 1 <= device_num <= len(device_list):
                     device_id = device_list[device_num - 1]
                     if set_device(config, device_id):
-                        print("\n⚙️ Restart the application for changes to take effect:")
+                        print("\nRestart the application for changes to take effect:")
                         print("   python serve.py")
                         break
                 else:
                     print(f"❌ Invalid selection: {device_num}")
-            
-            # Check if it's a device ID
             elif choice in DEVICE_CONFIGS:
                 if set_device(config, choice):
-                    print("\n⚙️ Restart the application for changes to take effect:")
+                    print("\nRestart the application for changes to take effect:")
                     print("   python serve.py")
                     break
-            
             else:
                 print(f"❌ Invalid selection: {choice}")
-        
+
         except KeyboardInterrupt:
-            print("\n👋 Goodbye!")
+            print("\nGoodbye!")
             break
         except Exception as e:
             print(f"❌ Error: {e}")
+
 
 if __name__ == "__main__":
     main()

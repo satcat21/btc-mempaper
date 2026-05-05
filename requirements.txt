@@ -29,8 +29,9 @@ psutil==6.1.0  # System info for device fingerprinting
 
 # Hardware dependencies (Raspberry Pi only)
 # Uncomment these when deploying to Raspberry Pi
-# spidev
-# RPi.GPIO
+# spidev        # SPI communication (used by epd7in3f / unified Waveshare repo)
+# RPi.GPIO      # GPIO control (used by older Waveshare drivers)
+# lgpio         # GPIO control (used by newer Waveshare drivers, e.g. epd13in3E separate programs)
 
 # Development dependencies (optional)
 # pytest==8.3.4

@@ -16,64 +16,87 @@ import threading
 import queue
 from PIL import Image, ImageDraw
 
-# Add the Waveshare library paths to sys.path
-# Try multiple common locations where Waveshare modules might be installed
-waveshare_lib_paths = [
-    # Location 1: User's home directory - separate programs structure (13.3E actual location)
-    os.path.expanduser('~/e-Paper/E-paper_Separate_Program/13.3inch_e-Paper_E/RaspberryPi/python/lib'),
-    # Location 2: User's home directory - unified structure (7.3F location)
-    os.path.expanduser('~/e-Paper/RaspberryPi_JetsonNano/python/lib'),
-    # Location 3: Parallel to project - separate programs structure
-    os.path.join(os.path.dirname(__file__), '..', '..', 'e-Paper', 'E-paper_Separate_Program', '13.3inch_e-Paper_E', 'RaspberryPi', 'python', 'lib'),
-    # Location 4: Parallel to project - unified structure
-    os.path.join(os.path.dirname(__file__), '..', '..', 'e-Paper', 'RaspberryPi_JetsonNano', 'python', 'lib'),
-    # Location 5: Project's lib directory (if modules were copied there)
-    os.path.join(os.path.dirname(__file__), '..', 'lib'),
-    # Location 6: Directly in display directory
-    os.path.dirname(__file__),
+# Each display has its own subdirectory under display/drivers/ because their
+# epdconfig.py files are incompatible (13.3E uses ctypes/CDLL, 7.3F uses spidev).
+# We import each module in isolation: temporarily add its subdir to sys.path,
+# import it, then remove the subdir and clear epdconfig from sys.modules so the
+# next display's import gets a fresh epdconfig from its own subdir.
+_drivers_base = os.path.join(os.path.dirname(__file__), 'drivers')
+
+# (module_name, bundled_subdir, legacy_fallback_paths)
+_DISPLAY_CONFIGS = [
+    ('epd13in3E', 'epd13in3E', [
+        os.path.expanduser('~/e-Paper/E-paper_Separate_Program/13.3inch_e-Paper_E/RaspberryPi/python/lib'),
+    ]),
+    ('epd7in3f', 'epd7in3f', [
+        os.path.expanduser('~/e-Paper/RaspberryPi_JetsonNano/python/lib'),
+        os.path.expanduser('~/e-Paper/RaspberryPi_JetsonNano/python/lib/waveshare_epd'),
+    ]),
+    ('epd13in3k', 'epd13in3k', []),
 ]
 
-for lib_path in waveshare_lib_paths:
-    if os.path.exists(lib_path) and lib_path not in sys.path:
-        sys.path.append(lib_path)
+def _import_display_isolated(module_name, subdir, fallback_paths):
+    """Import a display module with its own isolated epdconfig.
 
-# Dynamic module loading - import each module individually
-# This allows partial availability (only some displays work)
+    Adds only this display's directory to sys.path, imports the module
+    (which binds epdconfig into the module's own namespace), then removes
+    the directory and clears epdconfig from sys.modules so the next display
+    gets a fresh load from its own directory.
+    """
+    candidate_paths = []
+    bundled = os.path.join(_drivers_base, subdir)
+    if os.path.exists(bundled):
+        candidate_paths.append(bundled)
+    for p in fallback_paths:
+        if os.path.exists(p):
+            candidate_paths.append(p)
+
+    if not candidate_paths:
+        return None
+
+    added = []
+    for p in candidate_paths:
+        if p not in sys.path:
+            sys.path.insert(0, p)
+            added.append(p)
+
+    sys.modules.pop('epdconfig', None)  # ensure a fresh load from this display's dir
+    try:
+        if module_name in sys.modules:
+            return sys.modules[module_name]
+        return __import__(module_name)
+    except ImportError:
+        return None
+    except Exception as e:
+        print(f"⚠️ Error importing {module_name}: {e}")
+        return None
+    finally:
+        for p in added:
+            try:
+                sys.path.remove(p)
+            except ValueError:
+                pass
+        # Clear epdconfig so the next display's import gets its own version.
+        # The already-imported module retains its own reference via its namespace.
+        sys.modules.pop('epdconfig', None)
+
 WAVESHARE_AVAILABLE = False
 WAVESHARE_MODULES = {}
+_failed_modules = []
 
-# Try to import 7.3F display
-try:
-    import epd7in3f
-    WAVESHARE_MODULES['epd7in3f'] = epd7in3f
-    WAVESHARE_AVAILABLE = True
-except ImportError:
-    pass  # Module not available, skip
-
-# Try to import 13.3E display
-try:
-    import epd13in3E
-    WAVESHARE_MODULES['epd13in3E'] = epd13in3E
-    WAVESHARE_AVAILABLE = True
-except ImportError:
-    pass  # Module not available, skip
-
-# Try to import 13.3k display (Black & White)
-try:
-    import epd13in3k
-    WAVESHARE_MODULES['epd13in3k'] = epd13in3k
-    WAVESHARE_AVAILABLE = True
-except ImportError:
-    pass  # Module not available, skip
+for _name, _subdir, _fallbacks in _DISPLAY_CONFIGS:
+    _mod = _import_display_isolated(_name, _subdir, _fallbacks)
+    if _mod is not None:
+        WAVESHARE_MODULES[_name] = _mod
+        WAVESHARE_AVAILABLE = True
+    else:
+        _failed_modules.append(_name)
 
 if not WAVESHARE_AVAILABLE:
-    print(f"❌ No Waveshare EPD modules available")
-    print(f"   Searched paths:")
-    for path in waveshare_lib_paths:
-        exists = "✓" if os.path.exists(path) else "✗"
-        print(f"   [{exists}] {path}")
+    print(f"❌ No Waveshare EPD modules available.")
+    print(f"   Run: bash scripts/install_waveshare_drivers.sh")
 else:
-    pass  # Modules loaded successfully
+    print(f"✅ Waveshare modules loaded: {list(WAVESHARE_MODULES.keys())}")
 
 class WaveshareDisplay:
     """Dynamic interface to Waveshare e-paper displays (7.3F and 13.3E supported)."""
@@ -348,17 +371,18 @@ class WaveshareDisplay:
         try:
             # Check if hardware display is available and enabled
             if not WAVESHARE_AVAILABLE:
+                print(f"⚠️ display_image: WAVESHARE_AVAILABLE=False, skipping hardware update")
                 return True
-                
+
             if not self.enabled:
+                print(f"⚠️ display_image: display disabled in config (e-ink-display-connected=False), skipping")
                 return True
-            
+
             # Initialize EPD hardware FIRST to get correct dimensions
             if not self.epd:
                 try:
                     if self.module_name not in WAVESHARE_MODULES:
-                        print(f"❌ Module {self.module_name} not available in loaded modules")
-                        print(f"Available modules: {list(WAVESHARE_MODULES.keys())}")
+                        print(f"❌ Module {self.module_name} not in loaded modules {list(WAVESHARE_MODULES.keys())}")
                         return False
                     
                     epd_module = WAVESHARE_MODULES[self.module_name]
@@ -427,8 +451,6 @@ class WaveshareDisplay:
             
             # Display on hardware
             try:
-                total_start = time.time()
-
                 # Initialize display
                 self._call_epd_init()
 
@@ -441,11 +463,8 @@ class WaveshareDisplay:
                 self.epd.display(buffer_data)
 
                 # Put display to sleep
-                time.sleep(1)
                 self._call_epd_sleep()
                 
-                total_time = time.time() - total_start
-                print(f"✅ Display update completed in {total_time:.2f}s")
                 return True
                 
             except Exception as e:

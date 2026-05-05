@@ -14,6 +14,7 @@ import time
 import json
 import io
 import base64
+import queue
 import threading
 import multiprocessing
 import urllib3
@@ -249,9 +250,10 @@ class MempaperApp:
         # Block tracker for e-ink display race condition prevention
         self.block_tracker = {}
         
-        # E-ink display process management for cancellation
-        self.active_display_processes = {}  # {block_height: subprocess.Popen}
-        self.display_process_lock = threading.Lock()
+        # Persistent e-ink display worker (avoids ~10s Python startup per block)
+        self._display_worker = None           # subprocess.Popen, kept alive
+        self._display_worker_lock = threading.Lock()   # one display at a time
+        self._display_worker_results = queue.Queue()   # stdout reader → caller
 
         # Flag: an e-ink refresh was requested while the display was busy (e.g. donation during block update)
         self._pending_eink_refresh = False
@@ -1179,206 +1181,162 @@ class MempaperApp:
                 })
 
     def _display_on_epaper_async(self, image_path, block_height=None, block_hash=None):
-        """Display image on e-Paper using subprocess to avoid GPIO conflicts."""
-        import threading
-        import time
+        """Display image on e-Paper via persistent worker process."""
         import subprocess
         import sys
-        import signal
-        
-        # Early check: Skip display if block is already superseded
+
+        # Skip immediately if this block is already superseded
         if block_height:
             current_block = getattr(self, 'current_block_height', 0) or 0
             if int(block_height) < int(current_block):
                 print(f"⏭️ Skipping e-paper display for old block {block_height} (current: {current_block})")
                 return
-        
-        # Cancel any older display processes when a newer block arrives
-        if block_height:
-            self._cancel_older_display_processes(int(block_height))
-        
-        def display_in_subprocess():
-            process = None
-            try:
-                display_start = time.time()
-                print(f"⚙️ Starting e-paper display for: {image_path} at {time.strftime('%H:%M:%S', time.localtime(display_start))}")
-                if block_height:
-                    print(f"   Block: {block_height} | Hash: {block_hash}")
-                    # Always update display when block height differs from what's shown on e-ink
-                    current_eink_height = getattr(self, 'last_eink_block_height', 0) or 0
-                    if current_eink_height != int(block_height):
-                        print(f"👁️ E-ink display needs update: showing {current_eink_height}, new block {block_height}")
-                    else:
-                        print(f"📋 E-ink display block height matches: {block_height}")
-                
-                # Use subprocess to avoid GPIO conflicts between threads
-                script_path = os.path.join(os.path.dirname(__file__), "lib", "display_subprocess.py")
-                
-                # Start the subprocess
-                process = subprocess.Popen([
-                    sys.executable, script_path, image_path
-                ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=os.path.dirname(__file__))
-                
-                # Register the process for potential cancellation
-                if block_height:
-                    with self.display_process_lock:
-                        self.active_display_processes[int(block_height)] = process
-                        print(f"⚙️ Registered display process for block {block_height} (PID: {process.pid})")
-                
-                # Wait for completion with timeout
-                try:
-                    stdout, stderr = process.communicate(timeout=120)
-                    return_code = process.returncode
-                finally:
-                    # Unregister the process
-                    if block_height:
-                        with self.display_process_lock:
-                            self.active_display_processes.pop(int(block_height), None)
-                
-                display_duration = time.time() - display_start
-                
-                # Check if process was intentionally cancelled (SIGTERM/SIGKILL)
-                was_cancelled = return_code in [-15, -9, 15, 1]  # Unix SIGTERM/SIGKILL or Windows terminate
-                
-                if return_code == 0:
-                    print(f"✅ E-paper display completed in {display_duration:.2f}s")
-                    if stdout.strip():
-                        for line in stdout.strip().split('\n'):
-                            if line.strip():
-                                print(f"   {line.strip()}")
-                    
-                    # Update tracking only on successful display and only if this block is newer
-                    if block_height and block_hash:
-                        current_height = getattr(self, 'last_eink_block_height', 0) or 0
-                        if int(block_height) >= int(current_height):
-                            self.last_eink_block_height = block_height
-                            self.last_eink_block_hash = block_hash
-                            print(f"💾 E-ink display tracking updated: Block {block_height}")
-                        else:
-                            print(f"📋 E-ink display tracking NOT updated: Block {block_height} is older than current {current_height}")
 
-                    # Pre-fetch the next meme in the background while display is idle
-                    threading.Thread(target=self._prefetch_next_meme, daemon=True).start()
+        def display_in_worker():
+            display_start = time.time()
+            print(f"⚙️ Starting e-paper display for block {block_height} at {time.strftime('%H:%M:%S')}")
 
-                    # Check if a refresh was requested while we were busy (e.g. donation arrived during block update)
-                    if getattr(self, '_pending_eink_refresh', False):
-                        self._pending_eink_refresh = False
-                        print(f"📌 Executing pending e-ink refresh (donation arrived during previous display)...")
-                        threading.Thread(
-                            target=self._display_on_epaper_async,
-                            args=(self.current_eink_image_path, self.current_block_height, self.current_block_hash),
-                            daemon=True
-                        ).start()
-                    
-                    # Emit success to WebSocket clients
-                    if hasattr(self, 'socketio'):
-                        self.socketio.emit('display_update', {
-                            'status': 'success',
-                            'message': f'Display updated in {display_duration:.1f}s',
-                            'block_height': block_height,
-                            'timestamp': time.time()
-                        })
-                elif was_cancelled:
-                    # Don't log cancellation as error - it's expected behavior
-                    pass
-                else:
-                    print(f"⚠️ E-paper display failed after {display_duration:.2f}s")
-                    if stderr.strip():
-                        print(f"   Error: {stderr.strip()}")
-                    
-                    # Emit failure to WebSocket clients
-                    if hasattr(self, 'socketio'):
-                        self.socketio.emit('display_update', {
-                            'status': 'error', 
-                            'message': f'Display error: {stderr}',
-                            'timestamp': time.time()
-                        })
-                    
-            except subprocess.TimeoutExpired:
-                print(f"❌ E-paper display timed out after 120s")
-                # Kill the process if it's still running
-                if process and process.poll() is None:
-                    process.kill()
-                # Unregister the process
-                if block_height:
-                    with self.display_process_lock:
-                        self.active_display_processes.pop(int(block_height), None)
-                if hasattr(self, 'socketio'):
-                    self.socketio.emit('display_update', {
-                        'status': 'error',
-                        'message': 'Display timeout',
-                        'timestamp': time.time()
-                    })
-            except Exception as e:
-                # Check if this was a cancellation (process terminated externally)
-                if process and process.returncode in [-15, -9]:  # SIGTERM or SIGKILL
-                    print(f"🛑 E-paper display for block {block_height} was cancelled (newer block arrived)")
-                    return  # Don't emit error for intentional cancellation
-                
-                print(f"❌ E-paper display error: {e}")
-                # Unregister the process
-                if block_height:
-                    with self.display_process_lock:
-                        self.active_display_processes.pop(int(block_height), None)
-                if hasattr(self, 'socketio'):
-                    self.socketio.emit('display_update', {
-                        'status': 'error',
-                        'message': f'Display error: {str(e)}',
-                        'timestamp': time.time()
-                    })
-        
-        try:
-            # Run display in single background thread to avoid conflicts
-            display_thread = threading.Thread(target=display_in_subprocess, daemon=True)
-            display_thread.start()
-            
-        except Exception as e:
-            print(f"❌ Error starting e-paper display: {e}")
-            if hasattr(self, 'socketio'):
-                self.socketio.emit('display_update', {
-                    'status': 'error',
-                    'message': f'Thread error: {str(e)}',
-                    'timestamp': time.time()
-                })
-    
-    def _cancel_older_display_processes(self, new_block_height):
-        """Cancel any running display processes for older blocks."""
-        import signal
-        import subprocess
-        
-        with self.display_process_lock:
-            processes_to_cancel = []
-            for block_height, process in list(self.active_display_processes.items()):
-                if block_height < new_block_height:
-                    processes_to_cancel.append((block_height, process))
-            
-            for block_height, process in processes_to_cancel:
+            with self._display_worker_lock:
                 try:
-                    if process.poll() is None:  # Process is still running
-                        print(f"🛑 Cancelling older display process for block {block_height} (PID: {process.pid})")
-                        
-                        # Try graceful termination first
-                        if os.name == 'nt':  # Windows
-                            process.terminate()
-                        else:  # Unix-like systems
-                            process.send_signal(signal.SIGTERM)
-                        
-                        # Wait a short time for graceful shutdown
-                        try:
-                            process.wait(timeout=2)
-                            print(f"✅ Gracefully terminated display process for block {block_height}")
-                        except subprocess.TimeoutExpired:
-                            # Force kill if graceful termination fails
-                            process.kill()
-                            print(f"⚙️ Force killed display process for block {block_height}")
-                    
-                    # Remove from tracking
-                    self.active_display_processes.pop(block_height, None)
-                    
+                    worker = self._get_or_start_display_worker()
                 except Exception as e:
-                    print(f"⚠️ Error cancelling display process for block {block_height}: {e}")
-                    # Still remove from tracking even if cancellation failed
-                    self.active_display_processes.pop(block_height, None)
+                    print(f"❌ Could not start display worker: {e}")
+                    self._emit_display_error(str(e))
+                    return
+
+                try:
+                    worker.stdin.write(json.dumps({"image_path": image_path}) + "\n")
+                    worker.stdin.flush()
+                except Exception as e:
+                    print(f"❌ Failed to send command to display worker: {e}")
+                    self._display_worker = None  # force restart next time
+                    self._emit_display_error(str(e))
+                    return
+
+                try:
+                    result = self._display_worker_results.get(timeout=120)
+                except queue.Empty:
+                    print(f"❌ E-paper display timed out after 120s")
+                    self._display_worker = None  # worker may be stuck; restart next time
+                    self._emit_display_error("Display timeout")
+                    return
+
+            display_duration = time.time() - display_start
+
+            if result.get("worker_died"):
+                print(f"❌ Display worker died unexpectedly")
+                self._display_worker = None
+                self._emit_display_error("Worker process died")
+                return
+
+            if result.get("success"):
+                print(f"✅ E-paper display completed in {display_duration:.2f}s")
+
+                # Update block tracking if this result is still current
+                if block_height and block_hash:
+                    current_height = getattr(self, 'last_eink_block_height', 0) or 0
+                    if int(block_height) >= int(current_height):
+                        self.last_eink_block_height = block_height
+                        self.last_eink_block_hash = block_hash
+                        print(f"💾 E-ink display tracking updated: Block {block_height}")
+
+                # Pre-fetch the next meme while display is idle
+                threading.Thread(target=self._prefetch_next_meme, daemon=True).start()
+
+                # Execute any refresh that was queued while we were busy
+                if getattr(self, '_pending_eink_refresh', False):
+                    self._pending_eink_refresh = False
+                    print(f"📌 Executing pending e-ink refresh...")
+                    threading.Thread(
+                        target=self._display_on_epaper_async,
+                        args=(self.current_eink_image_path, self.current_block_height, self.current_block_hash),
+                        daemon=True
+                    ).start()
+
+                if hasattr(self, 'socketio'):
+                    self.socketio.emit('display_update', {
+                        'status': 'success',
+                        'message': f'Display updated in {display_duration:.1f}s',
+                        'block_height': block_height,
+                        'timestamp': time.time()
+                    })
+            else:
+                error = result.get("error", "unknown error")
+                print(f"⚠️ E-paper display failed after {display_duration:.2f}s: {error}")
+                if result.get("traceback"):
+                    for line in result["traceback"].splitlines():
+                        print(f"   {line}")
+                self._emit_display_error(error)
+
+        threading.Thread(target=display_in_worker, daemon=True).start()
+
+    def _get_or_start_display_worker(self):
+        """Return the running display worker, starting it if necessary."""
+        import subprocess
+        import sys
+
+        if self._display_worker and self._display_worker.poll() is None:
+            return self._display_worker
+
+        # Start fresh worker
+        script_path = os.path.join(os.path.dirname(__file__), "lib", "display_worker.py")
+        # Drain any stale results from a previous worker
+        while not self._display_worker_results.empty():
+            try:
+                self._display_worker_results.get_nowait()
+            except queue.Empty:
+                break
+
+        proc = subprocess.Popen(
+            [sys.executable, script_path],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            cwd=os.path.dirname(__file__)
+        )
+        self._display_worker = proc
+
+        # Start background thread that reads worker stdout into the results queue
+        threading.Thread(
+            target=self._read_display_worker_stdout,
+            args=(proc,),
+            daemon=True
+        ).start()
+
+        # Wait for the worker to finish loading drivers (ready signal)
+        try:
+            ready = self._display_worker_results.get(timeout=30)
+            if ready.get("status") != "ready":
+                raise RuntimeError(f"Unexpected worker signal: {ready}")
+        except queue.Empty:
+            proc.kill()
+            raise RuntimeError("Display worker failed to become ready within 30s")
+
+        print(f"⚙️ Display worker started (PID {proc.pid})")
+        return proc
+
+    def _read_display_worker_stdout(self, proc):
+        """Background thread: pipe worker stdout lines into the results queue."""
+        try:
+            for line in proc.stdout:
+                line = line.strip()
+                if line:
+                    try:
+                        self._display_worker_results.put(json.loads(line))
+                    except json.JSONDecodeError:
+                        pass
+        finally:
+            # Notify any waiting caller that the worker died
+            self._display_worker_results.put({"worker_died": True, "success": False})
+
+    def _emit_display_error(self, message):
+        if hasattr(self, 'socketio'):
+            self.socketio.emit('display_update', {
+                'status': 'error',
+                'message': f'Display error: {message}',
+                'timestamp': time.time()
+            })
     
     def _prefetch_next_meme(self):
         """Pre-fetch the next meme from einundzwanzig-memes.space in the background.
