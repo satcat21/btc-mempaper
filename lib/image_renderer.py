@@ -325,13 +325,10 @@ class ImageRenderer:
             # Look up dimensions from device specifications
             self.display_width, self.display_height = DEVICE_DIMENSIONS[device_name]
         else:
-            # Smart defaults based on orientation (high-resolution for quality rendering)
-            if self.web_orientation == "vertical":
-                self.display_width = 1200  # portrait width
-                self.display_height = 1600  # portrait height
-            else:  # horizontal/landscape
-                self.display_width = 1600  # landscape width
-                self.display_height = 1200  # landscape height
+            # Smart defaults: always store landscape-native dimensions (1600x1200).
+            # _apply_orientation_settings swaps them for portrait/vertical rendering.
+            self.display_width = 1600
+            self.display_height = 1200
         
         self.block_height_area_base = config.get("block_height_area", BASE_BLOCK_HEIGHT_AREA)
         self.e_ink_enabled = config.get("e-ink-display-connected", True)

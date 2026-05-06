@@ -4359,7 +4359,6 @@ async function saveConfiguration() {
             }
             
             // Block notifications are always enabled - no need to update subscription
-            }
             return true;
         } else {
             showNotification(result.message || 'Failed to save configuration', 'error');
