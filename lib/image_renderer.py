@@ -49,8 +49,8 @@ COLOR_SETS = {
         "info_unit": "#808080",
         "info_bg": "#F8F9FA",
         "info_outline": "#E9ECEF",
-        "hash_start": "#005fa3",     # darker blue
-        "hash_end": "#4b0f8f",       # darker purple
+        "hash_start": "#1c82c0",     # medium blue (shifted ~35% towards dark mode #4FC3F7)
+        "hash_end": "#c040a8",       # pink-magenta (shifted towards pink from purple)
         "green": "#388E3C",          # Material Green (darker)
         "yellow": "#FFA000",         # Material Amber (darker)
         "orange": "#F57C00",         # Material Orange (darker)
@@ -1048,14 +1048,14 @@ class ImageRenderer:
         if not web_quality and isinstance(color_name, str) and color_name in self.color_sets["light"]:
             mode = "dark" if self.config.get("eink_dark_mode", False) else "light"
             hex_color = self.color_sets[mode].get(color_name, "#ffffff")
-            
+
             # For e-ink dark mode, override most text to white for readability
             # Exceptions: date colors and fee-based colors (green/yellow/orange/red/blue/black)
-            if mode == "dark" and color_name not in ["date_normal", "date_holiday", "background", 
+            if mode == "dark" and color_name not in ["date_normal", "date_holiday", "background",
                                                        "info_bg", "info_outline", "hash_start", "hash_end",
                                                        "green", "yellow", "orange", "red", "blue", "black"]:
                 hex_color = "#ffffff"
-            
+
             hex_color = hex_color.lstrip("#")
             rgb = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
             return rgb
@@ -1527,45 +1527,73 @@ class ImageRenderer:
 
     def fee_to_colors(self, current_fee, recent_fee, web_quality=False):
         """
-        Returns a tuple of (current_color, recent_color) for gradient coloring.
-        Uses FEE_COLOR_TONES for light mode and FEE_COLOR_TONES_DARK for dark mode.
+        Returns (top_color, bottom_color) for the block-height text gradient.
+
+        Light mode: gradient from bottom (darker) to top (lighter)
+          - Fee label at bottom uses darker color for better readability
+        Dark mode: gradient from top (darker) to bottom (lighter)
+          - Fee label at bottom uses lighter color for better contrast
+
+        The gradient shifts hue when fees change between blocks.
         """
-        def fee_to_color_name(fee_value):
+        # fmt: off
+        STOPS = [
+            (0,    (  0, 210,  80)),   # green
+            (1,    (  0, 210,  80)),   # green
+            (5,    ( 20, 205,  50)),   # green (still clearly green)
+            (10,   (130, 210,  10)),   # yellow-green
+            (18,   (225, 205,   0)),   # yellow
+            (30,   (255, 160,   0)),   # amber
+            (50,   (255, 110,   0)),   # orange
+            (80,   (255,  55,   0)),   # orange-red
+            (120,  (230,  20,  20)),   # red
+            (250,  (195,  15,  90)),   # crimson
+            (500,  (140,  30, 200)),   # purple
+            (900,  ( 50,  90, 225)),   # blue
+            (1600, ( 25,  50, 150)),   # dark blue
+            (2500, ( 70,  70,  80)),   # dark grey
+        ]
+        # fmt: on
+
+        def interpolate(fee_value):
             if fee_value is None:
-                return "black"
-            elif fee_value <= 1:
-                return "green"
-            elif fee_value <= 3:
-                return "yellow"
-            elif fee_value <= 10:
-                return "orange"
-            elif fee_value <= 20:
-                return "red"
-            elif fee_value <= 40:
-                return "blue"
-            else:
-                return "black"
+                return (120, 120, 130)
+            if fee_value <= STOPS[0][0]:
+                return STOPS[0][1]
+            if fee_value >= STOPS[-1][0]:
+                return STOPS[-1][1]
+            for i in range(len(STOPS) - 1):
+                f0, c0 = STOPS[i]
+                f1, c1 = STOPS[i + 1]
+                if f0 <= fee_value <= f1:
+                    t = (fee_value - f0) / (f1 - f0)
+                    return tuple(int(c0[j] + t * (c1[j] - c0[j])) for j in range(3))
+            return STOPS[-1][1]
 
-        # Determine mode
-        mode = "dark" if self.config.get("color_mode_dark", True) else "light"
-        color_tones = FEE_COLOR_TONES_DARK if mode == "dark" else FEE_COLOR_TONES
+        current_color = interpolate(current_fee)
+        recent_color  = interpolate(recent_fee)
 
-        current_color_name = fee_to_color_name(current_fee)
-        recent_color_name = fee_to_color_name(recent_fee)
+        # Create saturated and washed versions
+        def boost_saturation(c, factor=0.85):
+            """Boost color saturation"""
+            return tuple(min(255, int(v * factor)) for v in c)
+        
+        def wash_out(c, amount=0.85):
+            """Wash out color towards white"""
+            return tuple(int(v + amount * (255 - v)) for v in c)
 
-        current_hex = color_tones.get(current_color_name, ("#FF9604", "#0B940B"))[0]
-        recent_hex = color_tones.get(recent_color_name, ("#A304FF", "#E3D90D"))[1]
-
-        def hex_to_rgb(hex_color):
-            hex_color = hex_color.lstrip("#")
-            if len(hex_color) == 3:
-                hex_color = ''.join([c*2 for c in hex_color])
-            return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
-
-        current_rgb = hex_to_rgb(current_hex)
-        recent_rgb = hex_to_rgb(recent_hex)
-
-        return current_rgb, recent_rgb
+        saturated = boost_saturation(current_color)
+        washed = wash_out(current_color)
+        
+        # Check if dark mode
+        is_dark = self.config.get("color_mode_dark", True)
+        
+        # Light mode: return (washed_top, saturated_bottom) - gradient bottom→top (dark→light)
+        # Dark mode: return (saturated_top, washed_bottom) - gradient top→bottom (dark→light)
+        if is_dark:
+            return saturated, washed  # top=darker, bottom=lighter
+        else:
+            return washed, saturated  # top=lighter, bottom=darker
     
 
     def get_localized_date(self, block_height=None):
@@ -1588,11 +1616,11 @@ class ImageRenderer:
             today = datetime.now()
         
         if self.lang == "en":
-            # English with ordinal day (e.g., "22nd July 2025")
+            # English (American) with ordinal day (e.g., "May 22nd, 2025")
             def ordinal(n):
                 return "%d%s" % (n, "tsnrhtdd"[(n//10%10!=1)*(n%10<4)*n%10::4])
             day_ordinal = ordinal(today.day)
-            return f"{day_ordinal} {today.strftime('%B %Y')}"
+            return f"{today.strftime('%B')} {day_ordinal}, {today.year}"
         
         elif self.lang == "de":
             # German format (e.g., "22. Juli 2025")
@@ -1645,7 +1673,7 @@ class ImageRenderer:
                 
                 if text_width <= max_width:
                     return font_size
-            except Exception as e:
+            except Exception:
                 # If font loading fails, continue with smaller size
                 continue
         
@@ -3174,9 +3202,10 @@ class ImageRenderer:
                 bbox = used_font_block_value.getbbox(formatted_height)
                 fee_y = value_y + bbox[3] - bbox[1] + self._scale_px(42, min_value=14)
                 
-                color = block_height_start_color if web_quality else block_height_end_color
-                self.draw_centered(draw, fee_text, fee_y, font_small, color)
-                
+                # Fee label always uses bottom color of gradient
+                fee_color = block_height_end_color
+                self.draw_centered(draw, fee_text, fee_y, font_small, fee_color)
+
             return # Exit early for vertical
 
         # --- LANDSCAPE/RESPONSIVE MODE ---
@@ -3224,11 +3253,9 @@ class ImageRenderer:
             # User requested to fix overlap: Increased gap from 15 to 25
             fee_y = value_y + text_height + self._scale_px(25, min_value=8)
 
-            # Use darker tone for e-ink, use brighter tone for web (TODO: use darker for light mode as well?)
-            if web_quality:
-                self.draw_centered(draw, fee_text, fee_y, font_small, block_height_start_color)
-            else:
-                self.draw_centered(draw, fee_text, fee_y, font_small, block_height_end_color)
+            # Fee label always uses bottom color of gradient
+            fee_color = block_height_end_color
+            self.draw_centered(draw, fee_text, fee_y, font_small, fee_color)
 
         # Draw shortened hash
         # (covered by frame)

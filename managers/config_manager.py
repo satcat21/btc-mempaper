@@ -444,9 +444,8 @@ class ConfigManager:
                 with open(self.config_path, 'w', encoding='utf-8') as f:
                     json.dump(validated_config, f, indent=2, ensure_ascii=False)
                 
-                # Update in-memory config if we saved current config
-                if config is None:
-                    self.config = validated_config
+                # Update in-memory config with the newly saved config
+                self.config = validated_config
             
             print(f"✅ Configuration saved to {self.config_path}")
             return True

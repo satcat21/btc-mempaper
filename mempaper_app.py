@@ -2445,20 +2445,11 @@ class MempaperApp:
             current_eink_height = getattr(self, 'last_eink_block_height', 0) or 0
             if int(block_height or 0) != int(current_eink_height) or force_eink:
                 print(f"⚡ Starting e-ink update for block {block_height}")
-                with self.display_process_lock:
-                    active_blocks = list(self.active_display_processes.keys())
-                    if not any(active_block >= block_height for active_block in active_blocks):
-                        # Start e-ink display immediately (no delay)
-                        threading.Thread(
-                            target=self._display_on_epaper_async,
-                            args=(self.current_eink_image_path, block_height, block_hash),
-                            daemon=True
-                        ).start()
-                    else:
-                        print(f"⏳ E-ink display already in progress for block >= {block_height}")
-                        if force_eink:
-                            self._pending_eink_refresh = True
-                            print(f"📌 Pending e-ink refresh flagged (will update after current display finishes)")
+                threading.Thread(
+                    target=self._display_on_epaper_async,
+                    args=(self.current_eink_image_path, block_height, block_hash),
+                    daemon=True
+                ).start()
         
         # Start wallet refresh in background (lower priority)
         def start_wallet_refresh():
