@@ -1616,8 +1616,11 @@ class ImageRenderer:
         saturated = boost_saturation(current_color)
         washed = wash_out(current_color)
         
-        # Check if dark mode
-        is_dark = self.config.get("color_mode_dark", True)
+        # Check if dark mode - use appropriate mode for web vs e-ink
+        if web_quality:
+            is_dark = self.config.get("color_mode_dark", True)
+        else:
+            is_dark = self.config.get("eink_dark_mode", False)
         
         # Light mode: return (washed_top, saturated_bottom) - gradient bottom→top (dark→light)
         # Dark mode: return (saturated_top, washed_bottom) - gradient top→bottom (dark→light)

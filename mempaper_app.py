@@ -1052,9 +1052,14 @@ class MempaperApp:
         """Create a simple placeholder image for instant startup."""
         try:
             from PIL import Image, ImageDraw, ImageFont
-            
-            # Create a simple placeholder
-            width, height = 800, 480
+
+            # Use configured display dimensions, respecting orientation
+            display_w = self.config.get("display_width", 800)
+            display_h = self.config.get("display_height", 480)
+            if self.config.get("web_orientation", "vertical") == "vertical":
+                width, height = min(display_w, display_h), max(display_w, display_h)
+            else:
+                width, height = max(display_w, display_h), min(display_w, display_h)
             # Use background color that respects dark mode setting
             is_dark_mode = self.config.get("color_mode_dark", False)
             bg_color = (46, 50, 78) if is_dark_mode else (255, 255, 255)  # Dark: #2e324e, Light: white

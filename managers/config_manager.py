@@ -35,6 +35,27 @@ except ImportError:
     SecureConfigManager = None
 
 
+# Device native resolution mapping (width x height in landscape orientation).
+# Mirrors DEVICE_DIMENSIONS in lib/image_renderer.py — keep in sync.
+DEVICE_DIMENSIONS = {
+    "epd13in3E": (1600, 1200),
+    "epd13in3k": (1600, 1200),
+    "epd7in3f":  (800,  480),
+    "waveshare_epd.epd13in3E": (1600, 1200),
+    "waveshare_epd.epd13in3k": (1600, 1200),
+    "waveshare_epd.epd7in3f":  (800,  480),
+    "waveshare_epd.epd5in83_v2": (648, 480),
+    "waveshare_epd.epd4in2":   (400, 300),
+    "waveshare_epd.epd2in7":   (264, 176),
+    "inky.auto":               (600, 448),
+    "inky.impression":         (600, 448),
+    "inky.what_red":           (400, 300),
+    "inky.what_yellow":        (400, 300),
+    "inky.what_black":         (400, 300),
+    "omni_epd.mock":           (800, 600),
+}
+
+
 class ConfigFileHandler(FileSystemEventHandler if WATCHDOG_AVAILABLE else object):
     """Handles file system events for configuration file changes."""
 
@@ -575,7 +596,7 @@ class ConfigManager:
         for setting in string_settings:
             if setting in config and isinstance(config[setting], str):
                 validated[setting] = config[setting].strip()
-        
+
         # Integer settings with validation (including backwards compatibility)
         int_settings = {
             "mempool_rest_port": (1, 65535),
@@ -592,6 +613,14 @@ class ConfigManager:
                         validated[setting] = value
                 except (ValueError, TypeError):
                     pass
+
+        # Auto-populate display dimensions from device when a known device is selected.
+        # This runs AFTER manual int_settings so device dimensions always take precedence.
+        device_name = validated.get("omni_device_name", "")
+        if device_name and device_name in DEVICE_DIMENSIONS:
+            validated["display_width"], validated["display_height"] = DEVICE_DIMENSIONS[device_name]
+            print(f"⚙️ Auto-set display dimensions for {device_name}: "
+                  f"{validated['display_width']}×{validated['display_height']}")
 
         # Float settings with validation
         float_settings = {}
