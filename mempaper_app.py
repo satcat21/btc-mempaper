@@ -763,10 +763,8 @@ class MempaperApp:
             # Save both images for caching
             if web_img is not None:
                 web_img.save(self.current_image_path)
-                print(f"💾 Web image saved to {self.current_image_path}")
             if eink_img is not None:
                 eink_img.save(self.current_eink_image_path)
-                print(f"💾 E-ink image saved to {self.current_eink_image_path}")
             
             # Update cache state
             self.current_block_height = block_info['block_height']
@@ -1324,11 +1322,9 @@ class MempaperApp:
             return
         self._meme_prefetch_in_progress = True
         try:
-            print("🖼️ Pre-fetching next meme from einundzwanzig-memes.space...")
             path = self.image_renderer._pick_online_meme()
             if path:
                 self._precached_meme_path = path
-                print(f"✅ Next meme pre-fetched and ready: {os.path.basename(path)}")
             else:
                 print("⚠️ Meme pre-fetch returned no path, will fetch on demand")
         except Exception as e:
@@ -1754,8 +1750,6 @@ class MempaperApp:
             
             with open(self.cache_metadata_path, 'w') as f:
                 json.dump(metadata, f, indent=2)
-                
-            print(f"💾 Cache metadata saved for block {self.current_block_height}")
         except Exception as e:
             print(f"⚠️ Error saving cache metadata: {e}")
     
@@ -1849,7 +1843,6 @@ class MempaperApp:
             # Use cached price if fresh (<120s old), otherwise fetch new
             if self._precache['price_data'] and (now - self._precache['price_last_update'] < 120):
                 price_data = self._precache['price_data']
-                print("⚡ Using pre-cached price data (fast!)")
             else:
                 print("🔄 Pre-cache stale, fetching fresh price...")
                 price_data = self.image_renderer.fetch_btc_price()
@@ -1861,7 +1854,6 @@ class MempaperApp:
             if self.config.get("show_bitaxe_block", True) and self.config.get("bitaxe_enabled", True):
                 if self._precache['bitaxe_data'] and (now - self._precache['bitaxe_last_update'] < 120):
                     bitaxe_data = self._precache['bitaxe_data']
-                    print("⚡ Using pre-cached Bitaxe data (fast!)")
                 else:
                     print("🔄 Pre-cache stale, fetching fresh Bitaxe...")
                     bitaxe_data = self.image_renderer.bitaxe_api.fetch_bitaxe_stats()
@@ -1875,7 +1867,6 @@ class MempaperApp:
             if self._precache['fee_data'] and (now - self._precache['fee_last_update'] < 90):
                 fee_data = self._precache['fee_data']
                 block_height = self._precache['block_height']
-                print("⚡ Using pre-cached fee data (fast!)")
             else:
                 print("🔄 Pre-cache stale, fetching fresh fees...")
                 try:
@@ -2136,7 +2127,6 @@ class MempaperApp:
 
             # Save the new e-ink image
             eink_img.save(self.current_eink_image_path)
-            print(f"💾 E-ink image saved to {self.current_eink_image_path}")
 
             # Display on e-Paper in background thread
             threading.Thread(
@@ -2351,10 +2341,9 @@ class MempaperApp:
         try:
             if web_img is not None:
                 web_img.save(self.current_image_path)
-                print(f"💾 Web image saved to {self.current_image_path}")
             if eink_img is not None:
                 eink_img.save(self.current_eink_image_path)
-                print(f"💾 E-ink image saved to {self.current_eink_image_path}")
+            print(f"💾 Images saved for block {block_height}")
         except Exception as e:
             print(f"❌ Failed to save images: {e}")
             traceback.print_exc()
@@ -2372,7 +2361,6 @@ class MempaperApp:
         if self.e_ink_enabled and not skip_epaper:
             current_eink_height = getattr(self, 'last_eink_block_height', 0) or 0
             if int(block_height or 0) != int(current_eink_height) or force_eink:
-                print(f"⚡ Starting e-ink update for block {block_height}")
                 threading.Thread(
                     target=self._display_on_epaper_async,
                     args=(self.current_eink_image_path, block_height, block_hash),

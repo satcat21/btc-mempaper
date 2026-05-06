@@ -1822,7 +1822,6 @@ class ImageRenderer:
             configured_fee = precached_fee.get(fee_param, 1)
             # Always prefer the explicitly passed block_height over stale pre-cached value
             api_block_height = block_height if block_height is not None else precached_block_height
-            print("⚡ Using pre-cached fee data (fast!)")
         else:
             configured_fee, api_block_height = self.get_fee_and_block_info(mempool_api)
         
@@ -1848,7 +1847,6 @@ class ImageRenderer:
                 if block_type == 'price' and config.get("show_btc_price_block", True):
                     if precached_price:
                         btc_price_data = precached_price
-                        print("⚡ Using pre-cached price data (fast!)")
                     else:
                         btc_price_data = self.btc_price_api.fetch_btc_price()
                     info_blocks.append((self.render_btc_price_block, btc_price_data))
@@ -1856,7 +1854,6 @@ class ImageRenderer:
                 elif block_type == 'bitaxe' and config.get("show_bitaxe_block", True):
                     if precached_bitaxe:
                         bitaxe_data = precached_bitaxe
-                        print("⚡ Using pre-cached Bitaxe data (fast!)")
                     else:
                         bitaxe_data = self.bitaxe_api.fetch_bitaxe_stats()
                     info_blocks.append((self.render_bitaxe_block, bitaxe_data))
@@ -1869,7 +1866,6 @@ class ImageRenderer:
             if config.get("show_btc_price_block", True):
                 if precached_price:
                     btc_price_data = precached_price
-                    print("⚡ Using pre-cached price data (fast!)")
                 else:
                     btc_price_data = self.btc_price_api.fetch_btc_price()
                 info_blocks.append((self.render_btc_price_block, btc_price_data))
@@ -1877,7 +1873,6 @@ class ImageRenderer:
             if config.get("show_bitaxe_block", True):
                 if precached_bitaxe:
                     bitaxe_data = precached_bitaxe
-                    print("⚡ Using pre-cached Bitaxe data (fast!)")
                 else:
                     bitaxe_data = self.bitaxe_api.fetch_bitaxe_stats()
                 info_blocks.append((self.render_bitaxe_block, bitaxe_data))
