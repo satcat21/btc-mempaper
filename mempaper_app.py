@@ -16,7 +16,7 @@ import io
 import base64
 import queue
 import threading
-import multiprocessing
+import traceback
 import urllib3
 import os
 import logging
@@ -32,7 +32,7 @@ from lib.websocket_client import MempoolWebSocket
 from lib.image_renderer import ImageRenderer
 from utils.translations import translations
 from managers.config_manager import ConfigManager
-from utils.technical_config import TechnicalConfig
+from utils.technical_config import TechnicalConfig, build_mempool_api_url
 from utils.security_config import SecurityConfig
 from utils.color_lut import ColorLUT
 from managers.secure_cache_manager import SecureCacheManager
@@ -352,7 +352,6 @@ class MempaperApp:
         mempool_password = self.config.get("mempool_password", "")
         
         # WebSocket URL already logged by block_monitor
-        # print(f"📶 Using mempool host for WebSocket: {mempool_host}")
         
         # Create WebSocket client with proper protocol and path
         self.websocket_client = MempoolWebSocket(
@@ -585,41 +584,11 @@ class MempaperApp:
         
         wallet_monitoring_enabled = config_manager.get("show_wallet_balances_block", True)
         
-        if not wallet_monitoring_enabled:
-            pass  # Wallet monitoring disabled - skip bootstrap check silently
-        else:
+        if wallet_monitoring_enabled:
             # Check if wallet bootstrap is needed at startup - smart cache-based decision
-            print("💾 Checking if wallet bootstrap is needed at startup...")
             try:
-                # Get wallet addresses from config - use correct config keys
-                wallet_addresses = []
-                
-                # Try the correct wallet balance config keys from the debug output
-                # Get wallet addresses from modern table format only
+                # Get wallet addresses from modern table format
                 wallet_addresses = config_manager.get("wallet_balance_addresses_with_comments", [])
-                if wallet_addresses:
-                    print(f"👁️ [DEBUG] Found {len(wallet_addresses)} wallet entries in 'wallet_balance_addresses_with_comments'")
-                else:
-                    # Fallback check for any legacy configurations (just for debugging)
-                    legacy_addresses = config_manager.get("wallet_balance_addresses", [])
-                    if legacy_addresses:
-                        print(f"⚠️ [DEBUG] Found {len(legacy_addresses)} entries in legacy 'wallet_balance_addresses' field - these should be migrated to the table format")
-                        wallet_addresses = legacy_addresses
-                
-                if not wallet_addresses:
-                    print(f"👁️ [DEBUG] No wallet addresses found in configuration")
-                
-                # Debug: show what we found
-                if wallet_addresses:
-                    for i, entry in enumerate(wallet_addresses[:3]):  # Show first 3
-                        if isinstance(entry, dict):
-                            address = entry.get("address", "")
-                            comment = entry.get("comment", "")
-                            print(f"   [DEBUG] Entry {i}: {address[:20]}... ({comment})")
-                        else:
-                            print(f"   [DEBUG] Entry {i}: {str(entry)[:20]}...")
-                else:
-                    print(f"👁️ [DEBUG] No wallet addresses found in any config source")
                 
                 extended_keys = []
                 
@@ -633,19 +602,8 @@ class MempaperApp:
                     if len(address) > 50 and (address.lower().startswith(('xpub', 'zpub', 'ypub'))):
                         extended_keys.append(address)
                 
-                if not wallet_addresses:
-                    print("⚙️ No wallet addresses configured - skipping bootstrap")
-                elif not extended_keys:
-                    # For regular addresses, try to get cached data
-                    try:
-                        wallet_data = self.wallet_balance_api.get_cached_wallet_balances()
-                        if wallet_data and 'addresses' in wallet_data:
-                            total_balance = wallet_data.get('total_btc', 0)
-                            print(f"✅ [STARTUP] Regular addresses only: {len(wallet_data.get('addresses', []))} addresses, {total_balance} BTC total")
-                        else:
-                            print(f"✅ [STARTUP] Regular addresses configured but no cached balance data")
-                    except Exception as cache_e:
-                        print(f"✅ [STARTUP] Regular addresses configured (cache check failed: {cache_e})")
+                if not wallet_addresses or not extended_keys:
+                    pass  # No extended keys - no bootstrap needed
                 else:
                     # Extended keys found - check if we have valid cached address derivation
                     print(f"🔑 [STARTUP] Found {len(extended_keys)} extended key(s) - checking cache status...")
@@ -767,12 +725,11 @@ class MempaperApp:
 
         
         try:
-            print("⚙️ Generating initial dashboard image with cached data...")
+            print(f"⚙️ Generating initial dashboard image with cached data...")
             
             # Get current block info from mempool API
             try:
                 block_info = self.mempool_api.get_current_block_info()
-                # Check for invalid block data
                 if block_info.get('block_height') is None:
                      raise ValueError("Block height is None")
             except Exception as e:
@@ -787,11 +744,7 @@ class MempaperApp:
             if block_info['block_height'] == 0:
                  potential_meme = os.path.join("static", "memes", "0.jpg")
                  if os.path.exists(potential_meme):
-                      print(f"🖼️ Genesis block detected: Forcing use of {potential_meme}")
                       override_meme = potential_meme
-            
-            # IMMEDIATE IMAGE GENERATION: Use cached wallet data for instant startup
-            print(f"⚙️ [IMMEDIATE] Generating dashboard with cached data for block {block_info['block_height']}...")
 
             # Sync latest donation data to renderer
             self.image_renderer._donation_data = self._get_active_donation()
@@ -825,27 +778,22 @@ class MempaperApp:
             # Save persistent cache metadata
             self._save_cache_metadata()
             
-            print("✅ Initial dashboard image generated and cached with existing data")
+            print("✅ Initial dashboard image generated and cached")
             
             # ASYNC WALLET REFRESH: Update wallet balances in background and regenerate if changed
-            print("⚙️ [ASYNC] Starting background wallet balance refresh...")
             threading.Thread(
                 target=self._async_wallet_refresh_and_regenerate,
                 args=(block_info['block_height'], block_info['block_hash']),
                 daemon=True
             ).start()
-            print("✅ [ASYNC] Background wallet refresh started - will regenerate image if balance changed")
             
             # Display on e-Paper in background thread (don't block startup)
             if self.e_ink_enabled:
-                print("🖥️ Starting e-Paper display in background...")
                 threading.Thread(
                     target=self._display_on_epaper_async,
                     args=(self.current_eink_image_path, self.current_block_height, self.current_block_hash),
                     daemon=True
                 ).start()
-            else:
-                print("⚙️ Skipping e-Paper display (disabled in config)")
             
         except Exception as e:
             print(f"⚠️ Failed to generate initial image: {e}")
@@ -857,28 +805,21 @@ class MempaperApp:
         This provides optimal UX by serving cached data immediately, then updating if needed.
         """
         try:
-            print(f"⚙️ [ASYNC-REFRESH] Starting wallet balance refresh for block {block_height}")
-            
             # Get cached wallet data for comparison
             cached_wallet_data = self.image_renderer.wallet_api.get_cached_wallet_balances()
             cached_balance = cached_wallet_data.get('total_btc', 0) if cached_wallet_data else 0
             
-            print(f"💾 [ASYNC-REFRESH] Cached balance: {cached_balance:.8f} BTC")
-            
             # Fetch fresh wallet balances (this might take time for XPUB derivation)
-            print("⚙️ [ASYNC-REFRESH] Fetching fresh wallet balances...")
             fresh_wallet_data = self.image_renderer.wallet_api.fetch_wallet_balances(startup_mode=False, current_block=block_height)
             
             if fresh_wallet_data and not fresh_wallet_data.get('error'):
                 fresh_balance = fresh_wallet_data.get('total_btc', 0)
-                print(f"💾 [ASYNC-REFRESH] Fresh balance: {fresh_balance:.8f} BTC")
                 
                 # Compare balances (use small epsilon for floating point comparison)
                 balance_changed = abs(fresh_balance - cached_balance) > 0.00000001  # 1 satoshi precision
                 
                 if balance_changed:
-                    print(f"⚙️ [ASYNC-REFRESH] Balance changed: {cached_balance:.8f} → {fresh_balance:.8f} BTC")
-                    print("⚙️ [ASYNC-REFRESH] Updating cache first, then regenerating image...")
+                    print(f"⚙️ [ASYNC-REFRESH] Balance changed: {cached_balance:.8f} → {fresh_balance:.8f} BTC - regenerating")
                     
                     # Update cache with fresh data BEFORE regenerating
                     self.image_renderer.wallet_api.update_cache(fresh_wallet_data)
@@ -887,31 +828,20 @@ class MempaperApp:
                     self._generate_new_image(
                         block_height, 
                         block_hash, 
-                        skip_epaper=False,  # Update e-Paper with new balance
-                        use_new_meme=False  # Keep same meme to minimize change
+                        skip_epaper=False,
+                        use_new_meme=False
                     )
-                    
-                    print("✅ [ASYNC-REFRESH] Image regenerated with updated wallet balance")
-                    return  # Early return since cache was already updated
-                else:
-                    print("✅ [ASYNC-REFRESH] Balance unchanged - no image regeneration needed")
+                    return
                 
-                # Update cache with fresh data (only if we didn't already update it above)
-                # This updates timestamp and fiat values (which change with BTC price)
-                # even though BTC balance is the same - ready for next block's image
-                if not balance_changed:
-                    print("💾 [ASYNC-REFRESH] Updating cache with fresh timestamp and current fiat values...")
-                    self.image_renderer.wallet_api.update_cache(fresh_wallet_data)
-                    print("✅ [ASYNC-REFRESH] Cache updated - fresh fiat values ready for next block")
+                # Update cache with fresh timestamp and fiat values even if BTC balance unchanged
+                self.image_renderer.wallet_api.update_cache(fresh_wallet_data)
                 
             else:
                 error_msg = fresh_wallet_data.get('error', 'Unknown error') if fresh_wallet_data else 'No data returned'
                 print(f"⚠️ [ASYNC-REFRESH] Failed to fetch fresh wallet data: {error_msg}")
-                print("💾 [ASYNC-REFRESH] Keeping existing cached image")
                 
         except Exception as e:
             print(f"❌ [ASYNC-REFRESH] Error during async wallet refresh: {e}")
-            import traceback
             traceback.print_exc()
     
     def _check_async_wallet_cache_status(self, xpub: str, current_block_height: int) -> str:
@@ -982,7 +912,6 @@ class MempaperApp:
         Warm up all API clients by fetching initial data to ensure they're ready.
         This prevents the first image from showing incomplete data.
         """
-        # print("⚙️ Warming up API clients with initial data fetch...")
         
         # Warm up BTC price API
         try:
@@ -1034,7 +963,6 @@ class MempaperApp:
         2. Start heavy operations in background
         3. Update interface when ready
         """
-        # print("🚀 Setting up instant startup mode...")
         
         # Check if we have a cached image to show immediately
         has_cached_image = (os.path.exists(self.current_image_path) and 
@@ -1050,7 +978,6 @@ class MempaperApp:
         
         # Start background processing after a short delay to let the web server start
         background_delay = self.config.get("background_processing_delay", 2)
-        # print(f"⚙️ Background processing will start in {background_delay} seconds...")
         
         threading.Timer(background_delay, self._run_background_startup).start()
         print("🌐 Website is now ready!")
@@ -1164,12 +1091,10 @@ class MempaperApp:
             self._init_websocket()
             
             # Warm up APIs
-            # print("⚙️ Warming up API clients...")
             self._warm_up_apis()
             
             # Don't force image regeneration here - let block monitor handle new blocks naturally
             # The cached image is served immediately, and new blocks will trigger updates via WebSocket/monitor
-            # print("💾 Background initialization complete - block monitor will handle updates")
             
             print("✅ Background initialization completed!")
             
@@ -1453,7 +1378,6 @@ class MempaperApp:
             removed_addresses = old_addresses - new_addresses
             
             if not removed_addresses:
-                # print("🧹 No removed wallet addresses - cache cleanup not needed")
                 return
             
             print(f"🧹 Cleaning up cache for {len(removed_addresses)} removed wallet address(es)")
@@ -1685,12 +1609,10 @@ class MempaperApp:
             print("⚙️ Starting background image generation...")
 
             if use_cached_block and self.current_block_height and self.current_block_hash:
-                # Skip API round-trip — block is unchanged (e.g. donation event)
                 block_info = {
                     'block_height': self.current_block_height,
                     'block_hash':   self.current_block_hash,
                 }
-                print(f"⚡ Using cached block info (skipping API): {self.current_block_height}")
             else:
                 block_info = self.mempool_api.get_current_block_info()
 
@@ -1698,18 +1620,10 @@ class MempaperApp:
             if (self.current_block_height == block_info['block_height'] and
                 self.current_block_hash == block_info['block_hash'] and
                 self.image_is_current):
-                print(f"✅ Image already current for block {block_info['block_height']}, skipping generation")
                 return
-
-            print(f"⚙️ Need to generate: cached_height={self.current_block_height}, current_height={block_info['block_height']}, is_current={self.image_is_current}")
 
             # Use new meme if block height changed OR explicitly requested (e.g. donation)
             use_new_meme = force_new_meme or (self.current_block_height != block_info['block_height'])
-            if use_new_meme:
-                reason = "donation" if force_new_meme else f"block changed ({self.current_block_height} → {block_info['block_height']})"
-                print(f"🎭 Selecting new meme ({reason})")
-            else:
-                print(f"🎭 Same block ({block_info['block_height']}) - will keep existing meme if available")
 
             self._generate_new_image(
                 block_info['block_height'],
@@ -1718,19 +1632,14 @@ class MempaperApp:
                 use_new_meme=use_new_meme,
                 force_eink=force_eink
             )
-            print("✅ Background image generation completed")
             
-            # Only emit to web clients if this is a new block
+            # Emit to web clients
             with self.app.app_context():
                 try:
                     with open(self.current_image_path, 'rb') as f:
                         image_data = 'data:image/png;base64,' + base64.b64encode(f.read()).decode()
-                        # Validate image data before sending
                         if len(image_data) > 50 and image_data.startswith('data:image/png;base64,'):
                             self.socketio.emit('new_image', {'image': image_data})
-                            print("📡 Fresh image sent to web clients")
-                        else:
-                            print("⚠️ Invalid image data generated, not sending to clients")
                 except Exception as e:
                     print(f"⚠️ Failed to read generated image: {e}")
                     
@@ -1856,7 +1765,6 @@ class MempaperApp:
         def update_precache():
             """Background worker to refresh price and bitaxe data between blocks."""
             # Initial pre-fill on startup
-            # print("🚀 Pre-cache updater started - warming cache...")
             self._update_precache_data()
             
             # Get update interval from config (default 5 minutes to reduce RPi load)
@@ -1872,7 +1780,6 @@ class MempaperApp:
                     time.sleep(update_interval)  # Continue despite errors
         
         threading.Thread(target=update_precache, daemon=True, name="PreCacheUpdater").start()
-        # print("✅ Pre-cache background updater started")
     
     def _update_precache_data(self):
         """Update pre-cached data (price, bitaxe, fees) in background."""
@@ -2150,10 +2057,8 @@ class MempaperApp:
                 # Save both images for caching
                 if web_img is not None:
                     web_img.save(self.current_image_path)
-                    print(f"💾 Regenerated web image saved to {self.current_image_path}")
                 if eink_img is not None:
                     eink_img.save(self.current_eink_image_path)
-                    print(f"💾 Regenerated e-ink image saved to {self.current_eink_image_path}")
                 
                 # Update cache metadata
                 self.image_is_current = True
@@ -2161,8 +2066,6 @@ class MempaperApp:
 
                 # Display on e-Paper if enabled
                 if self.e_ink_enabled:
-                    print("🖥️ Refreshing e-Paper display with updated image...")
-                    # Start e-Paper display in background thread
                     threading.Thread(
                         target=self._display_on_epaper_async,
                         args=(self.current_eink_image_path, self.current_block_height, self.current_block_hash),
@@ -2174,38 +2077,19 @@ class MempaperApp:
                     with open(self.current_image_path, 'rb') as f:
                         image_data = 'data:image/png;base64,' + base64.b64encode(f.read()).decode()
                     self.socketio.emit('new_image', {'image': image_data})
-                    print("📡 Fresh image sent to web clients")
                 except Exception as e:
                     print(f"⚠️ Failed to send image to web clients: {e}")
                 
-                print("✅ Image regeneration completed successfully")
-                
-                shared_data = {
-                    "holiday_info": None,  # or fetch as needed
-                    "configured_fee": None,  # or fetch as needed
-                    "api_block_height": None,  # or fetch as needed
-                    "meme_path": self.current_meme_path,
-                    "btc_price_data": None,  # or fetch as needed
-                    "bitaxe_data": None,     # or fetch as needed
-                    "wallet_data": None,     # or fetch as needed
-                    "info_blocks": [],       # or build as needed
-                }
-                # Now, start async wallet refresh in background using threading (no multiprocessing issues)
-                # Skip if wallet monitoring is disabled
+                # Start async wallet refresh in background
                 if self.config.get("show_wallet_balances_block", True):
-                    print("⚙️ Starting async wallet refresh in background...")
                     try:
-                        # Use a simple approach that avoids multiprocessing issues
-                        # This runs in a thread but the actual work happens in subprocess via image_renderer
                         threading.Thread(
                             target=self._safe_wallet_refresh_thread,
                             args=(self.current_block_height, self.current_block_hash, False),
                             daemon=True
                         ).start()
-                        print("✅ Wallet refresh thread started")
                     except Exception as proc_e:
                         print(f"❌ Failed to start wallet refresh thread: {proc_e}")
-                # Wallet monitoring disabled - skip refresh silently
 
         except Exception as e:
             print(f"❌ Error regenerating image with cached meme: {e}")
@@ -2282,7 +2166,6 @@ class MempaperApp:
             
             # Log wallet data with privacy masking
             # masked_fresh_data = MempaperApp.mask_wallet_data_for_logging(fresh_wallet_data)
-            # print(f"✅ [WALLET] Fresh wallet data: {masked_fresh_data}")
             
             # Get cached wallet data
             print("📖 [WALLET] Loading cached wallet data...")
@@ -2290,15 +2173,12 @@ class MempaperApp:
             
             # Log cached data with privacy masking
             # masked_cached_data = MempaperApp.mask_wallet_data_for_logging(cached_wallet_data)
-            # print(f"📋 [WALLET] Cached wallet data: {masked_cached_data}")
             
             # Ensure both are dicts before accessing .get()
             if not isinstance(fresh_wallet_data, dict):
                 fresh_wallet_data = {}
             if not isinstance(cached_wallet_data, dict):
                 cached_wallet_data = {}
-            
-            # Compare BTC balance
             fresh_btc = fresh_wallet_data.get("total_btc", 0)
             cached_btc = cached_wallet_data.get("total_btc", 0)
             wallet_changed = fresh_btc != cached_btc
@@ -2316,38 +2196,30 @@ class MempaperApp:
                 
                 if fresh_blocks != cached_blocks or fresh_difficulty != cached_difficulty:
                     bitaxe_changed = True
-                    print(f"⚖️ [BITAXE] Data changed: Blocks {cached_blocks}→{fresh_blocks}, Difficulty {cached_difficulty}→{fresh_difficulty}")
-                    # Update displayed Bitaxe cache
                     self.displayed_bitaxe_data = fresh_bitaxe
             
-            # Determine if regeneration is needed based on what's displayed
+            # Determine if regeneration is needed
             needs_regeneration = False
             regeneration_reason = []
             
             if wallet_changed and 'wallet' in self.displayed_info_blocks:
                 needs_regeneration = True
-                regeneration_reason.append(f"wallet balance {cached_btc:.8f}→{fresh_btc:.8f} BTC")
-                print(f"⚖️ [WALLET] Balance changed and wallet block is displayed")
-            elif wallet_changed:
-                print(f"ℹ️ [WALLET] Balance changed ({cached_btc:.8f}→{fresh_btc:.8f} BTC) but wallet block not displayed, skipping regeneration")
+                regeneration_reason.append(f"wallet {cached_btc:.8f}→{fresh_btc:.8f} BTC")
             
             if bitaxe_changed:
                 needs_regeneration = True
                 regeneration_reason.append("Bitaxe data")
-                print(f"⚖️ [BITAXE] Data changed and Bitaxe block is displayed")
             
             # Update caches regardless of regeneration
             self.image_renderer.wallet_api.update_cache(fresh_wallet_data)
             
             if needs_regeneration:
                 reason_str = ", ".join(regeneration_reason)
-                print(f"🔄 [REFRESH] Regenerating image due to: {reason_str}")
-                print("🎭 [REFRESH] Preserving current meme and info block selection")
+                print(f"🔄 [REFRESH] Regenerating image: {reason_str}")
                 
                 # Emit WebSocket event for balance update
-                if hasattr(self, 'socketio') and self.socketio:
+                if wallet_changed and hasattr(self, 'socketio') and self.socketio:
                     self.socketio.emit('wallet_balance_updated', fresh_wallet_data)
-                    print("📡 [WALLET] Balance update broadcasted via WebSocket")
                 
                 # Get pre-cached data for fast rendering
                 precached_price, precached_bitaxe, precached_fee, precached_block_height = self._get_precached_data()
@@ -2374,94 +2246,59 @@ class MempaperApp:
                     web_img.save(self.current_image_path)
                 if eink_img is not None:
                     eink_img.save(self.current_eink_image_path)
-                print("✅ [REFRESH] Image regenerated with updated data")
             else:
-                print("✅ [REFRESH] No visible data changes, keeping current image")
+                pass  # No visible data changes
                 
             # Update cache metadata
             self._save_cache_metadata()
-            print("✅ [WALLET] Wallet refresh completed successfully")
             
         except Exception as e:
             print(f"❌ [WALLET] Error during wallet refresh: {e}")
-            import traceback
             traceback.print_exc()
 
     def _safe_wallet_refresh_thread(self, block_height, block_hash, startup_mode=False):
         """Safe wallet refresh that runs in thread but uses subprocess for actual work."""
         try:
-            # print(f"🚀 [THREAD] Starting safe wallet refresh for block {block_height}...")
-            
-            # Call the existing process-based refresh logic directly
             self._run_wallet_refresh_process(block_height, block_hash, startup_mode)
-            
         except Exception as e:
             print(f"❌ [THREAD] Error in safe wallet refresh: {e}")
-            import traceback
             traceback.print_exc()
 
     def _run_wallet_refresh_process(self, block_height, block_hash, startup_mode=False):
-        """Wrapper to run wallet refresh in separate process to avoid gunicorn timeouts."""
+        """Run wallet refresh in separate process to avoid gunicorn timeouts."""
         try:
-            # Re-initialize components in the new process
             from managers.config_manager import ConfigManager
             from lib.image_renderer import ImageRenderer
             from utils.translations import translations
             
-            # Load config and initialize image renderer with wallet API
             config_manager = ConfigManager()
             config = config_manager.get_current_config()
             image_renderer = ImageRenderer(config, translations)
             
-            print(f"⚙️ [PROCESS] Wallet refresh process started for block {block_height}")
-            
-            # Fetch fresh wallet data
-            print("👁️ [PROCESS] Fetching fresh wallet data...")
             fresh_wallet_data = image_renderer.wallet_api.fetch_wallet_balances(startup_mode=startup_mode, current_block=block_height)
-            
-            # Log wallet data with privacy masking
-            # masked_fresh_data = MempaperApp.mask_wallet_data_for_logging(fresh_wallet_data)
-            # print(f"✅ [PROCESS] Fresh wallet data: {masked_fresh_data}")
-            
-            # Get cached wallet data
-            # print("📖 [PROCESS] Loading cached wallet data...")
             cached_wallet_data = image_renderer.wallet_api.get_cached_wallet_balances()
             
-            # Log cached data with privacy masking  
-            # masked_cached_data = MempaperApp.mask_wallet_data_for_logging(cached_wallet_data)
-            # print(f"📋 [PROCESS] Cached wallet data: {masked_cached_data}")
-            
-            # Ensure both are dicts before accessing .get()
             if not isinstance(fresh_wallet_data, dict):
                 fresh_wallet_data = {}
             if not isinstance(cached_wallet_data, dict):
                 cached_wallet_data = {}
             
-            # Compare only BTC/sats balance
             fresh_btc = fresh_wallet_data.get("total_btc", 0)
             cached_btc = cached_wallet_data.get("total_btc", 0)
             
-            # print(f"⚖️ [PROCESS] Balance comparison: Fresh={fresh_btc} BTC, Cached={cached_btc} BTC")
-
             if fresh_btc != cached_btc:
-                print("⚙️ [PROCESS] Wallet data changed, updating cache...")
-                image_renderer.wallet_api.update_cache(fresh_wallet_data)
-                print("✅ [PROCESS] Cache updated - image will be refreshed on next request")
-            else:
-                print("✅ [PROCESS] No wallet balance change detected")
-                # Still update the cache to keep timestamp fresh
-                image_renderer.wallet_api.update_cache(fresh_wallet_data)
-                
-            print("✅ [PROCESS] Wallet refresh process completed successfully")
+                print(f"⚙️ Wallet balance changed: {cached_btc:.8f} → {fresh_btc:.8f} BTC")
             
+            # Always update cache to keep timestamp fresh
+            image_renderer.wallet_api.update_cache(fresh_wallet_data)
+                
         except Exception as e:
-            print(f"❌ [PROCESS] Error during wallet refresh process: {e}")
-            import traceback
+            print(f"❌ Wallet refresh failed: {e}")
             traceback.print_exc()
 
     def _generate_new_image(self, block_height: int, block_hash: str, skip_epaper: bool = False, use_new_meme: bool = True, force_eink: bool = False):
         """Generate a new dashboard image and cache it."""
-        print(f"⚙️ Generating new dashboard image for block {block_height} with CACHED wallet data...")
+        print(f"⚙️ Generating dashboard image for block {block_height}...")
 
         # Sync latest donation data to renderer
         self.image_renderer._donation_data = self._get_active_donation()
@@ -2512,12 +2349,17 @@ class MempaperApp:
             print(f"⏭️ Skipping image save for old block {block_height} (current: {current_stored_height})")
             return  # Abort - newer block already processed
         
-        if web_img is not None:
-            web_img.save(self.current_image_path)
-            print(f"💾 Web image saved to {self.current_image_path}")
-        if eink_img is not None:
-            eink_img.save(self.current_eink_image_path)
-            print(f"💾 E-ink image saved to {self.current_eink_image_path}")
+        try:
+            if web_img is not None:
+                web_img.save(self.current_image_path)
+                print(f"💾 Web image saved to {self.current_image_path}")
+            if eink_img is not None:
+                eink_img.save(self.current_eink_image_path)
+                print(f"💾 E-ink image saved to {self.current_eink_image_path}")
+        except Exception as e:
+            print(f"❌ Failed to save images: {e}")
+            traceback.print_exc()
+            return
         
         # Update cache state
         self.current_block_height = block_height
@@ -2527,12 +2369,7 @@ class MempaperApp:
         # Save persistent cache metadata to survive app restarts
         self._save_cache_metadata()
         
-        # 🚀 PERFORMANCE FIX: Return web image IMMEDIATELY, then start background tasks
-        # This ensures web clients get instant response (~3 seconds) instead of waiting for e-ink display (~25 seconds)
-        print("🚀 Returning web image immediately for fast web response")
-        
-        # 🚀 IMMEDIATE E-INK UPDATE - Start e-ink display right after web image is ready
-        # This reduces total update time from web→eink by running them sequentially but without delay
+        # Start e-ink display update in background
         if self.e_ink_enabled and not skip_epaper:
             current_eink_height = getattr(self, 'last_eink_block_height', 0) or 0
             if int(block_height or 0) != int(current_eink_height) or force_eink:
@@ -2550,30 +2387,19 @@ class MempaperApp:
                 # Check if wallet refresh is already in progress (prevent concurrent scans)
                 if hasattr(self.image_renderer, 'wallet_api') and hasattr(self.image_renderer.wallet_api, '_fetch_lock'):
                     if self.image_renderer.wallet_api._fetch_lock.locked():
-                        print("⏸️ Wallet refresh already in progress, skipping duplicate scan")
                         return
                 
-                print("⚙️ Starting async wallet refresh in background...")
                 threading.Thread(
                     target=self._safe_wallet_refresh_thread,
                     args=(block_height, block_hash, False),
                     daemon=True
                 ).start()
-                print("✅ Async wallet refresh thread started")
         
         # Schedule wallet refresh to run after a short delay to prioritize e-ink
         threading.Thread(target=start_wallet_refresh, daemon=True).start()
         
         return web_img  # Return web image for web clients IMMEDIATELY
     
-    def get_prioritized_content_path(self):
-        """
-        """
-        # Fallback to regular meme selection
-        print("🎭 Using meme fallback")
-        return None  # Let image renderer handle meme selection
-    
-
     def on_new_block_received(self, block_height, block_hash):
         """
         Handle new block data received from WebSocket.
@@ -2582,23 +2408,14 @@ class MempaperApp:
             block_height (str): New block height
             block_hash (str): New block hash
         """
-        # Block info already logged by block_monitor
-        # print(f"👁️ WebSocket: New block received - Height: {block_height}")
-        # print(f"👁️ Block hash: {block_hash}")
-        
         # Convert block_height to integer if it's a string
         try:
             if isinstance(block_height, str):
-                # Handle potential decimal notation like "918.724"
-                if '.' in block_height:
-                    block_height_int = int(float(block_height))
-                    print(f"⚙️ [DEBUG] Converted block height from {block_height} to {block_height_int}")
-                else:
-                    block_height_int = int(block_height)
+                block_height_int = int(float(block_height)) if '.' in block_height else int(block_height)
             else:
                 block_height_int = int(block_height)
         except (ValueError, TypeError) as e:
-            print(f"❌ [DEBUG] Failed to convert block height {block_height}: {e}")
+            print(f"❌ Failed to convert block height {block_height}: {e}")
             return
         
         # 🔧 FIX: Prevent duplicate block processing and race conditions
@@ -2658,7 +2475,6 @@ class MempaperApp:
                 'median_fee_sat_vb': 0  # Will be updated
             }
             
-            # print(f"⚡ Sending INSTANT block notification for {block_height} (enrichment in background)")
             
             # Send instant notification to subscribed clients
             with self.app.app_context():
@@ -2714,31 +2530,15 @@ class MempaperApp:
                 
         except Exception as e:
             print(f"⚠️ Error sending new block notification: {e}")
-            import traceback
             traceback.print_exc()
     
     def _get_mempool_base_url(self):
-        """Get mempool API base URL from configuration with HTTPS support."""
-        mempool_host = self.config.get("mempool_host", "127.0.0.1")
-        mempool_rest_port = self.config.get("mempool_rest_port", "8080")
-        mempool_use_https = self.config.get("mempool_use_https", False)
-        
-        # Build URL with proper protocol
-        protocol = "https" if mempool_use_https else "http"
-        
-        # Check if host looks like a domain (contains dots but not just IP)
-        # Skip port for domains using standard ports (80/443)
-        is_domain = "." in mempool_host and not mempool_host.replace(".", "").isdigit()
-        
-        if is_domain:
-            if (mempool_use_https and mempool_rest_port in ["443", "80"]) or \
-               (not mempool_use_https and mempool_rest_port in ["80", "443"]):
-                return f"{protocol}://{mempool_host}/api"
-            else:
-                return f"{protocol}://{mempool_host}:{mempool_rest_port}/api"
-        else:
-            # Always include port for IP addresses
-            return f"{protocol}://{mempool_host}:{mempool_rest_port}/api"
+        """Get mempool API base URL from configuration."""
+        return build_mempool_api_url(
+            self.config.get("mempool_host", "127.0.0.1"),
+            self.config.get("mempool_rest_port", "8080"),
+            self.config.get("mempool_use_https", False)
+        )
     
     def _format_block_hash_for_display(self, block_hash):
         """
@@ -2795,11 +2595,9 @@ class MempaperApp:
                         active_bootstrap = len(self.wallet_api._active_gap_limit_detection) > 0
                     
                     if active_bootstrap:
-                        print(f"⏳ Bootstrap detection running - using cached wallet data for immediate display... (attempt {attempt})")
-                    else:
-                        print(f"⚙️ Generating dashboard image with cached wallet data... (attempt {attempt})")
+                        print(f"⏳ Bootstrap detection running - using cached wallet data (attempt {attempt})")
                         
-                    img = self._generate_new_image(block_height, block_hash, use_new_meme=True)  # New block = new meme
+                    img = self._generate_new_image(block_height, block_hash, use_new_meme=True)
                     if img:
                         buf = io.BytesIO()
                         img.save(buf, format='PNG')
@@ -2814,14 +2612,12 @@ class MempaperApp:
                                     print("⚠️ Invalid image data generated, not sending to clients")
                             except Exception as e:
                                 print(f"⚠️ Failed to encode image for WebSocket: {e}")
-                        # ✅ Background tasks (wallet refresh + e-ink display) are already started in _generate_new_image
-                        print("✅ Image generated and background tasks started automatically")
+                        # Background tasks (wallet refresh + e-ink display) are already started in _generate_new_image
                         break
                     else:
                         print(f"❌ Image generation returned None (attempt {attempt})")
                 except Exception as e:
                     print(f"❌ Error regenerating dashboard for block {block_height} (attempt {attempt}): {e}")
-                    import traceback
                     traceback.print_exc()
                 if attempt < max_retries:
                     print(f"🔁 Retrying image generation in 2 seconds...")
@@ -2852,7 +2648,6 @@ class MempaperApp:
                 response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
             except Exception as e:
                 print(f"❌ Error adding CORS headers: {type(e).__name__}: {str(e)}")
-                import traceback
                 traceback.print_exc()
             return response
         
@@ -3041,7 +2836,6 @@ class MempaperApp:
                 try:
                     auth_result = self.auth_manager.login(username, password)
                 except Exception as auth_err:
-                    import traceback
                     traceback.print_exc()
                     return jsonify({'success': False, 'message': f'Authentication error: {str(auth_err)}'}), 500
                 
@@ -3062,7 +2856,6 @@ class MempaperApp:
                         return response
                         
                     except Exception as resp_err:
-                        import traceback
                         traceback.print_exc()
                         # Try to return a simple response
                         try:
@@ -3073,7 +2866,6 @@ class MempaperApp:
                     return jsonify({'success': False, 'message': 'Invalid credentials'}), 401
                     
             except Exception as e:
-                import traceback
                 traceback.print_exc()
                 try:
                     return jsonify({'success': False, 'message': f'Server error: {str(e)}'}), 500
@@ -3496,8 +3288,6 @@ class MempaperApp:
         def get_config():
             """Get current configuration including secure wallet addresses."""
             try:
-                #print("📋 [DEBUG] Config API called - checking for wallet addresses...")
-                
                 # Get current language and translations
                 lang = self.config.get("language", "en")
                 current_translations = translations.get(lang, translations["en"])
@@ -3508,64 +3298,36 @@ class MempaperApp:
                 # Add wallet addresses from secure configuration if available
                 if hasattr(self.image_renderer, 'wallet_api') and self.image_renderer.wallet_api.secure_config_manager:
                     secure_config = self.image_renderer.wallet_api.secure_config_manager.load_secure_config()
-                    #print(f"📋 [DEBUG] Secure config loaded: {secure_config is not None}")
-                    # if secure_config:
-                    #     print(f"📋 [DEBUG] Secure config keys: {list(secure_config.keys())}")
                     if secure_config and 'wallet_balance_addresses_with_comments' in secure_config:
                         wallet_addresses = secure_config['wallet_balance_addresses_with_comments']
                         config_data['wallet_balance_addresses_with_comments'] = wallet_addresses
-                        #print(f"📋 [DEBUG] Added {len(wallet_addresses)} wallet addresses to config response")
                         
-                        # ENHANCEMENT: Include cached balances in the configuration
+                        # Include cached balances in the configuration
                         try:
                             if hasattr(self.image_renderer, 'wallet_api') and self.image_renderer.wallet_api:
-                                #print("📋 [DEBUG] Attempting to include cached balances in config...")
                                 cached_data = self.image_renderer.wallet_api.get_cached_wallet_balances()
-                                # print(f"📋 [DEBUG] Cached wallet data: {cached_data}")
                                 
-                                # Merge balances into wallet addresses
                                 if cached_data and 'addresses' in cached_data:
                                     address_balances = {}
-                                    # Create lookup for address balances
                                     for addr_info in cached_data['addresses']:
                                         if 'address' in addr_info and 'balance_btc' in addr_info:
                                             address_balances[addr_info['address']] = addr_info['balance_btc']
                                     
-                                    # Create lookup for xpub balances  
                                     if 'xpubs' in cached_data:
                                         for xpub_info in cached_data['xpubs']:
                                             if 'xpub' in xpub_info and 'balance_btc' in xpub_info:
                                                 address_balances[xpub_info['xpub']] = xpub_info['balance_btc']
                                     
-                                    # print(f"📋 [DEBUG] Address balance lookup: {address_balances}")
-                                    
-                                    # Add balances to wallet addresses
                                     for addr_entry in wallet_addresses:
                                         if 'address' in addr_entry:
                                             address = addr_entry['address']
-                                            if address in address_balances:
-                                                addr_entry['cached_balance'] = address_balances[address]
-                                                #print(f"📋 [DEBUG] Added balance {address_balances[address]} for {address[:10]}...")
-                                            else:
-                                                addr_entry['cached_balance'] = 0.0
-                                                #print(f"📋 [DEBUG] No balance found for {address[:10]}...")
+                                            addr_entry['cached_balance'] = address_balances.get(address, 0.0)
                                     
                                     config_data['wallet_balance_addresses_with_comments'] = wallet_addresses
                                     config_data['wallet_total_balance'] = cached_data.get('total_btc', 0.0)
-                                    ##print(f"📋 [DEBUG] Enhanced config with cached balances, total: {cached_data.get('total_btc', 0.0)}")
                                     
                         except Exception as balance_error:
-                            print(f"📋 [DEBUG] Error adding cached balances to config: {balance_error}")
-                            # Continue without cached balances if there's an error
-                        
-                        # for i, addr in enumerate(wallet_addresses):
-                        #     address_display = addr.get('address', 'N/A')[:10] + '...' if addr.get('address') else 'N/A'
-                        #     balance_display = addr.get('cached_balance', 'N/A')
-                        #     print(f"📋 [DEBUG] Address {i}: {address_display} ({addr.get('comment', 'No comment')}) - Balance: {balance_display}")
-                    else:
-                        print("📋 [DEBUG] No wallet_balance_addresses_with_comments found in secure config")
-                else:
-                    print("📋 [DEBUG] No wallet API or secure config manager available")
+                            pass  # Continue without cached balances if there's an error
                 
                 from flask import session as _session
                 return jsonify({
@@ -3577,7 +3339,6 @@ class MempaperApp:
                 })
             except Exception as e:
                 print(f"Error in get_config: {e}")
-                import traceback
                 traceback.print_exc()
                 return jsonify({'error': str(e)}), 500
         
@@ -4404,7 +4165,6 @@ class MempaperApp:
                 
             except Exception as e:
                 print(f"Error in refresh_wallet_balances: {e}")
-                import traceback
                 traceback.print_exc()
                 return jsonify({'success': False, 'message': str(e)}), 500
 
@@ -4471,7 +4231,6 @@ class MempaperApp:
                 
             except Exception as e:
                 print(f"Error in get_cached_wallet_balances: {e}")
-                import traceback
                 traceback.print_exc()
                 return jsonify({'success': False, 'message': str(e)}), 500
 
@@ -4513,7 +4272,6 @@ class MempaperApp:
                 
             except Exception as e:
                 print(f"Error in get_found_blocks_count: {e}")
-                import traceback
                 traceback.print_exc()
                 return jsonify({'success': False, 'message': str(e)}), 500
         
@@ -4541,7 +4299,6 @@ class MempaperApp:
 
             except Exception as e:
                 print(f"Error in get_bitaxe_best_diff: {e}")
-                import traceback
                 traceback.print_exc()
                 return jsonify({'success': False, 'message': str(e)}), 500
 
@@ -4687,11 +4444,6 @@ class MempaperApp:
             debug (bool): Enable debug mode
         """
         print(f"🚀 Starting Mempaper server on {host}:{port}")
-        
-        # DISABLED: websocket_client causes duplicate block processing
-        # block_monitor already has WebSocket functionality built-in
-        # self.start_websocket_listener()
-        print("⚙️ WebSocket updates handled by block_monitor (prevents duplicate processing)")
         
         # Run Flask app
         if self.socketio:

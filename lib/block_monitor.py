@@ -12,10 +12,12 @@ import os
 import requests
 import threading
 import time
+import traceback
 from typing import List, Set, Dict, Any
 import urllib3
 from requests.auth import HTTPBasicAuth
 from urllib.parse import quote
+from utils.technical_config import build_mempool_api_url
 
 # Import the new caching system
 from lib.block_reward_cache import BlockRewardCache
@@ -109,7 +111,7 @@ class BlockRewardMonitor:
             self.blocks_by_address = {}
     
     def _get_mempool_base_url(self) -> str:
-        """Get mempool API base URL from configuration with domain and HTTPS support."""
+        """Get mempool API base URL from configuration."""
         if self.config_manager:
             config = self.config_manager.get_current_config()
             mempool_host = config.get("mempool_host", "127.0.0.1") if isinstance(config, dict) else "127.0.0.1"
@@ -118,26 +120,10 @@ class BlockRewardMonitor:
             
             if not mempool_rest_port:
                 raise ValueError("❌ Mempool configuration missing. Please configure mempool_rest_port.")
-            
             if not mempool_host:
                 raise ValueError("❌ Mempool configuration missing. Please configure mempool_host.")
             
-            # Build URL with proper protocol
-            protocol = "https" if mempool_use_https else "http"
-            
-            # Check if host looks like a domain (contains dots but not just IP)
-            # Skip port for domains using standard ports (80/443)
-            is_domain = "." in mempool_host and not mempool_host.replace(".", "").isdigit()
-            
-            if is_domain:
-                if (mempool_use_https and mempool_rest_port in ["443", "80"]) or \
-                   (not mempool_use_https and mempool_rest_port in ["80", "443"]):
-                    return f"{protocol}://{mempool_host}/api"
-                else:
-                    return f"{protocol}://{mempool_host}:{mempool_rest_port}/api"
-            else:
-                # Always include port for IP addresses
-                return f"{protocol}://{mempool_host}:{mempool_rest_port}/api"
+            return build_mempool_api_url(mempool_host, mempool_rest_port, mempool_use_https)
         else:
             raise ValueError("❌ No configuration manager available. Cannot connect to mempool without configuration.")
 
@@ -580,19 +566,15 @@ class BlockRewardMonitor:
     
     def _on_open(self, ws):
         """WebSocket connection opened."""
-        # Connection already logged by websocket_client on_open
-        # print("📶 WebSocket connected, subscribing to blocks...")
         ws.send(json.dumps({"action": "want", "data": ["blocks"]}))
     
     def _on_message(self, ws, message):
         """Handle WebSocket message."""
-        # print(f"🟢 [HEARTBEAT] WebSocket message received at {time.strftime('%H:%M:%S')}")
         try:
             data = json.loads(message)
             if data.get("block"):
                 block_hash = data["block"]["id"]
                 block_height = data["block"].get("height")
-                # print(f"🟢 [HEARTBEAT] Block event received: block_height={block_height}, block_hash={block_hash}")
                 # Format block height with thousand separators for better readability
                 if block_height:
                     formatted_height = f"{block_height:,}".replace(",", ".")
@@ -605,21 +587,16 @@ class BlockRewardMonitor:
                 if block_height:
                     self.cache.update_for_new_block(block_hash, block_height)
                 
-                # ...existing code...
                 if self.new_block_notification_callback and block_height:
-                    print(f"📶 Sending new block notification to web clients")
                     try:
                         self.new_block_notification_callback(block_height, block_hash)
                     except Exception as e:
                         print(f"⚠️ Failed to send block notification: {e}")
                 if self.image_generation_callback and block_height:
-                    print(f"⚙️ Triggering image generation for new block {block_height}")
                     try:
                         self.image_generation_callback(block_height, block_hash)
-                        print(f"✅ Image generation triggered successfully for block {block_height}")
                     except Exception as e:
                         print(f"❌ Failed to trigger image generation for block {block_height}: {e}")
-                        import traceback
                         traceback.print_exc()
                 
                 # 🚀 OPTIMIZATION: Move coinbase check to background thread to avoid blocking WebSocket handler
@@ -645,7 +622,6 @@ class BlockRewardMonitor:
                     threading.Thread(target=check_block_rewards, daemon=True).start()
         except Exception as e:
             print(f"⚠️ Error processing WebSocket message: {e}")
-            import traceback
             traceback.print_exc()
     
     def _fetch_coinbase_with_retry(self, block_hash: str, max_retries: int = 3) -> Dict[str, Any]:

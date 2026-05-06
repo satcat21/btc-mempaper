@@ -9,6 +9,7 @@ Based on the reference implementation from image_renderer.py.
 import requests
 import time
 from typing import Dict, Optional, Union
+from utils.technical_config import build_mempool_api_url
 
 
 class BitcoinPriceAPI:
@@ -31,20 +32,12 @@ class BitcoinPriceAPI:
         self._price_cache_ttl = 300  # 5-minute cache TTL
     
     def _build_base_url(self) -> str:
-        """Build the base URL for price API from configuration with unified host field and HTTPS support."""
-        mempool_host = self.config.get("mempool_host", "127.0.0.1")
-        mempool_rest_port = self.config.get("mempool_rest_port", "8080")
-        mempool_use_https = self.config.get("mempool_use_https", False)
-        
-        # Build URL with proper protocol
-        protocol = "https" if mempool_use_https else "http"
-        
-        # Don't include port in URL if using standard ports with domain/hostname
-        if (mempool_use_https and mempool_rest_port in ["443", "80"]) or \
-           (not mempool_use_https and mempool_rest_port in ["80", "443"]):
-            return f"{protocol}://{mempool_host}/api"
-        else:
-            return f"{protocol}://{mempool_host}:{mempool_rest_port}/api"
+        """Build the base URL for price API from configuration."""
+        return build_mempool_api_url(
+            self.config.get("mempool_host", "127.0.0.1"),
+            self.config.get("mempool_rest_port", "8080"),
+            self.config.get("mempool_use_https", False)
+        )
     
     def fetch_btc_price(self) -> Optional[Dict[str, Union[str, float, int]]]:
         """
@@ -62,16 +55,13 @@ class BitcoinPriceAPI:
         # Check cache first
         current_time = time.time()
         if self._price_cache and (current_time - self._price_cache_timestamp) < self._price_cache_ttl:
-            # print(f"💰 Using cached price (age: {current_time - self._price_cache_timestamp:.1f}s)")
             return self._price_cache
         
         try:
             # Get Bitcoin price in USD
-            # print(f"🌐 Fetching price data from: {self.base_url}/v1/prices")
             response = requests.get(f"{self.base_url}/v1/prices", timeout=10, verify=self.mempool_verify_ssl)
             response.raise_for_status()
             price_data = response.json()
-            # print(f"✅ Successfully fetched price data from configured mempool instance")
             
             # Get configured currency
             selected_currency = self.config.get("btc_price_currency", "USD")

@@ -55,7 +55,6 @@ class ConfigurationObserver:
     def _calculate_wallet_config_hash(self, config: Dict) -> str:
         """Calculate hash of wallet-specific configuration."""
         wallet_config = {
-            # Legacy field removed - now using wallet_balance_addresses_with_comments only
             "xpub_derivation_count": config.get("xpub_derivation_count", 20)
         }
         config_str = json.dumps(wallet_config, sort_keys=True)
@@ -207,7 +206,6 @@ class AsyncAddressCacheManager:
     def _calculate_cache_key(self, config: Dict) -> str:
         """Calculate cache key for configuration."""
         wallet_config = {
-            # Legacy field removed - now using wallet_balance_addresses_with_comments only
             "xpub_derivation_count": config.get("xpub_derivation_count", 20)
         }
         config_str = json.dumps(wallet_config, sort_keys=True)

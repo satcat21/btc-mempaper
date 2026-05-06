@@ -298,7 +298,6 @@ class AddressDerivation:
         """
         try:
             public_key, chain_code, address_format = self.parse_extended_key(extended_key)
-            print(f"[DEBUG] Extended key format detected: {address_format} ({extended_key[:8]}...)")
             addresses = []
 
             for i in range(start_index, start_index + count):
@@ -313,25 +312,19 @@ class AddressDerivation:
                     elif address_format == 'p2wpkh':
                         address = self._pubkey_to_p2wpkh_address(child_key)
                     else:
-                        print(f"[ERROR] Unsupported address format: {address_format}")
+                        print(f"⚠️ Unsupported address format: {address_format}")
                         continue
 
                     addresses.append((address, i))
-                    print(f"[DEBUG] Derived address {i}: {address[:10]}...")
 
                 except Exception as e:
-                    print(f"[ERROR] Failed to derive address at index {i}: {e}")
-                    import traceback
-                    traceback.print_exc()
+                    print(f"⚠️ Failed to derive address at index {i}: {e}")
                     continue
 
-            print(f"[DEBUG] Total addresses derived from {extended_key[:8]}...: {len(addresses)}")
             return addresses
 
         except Exception as e:
-            print(f"[ERROR] Error deriving addresses from {extended_key[:20]}...: {e}")
-            import traceback
-            traceback.print_exc()
+            print(f"❌ Error deriving addresses from {extended_key[:20]}...: {e}")
             return []
     
     def derive_addresses_range(self, extended_key: str, start_index: int, end_index: int) -> List[Tuple[str, int]]:

@@ -9,8 +9,10 @@ Uses local address derivation from XPUB/ZPUB keys for better control.
 
 import requests
 import urllib3
+import traceback
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+from utils.technical_config import build_mempool_api_url
 import hashlib
 import json
 import time
@@ -107,7 +109,6 @@ class WalletBalanceAPI:
         # Initialize secure configuration manager
         if SECURE_CONFIG_AVAILABLE:
             self.secure_config_manager = SecureConfigManager()
-            # print(f"🔐 Secure configuration manager initialized")
         else:
             self.secure_config_manager = None
             print(f"⚠️ Secure configuration unavailable - using fallback mode")
@@ -118,24 +119,8 @@ class WalletBalanceAPI:
         mempool_use_https = self.config.get("mempool_use_https", False)
         self.mempool_verify_ssl = self.config.get("mempool_verify_ssl", True)
         
-        # Build API URL with proper protocol
-        protocol = "https" if mempool_use_https else "http"
+        self.base_url = build_mempool_api_url(mempool_host, mempool_port, mempool_use_https)
         
-        # Check if host looks like a domain (contains dots but not just IP)
-        # Skip port for domains using standard ports (80/443)
-        is_domain = "." in mempool_host and not mempool_host.replace(".", "").isdigit()
-        
-        if is_domain:
-            if (mempool_use_https and str(mempool_port) in ["443", "80"]) or \
-               (not mempool_use_https and str(mempool_port) in ["80", "443"]):
-                self.base_url = f"{protocol}://{mempool_host}/api"
-            else:
-                self.base_url = f"{protocol}://{mempool_host}:{mempool_port}/api"
-        else:
-            # Always include port for IP addresses
-            self.base_url = f"{protocol}://{mempool_host}:{mempool_port}/api"
-        
-        # print(f"🔒 Using private mempool instance: {self.base_url}")
         
         # Initialize mempool API client
         self.mempool_api = MempoolAPI(
@@ -149,7 +134,6 @@ class WalletBalanceAPI:
         
         # Initialize requests session with robust retry logic
         self.session = requests.Session()
-        # print("🔧 WalletBalanceAPI: Initializing session with robust timeout")
         retry_strategy = Retry(
             total=3,  # Increase retries to handle transient failures
             backoff_factor=1,  # Increase backoff
@@ -202,7 +186,6 @@ class WalletBalanceAPI:
         if self.use_unified_cache:
             try:
                 self.unified_cache = get_unified_cache()
-                # print(f"🔐 Unified secure cache initialized for wallet data")
             except Exception as e:
                 print(f"⚠️ Failed to initialize unified cache: {e}")
                 self.use_unified_cache = False
@@ -210,7 +193,6 @@ class WalletBalanceAPI:
         if self.use_async_cache:
             # Use async cache manager for optimal performance (address derivation)
             self.async_cache_manager = AsyncAddressCacheManager()
-            # print(f"🚀 Using async address cache for optimal performance")
         
         # Always initialize fallback cache (needed for _get_cached_addresses method)
         if not self.use_async_cache:
@@ -220,7 +202,6 @@ class WalletBalanceAPI:
             if SECURE_CACHE_AVAILABLE:
                 self.secure_cache_manager = SecureCacheManager(self.cache_file)
                 self.address_cache = self.secure_cache_manager.load_cache()
-                # print(f"🔐 Using secure encrypted address cache")
             else:
                 print(f"❌ Secure cache unavailable - using empty cache")
                 self.address_cache = {}
@@ -277,7 +258,6 @@ class WalletBalanceAPI:
                 return 0.0
         except Exception as e:
             print(f"❌ Fiat conversion error: {e}")
-            import traceback
             traceback.print_exc()
             return 0.0
     
@@ -377,7 +357,6 @@ class WalletBalanceAPI:
             #     print(f"⚙️ [STANDARD] Optimized monitoring disabled - using standard method")
             #     return self.get_xpub_balance(xpub, startup_mode)
             
-            # print(f"🎯 [OPTIMIZED] Starting optimized balance calculation for {xpub[:20]}...")
             
             # Get configuration values
             cache_days = 50
@@ -394,7 +373,6 @@ class WalletBalanceAPI:
             # Check if we have a valid full scan cache
             if cache_data and (current_time - cache_data.get('last_full_scan', 0)) < cache_valid_seconds:
                 # cache_age_days = (current_time - cache_data['last_full_scan']) / (24 * 60 * 60)
-                # print(f"🕐 [OPTIMIZED] Using cached scan from {datetime.fromtimestamp(cache_data['last_full_scan']).strftime('%Y-%m-%d %H:%M:%S')} ({cache_age_days:.1f} days ago)")
                 
                 # Check if we have fresh address data from gap limit that might invalidate balance cache
                 # This check should happen BEFORE monitoring, regardless of startup_mode
@@ -486,8 +464,6 @@ class WalletBalanceAPI:
                 return 0.0
                 
             # Perform full scan (either first run, cache expired, or balance change detected)
-            # print(f"👁️ [OPTIMIZED] Performing full address scan for {xpub[:20]}...")
-            # print(f"👁️ [OPTIMIZED] Gap limit enabled: {self.enable_gap_limit}")
             
             # Get all addresses using gap limit detection - force gap limit for comprehensive scanning
             if self.enable_gap_limit:
@@ -758,7 +734,6 @@ class WalletBalanceAPI:
             if not user_xpubs or not user_addresses:
                 return None  # No potential for conflicts
             
-            # print(f"👁️ Checking for conflicts between {len(user_addresses)} manual addresses and {len(user_xpubs)} extended keys...")
             
             # Map each derived address to its source XPUB/ZPUB
             address_to_xpub = {}
@@ -880,8 +855,6 @@ class WalletBalanceAPI:
                         cache_key = f"{xpub}:gap_limit:{test_count}"
                         cached_addresses = self.async_cache_manager.get_addresses(cache_key)
                         if cached_addresses:
-                            # print(f"✅ [CACHE] Found cached gap limit result for {xpub[:20]}... ({test_count} addresses)")
-                            # print(f"🚀 [CACHE] Skipping gap limit detection - using cached addresses")
                             return set(cached_addresses)
                 
                 print(f"👁️ [FRESH] No cached gap limit results found - running detection")
@@ -1009,7 +982,6 @@ class WalletBalanceAPI:
         # Debug: Check if address is actually an object (this should NOT happen)
         if isinstance(address, dict):
             print(f"🚨 ERROR: get_address_balance received a dict instead of string: {address}")
-            import traceback
             print("🚨 Call stack:")
             traceback.print_stack()
             # Try to extract address from the object
@@ -1076,7 +1048,6 @@ class WalletBalanceAPI:
             }
 
         try:
-            # print(f"👁️ Fetching usage info for {address[:10]}...")
             url = f"{self.base_url}/address/{address}"
             # Use reasonable timeout (30s) to allow for server load
             response = self.session.get(url, timeout=30, verify=self.mempool_verify_ssl)
@@ -1584,7 +1555,6 @@ class WalletBalanceAPI:
         # Debug: Check if xpub is actually an object (this should NOT happen)
         if isinstance(xpub, dict):
             print(f"🚨 ERROR: get_xpub_balance received a dict instead of string: {xpub}")
-            import traceback
             print("🚨 Call stack:")
             traceback.print_stack()
             # Try to extract xpub from the object
@@ -1830,7 +1800,6 @@ class WalletBalanceAPI:
             total_fiat = None
             
             if total_btc > 0:
-                # print(f"💰 Converting {total_btc:.8f} BTC to {fiat_currency}...")
                 total_fiat = self._convert_to_fiat(total_btc, fiat_currency)
                 # if total_fiat:
                 #     print(f"✅ Conversion successful: {total_fiat:.2f} {fiat_currency}")

@@ -49,7 +49,6 @@ class SecureCacheManager:
         try:
             self.secure_manager = SecureConfigManager(config_path)
             self.encryption_available = True
-            # print(f"🔐 Secure cache manager initialized for {cache_file}")
         except Exception as e:
             print(f"⚠️ Cache encryption unavailable: {e}")
             self.encryption_available = False
@@ -72,10 +71,6 @@ class SecureCacheManager:
                     if encrypted_data.get('_encrypted_cache'):
                         decrypted_data = self.secure_manager._decrypt_data(encrypted_data['data'])
                         if decrypted_data is not None:
-                            # Only log if cache has actual content (not just empty dict)
-                            # if decrypted_data and len(decrypted_data) > 0:
-                                # Silent loading for faster startup
-                                # print(f"💾 Loaded cached data from {self.encrypted_cache_file}")
                             return decrypted_data
                         else:
                             print(f"⚠️ Failed to decrypt cache: {self.encrypted_cache_file}")
@@ -153,150 +148,3 @@ class SecureCacheManager:
             info['recommendation'] = "Install cryptography library to enable cache encryption"
         
         return info
-
-
-def patch_wallet_balance_api():
-    """
-    Patch WalletBalanceAPI to use secure cache automatically.
-    This function modifies the existing cache system to use encryption.
-    """
-    try:
-        from wallet_balance_api import WalletBalanceAPI
-        
-        # Store original methods
-        original_load_cache = WalletBalanceAPI._load_address_cache
-        original_save_cache = WalletBalanceAPI._save_address_cache
-        
-        def secure_load_cache(self):
-            """Load address cache with encryption support."""
-            if not hasattr(self, '_secure_cache_manager'):
-                self._secure_cache_manager = SecureCacheManager(self.cache_file)
-            
-            self.address_cache = self._secure_cache_manager.load_cache()
-        
-        def secure_save_cache(self):
-            """Save address cache with encryption support."""
-            if not hasattr(self, '_secure_cache_manager'):
-                self._secure_cache_manager = SecureCacheManager(self.cache_file)
-            
-            return self._secure_cache_manager.save_cache(self.address_cache)
-        
-        # Patch the methods
-        WalletBalanceAPI._load_address_cache = secure_load_cache
-        WalletBalanceAPI._save_address_cache = secure_save_cache
-        
-        print("🔐 WalletBalanceAPI patched for secure cache support")
-        return True
-        
-    except Exception as e:
-        print(f"⚠️ Failed to patch WalletBalanceAPI: {e}")
-        return False
-
-
-def patch_async_cache_manager():
-    """
-    Patch AsyncAddressCacheManager to use secure cache.
-    """
-    try:
-        from config_observer import AsyncAddressCacheManager
-        
-        # Store original methods
-        original_load_cache = AsyncAddressCacheManager._load_cache_from_disk
-        original_save_cache = AsyncAddressCacheManager._save_cache_to_disk
-        
-        def secure_load_cache(self):
-            """Load async cache with encryption support."""
-            if not hasattr(self, '_secure_cache_manager'):
-                self._secure_cache_manager = SecureCacheManager(self.cache_file)
-            
-            cache_data = self._secure_cache_manager.load_cache()
-            
-            # Convert to expected format
-            for key, value in cache_data.items():
-                if isinstance(value, dict) and 'addresses' in value:
-                    self.cache[key] = {
-                        'addresses': value['addresses'],
-                        'timestamp': value.get('timestamp', 0),
-                        'count': value.get('count', len(value['addresses']))
-                    }
-        
-        def secure_save_cache(self):
-            """Save async cache with encryption support."""
-            if not hasattr(self, '_secure_cache_manager'):
-                self._secure_cache_manager = SecureCacheManager(self.cache_file)
-            
-            return self._secure_cache_manager.save_cache(dict(self.cache))
-        
-        # Patch the methods
-        AsyncAddressCacheManager._load_cache_from_disk = secure_load_cache
-        AsyncAddressCacheManager._save_cache_to_disk = secure_save_cache
-        
-        print("🔐 AsyncAddressCacheManager patched for secure cache support")
-        return True
-        
-    except Exception as e:
-        print(f"⚠️ Failed to patch AsyncAddressCacheManager: {e}")
-        return False
-
-
-def migrate_all_caches():
-    """Check all secure cache files (migration no longer needed as plain caches are deprecated)."""
-    cache_files = [
-        'wallet_address_cache.json',
-        'cache/async_wallet_address_cache.json'
-    ]
-    
-    # Check if secure cache files exist
-    existing_secure = 0
-    for cache_file in cache_files:
-        secure_cache = SecureCacheManager(cache_file)
-        if secure_cache.get_cache_info()['encrypted_cache_exists']:
-            existing_secure += 1
-    
-    print(f"✅ Found {existing_secure} existing secure cache files")
-    return existing_secure
-
-
-def get_all_cache_status():
-    """Get security status of all cache files."""
-    cache_files = [
-        'wallet_address_cache.json',
-        'cache/async_wallet_address_cache.json'
-    ]
-    
-    status = {}
-    for cache_file in cache_files:
-        secure_cache = SecureCacheManager(cache_file)
-        status[cache_file] = secure_cache.get_cache_info()
-    
-    return status
-
-
-def main():
-    """Test and demonstration of secure cache manager."""
-    print("🔐 Secure Cache Manager Test")
-    
-    # Check status of all caches
-    print("\n💾 Cache Security Status:")
-    cache_status = get_all_cache_status()
-    
-    for cache_file, info in cache_status.items():
-        print(f"\n📁 {cache_file}:")
-        print(f"   Encrypted cache exists: {'✅' if info['encrypted_cache_exists'] else '❌'}")
-        print(f"   Encryption available: {'✅' if info['encryption_available'] else '❌'}")
-        
-        if info['recommendation']:
-            print(f"   💡 Recommendation: {info['recommendation']}")
-    
-    # Test migration
-    print(f"\n⚙️ Testing cache migration...")
-    migrate_all_caches()
-    
-    # Patch existing systems
-    print(f"\n🔧 Patching cache systems...")
-    patch_wallet_balance_api()
-    patch_async_cache_manager()
-
-
-if __name__ == "__main__":
-    main()

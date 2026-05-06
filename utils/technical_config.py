@@ -148,3 +148,24 @@ class TechnicalConfig:
         logger.info(f"  🖥️  Block height area: {TechnicalConfig.BLOCK_HEIGHT_AREA}px")
         logger.info(f"  🖥️  Date font range: {TechnicalConfig.DATE_FONT_MIN_SIZE}-{TechnicalConfig.DATE_FONT_MAX_SIZE}px")
         logger.info(f"  🌐 Network outage tolerance: {TechnicalConfig.NETWORK_OUTAGE_TOLERANCE_MINUTES} minutes")
+
+
+def build_mempool_api_url(host, port, use_https=False):
+    """
+    Build a mempool API base URL, handling domain vs IP and standard ports.
+    
+    Args:
+        host: Hostname or IP address
+        port: Port number (str or int)
+        use_https: Whether to use HTTPS
+        
+    Returns:
+        Base URL string like "https://mempool.example.com/api"
+    """
+    protocol = "https" if use_https else "http"
+    port_str = str(port)
+    is_domain = "." in host and not host.replace(".", "").isdigit()
+    
+    if is_domain and port_str in ("80", "443"):
+        return f"{protocol}://{host}/api"
+    return f"{protocol}://{host}:{port_str}/api"

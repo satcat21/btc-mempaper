@@ -348,62 +348,7 @@ class SecureConfigManager:
             print(f"❌ Migration error: {e}")
             return False
     
-    def clean_secure_config(self) -> bool:
-        """
-        Clean the secure config to ensure it only contains sensitive fields.
-        Remove any non-sensitive data that shouldn't be encrypted.
-        
-        Returns:
-            True if cleaning successful
-        """
-        try:
-            # Load current complete configuration
-            current_config = self.load_secure_config()
-            if not current_config:
-                print("❌ Could not load current configuration for cleaning")
-                return False
-            
-            # Check what's currently in the encrypted file
-            encrypted_data = {}
-            if os.path.exists(self.encrypted_config_file):
-                with open(self.encrypted_config_file, 'r') as f:
-                    encrypted_file_data = json.load(f)
-                
-                if encrypted_file_data.get('_encrypted'):
-                    decrypted_data = self._decrypt_data(encrypted_file_data['data'])
-                    if decrypted_data:
-                        encrypted_data = decrypted_data
-                        print(f"👁️ Current encrypted config contains {len(encrypted_data)} fields:")
-                        for key in encrypted_data.keys():
-                            is_sensitive = key in self.sensitive_fields
-                            print(f"   {'🔐' if is_sensitive else '📄'} {key}: {'SENSITIVE' if is_sensitive else 'NOT SENSITIVE'}")
-            
-            # Identify non-sensitive fields that shouldn't be encrypted
-            non_sensitive_in_encrypted = {k: v for k, v in encrypted_data.items() if k not in self.sensitive_fields}
-            
-            if non_sensitive_in_encrypted:
-                print(f"🧹 Found {len(non_sensitive_in_encrypted)} non-sensitive fields in encrypted config:")
-                for key in non_sensitive_in_encrypted.keys():
-                    print(f"   📄 {key} (will be moved to public config)")
-                
-                # Re-save configuration to properly separate sensitive/non-sensitive data
-                success = self.save_secure_config(current_config)
-                
-                if success:
-                    print("✅ Secure config cleaned successfully!")
-                    print("   🔐 Only sensitive fields are now encrypted")
-                    print("   📄 Non-sensitive fields moved to public config")
-                    return True
-                else:
-                    print("❌ Failed to clean secure config")
-                    return False
-            else:
-                print("✅ Secure config is already clean - contains only sensitive fields")
-                return True
-                
-        except Exception as e:
-            print(f"❌ Error cleaning secure config: {e}")
-            return False
+    def get_security_status(self):
         """Get current security status and recommendations."""
         status = {
             'encryption_enabled': os.path.exists(self.encrypted_config_file),
@@ -417,7 +362,6 @@ class SecureConfigManager:
             status['recommendations'].append("Enable encryption for sensitive data")
         
         if status['public_config_exists']:
-            # Check if public config contains sensitive data
             try:
                 with open(self.config_file, 'r') as f:
                     config = json.load(f)
@@ -432,7 +376,7 @@ class SecureConfigManager:
         for file_path in [self.key_file, self.encrypted_config_file]:
             if os.path.exists(file_path):
                 file_stat = os.stat(file_path)
-                if file_stat.st_mode & 0o077:  # Check if readable by group/others
+                if file_stat.st_mode & 0o077:
                     status['recommendations'].append(f"Restrict permissions on {os.path.basename(file_path)}")
         
         return status

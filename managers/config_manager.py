@@ -114,7 +114,6 @@ class ConfigManager:
         if enable_secure_config and SECURE_CONFIG_AVAILABLE:
             try:
                 self.secure_manager = SecureConfigManager(self.config_path)
-                # print("🔐 Secure configuration manager initialized")
             except Exception as e:
                 print(f"⚠️ Failed to initialize secure config manager: {e}")
                 self.secure_manager = None
@@ -170,7 +169,6 @@ class ConfigManager:
             self.file_observer.schedule(event_handler, watch_dir, recursive=False)
             self.file_observer.start()
             
-            # print(f"👁 Watching config file for changes: {self.config_path}")
         except Exception as e:
             print(f"⚠ Could not start file watching: {e}")
             self.file_observer = None
@@ -328,7 +326,6 @@ class ConfigManager:
         try:
             with open(self.config_path, 'r', encoding='utf-8') as f:
                 plain_config = json.load(f)
-            # print(f"✅ Plain configuration loaded from {self.config_path}")
         except FileNotFoundError:
             print(f"⚠ Config file not found: {self.config_path}")
         except json.JSONDecodeError as e:
@@ -342,7 +339,6 @@ class ConfigManager:
         if self.secure_manager:
             secure_config = self.secure_manager.load_secure_config()
             if secure_config is not None:
-                # print(f"✅ Secure configuration loaded from encrypted files")
                 # Only update with sensitive fields from secure config
                 if self.secure_manager:
                     sensitive_fields = self.secure_manager.sensitive_fields
@@ -353,7 +349,6 @@ class ConfigManager:
                 for key, value in secure_config.items():
                     if key in sensitive_fields:
                         merged_config[key] = value
-                # print(f"⚙️ Added sensitive fields from secure configuration")
                 return merged_config
         
         print(f"📝 Configuration loaded: {len(merged_config)} fields")

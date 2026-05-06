@@ -9,23 +9,13 @@ This module handles all interactions with the Bitcoin mempool API including:
 
 import requests
 from requests.auth import HTTPBasicAuth
+from utils.technical_config import build_mempool_api_url
 
 
 class MempoolAPI:
     """Handles communication with Bitcoin mempool API."""
     
     def __init__(self, host="127.0.0.1", port="4081", use_https=False, verify_ssl=True, username=None, password=None):
-        """
-        Initialize Mempool API client.
-        
-        Args:
-            host (str): IP address or domain of the mempool instance
-            port (str): REST API port
-            use_https (bool): Whether to use HTTPS protocol
-            verify_ssl (bool): Whether to verify SSL certificates
-            username (str): Optional username for Basic authentication
-            password (str): Optional password for Basic authentication
-        """
         self.host = host
         self.port = port
         self.use_https = use_https
@@ -33,20 +23,7 @@ class MempoolAPI:
         self.username = username
         self.password = password
         self.auth = HTTPBasicAuth(username, password) if username and password else None
-        
-        # Build base URL with proper protocol
-        protocol = "https" if use_https else "http"
-        
-        # Handle standard ports for domains
-        if not host.replace('.', '').replace('-', '').isalnum():  # It's likely a domain, not an IP
-            if (use_https and port in ["443", "80"]) or \
-               (not use_https and port in ["80", "443"]):
-                self.base_url = f"{protocol}://{host}/api"
-            else:
-                self.base_url = f"{protocol}://{host}:{port}/api"
-        else:
-            # Always include port for IP addresses
-            self.base_url = f"{protocol}://{host}:{port}/api"
+        self.base_url = build_mempool_api_url(host, port, use_https)
         
         # Fallback values for when API is unavailable
         self.fallback_data = {

@@ -68,7 +68,6 @@ class BlockRewardCache:
         if self.use_secure_cache:
             try:
                 self.unified_cache = get_unified_cache()
-                # print(f"🔐 Using unified secure cache for block reward data")
             except Exception as e:
                 print(f"⚠️ Failed to initialize secure cache: {e}")
                 self.use_secure_cache = False
@@ -133,7 +132,6 @@ class BlockRewardCache:
                 cache_data = self.unified_cache.get_cache("block_reward_cache")
                 if cache_data and self._validate_cache_structure(cache_data):
                     self.cache_data = cache_data
-                    # print(f"✅ Loaded block reward cache from secure storage")
                 else:
                     print(f"📁 No secure cache data, initializing new cache")
                     self._save_cache()
@@ -152,7 +150,6 @@ class BlockRewardCache:
                     # Validate cache structure
                     if self._validate_cache_structure(loaded_data):
                         self.cache_data = loaded_data
-                        # print(f"✅ Loaded block reward cache from {self.cache_file}")
                     else:
                         print(f"⚠️ Invalid cache structure, initializing new cache")
                         self._save_cache()

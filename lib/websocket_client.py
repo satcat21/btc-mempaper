@@ -101,7 +101,6 @@ class MempoolWebSocket:
         """
         try:
             data = json.loads(message)
-            # print(f"WebSocket message received: {type(data)}")  # Reduce logging noise
             
             # Check for new block data
             block_data = data.get("block")
@@ -110,21 +109,11 @@ class MempoolWebSocket:
                 block_hash = block_data.get("id")
                 timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 
-                # Block info already logged by block_monitor callback
-                # print(f"📶 [{timestamp}] New block received: Height {block_height}, Hash {block_hash}")
-                
                 # Call the callback function if provided
                 if self.on_new_block_callback:
                     self.on_new_block_callback(block_height, block_hash)
-            elif "track-tx" in data or "conversions" in data or "action" in data:
-                 # Expected non-block messages (responses to subscriptions, init, etc)
-                 pass
             else:
-                # Only log unknown structure if it's not a known non-block message
-                if "block" not in data:
-                     # It might be an init message or something else, legitimate but not a block
-                     # print(f"Received non-block message: {str(data)[:100]}...")
-                     pass
+                pass
                 
         except json.JSONDecodeError as e:
             print(f"Error parsing WebSocket message JSON: {e}")
@@ -267,9 +256,6 @@ class MempoolWebSocket:
     
     def start_connection(self):
         """Start the WebSocket connection and run forever."""
-        # Connection status logged in on_open callback
-        # print(f"📶 Starting WebSocket connection to {self.ws_url}")
-        
         self.ws = websocket.WebSocketApp(
             self.ws_url,
             # No custom headers - let websocket-client handle Upgrade headers
@@ -312,8 +298,6 @@ class MempoolWebSocket:
         
         thread = threading.Thread(target=run_listener, daemon=True)
         thread.start()
-        # Thread startup logged via on_open callback when connection succeeds
-        # print("📶 WebSocket listener thread started")
         return thread
     
     def close_connection(self):

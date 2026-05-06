@@ -345,6 +345,7 @@ class ImageRenderer:
         self.font_bold = os.path.join("static", "fonts", "Roboto-Bold.ttf")
         self.font_mono = os.path.join("static", "fonts", "IBMPlexMono-Bold.ttf")
         self.font_block_height = os.path.join("static", "fonts", "RobotoCondensed-ExtraBold.ttf")
+        self._font_cache = {}  # Cache loaded font objects by (path, size)
         self.block_height_area = self.block_height_area_base
         
         # Color palette for 7-color e-Paper display
@@ -377,6 +378,15 @@ class ImageRenderer:
         # Example:
         if hasattr(self, "refresh_dashboard"):
             self.refresh_dashboard()
+
+    def _get_font(self, font_path, size):
+        """Get a cached font object, loading from disk only on first request."""
+        key = (font_path, size)
+        font = self._font_cache.get(key)
+        if font is None:
+            font = ImageFont.truetype(font_path, size)
+            self._font_cache[key] = font
+        return font
 
     def _get_resolution_scale(self, orientation):
         """Return orientation-aware scale factor based on original baseline canvas."""
@@ -614,7 +624,7 @@ class ImageRenderer:
 
         # Create fonts
         try:
-            font_small_label = ImageFont.truetype(self.font_regular, FONT_SIZE_SMALL_LABEL)
+            font_small_label = self._get_font(self.font_regular, FONT_SIZE_SMALL_LABEL)
         except:
             font_small_label = font_label
 
@@ -645,7 +655,7 @@ class ImageRenderer:
         value_y = self.layout.get_value_y(info_block_y, label_height)
 
         try:
-            font_large_value = ImageFont.truetype(self.font_bold, FONT_SIZE_LARGE_VALUE)
+            font_large_value = self._get_font(self.font_bold, FONT_SIZE_LARGE_VALUE)
         except:
             font_large_value = font_value
 
@@ -706,7 +716,7 @@ class ImageRenderer:
         right_col_center = self.layout.get_column_center(2, 1)
 
         try:
-            font_small_label = ImageFont.truetype(self.font_regular, FONT_SIZE_SMALL_LABEL)
+            font_small_label = self._get_font(self.font_regular, FONT_SIZE_SMALL_LABEL)
         except:
             font_small_label = font_label
 
@@ -737,7 +747,7 @@ class ImageRenderer:
         value_y = self.layout.get_value_y(info_block_y, label_height)
 
         try:
-            font_large_value = ImageFont.truetype(self.font_bold, FONT_SIZE_LARGE_VALUE)
+            font_large_value = self._get_font(self.font_bold, FONT_SIZE_LARGE_VALUE)
         except:
             font_large_value = font_value
 
@@ -813,7 +823,7 @@ class ImageRenderer:
         content_center_x = (_ib_left + _ib_right) // 2
 
         try:
-            font_small_label = ImageFont.truetype(self.font_regular, FONT_SIZE_SMALL_LABEL)
+            font_small_label = self._get_font(self.font_regular, FONT_SIZE_SMALL_LABEL)
         except Exception:
             font_small_label = font_label
 
@@ -823,7 +833,7 @@ class ImageRenderer:
         header_font = font_small_label
         while header_font_size > min_header_size:
             try:
-                trial = ImageFont.truetype(self.font_regular, header_font_size)
+                trial = self._get_font(self.font_regular, header_font_size)
             except Exception:
                 trial = font_small_label
             if trial.getlength(header_text) <= content_width:
@@ -850,7 +860,7 @@ class ImageRenderer:
         chosen_size = None
         for size in range(start_size, min_size - 1, -1):
             try:
-                f = ImageFont.truetype(self.font_bold, size)
+                f = self._get_font(self.font_bold, size)
             except Exception:
                 f = font_value
             wrapped = ImageRenderer._wrap_text_to_lines(msg, f, content_width, max_lines)
@@ -865,7 +875,7 @@ class ImageRenderer:
 
         if content_font is None or not lines:
             try:
-                content_font = ImageFont.truetype(self.font_bold, min_size)
+                content_font = self._get_font(self.font_bold, min_size)
             except Exception:
                 content_font = font_value
             lines = ImageRenderer._wrap_text_truncated(msg, content_font, content_width, max_lines)
@@ -876,7 +886,7 @@ class ImageRenderer:
         # If body needs multiple lines, cap max font size to 27 and re-wrap at that size.
         if len(lines) > 1 and chosen_size is not None and chosen_size > two_line_max_size:
             try:
-                content_font = ImageFont.truetype(self.font_bold, two_line_max_size)
+                content_font = self._get_font(self.font_bold, two_line_max_size)
             except Exception:
                 content_font = font_value
             lines = ImageRenderer._wrap_text_to_lines(msg, content_font, content_width, max_lines)
@@ -982,7 +992,7 @@ class ImageRenderer:
         right_col_center_x = self.layout.get_column_center(num_columns, 1) if show_fiat else 0
 
         try:
-            font_small_label = ImageFont.truetype(self.font_regular, FONT_SIZE_SMALL_LABEL)
+            font_small_label = self._get_font(self.font_regular, FONT_SIZE_SMALL_LABEL)
         except Exception:
             font_small_label = font_label
 
@@ -1006,7 +1016,7 @@ class ImageRenderer:
             draw.text((right_x, text_y), header_right_text, font=font_small_label, fill=self.get_color("info_header", web_quality))
 
         try:
-            font_large_value = ImageFont.truetype(self.font_bold, FONT_SIZE_LARGE_VALUE)
+            font_large_value = self._get_font(self.font_bold, FONT_SIZE_LARGE_VALUE)
         except Exception:
             font_large_value = font_value
 
@@ -1485,7 +1495,7 @@ class ImageRenderer:
         """
         text = (text or "").strip()
         if not text:
-            font_desc = ImageFont.truetype(self.font_regular, FONT_SIZE_HOLIDAY_DESC)
+            font_desc = self._get_font(self.font_regular, FONT_SIZE_HOLIDAY_DESC)
             return font_desc, [""]
 
         max_lines = 2
@@ -1496,13 +1506,13 @@ class ImageRenderer:
         min_size = max(10, int(round(base_size * 0.6)))
 
         for font_size in range(base_size, min_size - 1, -1):
-            font_desc = ImageFont.truetype(self.font_regular, font_size)
+            font_desc = self._get_font(self.font_regular, font_size)
             lines = self._wrap_text_to_lines(text, font_desc, max_text_width, max_lines)
             if lines is not None:
                 return font_desc, lines
 
         # Last resort: keep max line count and truncate with ellipsis.
-        fallback_font = ImageFont.truetype(self.font_regular, min_size)
+        fallback_font = self._get_font(self.font_regular, min_size)
         fallback_lines = self._wrap_text_truncated(text, fallback_font, max_text_width, max_lines)
         return fallback_font, fallback_lines
     
@@ -1554,7 +1564,7 @@ class ImageRenderer:
         Render a localized error message if mempool connection fails.
         """
         msg = self.t.get("mempool_error", "⚠️ Mempool connection failed. Fee and block info unavailable.")
-        font = ImageFont.truetype(self.font_bold, 22)
+        font = self._get_font(self.font_bold, 22)
         bbox = font.getbbox(msg)
         x = (width - (bbox[2] - bbox[0])) // 2
         draw.text((x, y), msg, font=font, fill=self.get_color("red", True))
@@ -1705,7 +1715,7 @@ class ImageRenderer:
         # Start with the maximum font size and work down
         for font_size in range(max_font_size, min_font_size - 1, -1):
             try:
-                test_font = ImageFont.truetype(self.font_bold, font_size)
+                test_font = self._get_font(self.font_bold, font_size)
                 bbox = test_font.getbbox(date_text)
                 text_width = bbox[2] - bbox[0]
                 
@@ -1810,7 +1820,8 @@ class ImageRenderer:
         if precached_fee and precached_block_height is not None:
             fee_param = self.config.get("fee_parameter", "minimumFee")
             configured_fee = precached_fee.get(fee_param, 1)
-            api_block_height = precached_block_height
+            # Always prefer the explicitly passed block_height over stale pre-cached value
+            api_block_height = block_height if block_height is not None else precached_block_height
             print("⚡ Using pre-cached fee data (fast!)")
         else:
             configured_fee, api_block_height = self.get_fee_and_block_info(mempool_api)
@@ -1992,6 +2003,10 @@ class ImageRenderer:
         
         # Get fee info once
         configured_fee, api_block_height = self.get_fee_and_block_info(mempool_api)
+        # Always prefer the explicitly passed block_height over API-fetched value
+        # (the API tip may lag behind the block we're rendering for)
+        if block_height is not None:
+            api_block_height = block_height
         
         # Use the provided cached meme path
         meme_path = cached_meme_path
@@ -2012,13 +2027,6 @@ class ImageRenderer:
             info_blocks.append((self.render_bitaxe_block, bitaxe_data))
         if config.get("show_wallet_balances_block", True):
             wallet_data = self.wallet_api.get_cached_wallet_balances()
-            # Import privacy utils if available
-            # try:
-                # from privacy_utils import mask_bitcoin_data
-                # masked_wallet_data = mask_bitcoin_data(wallet_data)
-                # print(f"📋 [CACHE_IMG] Cached wallet data result: {masked_wallet_data}")
-            # except ImportError:
-                # print(f"📋 [CACHE_IMG] Cached wallet data result: {wallet_data}")
             if wallet_data is None or wallet_data.get("error"):
                 wallet_data = {
                     "total_btc": 0,
@@ -2109,11 +2117,11 @@ class ImageRenderer:
         optimal_date_font_size = self.get_optimal_date_font_size(date_text)
         
         # Load fonts with calculated date font size
-        font_date = ImageFont.truetype(self.font_bold, optimal_date_font_size)
-        font_holiday_title = ImageFont.truetype(self.font_bold, FONT_SIZE_HOLIDAY_TITLE)
-        font_holiday_desc = ImageFont.truetype(self.font_regular, FONT_SIZE_HOLIDAY_DESC)
-        font_block_label = ImageFont.truetype(self.font_regular, FONT_SIZE_SMALL_LABEL)
-        font_block_value = ImageFont.truetype(self.font_block_height, self._scale_font_size(124, min_value=52))
+        font_date = self._get_font(self.font_bold, optimal_date_font_size)
+        font_holiday_title = self._get_font(self.font_bold, FONT_SIZE_HOLIDAY_TITLE)
+        font_holiday_desc = self._get_font(self.font_regular, FONT_SIZE_HOLIDAY_DESC)
+        font_block_label = self._get_font(self.font_regular, FONT_SIZE_SMALL_LABEL)
+        font_block_value = self._get_font(self.font_block_height, self._scale_font_size(124, min_value=52))
         
         holiday_info = shared_data["holiday_info"]
         configured_fee = shared_data["configured_fee"]
@@ -2537,16 +2545,6 @@ class ImageRenderer:
         # Define standard spacing unit for balanced layout
         # Increase spacing when holiday is present to ensure visual separation
         STANDARD_SPACING = 12 if holiday_info else 10  # Reduced by ~50% to maximize meme area
-
-        # Info blocks setup - moved after data initialization
-        # info_blocks = []
-        # config = self.config
-        # if config.get("show_btc_price_block", True):
-        #     info_blocks.append((self.render_btc_price_block, btc_price_data))
-        # if config.get("show_bitaxe_block", True):
-        #     info_blocks.append((self.render_bitaxe_block, bitaxe_data))
-        # if config.get("show_wallet_balances_block", True):
-        #     info_blocks.append((self.render_wallet_balances_block, wallet_data))
 
         # Calculate space required for info blocks
         def calculate_info_blocks_space(config_ref):
@@ -2980,7 +2978,7 @@ class ImageRenderer:
             # This is an approximation since we don't know the font metrics perfectly without loading.
             
             # Load font to measure
-            temp_font = ImageFont.truetype(self.font_mono, self._scale_font_size(11, min_value=8))
+            temp_font = self._get_font(self.font_mono, self._scale_font_size(11, min_value=8))
             bbox = temp_font.getbbox("0")
             cw = bbox[2] - bbox[0]
             # Top row logic: 2 chars then gap. 
@@ -3000,7 +2998,7 @@ class ImageRenderer:
                  # Adjust spacing by scale too
                  extra_space = int(max(1, extra_space * scale_factor))
 
-        font = ImageFont.truetype(self.font_mono, font_size)
+        font = self._get_font(self.font_mono, font_size)
     
         # Character size
         bbox = font.getbbox("0")
@@ -3157,7 +3155,7 @@ class ImageRenderer:
         # Inner width = 42*cw + 22*gap
         _MARGIN = self._scale_px(8, min_value=3)  # desired px gap on each side
         try:
-            _mono_font = ImageFont.truetype(self.font_mono, self._scale_font_size(11, min_value=8))
+            _mono_font = self._get_font(self.font_mono, self._scale_font_size(11, min_value=8))
             _cw = _mono_font.getbbox("0")[2] - _mono_font.getbbox("0")[0]
             _gap_frame = self._scale_px(6, min_value=2) if self.orientation == "vertical" else self._scale_px(3, min_value=1)
             if self.ui_scale > 1.0:
@@ -3195,7 +3193,7 @@ class ImageRenderer:
             ratio = frame_target_width / text_width
             new_size = max(self._scale_font_size(20, min_value=12), int(self._scale_font_size(124, min_value=52) * ratio))
             try:
-                used_font_block_value = ImageFont.truetype(self.font_block_height, new_size)
+                used_font_block_value = self._get_font(self.font_block_height, new_size)
                 # Re-measure after font size change
                 text_width = ImageRenderer._squeezed_text_width(formatted_height, used_font_block_value, _DOT_FRACTION)
             except Exception as e:
@@ -3241,7 +3239,7 @@ class ImageRenderer:
                 fee_text = f"{fee_type_display}: {configured_fee} sat/vB"
                 
                 try:
-                    font_small = ImageFont.truetype(self.font_regular, self._scale_font_size(12, min_value=8))
+                    font_small = self._get_font(self.font_regular, self._scale_font_size(12, min_value=8))
                 except:
                     font_small = font_block_label
                     
@@ -3289,7 +3287,7 @@ class ImageRenderer:
             fee_text = f"{fee_type_display}: {configured_fee} sat/vB"
             
             try:
-                font_small = ImageFont.truetype(self.font_regular, self._scale_font_size(12, min_value=8))
+                font_small = self._get_font(self.font_regular, self._scale_font_size(12, min_value=8))
             except:
                 font_small = font_block_label
             
@@ -3544,8 +3542,6 @@ class ImageRenderer:
             x = self.layout.get_text_centered_x(bbox)
             draw.text((x, y), line, font=holiday_desc_font, fill=desc_color)
             y += text_height + LINE_SPACING_MULTILINE
-        #else:
-        #    print(f"🚫 Holiday hidden due to prioritize_large_scaled_meme=True")
     
 
     def display_on_epaper(self, image_path="current.png", message=None):
