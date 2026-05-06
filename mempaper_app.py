@@ -272,10 +272,14 @@ class MempaperApp:
         self._precache = {
             'price_data': None,
             'bitaxe_data': None,
+            'fee_data': None,  # Fee recommendations cache
+            'block_height': None,  # Current block height cache
             'price_last_update': 0,
             'bitaxe_last_update': 0,
+            'fee_last_update': 0,
             'last_price_value': None,  # Track last price to detect changes
             'last_bitaxe_blocks': None,  # Track last Bitaxe blocks to detect changes
+            'last_fee_value': None,  # Track last fee to detect changes
             'lock': threading.Lock()
         }
         
@@ -1878,7 +1882,7 @@ class MempaperApp:
         # print("✅ Pre-cache background updater started")
     
     def _update_precache_data(self):
-        """Update pre-cached data (price, bitaxe) in background."""
+        """Update pre-cached data (price, bitaxe, fees) in background."""
         with self._precache['lock']:
             now = time.time()
             update_interval = self.config.get("precache_update_interval_seconds", 300)
@@ -1916,6 +1920,27 @@ class MempaperApp:
                             self._precache['last_bitaxe_blocks'] = blocks
                 except Exception as e:
                     print(f"⚠️ Failed to pre-cache Bitaxe: {e}")
+            
+            # Update fee data if stale (fees change more frequently, so use shorter interval)
+            fee_update_interval = min(update_interval, 60)  # Update fees at least every 60s
+            if now - self._precache['fee_last_update'] > fee_update_interval:
+                try:
+                    fee_param = self.config.get("fee_parameter", "minimumFee")
+                    fee_data = self.mempool_api.get_fee_recommendations()
+                    block_height = self.mempool_api.get_tip_height()
+                    
+                    if fee_data:
+                        self._precache['fee_data'] = fee_data
+                        self._precache['block_height'] = block_height
+                        self._precache['fee_last_update'] = now
+                        
+                        # Only log if fee actually changed
+                        fee_value = fee_data.get(fee_param, 1)
+                        if fee_value != self._precache['last_fee_value']:
+                            print(f"💾 Pre-cache updated: Fee {fee_value} sat/vB ({fee_param})")
+                            self._precache['last_fee_value'] = fee_value
+                except Exception as e:
+                    print(f"⚠️ Failed to pre-cache fees: {e}")
     
     def _get_precached_data(self):
         """Get pre-cached data with fallback to fresh fetch if needed."""
@@ -1946,7 +1971,26 @@ class MempaperApp:
             else:
                 bitaxe_data = None
             
-            return price_data, bitaxe_data
+            # Use cached fee if fresh (<90s old), otherwise fetch new
+            # Fees change more frequently, so use shorter cache lifetime
+            if self._precache['fee_data'] and (now - self._precache['fee_last_update'] < 90):
+                fee_data = self._precache['fee_data']
+                block_height = self._precache['block_height']
+                print("⚡ Using pre-cached fee data (fast!)")
+            else:
+                print("🔄 Pre-cache stale, fetching fresh fees...")
+                try:
+                    fee_data = self.mempool_api.get_fee_recommendations()
+                    block_height = self.mempool_api.get_tip_height()
+                    self._precache['fee_data'] = fee_data
+                    self._precache['block_height'] = block_height
+                    self._precache['fee_last_update'] = now
+                except Exception as e:
+                    print(f"⚠️ Failed to fetch fresh fees: {e}")
+                    fee_data = None
+                    block_height = None
+            
+            return price_data, bitaxe_data, fee_data, block_height
     
     def _on_config_change(self, new_config):
         """
@@ -2313,7 +2357,7 @@ class MempaperApp:
                     print("📡 [WALLET] Balance update broadcasted via WebSocket")
                 
                 # Get pre-cached data for fast rendering
-                precached_price, precached_bitaxe = self._get_precached_data()
+                precached_price, precached_bitaxe, precached_fee, precached_block_height = self._get_precached_data()
 
                 # Sync latest donation data to renderer
                 self.image_renderer._donation_data = self._get_active_donation()
@@ -2326,7 +2370,9 @@ class MempaperApp:
                     override_content_path=self.current_meme_path,  # Keep same meme
                     preserve_info_blocks=self.displayed_info_blocks,  # Keep same info blocks
                     precached_price=precached_price,
-                    precached_bitaxe=precached_bitaxe
+                    precached_bitaxe=precached_bitaxe,
+                    precached_fee=precached_fee,
+                    precached_block_height=precached_block_height
                 )
                 # Update displayed blocks tracking
                 self.displayed_info_blocks = displayed_blocks
@@ -2428,7 +2474,7 @@ class MempaperApp:
         self.image_renderer._donation_data = self._get_active_donation()
 
         # 🚀 Get pre-cached data for instant image generation
-        precached_price, precached_bitaxe = self._get_precached_data()
+        precached_price, precached_bitaxe, precached_fee, precached_block_height = self._get_precached_data()
         
         # Decide whether to use cached meme or pick a new one
         if use_new_meme or not hasattr(self, 'current_meme_path') or not self.current_meme_path or not os.path.exists(self.current_meme_path):
@@ -2447,7 +2493,9 @@ class MempaperApp:
                 startup_mode=True,  # Use cached wallet data for instant response
                 override_content_path=precached_meme,  # None = pick randomly, path = use pre-fetched
                 precached_price=precached_price,  # Use pre-cached price
-                precached_bitaxe=precached_bitaxe  # Use pre-cached Bitaxe
+                precached_bitaxe=precached_bitaxe,  # Use pre-cached Bitaxe
+                precached_fee=precached_fee,  # Use pre-cached fee
+                precached_block_height=precached_block_height  # Use pre-cached block height
             )
             # Cache the selected meme and displayed blocks for this block
             self.current_meme_path = content_path
@@ -2570,6 +2618,13 @@ class MempaperApp:
         if current_height_int is not None and block_height_int <= current_height_int:
             return
         
+        # 🚀 SEND NOTIFICATION IMMEDIATELY (before image generation blocks everything)
+        # This ensures web clients get instant notification without waiting for image rendering
+        try:
+            self.on_new_block_notification(block_height_int, block_hash)
+        except Exception as e:
+            print(f"⚠️ Failed to send instant notification: {e}")
+        
         # Acquire lock to prevent concurrent block processing
         if not self._block_processing_lock.acquire(blocking=False):
             return
@@ -2584,9 +2639,6 @@ class MempaperApp:
 
             if current_height_int is not None and block_height_int <= current_height_int:
                 return
-            
-            # Block notification already sent by block_monitor callback
-            # No need to send duplicate notification here
             
             # Always regenerate dashboard and update e-ink display immediately after new block
             self.image_is_current = False  # Invalidate cache to force regeneration

@@ -614,17 +614,28 @@ class BlockRewardMonitor:
                         print(f"❌ Failed to trigger image generation for block {block_height}: {e}")
                         import traceback
                         traceback.print_exc()
-                time.sleep(2)
-                coinbase_tx = self._fetch_coinbase_with_retry(block_hash)
-                if coinbase_tx:
-                    payouts = self.check_coinbase_for_addresses(coinbase_tx)
-                    for payout in payouts:
-                        self.increment_valid_blocks(
-                            block_hash, 
-                            payout['txid'], 
-                            payout['address'], 
-                            payout['value_sats']
-                        )
+                
+                # 🚀 OPTIMIZATION: Move coinbase check to background thread to avoid blocking WebSocket handler
+                # This allows immediate processing of next block while checking for block rewards
+                def check_block_rewards():
+                    try:
+                        time.sleep(2)  # Brief delay for block to propagate
+                        coinbase_tx = self._fetch_coinbase_with_retry(block_hash)
+                        if coinbase_tx:
+                            payouts = self.check_coinbase_for_addresses(coinbase_tx)
+                            for payout in payouts:
+                                self.increment_valid_blocks(
+                                    block_hash, 
+                                    payout['txid'], 
+                                    payout['address'], 
+                                    payout['value_sats']
+                                )
+                    except Exception as e:
+                        print(f"⚠️ Error checking block rewards in background: {e}")
+                
+                # Run block reward check in background (only if monitoring addresses)
+                if self.monitored_addresses:
+                    threading.Thread(target=check_block_rewards, daemon=True).start()
         except Exception as e:
             print(f"⚠️ Error processing WebSocket message: {e}")
             import traceback

@@ -1782,7 +1782,7 @@ class ImageRenderer:
         
         return y
 
-    def render_dual_images(self, block_height, block_hash, mempool_api=None,  startup_mode=False, override_content_path=None, preserve_info_blocks=None, precached_price=None, precached_bitaxe=None):
+    def render_dual_images(self, block_height, block_hash, mempool_api=None,  startup_mode=False, override_content_path=None, preserve_info_blocks=None, precached_price=None, precached_bitaxe=None, precached_fee=None, precached_block_height=None):
         """
         Render both web-quality and e-ink optimized images efficiently.
         Optimized to share common elements and reduce API calls.
@@ -1796,6 +1796,8 @@ class ImageRenderer:
             preserve_info_blocks (list, optional): List of block types to preserve ['wallet', 'bitaxe', 'price']
             precached_price (dict, optional): Pre-cached price data to avoid API call
             precached_bitaxe (dict, optional): Pre-cached Bitaxe data to avoid API call
+            precached_fee (dict, optional): Pre-cached fee recommendations to avoid API call
+            precached_block_height (int, optional): Pre-cached block height to avoid API call
             
         Returns:
             tuple: (web_image, eink_image, content_path, displayed_blocks) - PIL.Image objects, content path, and displayed block types
@@ -1804,8 +1806,14 @@ class ImageRenderer:
         # Get holiday info once
         holiday_info = self.get_today_btc_holiday()
         
-        # Get fee info once
-        configured_fee, api_block_height = self.get_fee_and_block_info(mempool_api)
+        # Get fee info - use pre-cached if available
+        if precached_fee and precached_block_height is not None:
+            fee_param = self.config.get("fee_parameter", "minimumFee")
+            configured_fee = precached_fee.get(fee_param, 1)
+            api_block_height = precached_block_height
+            print("⚡ Using pre-cached fee data (fast!)")
+        else:
+            configured_fee, api_block_height = self.get_fee_and_block_info(mempool_api)
         
         # Try overrides first, then Twitter content, fallback to memes
         content_path = override_content_path
