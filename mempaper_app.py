@@ -1159,10 +1159,13 @@ class MempaperApp:
                 # Update block tracking if this result is still current
                 if block_height and block_hash:
                     current_height = getattr(self, 'last_eink_block_height', 0) or 0
+                    latest_block = getattr(self, 'current_block_height', 0) or 0
                     if int(block_height) >= int(current_height):
                         self.last_eink_block_height = block_height
                         self.last_eink_block_hash = block_hash
-                        print(f"💾 E-ink display tracking updated: Block {block_height}")
+                        # Only log if this is actually the latest block (avoid confusion)
+                        if int(block_height) >= int(latest_block):
+                            print(f"💾 E-ink display tracking updated: Block {block_height}")
 
                 # Pre-fetch the next meme while display is idle
                 threading.Thread(target=self._prefetch_next_meme, daemon=True).start()
