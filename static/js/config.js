@@ -2343,7 +2343,7 @@ function createColorSelect(value) {
 // Diagnostic function to test boolean elements
 function diagnoseBooleanElements() {
     console.log('👁️ [DIAGNOSTIC] Checking all boolean elements:');
-    const booleanFields = ['prioritize_large_scaled_meme', 'color_mode_dark', 'live_block_notifications_enabled', 'show_btc_price_block', 'show_bitaxe_block', 'show_wallet_balances_block', 'show_donation_block', 'e-ink-display-connected'];
+    const booleanFields = ['prioritize_large_scaled_meme', 'color_mode_dark', 'show_btc_price_block', 'show_bitaxe_block', 'show_wallet_balances_block', 'show_donation_block', 'e-ink-display-connected'];
     
     booleanFields.forEach(fieldName => {
         const element = document.querySelector(`[data-config-key="${fieldName}"]`);
@@ -4257,7 +4257,7 @@ async function saveConfiguration() {
         
         // Additional safety check: ensure all boolean fields are properly collected
         // This is a fallback in case boolean switches weren't collected above
-        const expectedBooleanFields = ['prioritize_large_scaled_meme', 'color_mode_dark', 'live_block_notifications_enabled', 'show_btc_price_block', 'show_bitaxe_block', 'show_wallet_balances_block', 'show_donation_block', 'e-ink-display-connected'];
+        const expectedBooleanFields = ['prioritize_large_scaled_meme', 'color_mode_dark', 'show_btc_price_block', 'show_bitaxe_block', 'show_wallet_balances_block', 'show_donation_block', 'e-ink-display-connected'];
         expectedBooleanFields.forEach(fieldName => {
             if (!(fieldName in formConfig)) {
                 console.log(`🚨 [FALLBACK] Missing boolean field ${fieldName} in form collection, attempting to recover...`);
@@ -4358,16 +4358,7 @@ async function saveConfiguration() {
                 }
             }
             
-            // Update block notification subscription if setting changed
-            console.log('[SAVE DEBUG] live_block_notifications_enabled after save:', formConfig['live_block_notifications_enabled']);
-            if (typeof formConfig['live_block_notifications_enabled'] !== 'undefined') {
-                if (formConfig['live_block_notifications_enabled']) {
-                    console.log('[SAVE DEBUG] Calling subscribeToBlockNotifications after save');
-                    subscribeToBlockNotifications();
-                } else {
-                    console.log('[SAVE DEBUG] Calling unsubscribeFromBlockNotifications after save');
-                    unsubscribeFromBlockNotifications();
-                }
+            // Block notifications are always enabled - no need to update subscription
             }
             return true;
         } else {
@@ -5146,10 +5137,8 @@ function setupConfigSocketHandlers() {
         reconnectingConfig = false;
         // Register this page for notifications
         registerPageForNotifications('config');
-        // Check if live block notifications are enabled and subscribe
-        if (typeof live_block_notifications_enabled !== 'undefined' && live_block_notifications_enabled) {
-            subscribeToBlockNotifications();
-        }
+        // Subscribe to block notifications (always enabled)
+        subscribeToBlockNotifications();
     });
 
     configSocket.on('disconnect', () => {
@@ -5373,7 +5362,7 @@ function setupNavigationButtons() {
                     console.log('👁️ [SAVE DEBUG] Final formConfig:', formConfig);
                     
                     // Temporary: Show what we collected for boolean fields
-                    const booleanFields = ['prioritize_large_scaled_meme', 'color_mode_dark', 'live_block_notifications_enabled', 'show_btc_price_block', 'show_bitaxe_block', 'show_wallet_balances_block', 'show_donation_block', 'e-ink-display-connected'];
+                    const booleanFields = ['prioritize_large_scaled_meme', 'color_mode_dark', 'show_btc_price_block', 'show_bitaxe_block', 'show_wallet_balances_block', 'show_donation_block', 'e-ink-display-connected'];
                     const booleanData = {};
                     booleanFields.forEach(field => {
                         if (formConfig.hasOwnProperty(field)) {
@@ -5717,7 +5706,7 @@ window.testConfigSave = function() {
     console.log('🧪 Starting config save test...');
     
     // Test current boolean values
-    const booleanFields = ['prioritize_large_scaled_meme', 'color_mode_dark', 'live_block_notifications_enabled', 'show_btc_price_block', 'show_bitaxe_block', 'show_wallet_balances_block', 'show_donation_block', 'e-ink-display-connected'];
+    const booleanFields = ['prioritize_large_scaled_meme', 'color_mode_dark', 'show_btc_price_block', 'show_bitaxe_block', 'show_wallet_balances_block', 'show_donation_block', 'e-ink-display-connected'];
     
     console.log('💾 Current boolean values:');
     booleanFields.forEach(fieldName => {

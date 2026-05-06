@@ -362,9 +362,8 @@ class ConfigManager:
             "fee_parameter": "minimumFee",
             "display_width": 800,
             "display_height": 480,
-            "ui_scale_override": 1.0,
             "e-ink-display-connected": True,
-            "omni_device_name": "waveshare_epd.epd7in3f",
+            "omni_device_name": "epd7in3f",  # Default to native Waveshare 7.3" driver
             "admin_username": "admin",
             "admin_password": "mempaper2025",
             # --- Info block config additions ---
@@ -380,7 +379,6 @@ class ConfigManager:
             "wallet_balance_currency": "EUR",  # USD, EUR, GBP, CAD, CHF, AUD, JPY - fiat currency for wallet balance display
             "prioritize_large_scaled_meme": False,
             "color_mode_dark": True,
-            "live_block_notifications_enabled": True,  # Enable live block notifications by default
             "opsec_mode_enabled": False,
             "einundzwanzig_meme_source": False,
             # --- Donation block ---
@@ -489,7 +487,6 @@ class ConfigManager:
             "show_donation_block",
             "color_mode_dark",
             "eink_dark_mode",
-            "live_block_notifications_enabled",
             "mempool_use_https",
             "mempool_verify_ssl",
             "opsec_mode_enabled",
@@ -597,9 +594,7 @@ class ConfigManager:
                     pass
 
         # Float settings with validation
-        float_settings = {
-            "ui_scale_override": (0.5, 2.0)
-        }
+        float_settings = {}
         for setting, (min_val, max_val) in float_settings.items():
             if setting in config:
                 try:
@@ -1073,8 +1068,13 @@ class ConfigManager:
                 "label": t.get("display_type", "Display Device Type"),
                 "description": t.get("display_type_desc", "Select your specific e-paper display model"),
                 "options": [
+                    # Native Waveshare Displays (recommended - best performance)
+                    {"value": "epd13in3E", "label": "★ Waveshare 13.3\" 6-Color (Spectra 6) - Native Driver"},
+                    {"value": "epd7in3f", "label": "★ Waveshare 7.3\" 7-Color - Native Driver"},
+                    {"value": "epd13in3k", "label": "★ Waveshare 13.3\" B/W - Native Driver"},
+                    
                     # Inky Displays
-                    {"value": "inky.auto", "label": "Inky AutoDetect (try this first)"},
+                    {"value": "inky.auto", "label": "Inky AutoDetect"},
                     {"value": "inky.impression", "label": "Inky Impression 7 Color"},
                     {"value": "inky.phat_red", "label": "Inky pHAT Red/Black/White - 212x104"},
                     {"value": "inky.phat_yellow", "label": "Inky pHAT Yellow/Black/White - 212x104"},
@@ -1128,32 +1128,6 @@ class ConfigManager:
                 ],
                 "category": "eink_display"
             },
-            "display_width": {
-                "type": "number",
-                "label": t.get("width", "Display Width (pixels)"),
-                "description": t.get("width_desc", "Display width in pixels"),
-                "min": 100,
-                "max": 2000,
-                "category": "eink_display"
-            },
-            "display_height": {
-                "type": "number",
-                "label": t.get("height", "Display Height (pixels)"),
-                "description": t.get("height_desc", "Display height in pixels"),
-                "min": 100,
-                "max": 2000,
-                "category": "eink_display"
-            },
-            "ui_scale_override": {
-                "type": "number",
-                "label": t.get("ui_scale_override", "UI Scale Multiplier"),
-                "description": t.get("ui_scale_override_desc", "Global UI size multiplier for renderer scaling (e.g. 0.9, 1.0, 1.15)."),
-                "min": 0.5,
-                "max": 2.0,
-                "step": 0.05,
-                "default": 1.0,
-                "category": "eink_display"
-            },
             "eink_dark_mode": {
                 "type": "boolean",
                 "label": t.get("eink_dark_mode", "Dark Mode E-Ink"),
@@ -1165,13 +1139,6 @@ class ConfigManager:
                 "type": "boolean",
                 "label":  t.get("color_mode_dark", "Dark Mode"),
                 "description":  t.get("color_mode_dark_desc", "Enable dark mode for the webinterface."),
-                "default": True,
-                "category": "general"
-            },
-            "live_block_notifications_enabled": {
-                "type": "boolean",
-                "label": t.get("enable_live_block_notifications", "Enable Live Block Notifications"),
-                "description": t.get("enable_live_block_notifications_desc", "Show real-time toast notifications when new Bitcoin blocks are found. Provides immediate feedback on block discovery with mining pool and reward information."),
                 "default": True,
                 "category": "general"
             },

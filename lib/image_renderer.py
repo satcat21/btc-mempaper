@@ -100,6 +100,30 @@ FEE_COLOR_TONES = {
     "black":   ("#BDBDBD", "#E0E0E0"),   # Light Grey to Medium Grey (high readability)
 }
 
+# Device dimensions mapping (width x height in landscape orientation)
+# Source: device hardware specifications
+DEVICE_DIMENSIONS = {
+    # Native Waveshare displays
+    "epd13in3E": (1600, 1200),
+    "epd13in3k": (1600, 1200),
+    "epd7in3f": (800, 480),
+    # Waveshare via omni-epd (legacy format)
+    "waveshare_epd.epd13in3E": (1600, 1200),
+    "waveshare_epd.epd13in3k": (1600, 1200),
+    "waveshare_epd.epd7in3f": (800, 480),
+    "waveshare_epd.epd5in83_v2": (648, 480),
+    "waveshare_epd.epd4in2": (400, 300),
+    "waveshare_epd.epd2in7": (264, 176),
+    # Inky displays
+    "inky.auto": (600, 448),
+    "inky.impression": (600, 448),
+    "inky.what_red": (400, 300),
+    "inky.what_yellow": (400, 300),
+    "inky.what_black": (400, 300),
+    # Mock display
+    "omni_epd.mock": (800, 600),
+}
+
 # For dark mode, reverse the tuple order for each color
 FEE_COLOR_TONES_DARK = {
     "green":   ("#8AF1DC", "#4CAF50"),   # Light Green to Material Green (high contrast)
@@ -289,8 +313,26 @@ class ImageRenderer:
         # Initialize default orientation for rendering context (defaults to web settings)
         self.orientation = self.web_orientation
         
-        self.display_width = config.get("display_width", 800)
-        self.display_height = config.get("display_height", 480)
+        # Determine display dimensions from device config
+        # Priority: config-provided values > device lookup > smart defaults
+        device_name = config.get("omni_device_name", "")
+        
+        if "display_width" in config and "display_height" in config:
+            # Use explicit config values if provided (backwards compatibility)
+            self.display_width = config.get("display_width", 800)
+            self.display_height = config.get("display_height", 480)
+        elif device_name and device_name in DEVICE_DIMENSIONS:
+            # Look up dimensions from device specifications
+            self.display_width, self.display_height = DEVICE_DIMENSIONS[device_name]
+        else:
+            # Smart defaults based on orientation (high-resolution for quality rendering)
+            if self.web_orientation == "vertical":
+                self.display_width = 1200  # portrait width
+                self.display_height = 1600  # portrait height
+            else:  # horizontal/landscape
+                self.display_width = 1600  # landscape width
+                self.display_height = 1200  # landscape height
+        
         self.block_height_area_base = config.get("block_height_area", BASE_BLOCK_HEIGHT_AREA)
         self.e_ink_enabled = config.get("e-ink-display-connected", True)
         self._last_fee = None
@@ -349,16 +391,8 @@ class ImageRenderer:
         sx = self.width / max(base_w, 1)
         sy = self.height / max(base_h, 1)
 
-        # Optional user override for fine-tuning perceived UI density per display model.
-        # 1.0 keeps automatic scaling as-is; values like 0.9 or 1.15 shrink/grow UI.
-        try:
-            override = float(self.config.get("ui_scale_override", 1.0))
-        except (TypeError, ValueError):
-            override = 1.0
-        override = max(0.5, min(2.0, override))
-
         # Keep uniform scaling to preserve proportions.
-        return max(0.75, min(3.0, min(sx, sy) * override))
+        return max(0.75, min(3.0, min(sx, sy)))
 
     def _scale_px(self, value, min_value=1):
         """Scale a pixel value using the current UI scale."""

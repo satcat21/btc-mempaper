@@ -150,8 +150,10 @@ def _drivers_missing(device_id):
     """Return list of driver files that are not yet installed."""
     info = DEVICE_CONFIGS.get(device_id, {})
     missing = []
+    # Check for files in device-specific subdirectory
+    device_driver_dir = os.path.join(DRIVERS_DIR, device_id)
     for fname in info.get("driver_files", []):
-        if not os.path.exists(os.path.join(DRIVERS_DIR, fname)):
+        if not os.path.exists(os.path.join(device_driver_dir, fname)):
             missing.append(fname)
     return missing
 
@@ -171,6 +173,8 @@ def _extract_files_from_zip(zip_path, target_files, dest_dir):
             if fname in name_map:
                 member = name_map[fname]
                 dest = os.path.join(dest_dir, fname)
+                # Ensure parent directory exists
+                os.makedirs(os.path.dirname(dest), exist_ok=True)
                 with zf.open(member) as src, open(dest, 'wb') as dst:
                     dst.write(src.read())
                 installed.append(fname)
@@ -193,7 +197,9 @@ def install_drivers(device_id):
     url = dl["url"]
     target_files = list(dl["files"].keys())
 
-    os.makedirs(DRIVERS_DIR, exist_ok=True)
+    # Create device-specific subdirectory (e.g., display/drivers/epd13in3E/)
+    device_driver_dir = os.path.join(DRIVERS_DIR, device_id)
+    os.makedirs(device_driver_dir, exist_ok=True)
 
     print(f"   Downloading drivers from {url.split('/')[2]}...")
     try:
@@ -209,9 +215,9 @@ def install_drivers(device_id):
         urllib.request.urlretrieve(url, tmp_path, reporthook=_report)
         print()  # newline after progress
 
-        installed = _extract_files_from_zip(tmp_path, target_files, DRIVERS_DIR)
+        installed = _extract_files_from_zip(tmp_path, target_files, device_driver_dir)
         for fname in installed:
-            print(f"   Installed: {fname}")
+            print(f"   Installed: {os.path.join(device_id, fname)}")
 
         os.unlink(tmp_path)
         return len(installed) > 0

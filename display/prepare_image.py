@@ -17,7 +17,7 @@ class Processor():
         
         # Determine if display supports orange (7.3F) or not (13.3E)
         if config:
-            device_name = config.get("omni_device_name", "waveshare_epd.epd7in3f")
+            device_name = config.get("omni_device_name", "epd7in3f")
             module_name = device_name.split('.')[-1] if '.' in device_name else device_name
             self.supports_orange = module_name == 'epd7in3f'
         else:

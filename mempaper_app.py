@@ -1303,6 +1303,13 @@ class MempaperApp:
             args=(proc,),
             daemon=True
         ).start()
+        
+        # Start background thread to forward worker stderr to our logs
+        threading.Thread(
+            target=self._read_display_worker_stderr,
+            args=(proc,),
+            daemon=True
+        ).start()
 
         # Wait for the worker to finish loading drivers (ready signal)
         try:
@@ -1318,6 +1325,13 @@ class MempaperApp:
 
     def _read_display_worker_stdout(self, proc):
         """Background thread: pipe worker stdout lines into the results queue."""
+        # Patterns to suppress (verbose hardware status messages)
+        suppress_patterns = [
+            "Write PON", "Write DRF", "Write POF",
+            "e-Paper busy", "e-Paper busy H", "e-Paper busy H release",
+            "EPD init...", "bcm2835 init success", "Display Done!!"
+        ]
+        
         try:
             for line in proc.stdout:
                 line = line.strip()
@@ -1325,10 +1339,42 @@ class MempaperApp:
                     try:
                         self._display_worker_results.put(json.loads(line))
                     except json.JSONDecodeError:
-                        pass
+                        # Filter out verbose hardware status messages
+                        if not any(pattern in line for pattern in suppress_patterns):
+                            # Log non-JSON output from worker (debugging info)
+                            print(f"   [worker] {line}")
         finally:
+            # Check if there's stderr output to provide better error context
+            stderr_output = ""
+            try:
+                # Try to read any remaining stderr (non-blocking)
+                if proc.stderr:
+                    remaining = proc.stderr.read()
+                    if remaining:
+                        stderr_output = remaining.strip()
+            except Exception:
+                pass
+            
             # Notify any waiting caller that the worker died
-            self._display_worker_results.put({"worker_died": True, "success": False})
+            error_msg = "Worker process died"
+            if stderr_output:
+                error_msg = f"Worker process died: {stderr_output[:200]}"  # Limit length
+            self._display_worker_results.put({
+                "worker_died": True, 
+                "success": False,
+                "error": error_msg
+            })
+
+    def _read_display_worker_stderr(self, proc):
+        """Background thread: forward worker stderr to our logs with prefix."""
+        try:
+            for line in proc.stderr:
+                line = line.strip()
+                if line:
+                    # Forward stderr from worker to our logs
+                    print(f"   [worker stderr] {line}")
+        except Exception:
+            pass
 
     def _emit_display_error(self, message):
         if hasattr(self, 'socketio'):
@@ -2900,7 +2946,6 @@ class MempaperApp:
                                  e_ink_enabled=self.e_ink_enabled,
                                  # This orientation determines the CSS class for layout
                                  orientation=orientation,
-                                 live_block_notifications_enabled=self.config.get('live_block_notifications_enabled', False),
                                  block_height=block_height)
         
         @self.app.route('/config')
@@ -2912,8 +2957,7 @@ class MempaperApp:
             current_translations = translations.get(lang, translations["en"])
             
             return render_template('config.html', 
-                                 translations=current_translations,
-                                 live_block_notifications_enabled=self.config.get('live_block_notifications_enabled', False))
+                                 translations=current_translations)
         
         @self.app.route('/login')
         def login_page():

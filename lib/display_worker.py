@@ -52,14 +52,29 @@ def main():
 
         try:
             success = display.display_image(image_path)
-            sys.stdout.write(json.dumps({"success": bool(success)}) + "\n")
+            if success:
+                sys.stdout.write(json.dumps({"success": True}) + "\n")
+            else:
+                # Display returned False - no exception but failed
+                sys.stderr.write("Display returned False (check hardware/connection)\n")
+                sys.stdout.write(json.dumps({
+                    "success": False,
+                    "error": "Display hardware returned False (check connection/power)"
+                }) + "\n")
         except Exception as e:
+            error_msg = str(e)
+            tb = traceback.format_exc()
+            # Log to stderr for debugging
+            sys.stderr.write(f"Display exception: {error_msg}\n")
+            sys.stderr.write(tb)
+            # Return error via stdout JSON
             sys.stdout.write(json.dumps({
                 "success": False,
-                "error": str(e),
-                "traceback": traceback.format_exc(),
+                "error": error_msg,
+                "traceback": tb,
             }) + "\n")
         sys.stdout.flush()
+        sys.stderr.flush()
 
 
 if __name__ == "__main__":

@@ -116,7 +116,7 @@ class WaveshareDisplay:
         self.height = self.config.get("display_height", 480)
         
         # Parse device name from config (e.g., "waveshare_epd.epd7in3f" -> "epd7in3f")
-        device_name = self.config.get("omni_device_name", "waveshare_epd.epd7in3f")
+        device_name = self.config.get("omni_device_name", "epd7in3f")
         self.module_name = device_name.split('.')[-1] if '.' in device_name else device_name
         
         # Normalize module name - handle case variations (e.g., epd13in3e -> epd13in3E)
@@ -382,8 +382,9 @@ class WaveshareDisplay:
             if not self.epd:
                 try:
                     if self.module_name not in WAVESHARE_MODULES:
-                        print(f"❌ Module {self.module_name} not in loaded modules {list(WAVESHARE_MODULES.keys())}")
-                        return False
+                        error_msg = f"Module {self.module_name} not in loaded modules {list(WAVESHARE_MODULES.keys())}"
+                        print(f"❌ {error_msg}")
+                        raise RuntimeError(error_msg)
                     
                     epd_module = WAVESHARE_MODULES[self.module_name]
                     self.epd = epd_module.EPD()
@@ -408,7 +409,7 @@ class WaveshareDisplay:
                     
                 except Exception as e:
                     print(f"❌ EPD initialization failed: {e}")
-                    return False
+                    raise  # Re-raise to propagate error to caller
             
             # Now load and process the image with correct dimensions
             # Load the image
@@ -482,7 +483,8 @@ class WaveshareDisplay:
                 except Exception as cleanup_error:
                     print(f"⚠️ Cleanup also failed: {cleanup_error}")
                 
-                return False
+                # Re-raise the original error so it's properly reported
+                raise
                 
         except Exception as e:
             import traceback
@@ -490,7 +492,8 @@ class WaveshareDisplay:
             print(f"   Error type: {type(e).__name__}")
             print(f"   Traceback:")
             traceback.print_exc()
-            return False
+            # Re-raise so the error details are captured in the worker response
+            raise
 
     def sleep(self):
         """Put the display to sleep to save power."""

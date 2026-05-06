@@ -10,7 +10,6 @@
 
   "fee_parameter": "fastestFee",
 
-  "live_block_notifications_enabled": true,
   "prioritize_large_scaled_meme": true,
   "color_mode_dark": true,
 
@@ -24,12 +23,11 @@
   "color_wallets_dark": "#09A3BA",
 
   "e-ink-display-connected": false,
-  "omni_device_name": "waveshare_epd.epd7in3f",
+  "omni_device_name": "epd7in3f",
   "web_orientation": "vertical",
   "eink_orientation": "vertical",
   "display_width": 800,
   "display_height": 480,
-  "ui_scale_override": 1.0,
 
   "show_btc_price_block": false,
   "btc_price_currency": "USD",

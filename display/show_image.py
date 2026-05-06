@@ -21,7 +21,7 @@ def quantize_to_exact_epd_colors(img, config=None):
     """
     # Determine if display supports orange (7.3F) or not (13.3E)
     if config:
-        device_name = config.get("omni_device_name", "waveshare_epd.epd7in3f")
+        device_name = config.get("omni_device_name", "epd7in3f")
         module_name = device_name.split('.')[-1] if '.' in device_name else device_name
         supports_orange = module_name == 'epd7in3f'
     else:
@@ -256,7 +256,7 @@ for config_path in config_paths:
     try:
         with open(config_path, 'r') as f:
             config = json.load(f)
-        device_name = config.get("omni_device_name", "waveshare_epd.epd7in3f")
+        device_name = config.get("omni_device_name", "epd7in3f")
         print(f"show_image.py: Using display device: {device_name} (config from: {config_path})")
         break
     except (FileNotFoundError, json.JSONDecodeError) as e:

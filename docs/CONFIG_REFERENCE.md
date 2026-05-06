@@ -15,7 +15,6 @@ These settings can be modified via the Web Dashboard (recommended) or by editing
 | **Color Mode** | `color_mode_dark` | Switch | Dark theme for dashboard | `true` (Dark), `false` (Light) |
 | **E-Ink Dark Mode** | `eink_dark_mode` | Switch | Invert colors for E-ink | `true` (Inverted/Night), `false` (Standard) |
 | **Prioritize Large Memes** | `prioritize_large_scaled_meme` | Switch | Maximize meme size vs info blocks | `true` (Large Memes), `false` (Balanced) |
-| **Live Block Notifications** | `live_block_notifications_enabled` | Switch | Popup on new block | `true` (On), `false` (Off) |
 
 ---
 
@@ -49,9 +48,9 @@ These settings can be modified via the Web Dashboard (recommended) or by editing
 | Web Label | Config Key | Type | Description | Allowed Values / Examples |
 | :--- | :--- | :--- | :--- | :--- |
 | **E-Ink Display Connected** | `e-ink-display-connected` | Switch | Enable hardware driver | `true` (Enable), `false` (Disable) |
-| **Display Driver** | `omni_device_name` | String | Driver name (Waveshare/Omni-EPD) | `waveshare_epd.epd7in3f` (Default), `inky.impression` |
-| **Display Width** | `display_width` | Number | Resolution Width (px) | `800` (Default), `600`, `648` |
-| **Display Height** | `display_height` | Number | Resolution Height (px) | `480` (Default), `448`, `400` |
+| **Display Driver** | `omni_device_name` | String | Driver name (Native or Omni-EPD) | `epd13in3E` (Recommended - Waveshare 13.3"), `epd7in3f` (Default - Waveshare 7.3"), `inky.impression`, `inky.auto` |
+| **Display Width** | `display_width` | Number | Resolution Width (pixels) - Auto-set by device selection | Automatically determined from selected device or orientation |
+| **Display Height** | `display_height` | Number | Resolution Height (pixels) - Auto-set by device selection | Automatically determined from selected device or orientation |
 | **Skip Clear Display** | `skip_clear_display` | Boolean | Skip clearing before refresh (faster) | `true` (Fast ~39s, default), `false` (Full clear ~70s) |
 
 ---

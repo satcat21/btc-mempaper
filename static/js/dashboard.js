@@ -31,10 +31,8 @@ function setupSocketHandlers() {
         if (!dashboardImg.src || dashboardImg.src.includes('placeholder') || dashboardImg.src === window.location.href) {
             socket.emit('request_latest_image');
         }
-        // Subscribe to block notifications if enabled
-        if (typeof live_block_notifications_enabled !== 'undefined' && live_block_notifications_enabled) {
-            subscribeToBlockNotifications();
-        }
+        // Subscribe to block notifications (always enabled)
+        subscribeToBlockNotifications();
     });
 
     socket.on('disconnect', (reason) => {
