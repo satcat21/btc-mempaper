@@ -564,7 +564,14 @@ class BlockRewardMonitor:
                 else:
                      sslopt = {"cert_reqs": ssl.CERT_NONE, "check_hostname": False}
                 
-                self.ws.run_forever(sslopt=sslopt)
+                # Run forever with keepalive ping/pong to prevent idle timeouts
+                # ping_interval: Send ping every 30s to keep connection alive (prevents 5min timeout)
+                # ping_timeout: Wait 10s for pong response before considering connection dead
+                self.ws.run_forever(
+                    sslopt=sslopt,
+                    ping_interval=30,  # Send ping every 30 seconds
+                    ping_timeout=10    # Wait 10 seconds for pong response
+                )
             except Exception as e:
                 print(f"⚠️ WebSocket error: {e}")
                 if self.running:

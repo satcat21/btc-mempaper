@@ -1158,17 +1158,7 @@ class MempaperApp:
                 total_addresses = len(block_table_addresses)
                 if total_addresses > 0:
                     print(f"👁️ Block reward monitoring started for {total_addresses} addresses")
-            else:
-                print("⚙️ Skipping block monitoring for faster startup")
-            
-            # Initialize WebSocket connection
             self._init_websocket()
-            
-            # Start WebSocket listener now that client is initialized
-            if hasattr(self, 'websocket_client') and self.websocket_client:
-                self.websocket_client.start_listener_thread()
-            else:
-                print("⚠️ WebSocket client not available - using block monitor for updates")
             
             # Warm up APIs
             # print("⚙️ Warming up API clients...")
@@ -2618,12 +2608,8 @@ class MempaperApp:
         if current_height_int is not None and block_height_int <= current_height_int:
             return
         
-        # 🚀 SEND NOTIFICATION IMMEDIATELY (before image generation blocks everything)
-        # This ensures web clients get instant notification without waiting for image rendering
-        try:
-            self.on_new_block_notification(block_height_int, block_hash)
-        except Exception as e:
-            print(f"⚠️ Failed to send instant notification: {e}")
+        # Note: Block notification is sent by block_monitor callback before this is called
+        # No need to send duplicate notification here
         
         # Acquire lock to prevent concurrent block processing
         if not self._block_processing_lock.acquire(blocking=False):
@@ -4672,6 +4658,11 @@ class MempaperApp:
     
     def start_websocket_listener(self):
         """Start the WebSocket listener for real-time block updates."""
+        # DISABLED: websocket_client causes duplicate block processing
+        # block_monitor already has WebSocket functionality built-in
+        print("⚙️ start_websocket_listener() called but disabled (using block_monitor's WebSocket)")
+        return
+        
         # Check if WebSocket client exists and is initialized
         if hasattr(self, 'websocket_client') and self.websocket_client:
             self.websocket_client.start_listener_thread()
@@ -4694,8 +4685,10 @@ class MempaperApp:
         """
         print(f"🚀 Starting Mempaper server on {host}:{port}")
         
-        # Start WebSocket listener
-        self.start_websocket_listener()
+        # DISABLED: websocket_client causes duplicate block processing
+        # block_monitor already has WebSocket functionality built-in
+        # self.start_websocket_listener()
+        print("⚙️ WebSocket updates handled by block_monitor (prevents duplicate processing)")
         
         # Run Flask app
         if self.socketio:

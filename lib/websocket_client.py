@@ -293,8 +293,14 @@ class MempoolWebSocket:
                 print("⚠️ SSL verification disabled for WebSocket")
                 sslopt = {"cert_reqs": ssl.CERT_NONE, "check_hostname": False}
             
-        # Run forever (blocking call)
-        self.ws.run_forever(sslopt=sslopt)
+        # Run forever with keepalive ping/pong to prevent idle timeouts
+        # ping_interval: Send ping every 30s to keep connection alive (prevents 5min timeout)
+        # ping_timeout: Wait 10s for pong response before considering connection dead
+        self.ws.run_forever(
+            sslopt=sslopt,
+            ping_interval=30,  # Send ping every 30 seconds
+            ping_timeout=10    # Wait 10 seconds for pong response
+        )
     
     def start_listener_thread(self):
         """Start WebSocket listener in a separate daemon thread."""

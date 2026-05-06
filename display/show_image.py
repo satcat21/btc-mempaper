@@ -12,8 +12,8 @@ from PIL import Image
 
 def quantize_to_exact_epd_colors(img, config=None):
     """
-    Quantize image to exact Waveshare EPD colors using nearest-neighbor mapping.
-    This ensures every pixel uses exactly one of the EPD colors (6 or 7 colors).
+    Quantize image to exact Waveshare EPD colors using vectorized NumPy operations.
+    This is 10-100x faster than pixel-by-pixel loops.
     
     Args:
         img: PIL Image to quantize
@@ -53,7 +53,40 @@ def quantize_to_exact_epd_colors(img, config=None):
     if img.mode != 'RGB':
         img = img.convert('RGB')
     
-    # Create new image with exact colors
+    # 🚀 OPTIMIZED: Use NumPy for vectorized operations (10-100x faster)
+    try:
+        import numpy as np
+        
+        # Convert PIL image to NumPy array
+        img_array = np.array(img, dtype=np.int32)  # int32 to prevent overflow in distance calc
+        height, width, _ = img_array.shape
+        
+        # Convert EPD colors to NumPy array for broadcasting
+        epd_array = np.array(epd_colors, dtype=np.int32)
+        
+        # Reshape image for broadcasting: (H*W, 3)
+        pixels = img_array.reshape(-1, 3)
+        
+        # Calculate Euclidean distance to all EPD colors at once
+        # Broadcasting: (H*W, 1, 3) - (1, num_colors, 3) -> (H*W, num_colors, 3)
+        distances = np.sum((pixels[:, np.newaxis, :] - epd_array[np.newaxis, :, :]) ** 2, axis=2)
+        
+        # Find closest color index for each pixel
+        closest_indices = np.argmin(distances, axis=1)
+        
+        # Map to EPD colors
+        quantized = epd_array[closest_indices].reshape(height, width, 3).astype(np.uint8)
+        
+        # Convert back to PIL Image
+        return Image.fromarray(quantized, mode='RGB')
+        
+    except ImportError:
+        # Fallback to slow Python loops if NumPy not available
+        print("⚠️ NumPy not available, using slow quantization (install numpy for 10-100x speedup)")
+        return _quantize_slow(img, epd_colors)
+
+def _quantize_slow(img, epd_colors):
+    """Fallback quantization using Python loops (slow)."""
     width, height = img.size
     pixels = img.load()
     new_img = Image.new('RGB', (width, height))

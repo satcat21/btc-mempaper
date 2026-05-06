@@ -73,20 +73,42 @@ class Processor():
         if img.mode != 'RGB':
             img = img.convert('RGB')
         
-        # Create new image with exact colors
-        width, height = img.size
-        pixels = img.load()
-        new_img = Image.new('RGB', (width, height))
-        new_pixels = new_img.load()
-        
-        # Map each pixel to closest EPD color
-        for y in range(height):
-            for x in range(width):
-                original_color = pixels[x, y]
-                closest_color = self.find_closest_epd_color(original_color, epd_colors)
-                new_pixels[x, y] = closest_color
-        
-        return new_img
+        # 🚀 OPTIMIZED: Use NumPy for vectorized operations (10-100x faster)
+        try:
+            import numpy as np
+            
+            # Convert PIL image to NumPy array
+            img_array = np.array(img, dtype=np.int32)
+            height, width, _ = img_array.shape
+            
+            # Convert EPD colors to NumPy array
+            epd_array = np.array(epd_colors, dtype=np.int32)
+            
+            # Reshape for broadcasting
+            pixels = img_array.reshape(-1, 3)
+            
+            # Vectorized distance calculation
+            distances = np.sum((pixels[:, np.newaxis, :] - epd_array[np.newaxis, :, :]) ** 2, axis=2)
+            closest_indices = np.argmin(distances, axis=1)
+            quantized = epd_array[closest_indices].reshape(height, width, 3).astype(np.uint8)
+            
+            return Image.fromarray(quantized, mode='RGB')
+            
+        except ImportError:
+            # Fallback to slow loops if NumPy unavailable
+            print("⚠️ NumPy not available, using slow quantization")
+            width, height = img.size
+            pixels = img.load()
+            new_img = Image.new('RGB', (width, height))
+            new_pixels = new_img.load()
+            
+            for y in range(height):
+                for x in range(width):
+                    original_color = pixels[x, y]
+                    closest_color = self.find_closest_epd_color(original_color, epd_colors)
+                    new_pixels[x, y] = closest_color
+            
+            return new_img
     
     def find_closest_epd_color(self, rgb_color, epd_colors):
         """
