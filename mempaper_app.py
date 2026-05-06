@@ -91,6 +91,9 @@ class MempaperApp:
             
             if (cached_bh and current_bh and cached_bh != current_bh):
                 print(f"⚙️ [STARTUP] Block changed since last run: {cached_bh} → {current_bh}")
+                # Update to current block so config changes use correct block height
+                self.current_block_height = block_info.get('block_height')
+                self.current_block_hash = block_info.get('block_hash')
                 self.image_is_current = False  # Mark as outdated for _generate_initial_image to handle
             elif cached_bh and current_bh and cached_bh == current_bh:
                 print(f"👁️ [STARTUP] Block unchanged: {current_bh} - cache is valid")
