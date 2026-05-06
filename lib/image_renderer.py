@@ -1080,6 +1080,10 @@ class ImageRenderer:
             mode = "dark" if self.config.get("eink_dark_mode", False) else "light"
             hex_color = self.color_sets[mode].get(color_name, "#ffffff")
 
+            # For e-ink dark mode background, use pure black for better readability
+            if mode == "dark" and color_name == "background":
+                hex_color = "#000000"
+
             # For e-ink dark mode, override most text to white for readability
             # Exceptions: date colors and fee-based colors (green/yellow/orange/red/blue/black)
             if mode == "dark" and color_name not in ["date_normal", "date_holiday", "background",

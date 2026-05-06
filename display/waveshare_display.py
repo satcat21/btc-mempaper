@@ -95,8 +95,6 @@ for _name, _subdir, _fallbacks in _DISPLAY_CONFIGS:
 if not WAVESHARE_AVAILABLE:
     print(f"❌ No Waveshare EPD modules available.")
     print(f"   Run: bash scripts/install_waveshare_drivers.sh")
-else:
-    print(f"✅ Waveshare modules loaded: {list(WAVESHARE_MODULES.keys())}")
 
 class WaveshareDisplay:
     """Dynamic interface to Waveshare e-paper displays (7.3F and 13.3E supported)."""
