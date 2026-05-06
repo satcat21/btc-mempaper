@@ -321,8 +321,7 @@ class MempaperApp:
         mempool_username = self.config.get("mempool_username", "")
         mempool_password = self.config.get("mempool_password", "")
         
-        protocol = 'HTTPS' if mempool_use_https else 'HTTP'
-        print(f"🌐 Mempool API: {protocol}://{mempool_host}:{mempool_rest_port}/api")
+        print(f"🌐 Mempool API: {build_mempool_api_url(mempool_host, mempool_rest_port, mempool_use_https)}")
         
         self.mempool_api = MempoolAPI(
             host=mempool_host,

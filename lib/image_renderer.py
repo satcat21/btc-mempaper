@@ -1359,7 +1359,7 @@ class ImageRenderer:
                 f.write(image_bytes)
 
             template = meme.get("meme_template") or meme_id
-            print(f"Fetched online meme from einundzwanzig-memes.space: {template}")
+            print(f"🖼️ Fetched online meme from einundzwanzig-memes.space: {template}")
             return dest
 
         except Exception as e:
