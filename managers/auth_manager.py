@@ -324,6 +324,36 @@ def require_web_auth(auth_manager: AuthManager):
     return decorator
 
 
+def allow_public_or_auth(auth_manager: AuthManager, config_manager):
+    """
+    Decorator that allows public access when public_dashboard is enabled,
+    otherwise requires authentication like require_web_auth.
+    
+    Args:
+        auth_manager (AuthManager): Authentication manager instance
+        config_manager: ConfigManager instance for checking public_dashboard setting
+    """
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            # If public dashboard is enabled, allow access without auth
+            if config_manager.config.get('public_dashboard', False):
+                # Still refresh session if user happens to be authenticated
+                if auth_manager.is_authenticated():
+                    auth_manager.refresh_session()
+                return f(*args, **kwargs)
+            
+            # Otherwise require authentication
+            if not auth_manager.is_authenticated():
+                from flask import redirect, url_for
+                return redirect(url_for('login_page'))
+            
+            auth_manager.refresh_session()
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
+
+
 def require_rate_limit(auth_manager: AuthManager, exempt_authenticated=False):
     """
     Decorator to apply rate limiting to routes.

@@ -1,35 +1,36 @@
+/* ============================================================
+   MEMPAPER DASHBOARD – Themed (inherits from theme.css)
+   ============================================================ */
+
 body {
-    background: #F5F7FA; /*linear-gradient(180deg, #6610f2 0%, #6610f2 20%, #007bff 80%, #007bff 100%);*/
-    margin: 0;
     min-height: 100vh;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    font-family: 'Roboto', Arial, sans-serif;
-    padding: 20px 10px; /* Minimal padding since no top bar */
-    box-sizing: border-box;
+    padding: 20px 10px;
 }
 
+/* ── Dashboard Image ────────────────────────────────────────── */
 #dashboard {
-    /* Base sizing - responsive & aspect ratio agnostic */
     width: auto;
     height: auto;
-    
-    /* Constrain width */
     max-width: 95vw;
-    
-    /* Constrain height - verify vertical space for nav/padding */
     max-height: calc(100vh - 120px);
-    
-    box-shadow: 0 4px 20px rgba(0,0,0,0.1);
-    border-radius: 8px;
+    box-shadow: var(--shadow-elevated);
+    border-radius: var(--radius-md);
     object-fit: contain;
-    transition: all 0.3s ease;
+    transition: box-shadow 0.3s ease, background-color 0.3s ease;
+    background-color: var(--bg-card);
 }
 
-/* Mobile adjustments */
-@media (max-width: 768px) {
+body.dark-mode #dashboard {
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.06),
+                0 4px 24px rgba(0,0,0,0.5),
+                0 0 60px rgba(255,255,255,0.03);
+}
+
+@media (max-width: 999px) {
     #dashboard {
         max-height: calc(100vh - 100px);
     }
@@ -42,56 +43,13 @@ body {
     }
 }
 
-/* Landscape on mobile */
 @media (max-height: 500px) and (orientation: landscape) {
     #dashboard {
         max-height: calc(100vh - 40px);
     }
 }
 
-
-
-
-/* Desktop Navigation - Vertical Left Side */
-.desktop-nav-buttons {
-    position: fixed;
-    left: 20px;
-    top: 50%;
-    transform: translateY(-50%);
-    display: flex;
-    flex-direction: column;
-    gap: 15px;
-    z-index: 1000;
-}
-
-/* Mobile Navigation - Bottom Center (copied from config page styling) */
-.mobile-nav-buttons {
-    position: fixed;
-    bottom: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    display: flex;
-    gap: 20px;
-    padding: 15px 20px;
-    background: rgba(45, 48, 71, 0.95);
-    backdrop-filter: blur(15px);
-    border-radius: 25px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-    z-index: 1000;
-    margin-top: 15px;
-    justify-content: center;
-    align-items: center;
-    transition: all 0.3s ease;
-    opacity: 0;
-    pointer-events: none;
-}
-
-.mobile-nav-buttons.visible {
-    opacity: 1;
-    pointer-events: auto;
-}
-
-/* Mobile toggle button - small and subtle */
+/* ── Mobile Nav Toggle ──────────────────────────────────────── */
 .mobile-nav-toggle {
     position: fixed;
     bottom: 5px;
@@ -100,101 +58,59 @@ body {
     height: 36px;
     border: none;
     border-radius: 50%;
-    background: rgba(45, 48, 71, 0.4);
+    background: var(--nav-bg);
     backdrop-filter: blur(10px);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
     z-index: 1001;
     cursor: pointer;
-    transition: all 0.3s ease;
+    transition: all var(--transition);
     display: flex;
     align-items: center;
     justify-content: center;
-    color: white;
+    color: var(--nav-icon-fill);
     font-size: 14px;
 }
 
 .mobile-nav-toggle:hover {
-    background: rgba(45, 48, 71, 0.95);
+    background: var(--bg-card-hover);
     transform: scale(1.05);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
 }
 
 .mobile-nav-toggle.active {
-    background: rgba(77, 81, 104, 0.95);
+    background: var(--bg-elevated);
 }
 
 .mobile-nav-toggle svg {
     transition: transform 0.3s ease;
-    fill: #b0b0b0 !important;
+    fill: var(--text-muted) !important;
 }
 
-/* Navigation button styles (copied from config page) */
-.nav-button {
-    padding: 12px 20px;
-    border: none;
-    border-radius: 8px;
-    font-size: 14px;
-    font-weight: 500;
-    cursor: pointer;
-    min-width: 120px;
-    text-align: center;
-    transition: all 0.3s ease;
-    backdrop-filter: blur(10px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    background: #5d6182;
-    color: white;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    pointer-events: auto;
-    z-index: 1001;
-    text-decoration: none;
-}
-
-.nav-button:hover {
-    background: #4a4d6b;
-    transform: translateX(-3px);
-}
-
-.nav-button:disabled {
-    background: #666;
-    cursor: not-allowed;
-    transform: none;
-}
-
-.nav-button svg {
-    flex-shrink: 0;
+/* Dashboard uses a toggle-based mobile nav (hidden by default) */
+.mobile-nav-buttons {
+    opacity: 0;
     pointer-events: none;
-    fill: white !important; /* Force white icons */
+    transition: opacity 0.3s ease;
+    /* Override the base position from theme.css for dashboard */
+    bottom: 20px;
+    border-radius: 25px;
+    border-top: none;
+    padding: 15px 20px;
+    gap: 20px;
 }
 
-/* Icon-only button styling (copied from config page) */
-.nav-button.icon-only {
-    min-width: 48px !important;
-    width: 48px !important;
-    height: 48px !important;
-    padding: 0 !important;
-    border-radius: 50% !important;
-    box-sizing: border-box !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
+.mobile-nav-buttons.visible {
+    opacity: 1;
+    pointer-events: auto;
 }
 
-.nav-button.icon-only svg {
-    width: 20px !important;
-    height: 20px !important;
-}
-
-/* Specific desktop button overrides to ensure consistency */
+/* Dashboard-specific desktop button sizing */
 #desktop-config-button,
 #desktop-logout-button {
     width: 48px !important;
     height: 48px !important;
     min-width: 48px !important;
     padding: 0 !important;
-    box-sizing: border-box !important;
 }
 
 #desktop-config-button svg,
@@ -203,44 +119,10 @@ body {
     height: 20px !important;
 }
 
-/* Mobile navigation button styling (copied from config page) */
+/* Dashboard-specific mobile button sizing */
 .mobile-nav-button {
     width: 50px;
     height: 50px;
-    border: none;
-    border-radius: 50%;
-    font-size: 18px;
-    font-weight: 500;
-    cursor: pointer;
-    text-align: center;
-    transition: all 0.3s ease;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-    background: #5d6182;
-    color: white;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    margin: 0;
-    pointer-events: auto;
-    z-index: 1001;
-}
-
-.mobile-nav-button:hover, .mobile-nav-button:active {
-    background: #4a4d6b;
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-}
-
-.mobile-nav-button:disabled {
-    background: #666;
-    cursor: not-allowed;
-    transform: none;
-}
-
-.mobile-nav-button svg {
-    pointer-events: none;
-    fill: white !important; /* Force white icons */
 }
 
 .mobile-nav-button.icon-only svg {
@@ -248,108 +130,48 @@ body {
     height: 24px;
 }
 
-/* Force white icons for dashboard nav buttons (copied from config page approach) */
-#config-button svg,
-#config-button svg path,
-#logout-button svg,
-#logout-button svg path,
-#desktop-config-button svg,
-#desktop-config-button svg path,
-#desktop-logout-button svg,
-#desktop-logout-button svg path,
-#mobile-config-button svg,
-#mobile-config-button svg path,
-#mobile-logout-button svg,
-#mobile-logout-button svg path,
-.nav-button svg,
-.nav-button svg path,
-.mobile-nav-button svg,
-.mobile-nav-button svg path,
-.nav-button.icon-only svg,
-.nav-button.icon-only svg path,
-.mobile-nav-button.icon-only svg,
-.mobile-nav-button.icon-only svg path {
-    fill: #ffffff !important;
-    color: #ffffff !important;
-    stroke: #ffffff !important;
-}
-
-
-
-
-
-
-
-/* Extreme mobile optimization - maximize image size */
+/* ── Extreme mobile optimization ────────────────────────────── */
 @media (max-width: 414px) {
     .orientation-vertical #dashboard {
         width: min(99vw, calc(100vh - 80px) * 3/5);
         max-height: calc(100vh - 80px);
     }
-    
     .orientation-horizontal #dashboard {
         width: min(99vw, calc(100vh - 80px) * 5/3);
         max-height: calc(100vh - 80px);
     }
 }
 
-/* iPhone SE and similar very small screens */
 @media (max-width: 375px) and (max-height: 667px) {
     .orientation-vertical #dashboard {
         width: min(99vw, calc(100vh - 75px) * 3/5);
         max-height: calc(100vh - 75px);
     }
-    
     .orientation-horizontal #dashboard {
         width: min(99vw, calc(100vh - 75px) * 5/3);
         max-height: calc(100vh - 75px);
     }
 }
 
-/* Navigation Layout Control (copied from config page) */
-/* Desktop: Show left-side navigation, hide mobile elements */
-@media (min-width: 769px) {
-    .desktop-nav-buttons {
-        display: flex;
-    }
-    
-    .mobile-nav-buttons {
-        display: none;
-    }
-    
-    .mobile-nav-toggle {
-        display: none;
-    }
+/* Dashboard mobile toggle visibility */
+@media (min-width: 1000px) {
+    .mobile-nav-toggle { display: none; }
 }
 
-/* Mobile: Hide left-side navigation, show bottom navigation and toggle */
-@media (max-width: 768px) {
-    .desktop-nav-buttons {
-        display: none;
-    }
-    
-    .mobile-nav-buttons {
-        display: flex;
-    }
-    
-    .mobile-nav-toggle {
-        display: flex;
-    }
+@media (max-width: 999px) {
+    .mobile-nav-toggle { display: flex; }
 }
 
-/* Extra small screens (copied from config page) */
 @media (max-width: 480px) {
     .mobile-nav-button {
         width: 45px;
         height: 45px;
         font-size: 16px;
     }
-    
     .mobile-nav-buttons {
         padding: 12px;
         gap: 15px;
     }
-    
     .mobile-nav-toggle {
         width: 32px;
         height: 32px;
@@ -359,7 +181,7 @@ body {
     }
 }
 
-/* Block Toast Notifications */
+/* ── Block Toast Notifications ──────────────────────────────── */
 #block-toast-container {
     pointer-events: none;
 }
@@ -368,15 +190,13 @@ body {
     pointer-events: auto;
 }
 
-/* Mobile responsiveness for block toasts */
-@media (max-width: 768px) {
+@media (max-width: 999px) {
     #block-toast-container {
         top: 10px !important;
         right: 10px !important;
         left: 10px !important;
         width: auto !important;
     }
-    
     #block-toast-container > div {
         min-width: auto !important;
         max-width: none !important;
@@ -391,17 +211,8 @@ body {
         right: 5px !important;
         left: 5px !important;
     }
-    
     #block-toast-container > div {
         padding: 12px 16px !important;
         font-size: 12px !important;
     }
-}
-
-/* ========================================
-   DARK MODE STYLES
-   ======================================== */
-
-body.dark-mode {
-    background: #1d1f31;
 }

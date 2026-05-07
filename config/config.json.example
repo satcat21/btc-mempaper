@@ -33,12 +33,33 @@
   "btc_price_currency": "USD",
   "moscow_time_unit": "hour",
 
+  "show_countdown_block": true,
+  "color_countdown_light": "#C55A00",
+  "color_countdown_dark": "#FF9E40",
+
+  "show_halving_block": true,
+  "color_halving_light": "#1565C0",
+  "color_halving_dark": "#4FC3F7",
+
+  "show_network_block": true,
+  "color_network_light": "#6A1B9A",
+  "color_network_dark": "#CE93D8",
+
   "show_bitaxe_block": false,
+  "bitaxe_display_mode": "blocks",
   "bitaxe_miner_table": [],
 
   "show_wallet_balances_block": false,
   "wallet_balance_unit": "btc",
   "wallet_balance_currency": "EUR",
 
-  "opsec_mode_enabled": false
+  "show_donation_block": false,
+  "donation_display_mode": "latest",
+  "webhook_relay_ws_url": "",
+  "color_donation_light": "#F7931A",
+  "color_donation_dark": "#F7931A",
+
+  "public_dashboard": false,
+  "opsec_mode_enabled": false,
+  "eink_dark_mode": false
 }

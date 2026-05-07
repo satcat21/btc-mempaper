@@ -63,7 +63,7 @@ function closeMemeModal() {
                     const msg = donation.message
                         ? escapeHtml(donation.message) : '<em style="color:#888">—</em>';
                     const tr = document.createElement('tr');
-                    tr.style.cssText = 'border-bottom:1px solid var(--border-color,#f0f0f0);';
+                    tr.style.cssText = 'border-bottom:1px solid var(--border-color);';
                     tr.innerHTML = `
                         <td style="padding:5px 8px; white-space:nowrap;">${ts}</td>
                         <td style="padding:5px 8px; text-align:right; font-weight:bold;">${sats}</td>
@@ -118,6 +118,9 @@ const isConfigPage = window.location.pathname.includes('/config');
 function getSectionToggleKey(categoryId) {
     const toggleMapping = {
         'price_stats': 'show_btc_price_block',
+        'countdown': 'show_countdown_block',
+        'halving': 'show_halving_block',
+        'network_stats': 'show_network_block',
         'bitaxe_stats': 'show_bitaxe_block',
         'wallet_monitoring': 'show_wallet_balances_block',
         'eink_display': 'e-ink-display-connected',
@@ -299,7 +302,7 @@ function createPasswordChangeInterface(key, field) {
     const changeButton = document.createElement('button');
     changeButton.type = 'button';
     changeButton.className = 'form-button';
-    changeButton.style.backgroundColor = '#667eea';
+    changeButton.style.backgroundColor = '#F7931A';
     changeButton.style.color = 'white';
     changeButton.style.border = 'none';
     changeButton.style.padding = '8px 16px';
@@ -357,7 +360,7 @@ function createPasswordChangeInterface(key, field) {
     const saveButton = document.createElement('button');
     saveButton.type = 'button';
     saveButton.className = 'form-button';
-    saveButton.style.backgroundColor = '#667eea';
+    saveButton.style.backgroundColor = '#F7931A';
     saveButton.style.color = 'white';
     saveButton.style.border = 'none';
     saveButton.style.padding = '8px 16px';
@@ -666,11 +669,11 @@ async function showRenameDialog(originalFilename, file, suggestedFilename, exist
             <div class="modal-content" style="max-width: 400px;">
                 <h3>${t?.rename_image || 'Rename Image'}</h3>
                 ${previewHtml}
-                <p style="margin-bottom: 8px; color: #666;">${t?.rename_conflict_info || 'A file named'} <strong>${originalFilename}</strong> ${t?.rename_conflict_exists || 'already exists.'}</p>
+                <p style="margin-bottom: 8px; color: #6a6a78;">${t?.rename_conflict_info || 'A file named'} <strong>${originalFilename}</strong> ${t?.rename_conflict_exists || 'already exists.'}</p>
                 <label style="display: block; margin-bottom: 5px; font-weight: 600;">${t?.rename_new_name || 'New name (without extension):'}</label>
                 <input type="text" id="rename-input" class="form-input" value="${suggestedNameWithoutExt}" style="margin-bottom: 5px;">
-                <p id="rename-name-warning" style="font-size: 0.85rem; color: #dc3545; margin-bottom: 5px; display: none;">${t?.rename_name_in_use || 'This name is already in use. Please choose a different name.'}</p>
-                <p style="font-size: 0.85rem; color: #667eea; margin-bottom: 15px;">${(t?.rename_extension_preserved || 'Extension {ext} will be preserved').replace('{ext}', extension)}</p>
+                <p id="rename-name-warning" style="font-size: 0.85rem; color: #e53e3e; margin-bottom: 5px; display: none;">${t?.rename_name_in_use || 'This name is already in use. Please choose a different name.'}</p>
+                <p style="font-size: 0.85rem; color: #F7931A; margin-bottom: 15px;">${(t?.rename_extension_preserved || 'Extension {ext} will be preserved').replace('{ext}', extension)}</p>
                 <div class="modal-buttons" style="display: flex; gap: 10px;">
                     <button id="rename-confirm" class="save-button" style="flex: 1;">${t?.rename_confirm || 'Rename'}</button>
                     <button id="rename-skip" class="cancel-button" style="flex: 1;">${t?.rename_keep_original || 'Keep Original'}</button>
@@ -741,7 +744,7 @@ async function uploadFiles(files) {
         progressDiv.style.display = 'block';
         progressBar.style.width = '0%';
         statusText.textContent = t?.upload_checking_duplicates || 'Checking for duplicates...';
-        statusText.style.color = '#667eea';
+        statusText.style.color = '#F7931A';
     }
     
     // Get existing hashes
@@ -811,7 +814,7 @@ async function uploadFiles(files) {
     
     if (statusText) {
         statusText.textContent = summaryMessage;
-        statusText.style.color = duplicates.length > 0 ? '#ff9800' : '#667eea';
+        statusText.style.color = duplicates.length > 0 ? '#ff9800' : '#F7931A';
     }
     
     // Show duplicate details if any
@@ -880,7 +883,7 @@ async function uploadFiles(files) {
             }
 
             statusText.textContent = parts.join(' | ');
-            statusText.style.color = failedCount > 0 ? '#dc3545' : '#28a745';
+            statusText.style.color = failedCount > 0 ? '#e53e3e' : '#38a169';
         }
         
         // Clear cache and reload memes
@@ -977,7 +980,7 @@ async function deleteMeme(filename) {
                             const loadMoreBtn = memesList.querySelector('.load-more-btn');
                             if (!loadMoreBtn) {
                                 // No more memes and no load more button
-                                memesList.innerHTML = `<p style="grid-column: 1/-1; text-align: center; color: #666;">${window.translations.no_memes_uploaded}</p>`;
+                                memesList.innerHTML = `<p style="grid-column: 1/-1; text-align: center; color: var(--text-secondary);">${window.translations.no_memes_uploaded}</p>`;
                             }
                         }
                     }
@@ -1310,18 +1313,20 @@ class MemeLoader {
         }
     }
     
-    async loadMemePage(page = 1) {
+    async loadMemePage(page = 1, search = '') {
         // Only block if currently loading this page
         if (this.isLoading) {
             return null;
         }
         this.isLoading = true;
         try {
-            const response = await fetch(`/api/memes?page=${page}&per_page=${this.perPage}`);
+            let url = `/api/memes?page=${page}&per_page=${this.perPage}`;
+            if (search) url += `&search=${encodeURIComponent(search)}`;
+            const response = await fetch(url);
             const data = await response.json();
             this.totalMemes = data.total;
-            // Only mark page as loaded if fetch succeeded
-            if (data && data.memes && data.memes.length > 0) {
+            // Only mark page as loaded if fetch succeeded and no search filter
+            if (!search && data && data.memes && data.memes.length > 0) {
                 this.loadedPages.add(page);
             }
             return data;
@@ -1337,7 +1342,11 @@ class MemeLoader {
 // Global meme loader instance
 const memeLoader = new MemeLoader();
 
-async function loadMemes() {
+// Current meme search term
+let currentMemeSearch = '';
+
+async function loadMemes(search = '') {
+    currentMemeSearch = search;
     try {
         const memesList = document.getElementById('memes-list');
         if (!memesList) {
@@ -1345,14 +1354,19 @@ async function loadMemes() {
             return;
         }
         // Show loading indicator
-        memesList.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: #666;">Loading memes...</div>';
+        memesList.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: var(--text-secondary);">Loading memes...</div>';
         // Load first page
-        const data = await memeLoader.loadMemePage(1);
+        const data = await memeLoader.loadMemePage(1, search);
         if (!data) {
-            memesList.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: #f44;">Failed to load memes</div>';
+            memesList.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: var(--danger);">Failed to load memes</div>';
             return;
         }
         memesList.innerHTML = '';
+
+        // Update count label
+        const memeCountLabel = document.getElementById('meme-image-count');
+        if (memeCountLabel) memeCountLabel.textContent = `(${data.total || 0})`;
+
         // Rebuild filename set from loaded page
         window.memeFilenameSet = new Set();
         if (data.memes && data.memes.length > 0) {
@@ -1370,7 +1384,7 @@ async function loadMemes() {
                 img.title = 'Click to inspect';
                 img.onclick = () => openMemeModal(meme.filename, meme.url);
                 // Add placeholder until loaded
-                img.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100%" height="100%" fill="%23f0f0f0"/><text x="50%" y="50%" text-anchor="middle" dy=".3em" fill="%23999">📷</text></svg>';
+                img.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100%" height="100%" fill="%23222228"/><text x="50%" y="50%" text-anchor="middle" dy=".3em" fill="%23999">📷</text></svg>';
                 img.classList.add('meme-lazy');
                 // Set up lazy loading observer
                 memeLoader.observer.observe(img);
@@ -1389,51 +1403,63 @@ async function loadMemes() {
                 memeDiv.insertBefore(img, memeDiv.firstChild);
                 memesList.appendChild(memeDiv);
             });
-            // Add load more button if there are more pages
+            // Add infinite scroll sentinel if there are more pages
             if (data.has_next) {
-                const loadMoreBtn = document.createElement('button');
-                loadMoreBtn.className = 'load-more-btn';
-                loadMoreBtn.style.cssText = 'grid-column: 1/-1; padding: 15px; margin: 10px; background: linear-gradient(45deg, #667eea, #764ba2); color: white; border: none; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: all 0.3s ease; font-weight: 600; box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);';
-                const remaining = data.total - data.memes.length;
-                
-                // Create icon element
-                const iconImg = document.createElement('img');
-                iconImg.src = '/static/icons/unfold_more.svg';
-                iconImg.style.cssText = 'width: 20px; height: 20px; filter: brightness(0) invert(1);'; // Make icon white
-                
-                loadMoreBtn.appendChild(iconImg);
-                const loadMoreText = window.translations?.load_more_remaining || 'Load More ({remaining} remaining)';
-                loadMoreBtn.appendChild(document.createTextNode(loadMoreText.replace('{remaining}', remaining)));
-                loadMoreBtn.onclick = () => loadMoreMemes(data.page + 1, loadMoreBtn);
-                memesList.appendChild(loadMoreBtn);
+                const sentinel = document.createElement('div');
+                sentinel.className = 'meme-scroll-sentinel';
+                sentinel.dataset.nextPage = data.page + 1;
+                memesList.appendChild(sentinel);
+                setupMemeInfiniteScroll(sentinel);
             }
             
         } else {
-            memesList.innerHTML = `<p style="grid-column: 1/-1; text-align: center; color: #666;">${window.translations.no_memes_uploaded}</p>`;
+            memesList.innerHTML = `<p style="grid-column: 1/-1; text-align: center; color: var(--text-secondary);">${window.translations.no_memes_uploaded}</p>`;
         }
         
         
     } catch (error) {
         console.error('Failed to load memes:', error);
         const memesList = document.getElementById('memes-list');
-        memesList.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: #f44;">Failed to load memes</div>';
+        memesList.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: var(--danger);">Failed to load memes</div>';
     }
 }
 
-async function loadMoreMemes(page, buttonElement) {
+// Infinite scroll observer for meme grid
+let memeScrollObserver = null;
+let memeScrollLoading = false;
+
+function setupMemeInfiniteScroll(sentinel) {
+    // Clean up previous observer if any
+    if (memeScrollObserver) {
+        memeScrollObserver.disconnect();
+    }
+    const scrollContainer = document.querySelector('.memes-scroll-container');
+    memeScrollObserver = new IntersectionObserver((entries) => {
+        const entry = entries[0];
+        if (entry.isIntersecting && !memeScrollLoading) {
+            const nextPage = parseInt(sentinel.dataset.nextPage, 10);
+            if (nextPage) {
+                loadMoreMemes(nextPage, sentinel);
+            }
+        }
+    }, { root: scrollContainer, rootMargin: '200px' });
+    memeScrollObserver.observe(sentinel);
+}
+
+async function loadMoreMemes(page, sentinel) {
+    if (memeScrollLoading) return;
+    memeScrollLoading = true;
     try {
-        buttonElement.textContent = 'Loading...';
-        buttonElement.disabled = true;
-        
-        const data = await memeLoader.loadMemePage(page);
+        const data = await memeLoader.loadMemePage(page, currentMemeSearch);
         if (!data || !data.memes.length) {
-            buttonElement.remove();
+            sentinel.remove();
+            memeScrollLoading = false;
             return;
         }
         
         const memesList = document.getElementById('memes-list');
         
-        // Add new memes before the load more button
+        // Add new memes before the sentinel
         data.memes.forEach(meme => {
             const memeDiv = document.createElement('div');
             memeDiv.className = 'meme-thumbnail';
@@ -1446,7 +1472,7 @@ async function loadMoreMemes(page, buttonElement) {
             img.style.cursor = 'pointer';
             img.title = 'Click to inspect';
             img.onclick = () => openMemeModal(meme.filename, meme.url);
-            img.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100%" height="100%" fill="%23f0f0f0"/><text x="50%" y="50%" text-anchor="middle" dy=".3em" fill="%23999">📷</text></svg>';
+            img.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100%" height="100%" fill="%23222228"/><text x="50%" y="50%" text-anchor="middle" dy=".3em" fill="%23999">📷</text></svg>';
             img.classList.add('meme-lazy');
             
             memeLoader.observer.observe(img);
@@ -1464,35 +1490,21 @@ async function loadMoreMemes(page, buttonElement) {
             `;
             
             memeDiv.insertBefore(img, memeDiv.firstChild);
-            memesList.insertBefore(memeDiv, buttonElement);
+            memesList.insertBefore(memeDiv, sentinel);
         });
         
-        // Update or remove the load more button
+        // Update sentinel for next page or remove it
         if (data.has_next) {
-            const remaining = data.total - (page * memeLoader.perPage);
-            
-            // Clear existing content and rebuild with icon
-            buttonElement.innerHTML = '';
-            buttonElement.style.cssText = 'grid-column: 1/-1; padding: 15px; margin: 10px; background: #667eea; color: white; border: none; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;';
-            
-            const iconImg = document.createElement('img');
-            iconImg.src = '/static/icons/unfold_more.svg';
-            iconImg.style.cssText = 'width: 20px; height: 20px; filter: brightness(0) invert(1);';
-            
-            buttonElement.appendChild(iconImg);
-            const loadMoreText = window.translations?.load_more_remaining || 'Load More ({remaining} remaining)';
-            buttonElement.appendChild(document.createTextNode(loadMoreText.replace('{remaining}', remaining)));
-            buttonElement.onclick = () => loadMoreMemes(page + 1, buttonElement);
-            buttonElement.disabled = false;
+            sentinel.dataset.nextPage = page + 1;
         } else {
-            buttonElement.remove();
+            if (memeScrollObserver) memeScrollObserver.disconnect();
+            sentinel.remove();
         }
         
     } catch (error) {
         console.error('Failed to load more memes:', error);
-        buttonElement.textContent = 'Failed to load';
-        buttonElement.disabled = false;
     }
+    memeScrollLoading = false;
 }
 
 // Clear cache when memes are uploaded or deleted
@@ -1505,10 +1517,12 @@ const logoutButton = document.getElementById('logout-button');
 if (logoutButton) {
     logoutButton.addEventListener('click', async () => {
         try {
-            await fetch('/api/logout', { method: 'POST' });
-            window.location.href = '/';
+            const response = await fetch('/api/logout', { method: 'POST' });
+            const result = await response.json();
+            window.location.href = result.public_dashboard ? '/' : '/login';
         } catch (error) {
             console.error('Logout failed:', error);
+            window.location.href = '/login';
         }
     });
 } else if (isConfigPage) {
@@ -1609,7 +1623,7 @@ function createCurrentUserPasswordInterface() {
     const changeButton = document.createElement('button');
     changeButton.type = 'button';
     changeButton.className = 'form-button';
-    changeButton.style.cssText = 'background:#667eea;color:white;border:none;padding:8px 16px;border-radius:4px;cursor:pointer;';
+    changeButton.style.cssText = 'background:#F7931A;color:white;border:none;padding:8px 16px;border-radius:4px;cursor:pointer;';
     changeButton.textContent = window.translations?.change_password || 'Change Password';
 
     const passwordForm = document.createElement('div');
@@ -1638,7 +1652,7 @@ function createCurrentUserPasswordInterface() {
     const saveButton = document.createElement('button');
     saveButton.type = 'button';
     saveButton.className = 'form-button';
-    saveButton.style.cssText = 'background:#667eea;color:white;border:none;padding:8px 16px;border-radius:4px;cursor:pointer;';
+    saveButton.style.cssText = 'background:#F7931A;color:white;border:none;padding:8px 16px;border-radius:4px;cursor:pointer;';
     saveButton.textContent = window.translations?.save || 'Save';
 
     const cancelButton = document.createElement('button');
@@ -1758,7 +1772,7 @@ function renderConfigurationForm() {
         // Handle icon: if it's a path (starts with /), create an img tag, otherwise use as text
         let iconHtml;
         if (category.icon && category.icon.startsWith('/')) {
-            iconHtml = `<img src="${category.icon}" alt="${category.label}" style="width: 24px; height: 24px; margin-right: 10px; vertical-align: middle; transform: translateY(-2px); filter: brightness(0) invert(1);">`;
+            iconHtml = `<img src="${category.icon}" alt="${category.label}" class="section-icon" style="width: 24px; height: 24px; margin-right: 10px; vertical-align: middle; transform: translateY(-2px);">`;
         } else {
             iconHtml = category.icon || '';
         }
@@ -2225,7 +2239,7 @@ function createColorSelect(value) {
             optionDiv.style.display = 'flex';
             optionDiv.style.alignItems = 'center';
             optionDiv.style.gap = '8px';
-            optionDiv.style.borderBottom = '1px solid #f0f0f0';
+            optionDiv.style.borderBottom = '1px solid var(--border-color)';
             optionDiv.setAttribute('data-value', option.value);
             
             // Create color preview dot
@@ -3516,9 +3530,9 @@ function createMemeManagementInterface(field) {
     uploadArea.innerHTML = `
         <input type="file" id="file-input" accept="image/*" multiple style="display: none;">
         <div class="upload-placeholder">
-            <img src="/static/icons/add_meme.svg" alt="Add Meme" style="width: 2rem; height: 2rem; margin-bottom: 10px; filter: brightness(0) invert(1);" />
+            <img src="/static/icons/add_meme.svg" alt="Add Meme" class="upload-icon" style="width: 2rem; height: 2rem; margin-bottom: 10px;" />
             <p>${window.translations?.upload_placeholder || 'Click to select image(s) or drag & drop'}</p>
-            <p style="font-size: 0.8rem; color: #667eea;">${window.translations?.upload_formats || 'Supported: PNG, JPG, JPEG, GIF, WebP (Multiple files allowed)'}</p>
+            <p style="font-size: 0.8rem; color: var(--accent);">${window.translations?.upload_formats || 'Supported: PNG, JPG, JPEG, GIF, WebP (Multiple files allowed)'}</p>
         </div>
     `;
     
@@ -3527,8 +3541,8 @@ function createMemeManagementInterface(field) {
     uploadProgress.style.display = 'none';
     uploadProgress.style.marginTop = '10px';
     uploadProgress.innerHTML = `
-        <div style="background: #f0f0f0; border-radius: 10px; overflow: hidden;">
-            <div id="progress-bar" style="height: 8px; background: #667eea; width: 0%; transition: width 0.3s;"></div>
+        <div style="background: var(--bg-input); border-radius: 10px; overflow: hidden;">
+            <div id="progress-bar" style="height: 8px; background: #F7931A; width: 0%; transition: width 0.3s;"></div>
         </div>
         <p id="upload-status" style="margin-top: 5px; font-size: 0.9rem;"></p>
     `;
@@ -3542,8 +3556,25 @@ function createMemeManagementInterface(field) {
     
     const memesLabel = document.createElement('label');
     memesLabel.className = 'form-label';
-    memesLabel.textContent = window.translations?.current_memes || 'Current Memes';
+    memesLabel.innerHTML = `${window.translations?.current_memes || 'Current Memes'} <span id="meme-image-count" style="color: var(--text-muted); font-weight: 400;"></span>`;
     memesSection.appendChild(memesLabel);
+
+    // Search input for filtering by tag/filename
+    const searchInput = document.createElement('input');
+    searchInput.type = 'text';
+    searchInput.className = 'form-input';
+    searchInput.id = 'meme-search-input';
+    searchInput.placeholder = window.translations?.search_memes || 'Search by tag or filename...';
+    searchInput.style.cssText = 'margin-bottom: 10px; font-size: 0.85rem;';
+    let memeSearchTimeout = null;
+    searchInput.addEventListener('input', () => {
+        clearTimeout(memeSearchTimeout);
+        memeSearchTimeout = setTimeout(() => {
+            const term = searchInput.value.trim();
+            loadMemes(term);
+        }, 350);
+    });
+    memesSection.appendChild(searchInput);
     
     const memesList = document.createElement('div');
     memesList.id = 'memes-list';
@@ -3551,44 +3582,13 @@ function createMemeManagementInterface(field) {
     memesList.style.gridTemplateColumns = 'repeat(auto-fill, minmax(100px, 1fr))';
     memesList.style.gap = '10px';
     memesList.style.marginTop = '10px';
-    memesSection.appendChild(memesList);
-    
-    // Einundzwanzig bulk-download section
-    const ezSection = document.createElement('div');
-    ezSection.className = 'form-group';
-    ezSection.style.marginBottom = '30px';
 
-    const ezLabel = document.createElement('label');
-    ezLabel.className = 'form-label';
-    ezLabel.textContent = 'Einundzwanzig Memes – Bulk Download';
-    ezSection.appendChild(ezLabel);
+    // Wrap in scrollable container so user can scroll past the section
+    const memesScrollContainer = document.createElement('div');
+    memesScrollContainer.className = 'memes-scroll-container';
+    memesScrollContainer.appendChild(memesList);
+    memesSection.appendChild(memesScrollContainer);
 
-    const ezDesc = document.createElement('p');
-    ezDesc.style.cssText = 'font-size:0.85rem; color:var(--text-secondary,#aaa); margin: 4px 0 12px;';
-    ezDesc.textContent = 'Download all available memes from einundzwanzig-memes.space. Duplicates are detected by content hash and skipped automatically.';
-    ezSection.appendChild(ezDesc);
-
-    const ezBtn = document.createElement('button');
-    ezBtn.id = 'ez-download-btn';
-    ezBtn.className = 'save-button';
-    ezBtn.style.cssText = 'display:inline-flex; align-items:center; gap:8px; margin:0; padding:12px 24px; font-size:14px;';
-    ezBtn.innerHTML = `<img src="/static/icons/download.svg" alt="" style="width:16px;height:16px;filter:brightness(0) invert(1);"> Download All Memes`;
-    ezBtn.onclick = startEinundzwanzigDownload;
-    ezSection.appendChild(ezBtn);
-
-    const ezProgress = document.createElement('div');
-    ezProgress.id = 'ez-progress';
-    ezProgress.style.cssText = 'display:none; margin-top:14px;';
-    ezProgress.innerHTML = `
-        <div style="background:#2a2a2a; border-radius:10px; overflow:hidden;">
-            <div id="ez-progress-bar" style="height:8px; background:#667eea; width:0%; transition:width 0.4s;"></div>
-        </div>
-        <p id="ez-status" style="margin-top:6px; font-size:0.9rem;"></p>
-        <p id="ez-counters" style="font-size:0.85rem; color:var(--text-secondary,#aaa);"></p>
-    `;
-    ezSection.appendChild(ezProgress);
-
-    container.appendChild(ezSection);
     container.appendChild(uploadSection);
     container.appendChild(memesSection);
 
@@ -3606,95 +3606,6 @@ function createMemeManagementInterface(field) {
 }
 
 
-
-// --- Einundzwanzig bulk-download ---
-
-function startEinundzwanzigDownload() {
-    const btn = document.getElementById('ez-download-btn');
-    const progress = document.getElementById('ez-progress');
-    const bar = document.getElementById('ez-progress-bar');
-    const status = document.getElementById('ez-status');
-    const counters = document.getElementById('ez-counters');
-
-    if (!btn) return;
-    btn.disabled = true;
-    btn.innerHTML = `<img src="/static/icons/download.svg" alt="" style="width:16px;height:16px;filter:brightness(0) invert(1);"> Connecting…`;
-    progress.style.display = 'block';
-    bar.style.width = '2%';
-    status.textContent = 'Connecting…';
-    counters.textContent = '';
-
-    fetch('/api/download-einundzwanzig', { method: 'POST' })
-        .then(r => r.json())
-        .then(data => {
-            if (!data.success) {
-                status.textContent = '⚠️ ' + (data.message || 'Failed to start download');
-                btn.disabled = false;
-                btn.innerHTML = `<img src="/static/icons/download.svg" alt="" style="width:16px;height:16px;filter:brightness(0) invert(1);"> Download All Memes`;
-            }
-        })
-        .catch(err => {
-            status.textContent = '⚠️ Error: ' + err.message;
-            btn.disabled = false;
-            btn.innerHTML = `<img src="/static/icons/download.svg" alt="" style="width:16px;height:16px;filter:brightness(0) invert(1);"> Download All Memes`;
-        });
-}
-
-function handleEzDownloadProgress(data) {
-    const bar = document.getElementById('ez-progress-bar');
-    const status = document.getElementById('ez-status');
-    const counters = document.getElementById('ez-counters');
-    const btn = document.getElementById('ez-download-btn');
-    if (!status) return;
-
-    if (data.stage === 'hashing') {
-        // 0–5%: scanning existing files for duplicate detection
-        if (bar) bar.style.width = '5%';
-        if (btn) btn.innerHTML = `<img src="/static/icons/download.svg" alt="" style="width:16px;height:16px;filter:brightness(0) invert(1);"> Scanning…`;
-        status.textContent = data.message;
-    } else if (data.stage === 'discovering') {
-        // 5–20%: random sampling (500 calls max, stops early on saturation)
-        // discovered grows toward ~4326; scale bar accordingly
-        const discPct = data.discovered > 0 ? Math.min(5 + Math.round(data.discovered / 55), 20) : 7;
-        if (bar) bar.style.width = discPct + '%';
-        if (btn) btn.innerHTML = `<img src="/static/icons/download.svg" alt="" style="width:16px;height:16px;filter:brightness(0) invert(1);"> Sampling…`;
-        status.textContent = data.message;
-    } else if (data.stage === 'downloading') {
-        // 20–100%: downloading new memes
-        const pct = data.total > 0 ? 20 + Math.round((data.done / data.total) * 80) : 20;
-        if (bar) bar.style.width = pct + '%';
-        if (btn) btn.innerHTML = `<img src="/static/icons/download.svg" alt="" style="width:16px;height:16px;filter:brightness(0) invert(1);"> Downloading…`;
-        status.textContent = data.message;
-        if (counters && data.total > 0) {
-            counters.textContent = `✓ ${data.downloaded} new  ⊝ ${data.duplicates} duplicates  ✗ ${data.failed} failed`;
-        }
-    }
-}
-
-function handleEzDownloadComplete(data) {
-    const bar = document.getElementById('ez-progress-bar');
-    const status = document.getElementById('ez-status');
-    const counters = document.getElementById('ez-counters');
-    const btn = document.getElementById('ez-download-btn');
-
-    if (bar) bar.style.width = '100%';
-
-    if (data.success) {
-        if (bar) bar.style.background = '#4caf50';
-        if (status) status.textContent = `✓ Download complete — ${data.downloaded} new meme${data.downloaded !== 1 ? 's' : ''} added`;
-        if (counters) counters.textContent = `${data.downloaded} new  ·  ${data.duplicates} duplicates skipped  ·  ${data.failed} failed  ·  ${data.total} total found`;
-        // Reload the meme grid so new images appear
-        if (typeof loadMemes === 'function') loadMemes(true);
-    } else {
-        if (bar) bar.style.background = '#f44336';
-        if (status) status.textContent = '✗ Download failed: ' + (data.message || 'Unknown error');
-    }
-
-    if (btn) {
-        btn.disabled = false;
-        btn.innerHTML = `<img src="/static/icons/download.svg" alt="" style="width:16px;height:16px;filter:brightness(0) invert(1);"> Download All Memes`;
-    }
-}
 
 
 // --- OPSec Image Management ---
@@ -3738,26 +3649,32 @@ function createOpsecThumb(img) {
     return thumb;
 }
 
-function createOpsecLoadMoreBtn(data) {
-    const btn = document.createElement('button');
-    btn.className = 'load-more-btn';
-    btn.style.cssText = 'grid-column: 1/-1; padding: 15px; margin: 10px; background: linear-gradient(45deg, #667eea, #764ba2); color: white; border: none; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: all 0.3s ease; font-weight: 600; box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);';
-    const iconImg = document.createElement('img');
-    iconImg.src = '/static/icons/unfold_more.svg';
-    iconImg.style.cssText = 'width: 20px; height: 20px; filter: brightness(0) invert(1);';
-    const remaining = data.total - (data.page * data.per_page);
-    const loadMoreText = window.translations?.load_more_remaining || 'Load More ({remaining} remaining)';
-    btn.appendChild(iconImg);
-    btn.appendChild(document.createTextNode(loadMoreText.replace('{remaining}', remaining)));
-    btn.onclick = () => loadMoreOpsecImages(data.page + 1, btn);
-    return btn;
+// Opsec infinite scroll
+let opsecScrollObserver = null;
+let opsecScrollLoading = false;
+
+function setupOpsecInfiniteScroll(sentinel) {
+    if (opsecScrollObserver) {
+        opsecScrollObserver.disconnect();
+    }
+    const scrollContainer = document.querySelector('.opsec-scroll-container');
+    opsecScrollObserver = new IntersectionObserver((entries) => {
+        const entry = entries[0];
+        if (entry.isIntersecting && !opsecScrollLoading) {
+            const nextPage = parseInt(sentinel.dataset.nextPage, 10);
+            if (nextPage) {
+                loadMoreOpsecImages(nextPage, sentinel);
+            }
+        }
+    }, { root: scrollContainer, rootMargin: '200px' });
+    opsecScrollObserver.observe(sentinel);
 }
 
 async function loadOpsecImages() {
     const list = document.getElementById('opsec-images-list');
     if (!list) return;
 
-    list.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: #666;">${window.translations?.loading || 'Loading...'}</div>`;
+    list.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: var(--text-secondary);">${window.translations?.loading || 'Loading...'}</div>`;
 
     try {
         const response = await fetch('/api/opsec-images?page=1&per_page=50');
@@ -3767,20 +3684,58 @@ async function loadOpsecImages() {
 
         list.innerHTML = '';
 
+        // Update count label
+        const countLabel = document.getElementById('opsec-image-count');
+        if (countLabel) countLabel.textContent = `(${data.total || images.length})`;
+
         if (images.length === 0) {
-            list.innerHTML = `<p style="grid-column: 1/-1; text-align: center; color: #666;">${window.translations?.no_opsec_images || 'No OPSec images uploaded yet'}</p>`;
+            list.innerHTML = `<p style="grid-column: 1/-1; text-align: center; color: var(--text-secondary);">${window.translations?.no_opsec_images || 'No OPSec images uploaded yet'}</p>`;
             return;
         }
 
         images.forEach(img => list.appendChild(createOpsecThumb(img)));
 
         if (data.has_next) {
-            list.appendChild(createOpsecLoadMoreBtn(data));
+            const sentinel = document.createElement('div');
+            sentinel.className = 'meme-scroll-sentinel';
+            sentinel.dataset.nextPage = data.page + 1;
+            list.appendChild(sentinel);
+            setupOpsecInfiniteScroll(sentinel);
         }
     } catch (error) {
         console.error('Error loading OPSec images:', error);
-        list.innerHTML = `<p style="grid-column: 1/-1; text-align: center; color: #dc3545;">Error loading OPSec images</p>`;
+        list.innerHTML = `<p style="grid-column: 1/-1; text-align: center; color: var(--danger);">Error loading OPSec images</p>`;
     }
+}
+
+async function loadMoreOpsecImages(page, sentinel) {
+    if (opsecScrollLoading) return;
+    opsecScrollLoading = true;
+    try {
+        const response = await fetch(`/api/opsec-images?page=${page}&per_page=50`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        const images = data.images || [];
+
+        if (!images.length) {
+            sentinel.remove();
+            opsecScrollLoading = false;
+            return;
+        }
+
+        const list = document.getElementById('opsec-images-list');
+        images.forEach(img => list.insertBefore(createOpsecThumb(img), sentinel));
+
+        if (data.has_next) {
+            sentinel.dataset.nextPage = page + 1;
+        } else {
+            if (opsecScrollObserver) opsecScrollObserver.disconnect();
+            sentinel.remove();
+        }
+    } catch (error) {
+        console.error('Failed to load more OPSec images:', error);
+    }
+    opsecScrollLoading = false;
 }
 
 function downloadOpsecImage(filename) {
@@ -3790,47 +3745,6 @@ function downloadOpsecImage(filename) {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-}
-
-async function loadMoreOpsecImages(page, buttonElement) {
-    try {
-        buttonElement.textContent = window.translations?.loading || 'Loading...';
-        buttonElement.disabled = true;
-
-        const response = await fetch(`/api/opsec-images?page=${page}&per_page=50`);
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const data = await response.json();
-        const images = data.images || [];
-
-        if (!images.length) {
-            buttonElement.remove();
-            return;
-        }
-
-        const list = document.getElementById('opsec-images-list');
-        images.forEach(img => list.insertBefore(createOpsecThumb(img), buttonElement));
-
-        if (data.has_next) {
-            // Rebuild button content with updated count
-            buttonElement.innerHTML = '';
-            buttonElement.style.cssText = 'grid-column: 1/-1; padding: 15px; margin: 10px; background: linear-gradient(45deg, #667eea, #764ba2); color: white; border: none; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: all 0.3s ease; font-weight: 600; box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);';
-            const iconImg = document.createElement('img');
-            iconImg.src = '/static/icons/unfold_more.svg';
-            iconImg.style.cssText = 'width: 20px; height: 20px; filter: brightness(0) invert(1);';
-            const remaining = data.total - (page * data.per_page);
-            const loadMoreText = window.translations?.load_more_remaining || 'Load More ({remaining} remaining)';
-            buttonElement.appendChild(iconImg);
-            buttonElement.appendChild(document.createTextNode(loadMoreText.replace('{remaining}', remaining)));
-            buttonElement.onclick = () => loadMoreOpsecImages(page + 1, buttonElement);
-            buttonElement.disabled = false;
-        } else {
-            buttonElement.remove();
-        }
-    } catch (error) {
-        console.error('Failed to load more OPSec images:', error);
-        buttonElement.textContent = window.translations?.load_failed || 'Failed to load';
-        buttonElement.disabled = false;
-    }
 }
 
 async function deleteOpsecImage(filename) {
@@ -3851,7 +3765,7 @@ async function deleteOpsecImage(filename) {
                     if (remaining.length === 0) {
                         const loadMoreBtn = list.querySelector('.load-more-btn');
                         if (!loadMoreBtn) {
-                            list.innerHTML = `<p style="grid-column: 1/-1; text-align: center; color: #666;">${window.translations?.no_opsec_images || 'No OPSec images uploaded yet'}</p>`;
+                            list.innerHTML = `<p style="grid-column: 1/-1; text-align: center; color: var(--text-secondary);">${window.translations?.no_opsec_images || 'No OPSec images uploaded yet'}</p>`;
                         }
                     }
                 }
@@ -3884,9 +3798,9 @@ function createOpsecManagementInterface(field) {
     uploadArea.innerHTML = `
         <input type="file" id="opsec-file-input" accept="image/*" multiple style="display: none;">
         <div class="upload-placeholder">
-            <img src="/static/icons/add_meme.svg" alt="Add Image" style="width: 2rem; height: 2rem; margin-bottom: 10px; filter: brightness(0) invert(1);" />
+            <img src="/static/icons/add_meme.svg" alt="Add Image" class="upload-icon" style="width: 2rem; height: 2rem; margin-bottom: 10px;" />
             <p>${window.translations?.upload_placeholder || 'Click to select image(s) or drag & drop'}</p>
-            <p style="font-size: 0.8rem; color: #667eea;">${window.translations?.upload_formats || 'Supported: PNG, JPG, JPEG, GIF, WebP (Multiple files allowed)'}</p>
+            <p style="font-size: 0.8rem; color: var(--accent);">${window.translations?.upload_formats || 'Supported: PNG, JPG, JPEG, GIF, WebP (Multiple files allowed)'}</p>
         </div>
     `;
 
@@ -3895,8 +3809,8 @@ function createOpsecManagementInterface(field) {
     uploadProgress.style.display = 'none';
     uploadProgress.style.marginTop = '10px';
     uploadProgress.innerHTML = `
-        <div style="background: #f0f0f0; border-radius: 10px; overflow: hidden;">
-            <div id="opsec-progress-bar" style="height: 8px; background: #667eea; width: 0%; transition: width 0.3s;"></div>
+        <div style="background: var(--bg-input); border-radius: 10px; overflow: hidden;">
+            <div id="opsec-progress-bar" style="height: 8px; background: #F7931A; width: 0%; transition: width 0.3s;"></div>
         </div>
         <p id="opsec-upload-status" style="margin-top: 5px; font-size: 0.9rem;"></p>
     `;
@@ -3910,7 +3824,7 @@ function createOpsecManagementInterface(field) {
 
     const imagesLabel = document.createElement('label');
     imagesLabel.className = 'form-label';
-    imagesLabel.textContent = window.translations?.current_opsec_images || 'Current OPSec Images';
+    imagesLabel.innerHTML = `${window.translations?.current_opsec_images || 'Current OPSec Images'} <span id="opsec-image-count" style="color: var(--text-muted); font-weight: 400;"></span>`;
     imagesSection.appendChild(imagesLabel);
 
     const imagesList = document.createElement('div');
@@ -3919,7 +3833,12 @@ function createOpsecManagementInterface(field) {
     imagesList.style.gridTemplateColumns = 'repeat(auto-fill, minmax(100px, 1fr))';
     imagesList.style.gap = '10px';
     imagesList.style.marginTop = '10px';
-    imagesSection.appendChild(imagesList);
+
+    // Wrap in scrollable container so user can scroll past the section
+    const opsecScrollContainer = document.createElement('div');
+    opsecScrollContainer.className = 'opsec-scroll-container';
+    opsecScrollContainer.appendChild(imagesList);
+    imagesSection.appendChild(opsecScrollContainer);
 
     container.appendChild(uploadSection);
     container.appendChild(imagesSection);
@@ -3962,19 +3881,19 @@ function createDonationHistoryInterface() {
     container.appendChild(title);
 
     const tableWrapper = document.createElement('div');
-    tableWrapper.style.cssText = 'overflow-x: auto; overflow-y: auto; max-height: 210px; border: 1px solid var(--border-color, #dee2e6); border-radius: 6px;';
+    tableWrapper.style.cssText = 'overflow-x: auto; overflow-y: auto; max-height: 210px; border: 1px solid var(--border-color); border-radius: 6px;';
 
     const table = document.createElement('table');
     table.style.cssText = 'width: 100%; border-collapse: collapse; font-size: 13px;';
     table.innerHTML = `
         <thead>
-            <tr style="border-bottom: 1px solid var(--border-color, #dee2e6);">
-                <th style="text-align:left; padding: 6px 8px; position: sticky; top: 0; background: var(--card-bg, #fff); z-index: 1;">${t.donation_col_time || 'Time'}</th>
-                <th style="text-align:right; padding: 6px 8px; position: sticky; top: 0; background: var(--card-bg, #fff); z-index: 1;">Sats</th>
-                <th style="text-align:left; padding: 6px 8px; position: sticky; top: 0; background: var(--card-bg, #fff); z-index: 1;">${t.donation_col_message || 'Message'}</th>
+            <tr style="border-bottom: 1px solid var(--border-color);">
+                <th style="text-align:left; padding: 6px 8px; position: sticky; top: 0; background: var(--bg-card); z-index: 1; color: var(--text-secondary);">${t.donation_col_time || 'Time'}</th>
+                <th style="text-align:right; padding: 6px 8px; position: sticky; top: 0; background: var(--bg-card); z-index: 1; color: var(--text-secondary);">Sats</th>
+                <th style="text-align:left; padding: 6px 8px; position: sticky; top: 0; background: var(--bg-card); z-index: 1; color: var(--text-secondary);">${t.donation_col_message || 'Message'}</th>
             </tr>
         </thead>
-        <tbody id="donation-history-tbody"><tr><td colspan="3" style="padding:8px; color:#888;">${t.loading || 'Loading…'}</td></tr></tbody>
+        <tbody id="donation-history-tbody"><tr><td colspan="3" style="padding:8px; color: var(--text-muted);">${t.loading || 'Loading…'}</td></tr></tbody>
     `;
     tableWrapper.appendChild(table);
     container.appendChild(tableWrapper);
@@ -3982,8 +3901,8 @@ function createDonationHistoryInterface() {
     // Fixed total row (outside the scrollable wrapper)
     const totalRow = document.createElement('div');
     totalRow.id = 'donation-total-row';
-    totalRow.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding: 6px 10px; border: 1px solid var(--border-color, #dee2e6); border-top: none; border-radius: 0 0 6px 6px; font-size:13px; background: var(--card-bg, #fff);';
-    totalRow.innerHTML = `<span style="color:var(--text-muted, #888);">${t.donation_total || 'Total received'}</span><span id="donation-total-sats" style="font-weight:bold;">—</span>`;
+    totalRow.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding: 6px 10px; border: 1px solid var(--border-color); border-top: none; border-radius: 0 0 6px 6px; font-size:13px; background: var(--bg-card);';
+    totalRow.innerHTML = `<span style="color:var(--text-muted);">${t.donation_total || 'Total received'}</span><span id="donation-total-sats" style="font-weight:bold;">—</span>`;
     container.appendChild(totalRow);
 
     // Load donations from API
@@ -3993,14 +3912,14 @@ function createDonationHistoryInterface() {
             const tbody = table.querySelector('#donation-history-tbody');
             const donations = data.donations || [];
             if (donations.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="3" style="padding:8px; color:#888;">${t.no_donations_yet || 'No donations yet.'}</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="3" style="padding:8px; color: var(--text-muted);">${t.no_donations_yet || 'No donations yet.'}</td></tr>`;
                 return;
             }
             tbody.innerHTML = donations.map(d => {
                 const ts = d.timestamp ? new Date(d.timestamp + 'Z').toLocaleString() : '—';
                 const sats = (d.amount_sats || 0).toLocaleString();
-                const msg = d.message ? escapeHtml(d.message) : '<em style="color:#888">—</em>';
-                return `<tr style="border-bottom:1px solid var(--border-color, #f0f0f0);">
+                const msg = d.message ? escapeHtml(d.message) : '<em style="color: var(--text-muted);">—</em>';
+                return `<tr style="border-bottom:1px solid var(--border-color);">
                     <td style="padding:5px 8px; white-space:nowrap;">${ts}</td>
                     <td style="padding:5px 8px; text-align:right; font-weight:bold;">${sats}</td>
                     <td style="padding:5px 8px;">${msg}</td>
@@ -4015,7 +3934,7 @@ function createDonationHistoryInterface() {
         })
         .catch(() => {
             const tbody = table.querySelector('#donation-history-tbody');
-            tbody.innerHTML = `<tr><td colspan="3" style="padding:8px; color:#888;">${t.could_not_load_donations || 'Could not load donations.'}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="3" style="padding:8px; color: var(--text-muted);">${t.could_not_load_donations || 'Could not load donations.'}</td></tr>`;
         });
 
     container.getValue = () => null;
@@ -4066,7 +3985,7 @@ async function uploadOpsecFiles(files) {
         progressDiv.style.display = 'block';
         progressBar.style.width = '0%';
         statusText.textContent = t?.upload_checking_duplicates || 'Checking for duplicates...';
-        statusText.style.color = '#667eea';
+        statusText.style.color = '#F7931A';
     }
 
     // Fetch existing hashes for duplicate detection
@@ -4117,7 +4036,7 @@ async function uploadOpsecFiles(files) {
 
     if (statusText) {
         statusText.textContent = summaryMessage;
-        statusText.style.color = duplicates.length > 0 ? '#ff9800' : '#667eea';
+        statusText.style.color = duplicates.length > 0 ? '#ff9800' : '#F7931A';
     }
 
     if (duplicates.length > 0) {
@@ -4165,7 +4084,7 @@ async function uploadOpsecFiles(files) {
             if (failedCount > 0) parts.push((t?.upload_count_failed || '✗ {count} failed').replace('{count}', failedCount));
             if (duplicates.length > 0) parts.push((t?.upload_count_skipped || '⊝ {count} skipped (duplicates)').replace('{count}', duplicates.length));
             statusText.textContent = parts.join(' | ');
-            statusText.style.color = failedCount > 0 ? '#dc3545' : '#28a745';
+            statusText.style.color = failedCount > 0 ? '#e53e3e' : '#38a169';
         }
 
         if (uploadedCount > 0) loadOpsecImages();
@@ -5070,14 +4989,14 @@ function showNotification(message, type = 'info', duration = 5000) {
     // Set background color based on type
     switch (type) {
         case 'success':
-            notification.style.backgroundColor = '#28a745';
+            notification.style.backgroundColor = '#38a169';
             break;
         case 'warning':
             notification.style.backgroundColor = '#ffc107';
             notification.style.color = '#212529';
             break;
         case 'error':
-            notification.style.backgroundColor = '#dc3545';
+            notification.style.backgroundColor = '#e53e3e';
             break;
         default:
             notification.style.backgroundColor = '#17a2b8';
@@ -5224,15 +5143,6 @@ function setupConfigSocketHandlers() {
                 console.warn('Error parsing cross-page notification:', error);
             }
         }
-    });
-
-    // Einundzwanzig bulk-download progress
-    configSocket.on('einundzwanzig_download_progress', (data) => {
-        handleEzDownloadProgress(data);
-    });
-
-    configSocket.on('einundzwanzig_download_complete', (data) => {
-        handleEzDownloadComplete(data);
     });
 
     // Cleanup on page unload
@@ -5456,14 +5366,21 @@ function setupNavigationButtons() {
         const button = document.getElementById(buttonId);
         if (button) {
             button.addEventListener('click', async () => {
-                if (confirm(window.translations?.are_you_sure_logout || window.translations?.confirm_logout || 'Are you sure you want to logout?')) {
+                const confirmed = await showConfirmModal({
+                    title: window.translations?.logout || 'Logout',
+                    message: window.translations?.are_you_sure_logout || window.translations?.confirm_logout || 'Are you sure you want to logout?',
+                    confirmText: window.translations?.logout || 'Logout',
+                    cancelText: window.translations?.cancel || 'Cancel',
+                    danger: true
+                });
+                if (confirmed) {
                     try {
-                        await fetch('/api/logout', { method: 'POST' });
-                        window.location.href = '/login';
+                        const response = await fetch('/api/logout', { method: 'POST' });
+                        const result = await response.json();
+                        window.location.href = result.public_dashboard ? '/' : '/login';
                     } catch (error) {
                         console.error('Logout failed:', error);
-                        // Fallback to GET logout if POST fails
-                        window.location.href = '/logout';
+                        window.location.href = '/login';
                     }
                 }
             });
@@ -5555,14 +5472,25 @@ function showBlockToast(blockData) {
         // Create new toast element
         toast = document.createElement('div');
         toast.id = toastId;
+        const isDark = document.body.classList.contains('dark-mode');
+        const toastBg = isDark ? 'rgba(30, 30, 36, 0.92)' : 'rgba(255, 255, 255, 0.95)';
+        const toastColor = isDark ? '#e8e8ec' : '#1a1a2e';
+        const toastBorder = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.1)';
+        const toastShadow = isDark
+            ? '0 8px 32px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255,255,255,0.06)'
+            : '0 8px 32px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0,0,0,0.04)';
+        const closeBtnBg = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)';
+        const closeBtnColor = isDark ? '#9a9aaa' : '#555';
+        const closeBtnHoverBg = isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.12)';
         toast.style.cssText = `
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
+            background: ${toastBg};
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            color: ${toastColor};
             padding: 16px 20px;
-            border-radius: 12px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-            backdrop-filter: blur(15px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 14px;
+            box-shadow: ${toastShadow};
+            border: 1px solid ${toastBorder};
             margin-bottom: 10px;
             min-width: 320px;
             max-width: 400px;
@@ -5573,18 +5501,18 @@ function showBlockToast(blockData) {
             font-size: 14px;
             line-height: 1.4;
         `;
-        
+
         // Create close button
         const closeBtn = document.createElement('button');
         closeBtn.innerHTML = '×';
         closeBtn.setAttribute('aria-label', 'Close notification');
         closeBtn.style.cssText = `
             position: absolute;
-            top: 8px;
-            right: 12px;
-            background: rgba(255, 255, 255, 0.15);
+            top: 4px;
+            right: 8px;
+            background: ${closeBtnBg};
             border: none;
-            color: white;
+            color: ${closeBtnColor};
             font-size: 24px;
             cursor: pointer;
             width: 44px;
@@ -5597,7 +5525,7 @@ function showBlockToast(blockData) {
             font-weight: bold;
             z-index: 1;
         `;
-        
+
         // Close toast function
         const closeToast = () => {
             toast.style.opacity = '0';
@@ -5608,17 +5536,17 @@ function showBlockToast(blockData) {
                 }
             }, 400);
         };
-        
+
         // Close button event listeners
         closeBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             closeToast();
         });
         closeBtn.addEventListener('mouseenter', () => {
-            closeBtn.style.backgroundColor = 'rgba(255, 255, 255, 0.3)';
+            closeBtn.style.backgroundColor = closeBtnHoverBg;
         });
         closeBtn.addEventListener('mouseleave', () => {
-            closeBtn.style.backgroundColor = 'rgba(255, 255, 255, 0.15)';
+            closeBtn.style.backgroundColor = closeBtnBg;
         });
         
         // Mobile-friendly: tap anywhere on toast to dismiss
@@ -5723,3 +5651,5 @@ window.testConfigSave = function() {
     
     return 'Test initiated - check console for results';
 };
+
+

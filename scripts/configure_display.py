@@ -7,6 +7,8 @@ Shows available device types and updates configuration accordingly.
 For native Waveshare displays, downloads driver files automatically.
 """
 
+import fnmatch
+import glob
 import json
 import os
 import sys
@@ -26,7 +28,7 @@ DEVICE_CONFIGS = {
         "width": 1200,
         "height": 1600,
         "description": "13.3 inch 6-color e-ink display (recommended for mempaper)",
-        "driver_files": ["epd13in3E.py", "epdconfig.py"],
+        "driver_files": ["epd13in3E.py", "epdconfig.py", "DEV_Config_*.so"],
     },
     "epd7in3f": {
         "name": "Waveshare 7.3\" 7-color",
@@ -80,6 +82,7 @@ DRIVER_DOWNLOADS = {
         "files": {
             "epd13in3E.py": None,   # searched by name inside zip
             "epdconfig.py": None,
+            "DEV_Config_*.so": None, # native SPI library (glob pattern)
         },
     },
     "epd7in3f": {
@@ -147,39 +150,65 @@ def list_available_devices():
 
 
 def _drivers_missing(device_id):
-    """Return list of driver files that are not yet installed."""
+    """Return list of driver files that are not yet installed.
+    
+    Supports glob patterns (e.g. 'DEV_Config_*.so') in driver_files.
+    A glob pattern is considered missing if no files match it.
+    """
     info = DEVICE_CONFIGS.get(device_id, {})
     missing = []
-    # Check for files in device-specific subdirectory
     device_driver_dir = os.path.join(DRIVERS_DIR, device_id)
     for fname in info.get("driver_files", []):
-        if not os.path.exists(os.path.join(device_driver_dir, fname)):
-            missing.append(fname)
+        if '*' in fname or '?' in fname:
+            # Glob pattern: check if any files match
+            if not glob.glob(os.path.join(device_driver_dir, fname)):
+                missing.append(fname)
+        else:
+            if not os.path.exists(os.path.join(device_driver_dir, fname)):
+                missing.append(fname)
     return missing
 
 
 def _extract_files_from_zip(zip_path, target_files, dest_dir):
-    """Extract named files from a zip, searching all paths inside."""
+    """Extract named files from a zip, searching all paths inside.
+    
+    Supports glob patterns in target_files (e.g. 'DEV_Config_*.so').
+    Exact names are matched by basename; glob patterns use fnmatch.
+    """
     installed = []
     with zipfile.ZipFile(zip_path) as zf:
+        all_members = zf.namelist()
         # Build a map: basename -> full zip path (last one wins if duplicates)
         name_map = {}
-        for member in zf.namelist():
+        for member in all_members:
             basename = os.path.basename(member)
-            if basename in target_files:
+            if basename:
                 name_map[basename] = member
 
         for fname in target_files:
-            if fname in name_map:
-                member = name_map[fname]
-                dest = os.path.join(dest_dir, fname)
-                # Ensure parent directory exists
-                os.makedirs(os.path.dirname(dest), exist_ok=True)
-                with zf.open(member) as src, open(dest, 'wb') as dst:
-                    dst.write(src.read())
-                installed.append(fname)
+            if '*' in fname or '?' in fname:
+                # Glob pattern: find all matching basenames
+                matched = [bn for bn in name_map if fnmatch.fnmatch(bn, fname)]
+                if matched:
+                    for bn in matched:
+                        member = name_map[bn]
+                        dest = os.path.join(dest_dir, bn)
+                        os.makedirs(os.path.dirname(dest), exist_ok=True)
+                        with zf.open(member) as src, open(dest, 'wb') as dst:
+                            dst.write(src.read())
+                        installed.append(bn)
+                else:
+                    print(f"   WARNING: no files matching '{fname}' found in zip")
             else:
-                print(f"   WARNING: {fname} not found in zip")
+                if fname in name_map:
+                    member = name_map[fname]
+                    dest = os.path.join(dest_dir, fname)
+                    os.makedirs(os.path.dirname(dest), exist_ok=True)
+                    with zf.open(member) as src, open(dest, 'wb') as dst:
+                        dst.write(src.read())
+                    installed.append(fname)
+                else:
+                    print(f"   WARNING: {fname} not found in zip")
     return installed
 
 
@@ -224,7 +253,7 @@ def install_drivers(device_id):
 
     except Exception as e:
         print(f"   ❌ Driver download failed: {e}")
-        print(f"   Run manually: bash scripts/install_waveshare_drivers.sh")
+        print(f"   Try again: python scripts/configure_display.py")
         try:
             os.unlink(tmp_path)
         except Exception:

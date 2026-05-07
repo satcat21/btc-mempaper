@@ -60,9 +60,13 @@ COLOR_SETS = {
         "wallet_balance": "#1565C0", # darker blue for wallet balance
         "fiat_balance": "#1565C0",   # darker green for fiat balance
         "donation": "#F7931A",       # Bitcoin orange for donation block
+        "countdown": "#C55A00",      # dark amber-orange for supply countdown
+        "halving": "#1565C0",        # deep blue for halving countdown
+        "network_hashrate": "#6A1B9A",  # deep purple for network hashrate
+        "network_difficulty": "#6A1B9A",  # same purple for difficulty
     },
     "dark": {
-        "background": "#2e324e",
+        "background": "#1a1a1f",
         "date_normal": "#BA68C8",
         "date_holiday": "#09a3ba",
         "holiday_title": "#09a3ba",
@@ -73,9 +77,9 @@ COLOR_SETS = {
         "found_blocks": "#ffe566",
         "info_header": "#ffffff",
         "info_value": "#ffffff",
-        "info_unit": "#777983",
-        "info_bg": "#1d1f31",
-        "info_outline": "#1d1f31",
+        "info_unit": "#6a6a78",
+        "info_bg": "#1a1a1f",
+        "info_outline": "#2a2a32",
         "hash_start": "#4FC3F7",
         "hash_end": "#BA68C8",
         'green':  "#81C784",   # Material Light Green
@@ -87,6 +91,10 @@ COLOR_SETS = {
         "wallet_balance": "#09a3ba",  # lighter blue for wallet balance
         "fiat_balance": "#09a3ba",    # lighter green for fiat balance
         "donation": "#F7931A",        # Bitcoin orange for donation block
+        "countdown": "#FF9E40",       # warm orange for supply countdown
+        "halving": "#4FC3F7",         # sky blue for halving countdown
+        "network_hashrate": "#CE93D8",   # soft purple for network hashrate
+        "network_difficulty": "#CE93D8", # same soft purple for difficulty
     }
 }
 
@@ -296,6 +304,26 @@ class ImageRenderer:
             self.color_sets["light"]["donation"] = config["color_donation_light"]
         if "color_donation_dark" in config:
             self.color_sets["dark"]["donation"] = config["color_donation_dark"]
+
+        # Countdown colors
+        if "color_countdown_light" in config:
+            self.color_sets["light"]["countdown"] = config["color_countdown_light"]
+        if "color_countdown_dark" in config:
+            self.color_sets["dark"]["countdown"] = config["color_countdown_dark"]
+
+        # Halving colors
+        if "color_halving_light" in config:
+            self.color_sets["light"]["halving"] = config["color_halving_light"]
+        if "color_halving_dark" in config:
+            self.color_sets["dark"]["halving"] = config["color_halving_dark"]
+
+        # Network stats colors
+        if "color_network_light" in config:
+            self.color_sets["light"]["network_hashrate"] = config["color_network_light"]
+            self.color_sets["light"]["network_difficulty"] = config["color_network_light"]
+        if "color_network_dark" in config:
+            self.color_sets["dark"]["network_hashrate"] = config["color_network_dark"]
+            self.color_sets["dark"]["network_difficulty"] = config["color_network_dark"]
 
         # Latest Lightning donation data (set from app before each render)
         self._donation_data = None
@@ -659,13 +687,13 @@ class ImageRenderer:
         except:
             font_large_value = font_value
 
-        price_value_text = f"{fiat_currency_symbol} {price:,.0f}"
+        price_value_text = f"{fiat_currency_symbol} {self._format_number(price, 0)}"
         if moscow_time_unit == "hour":
             hours = moscow_time // 100
             minutes = moscow_time % 100
             moscow_time_text = f"{hours:02d}:{minutes:02d}"
         else:
-            moscow_time_text = f"{moscow_time:,} sats"
+            moscow_time_text = f"{self._format_number(moscow_time, 0)} sats"
 
         bbox_price = font_large_value.getbbox(price_value_text)
         bbox_moscow = font_large_value.getbbox(moscow_time_text)
@@ -689,7 +717,7 @@ class ImageRenderer:
         valid_blocks = bitaxe_data.get("valid_blocks", 0)
         best_difficulty = bitaxe_data.get("best_difficulty", 0)
 
-        header_left_text = self.t.get("total_hashrate", f"Total hashrate ({online_devices}/{total_devices})")
+        header_left_text = self.t.get("total_hashrate", f"Bitaxe Hashrate ({online_devices}/{total_devices})")
         
         # Determine what to show on the right side based on config
         display_mode = self.config.get("bitaxe_display_mode", "blocks")
@@ -763,6 +791,306 @@ class ImageRenderer:
 
         return info_block_y + INFO_BLOCK_HEIGHT + ELEMENT_MARGIN
 
+    # --- Bitcoin Supply / Halving / Network helpers ---
+
+    _MAX_SUPPLY_BTC = 20999999.97690000
+    _HALVING_INTERVAL = 210000
+    _GENESIS_SUBSIDY_SATS = 5000000000  # 50 BTC in satoshis
+
+    @staticmethod
+    def _compute_supply_stats(height):
+        """Compute BTC circulating supply, remaining, and % mined from block height."""
+        subsidy = ImageRenderer._GENESIS_SUBSIDY_SATS
+        total_sats = 0
+        h = int(height) if height else 0
+        for epoch in range(64):
+            start = epoch * ImageRenderer._HALVING_INTERVAL
+            end = (epoch + 1) * ImageRenderer._HALVING_INTERVAL
+            if h <= start:
+                break
+            blocks_in_epoch = min(h, end) - start
+            total_sats += blocks_in_epoch * subsidy
+            subsidy //= 2
+            if subsidy == 0:
+                break
+        circulating_btc = total_sats / 1e8
+        remaining_btc = ImageRenderer._MAX_SUPPLY_BTC - circulating_btc
+        pct_mined = (circulating_btc / ImageRenderer._MAX_SUPPLY_BTC) * 100
+        return {
+            "circulating_btc": circulating_btc,
+            "remaining_btc": remaining_btc,
+            "pct_mined": pct_mined,
+        }
+
+    @staticmethod
+    def _compute_halving_stats(height, time_avg_ms=600000):
+        """Compute next halving block, blocks remaining, estimated date from block height."""
+        from datetime import datetime, timedelta
+        h = int(height) if height else 0
+        current_epoch = h // ImageRenderer._HALVING_INTERVAL
+        next_halving_block = (current_epoch + 1) * ImageRenderer._HALVING_INTERVAL
+        blocks_remaining = next_halving_block - h
+        seconds_remaining = blocks_remaining * (time_avg_ms / 1000.0)
+        estimated_date = datetime.now() + timedelta(seconds=seconds_remaining)
+        days_remaining = seconds_remaining / 86400.0
+        hours_remaining = seconds_remaining / 3600.0
+        return {
+            "next_halving_block": next_halving_block,
+            "blocks_remaining": blocks_remaining,
+            "days_remaining": days_remaining,
+            "hours_remaining": hours_remaining,
+            "estimated_date": estimated_date,
+        }
+
+    def _format_number(self, value, decimals=0):
+        """Format a number with locale-aware thousand separators and decimal point."""
+        formatted = f"{value:,.{decimals}f}"
+        if self.lang == "de":
+            # German: 1.234.567,89
+            formatted = formatted.replace(",", "X").replace(".", ",").replace("X", ".")
+        elif self.lang in ("es", "fr", "it"):
+            # ES/FR/IT: 1.234.567,89
+            formatted = formatted.replace(",", "X").replace(".", ",").replace("X", ".")
+        return formatted
+
+    def _format_pct_mined(self, pct):
+        """Format percentage mined with enough decimals to never show 100% prematurely."""
+        for decimals in range(2, 11):
+            formatted = f"{pct:.{decimals}f}"
+            if formatted != f"{100.0:.{decimals}f}":
+                if self.lang in ("de", "es", "fr", "it"):
+                    formatted = formatted.replace(".", ",")
+                return f"{formatted}%"
+        formatted = f"{pct:.10f}"
+        if self.lang in ("de", "es", "fr", "it"):
+            formatted = formatted.replace(".", ",")
+        return f"{formatted}%"
+
+    def _format_hashrate(self, hs):
+        """Format hash rate (H/s) as human-readable string (EH/s, PH/s, TH/s)."""
+        if hs >= 1e18:
+            return f"{self._format_number(hs / 1e18, 2)} EH/s"
+        if hs >= 1e15:
+            return f"{self._format_number(hs / 1e15, 2)} PH/s"
+        if hs >= 1e12:
+            return f"{self._format_number(hs / 1e12, 2)} TH/s"
+        if hs >= 1e9:
+            return f"{self._format_number(hs / 1e9, 2)} GH/s"
+        return f"{self._format_number(hs, 0)} H/s"
+
+    def _format_difficulty(self, d):
+        """Format mining difficulty as human-readable string (T, G, M)."""
+        if d >= 1e12:
+            return f"{self._format_number(d / 1e12, 2)} T"
+        if d >= 1e9:
+            return f"{self._format_number(d / 1e9, 2)} G"
+        if d >= 1e6:
+            return f"{self._format_number(d / 1e6, 2)} M"
+        return f"{self._format_number(d, 0)}"
+
+    def render_countdown_block(self, draw, info_block_y, font_label, font_value, countdown_data, web_quality=False):
+        """Render BTC supply countdown block: remaining BTC (left) and % mined (right)."""
+        if countdown_data is None or countdown_data.get("error"):
+            return info_block_y
+
+        remaining_btc = countdown_data.get("remaining_btc", 0)
+        pct_mined = countdown_data.get("pct_mined", 0)
+
+        header_left_text = self.t.get("btc_remaining", "BTC Remaining")
+        header_right_text = self.t.get("pct_mined", "% Mined")
+
+        left_col_center = self.layout.get_column_center(2, 0)
+        right_col_center = self.layout.get_column_center(2, 1)
+
+        try:
+            font_small_label = self._get_font(self.font_regular, FONT_SIZE_SMALL_LABEL)
+        except Exception:
+            font_small_label = font_label
+
+        block_bounds = self.layout.get_info_block_bounds()
+        draw.rounded_rectangle(
+            [(block_bounds[0], info_block_y),
+             (block_bounds[2], info_block_y + INFO_BLOCK_HEIGHT)],
+            radius=BLOCK_RADIUS,
+            fill=self.get_color("info_bg", web_quality),
+            outline=self.get_color("info_outline", web_quality),
+            width=4
+        )
+
+        text_y = self.layout.get_label_y(info_block_y)
+        bbox_left = font_small_label.getbbox(header_left_text)
+        bbox_right = font_small_label.getbbox(header_right_text)
+        left_x = self.layout.get_text_centered_x(bbox_left, left_col_center)
+        right_x = self.layout.get_text_centered_x(bbox_right, right_col_center)
+        draw.text((left_x, text_y), header_left_text, font=font_small_label, fill=self.get_color("info_header", web_quality))
+        draw.text((right_x, text_y), header_right_text, font=font_small_label, fill=self.get_color("info_header", web_quality))
+
+        label_height = bbox_left[3] - bbox_left[1]
+        value_y = self.layout.get_value_y(info_block_y, label_height)
+
+        try:
+            font_large_value = self._get_font(self.font_bold, FONT_SIZE_LARGE_VALUE)
+        except Exception:
+            font_large_value = font_value
+
+        remaining_text = f"{self._format_number(remaining_btc, 2)} BTC"
+        pct_text = self._format_pct_mined(pct_mined)
+
+        bbox_remaining = font_large_value.getbbox(remaining_text)
+        bbox_pct = font_large_value.getbbox(pct_text)
+        remaining_x = self.layout.get_text_centered_x(bbox_remaining, left_col_center)
+        pct_x = self.layout.get_text_centered_x(bbox_pct, right_col_center)
+
+        draw.text((remaining_x, value_y), remaining_text, font=font_large_value, fill=self.get_color("countdown", web_quality))
+        draw.text((pct_x, value_y), pct_text, font=font_large_value, fill=self.get_color("countdown", web_quality))
+
+        return info_block_y + INFO_BLOCK_HEIGHT + ELEMENT_MARGIN
+
+    def render_halving_block(self, draw, info_block_y, font_label, font_value, halving_data, web_quality=False):
+        """Render next halving block: estimated date (left) and days/hours countdown (right)."""
+        if halving_data is None or halving_data.get("error"):
+            return info_block_y
+
+        estimated_date = halving_data.get("estimated_date")
+        days_remaining = halving_data.get("days_remaining", 0)
+        hours_remaining = halving_data.get("hours_remaining", 0)
+
+        header_left_text = self.t.get("halving_date", "Next Halving")
+        if hours_remaining < 24:
+            header_right_text = self.t.get("halving_hours_left", "Hours Until Halving")
+        else:
+            header_right_text = self.t.get("halving_days_left", "Days Until Halving")
+
+        left_col_center = self.layout.get_column_center(2, 0)
+        right_col_center = self.layout.get_column_center(2, 1)
+
+        try:
+            font_small_label = self._get_font(self.font_regular, FONT_SIZE_SMALL_LABEL)
+        except Exception:
+            font_small_label = font_label
+
+        block_bounds = self.layout.get_info_block_bounds()
+        draw.rounded_rectangle(
+            [(block_bounds[0], info_block_y),
+             (block_bounds[2], info_block_y + INFO_BLOCK_HEIGHT)],
+            radius=BLOCK_RADIUS,
+            fill=self.get_color("info_bg", web_quality),
+            outline=self.get_color("info_outline", web_quality),
+            width=4
+        )
+
+        text_y = self.layout.get_label_y(info_block_y)
+        bbox_left = font_small_label.getbbox(header_left_text)
+        bbox_right = font_small_label.getbbox(header_right_text)
+        left_x = self.layout.get_text_centered_x(bbox_left, left_col_center)
+        right_x = self.layout.get_text_centered_x(bbox_right, right_col_center)
+        draw.text((left_x, text_y), header_left_text, font=font_small_label, fill=self.get_color("info_header", web_quality))
+        draw.text((right_x, text_y), header_right_text, font=font_small_label, fill=self.get_color("info_header", web_quality))
+
+        label_height = bbox_left[3] - bbox_left[1]
+        value_y = self.layout.get_value_y(info_block_y, label_height)
+
+        try:
+            font_large_value = self._get_font(self.font_bold, FONT_SIZE_LARGE_VALUE)
+        except Exception:
+            font_large_value = font_value
+
+        # Format date matching the top-of-image date style (locale-aware)
+        if estimated_date:
+            try:
+                lang = self.config.get("language", "en")
+                if lang == "en":
+                    def ordinal(n):
+                        return "%d%s" % (n, "tsnrhtdd"[(n//10%10!=1)*(n%10<4)*n%10::4])
+                    date_text = f"{estimated_date.strftime('%B')} {ordinal(estimated_date.day)}, {estimated_date.year}"
+                elif lang == "de":
+                    date_text = format_date(estimated_date, format="d. MMMM y", locale="de")
+                elif lang == "es":
+                    date_text = format_date(estimated_date, format="d 'de' MMMM 'de' y", locale="es")
+                elif lang == "fr":
+                    date_text = format_date(estimated_date, format="d MMMM y", locale="fr")
+                elif lang == "it":
+                    date_text = format_date(estimated_date, format="d MMMM y", locale="it")
+                else:
+                    date_text = estimated_date.strftime("%Y-%m-%d")
+            except Exception:
+                date_text = estimated_date.strftime("%d %b %Y") if estimated_date else "—"
+        else:
+            date_text = "—"
+
+        if hours_remaining < 24:
+            countdown_text = f"{hours_remaining:.1f}h"
+        else:
+            countdown_text = f"{days_remaining:.0f}d"
+
+        bbox_date = font_large_value.getbbox(date_text)
+        bbox_countdown = font_large_value.getbbox(countdown_text)
+        date_x = self.layout.get_text_centered_x(bbox_date, left_col_center)
+        countdown_x = self.layout.get_text_centered_x(bbox_countdown, right_col_center)
+
+        draw.text((date_x, value_y), date_text, font=font_large_value, fill=self.get_color("halving", web_quality))
+        draw.text((countdown_x, value_y), countdown_text, font=font_large_value, fill=self.get_color("halving", web_quality))
+
+        return info_block_y + INFO_BLOCK_HEIGHT + ELEMENT_MARGIN
+
+    def render_network_block(self, draw, info_block_y, font_label, font_value, network_data, web_quality=False):
+        """Render global network hashrate (left) and current difficulty (right)."""
+        if network_data is None or network_data.get("error"):
+            return info_block_y
+
+        hashrate = network_data.get("currentHashrate", 0)
+        difficulty = network_data.get("currentDifficulty", 0)
+
+        header_left_text = self.t.get("network_hashrate", "Network Hashrate")
+        header_right_text = self.t.get("network_difficulty", "Difficulty")
+
+        left_col_center = self.layout.get_column_center(2, 0)
+        right_col_center = self.layout.get_column_center(2, 1)
+
+        try:
+            font_small_label = self._get_font(self.font_regular, FONT_SIZE_SMALL_LABEL)
+        except Exception:
+            font_small_label = font_label
+
+        block_bounds = self.layout.get_info_block_bounds()
+        draw.rounded_rectangle(
+            [(block_bounds[0], info_block_y),
+             (block_bounds[2], info_block_y + INFO_BLOCK_HEIGHT)],
+            radius=BLOCK_RADIUS,
+            fill=self.get_color("info_bg", web_quality),
+            outline=self.get_color("info_outline", web_quality),
+            width=4
+        )
+
+        text_y = self.layout.get_label_y(info_block_y)
+        bbox_left = font_small_label.getbbox(header_left_text)
+        bbox_right = font_small_label.getbbox(header_right_text)
+        left_x = self.layout.get_text_centered_x(bbox_left, left_col_center)
+        right_x = self.layout.get_text_centered_x(bbox_right, right_col_center)
+        draw.text((left_x, text_y), header_left_text, font=font_small_label, fill=self.get_color("info_header", web_quality))
+        draw.text((right_x, text_y), header_right_text, font=font_small_label, fill=self.get_color("info_header", web_quality))
+
+        label_height = bbox_left[3] - bbox_left[1]
+        value_y = self.layout.get_value_y(info_block_y, label_height)
+
+        try:
+            font_large_value = self._get_font(self.font_bold, FONT_SIZE_LARGE_VALUE)
+        except Exception:
+            font_large_value = font_value
+
+        hashrate_text = self._format_hashrate(hashrate)
+        difficulty_text = self._format_difficulty(difficulty)
+
+        bbox_hashrate = font_large_value.getbbox(hashrate_text)
+        bbox_diff = font_large_value.getbbox(difficulty_text)
+        hashrate_x = self.layout.get_text_centered_x(bbox_hashrate, left_col_center)
+        diff_x = self.layout.get_text_centered_x(bbox_diff, right_col_center)
+
+        draw.text((hashrate_x, value_y), hashrate_text, font=font_large_value, fill=self.get_color("network_hashrate", web_quality))
+        draw.text((diff_x, value_y), difficulty_text, font=font_large_value, fill=self.get_color("network_difficulty", web_quality))
+
+        return info_block_y + INFO_BLOCK_HEIGHT + ELEMENT_MARGIN
+
     def _build_donation_header_text(self, amount_sats: int, timestamp: str) -> str:
         """Build localized donation header text used for measure + render passes."""
         display_mode = self.config.get("donation_display_mode", "latest")
@@ -808,7 +1136,8 @@ class ImageRenderer:
         else:
             timestamp_text = "—"
 
-        amount_text = f"{amount_sats:,} Sat" if amount_sats == 1 else f"{amount_sats:,} Sats"
+        amount_formatted = self._format_number(amount_sats, 0)
+        amount_text = f"{amount_formatted} Sat" if amount_sats == 1 else f"{amount_formatted} Sats"
         return f"{header_mode}: {amount_text} ({timestamp_text})"
 
     def _measure_donation_block_layout(self, donation_data, font_label, font_value):
@@ -1022,9 +1351,11 @@ class ImageRenderer:
 
         if balance_unit.lower() == "sats":
             total_balance_sats = int(total_balance_btc * 1e8)
-            balance_value_text = f"{total_balance_sats:,}"
+            balance_value_text = self._format_number(total_balance_sats, 0)
         else:
             balance_value_text = f"{total_balance_btc:.8f}"
+            if self.lang in ("de", "es", "fr", "it"):
+                balance_value_text = balance_value_text.replace(".", ",")
 
         bbox_balance = font_large_value.getbbox(balance_value_text)
         balance_x = self.layout.get_text_centered_x(bbox_balance, left_col_center_x)
@@ -1041,14 +1372,12 @@ class ImageRenderer:
 
             if fiat_value is not None:
                 if fiat_currency == "JPY":
-                    fiat_value_text = f"{fiat_currency_symbol} {fiat_value:,.0f}"
-                elif fiat_currency == "EUR":
-                    fiat_value_text = f"{fiat_currency_symbol} {fiat_value:,.2f}"
+                    fiat_value_text = f"{fiat_currency_symbol} {self._format_number(fiat_value, 0)}"
                 else:
-                    fiat_value_text = f"{fiat_currency_symbol} {fiat_value:,.2f}"
+                    fiat_value_text = f"{fiat_currency_symbol} {self._format_number(fiat_value, 2)}"
             else:
-                # Show 0.00 for EUR/others when no value
-                fiat_value_text = f"{fiat_currency_symbol} 0.00"
+                zero_text = self._format_number(0, 2)
+                fiat_value_text = f"{fiat_currency_symbol} {zero_text}"
 
             bbox_fiat = font_large_value.getbbox(fiat_value_text)
             fiat_x = self.layout.get_text_centered_x(bbox_fiat, right_col_center_x)
@@ -1208,17 +1537,12 @@ class ImageRenderer:
     
     def pick_random_meme(self):
         """
-        Select a random meme image. If einundzwanzig_meme_source is enabled,
-        fetches a live meme from einundzwanzig-memes.space; otherwise selects
-        from the local memes directory.
+        Select a random meme image from the local memes directory.
 
         Returns:
             str or None: Path to selected meme or None if no memes found
         """
-        if self.config.get("einundzwanzig_meme_source", False):
-            return self._pick_online_meme()
-
-        # Offline mode: try holiday-themed selection first
+        # Try holiday-themed selection first
         holiday = self.get_today_btc_holiday()
         if holiday:
             holiday_title = holiday.get("title", "")
@@ -1303,69 +1627,6 @@ class ImageRenderer:
             print(f"Error selecting meme: {e}")
             return None
 
-    def _pick_online_meme(self):
-        """Fetch a random meme live from einundzwanzig-memes.space.
-
-        If today is a BTC holiday, searches by the holiday's English title so
-        the meme shown is thematically relevant.  Falls back to /random if the
-        search returns no results.
-        """
-        import urllib.request
-        import urllib.parse
-        import json as _json
-
-        try:
-            # Check for a BTC holiday today and use its title as search query
-            holiday = self.get_today_btc_holiday()
-            holiday_title = holiday.get("title") if holiday else None
-
-            if holiday_title:
-                query = urllib.parse.urlencode({"q": holiday_title, "limit": "20", "full": "true"})
-                api_url = f"https://einundzwanzig-memes.space/api/v1/search?{query}"
-                print(f"BTC holiday '{holiday_title}' — searching memes for: {holiday_title!r}")
-            else:
-                api_url = "https://einundzwanzig-memes.space/api/v1/random?count=20&full=true"
-
-            req = urllib.request.Request(api_url, headers={"User-Agent": "btc-mempaper/1.0"})
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                data = _json.loads(resp.read().decode())
-
-            results = data.get("results", [])
-
-            # If holiday search returned nothing, fall back to /random
-            if not results and holiday_title:
-                print(f"No search results for {holiday_title!r}, falling back to /random")
-                api_url = "https://einundzwanzig-memes.space/api/v1/random?count=20&full=true"
-                req = urllib.request.Request(api_url, headers={"User-Agent": "btc-mempaper/1.0"})
-                with urllib.request.urlopen(req, timeout=10) as resp:
-                    data = _json.loads(resp.read().decode())
-                results = data.get("results", [])
-
-            if not results:
-                print("Einundzwanzig API returned no memes, falling back to local")
-                return self._pick_local_meme()
-
-            meme = random.choice(results)
-            meme_id = meme["id"]
-            image_url = f"https://einundzwanzig-memes.space/images/medium/{meme_id}.webp"
-
-            req = urllib.request.Request(image_url, headers={"User-Agent": "btc-mempaper/1.0"})
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                image_bytes = resp.read()
-
-            os.makedirs(self.meme_dir, exist_ok=True)
-            dest = os.path.join(self.meme_dir, "_einundzwanzig_live.webp")
-            with open(dest, "wb") as f:
-                f.write(image_bytes)
-
-            template = meme.get("meme_template") or meme_id
-            print(f"🖼️ Fetched online meme from einundzwanzig-memes.space: {template}")
-            return dest
-
-        except Exception as e:
-            print(f"Failed to fetch online meme: {e}, falling back to local")
-            return self._pick_local_meme()
-    
     def pick_random_opsec_image(self):
         """
         Select a random OPSec image from the opsec directory.
@@ -1792,7 +2053,7 @@ class ImageRenderer:
         
         return y
 
-    def render_dual_images(self, block_height, block_hash, mempool_api=None,  startup_mode=False, override_content_path=None, preserve_info_blocks=None, precached_price=None, precached_bitaxe=None, precached_fee=None, precached_block_height=None):
+    def render_dual_images(self, block_height, block_hash, mempool_api=None,  startup_mode=False, override_content_path=None, preserve_info_blocks=None, precached_price=None, precached_bitaxe=None, precached_fee=None, precached_block_height=None, precached_network=None, skip_hash_frame=False):
         """
         Render both web-quality and e-ink optimized images efficiently.
         Optimized to share common elements and reduce API calls.
@@ -1837,9 +2098,31 @@ class ImageRenderer:
         bitaxe_data = None
         btc_price_data = None
         wallet_data = None
+        countdown_data = None
+        halving_data = None
+        network_data = None
         displayed_blocks = []  # Track which blocks are actually added
         config = self.config
-        
+
+        # Fetch network stats once (shared by countdown, halving, network blocks)
+        _need_network = (
+            config.get("show_countdown_block", True)
+            or config.get("show_halving_block", True)
+            or config.get("show_network_block", True)
+        )
+        if _need_network and not preserve_info_blocks:
+            if precached_network:
+                network_data = precached_network
+            elif mempool_api:
+                _hd = mempool_api.get_hashrate_and_difficulty()
+                _da = mempool_api.get_difficulty_adjustment()
+                if _hd:
+                    network_data = {
+                        "currentHashrate": _hd.get("currentHashrate", 0),
+                        "currentDifficulty": _hd.get("currentDifficulty", 0),
+                        "timeAvg": _da.get("timeAvg", 600000) if _da else 600000,
+                    }
+
         # If preserving layout, build blocks in the same order as displayed_info_blocks
         if preserve_info_blocks:
             print(f"🎭 Preserving info block layout: {preserve_info_blocks}")
@@ -1851,6 +2134,19 @@ class ImageRenderer:
                         btc_price_data = self.btc_price_api.fetch_btc_price()
                     info_blocks.append((self.render_btc_price_block, btc_price_data))
                     displayed_blocks.append('price')
+                elif block_type == 'countdown' and config.get("show_countdown_block", True):
+                    countdown_data = self._compute_supply_stats(block_height)
+                    info_blocks.append((self.render_countdown_block, countdown_data))
+                    displayed_blocks.append('countdown')
+                elif block_type == 'halving' and config.get("show_halving_block", True):
+                    _time_avg = (precached_network or {}).get("timeAvg", 600000)
+                    halving_data = self._compute_halving_stats(block_height, _time_avg)
+                    info_blocks.append((self.render_halving_block, halving_data))
+                    displayed_blocks.append('halving')
+                elif block_type == 'network' and config.get("show_network_block", True):
+                    _nd = precached_network or {}
+                    info_blocks.append((self.render_network_block, _nd))
+                    displayed_blocks.append('network')
                 elif block_type == 'bitaxe' and config.get("show_bitaxe_block", True):
                     if precached_bitaxe:
                         bitaxe_data = precached_bitaxe
@@ -1870,6 +2166,18 @@ class ImageRenderer:
                     btc_price_data = self.btc_price_api.fetch_btc_price()
                 info_blocks.append((self.render_btc_price_block, btc_price_data))
                 displayed_blocks.append('price')
+            if config.get("show_countdown_block", True):
+                countdown_data = self._compute_supply_stats(block_height)
+                info_blocks.append((self.render_countdown_block, countdown_data))
+                displayed_blocks.append('countdown')
+            if config.get("show_halving_block", True):
+                _time_avg = network_data.get("timeAvg", 600000) if network_data else 600000
+                halving_data = self._compute_halving_stats(block_height, _time_avg)
+                info_blocks.append((self.render_halving_block, halving_data))
+                displayed_blocks.append('halving')
+            if config.get("show_network_block", True):
+                info_blocks.append((self.render_network_block, network_data or {}))
+                displayed_blocks.append('network')
             if config.get("show_bitaxe_block", True):
                 if precached_bitaxe:
                     bitaxe_data = precached_bitaxe
@@ -1955,7 +2263,8 @@ class ImageRenderer:
         self._apply_orientation_settings(self.web_orientation)
         web_img = self._render_image_with_shared_data(
             block_height, block_hash, mempool_api,
-            shared_data, web_quality=True, startup_mode=startup_mode
+            shared_data, web_quality=True, startup_mode=startup_mode,
+            skip_hash_frame=skip_hash_frame
         )
         
         # === GENERATE E-INK IMAGE ===
@@ -1969,7 +2278,8 @@ class ImageRenderer:
             else:
                 eink_img = self._render_image_with_shared_data(
                     block_height, block_hash, mempool_api,
-                    shared_data, web_quality=False, startup_mode=startup_mode
+                    shared_data, web_quality=False, startup_mode=startup_mode,
+                    skip_hash_frame=skip_hash_frame
                 )
 
         # Restore default/web orientation state (optional, but good practice)
@@ -1978,7 +2288,9 @@ class ImageRenderer:
         print(f"✅ Image generated for block {block_height}")
         return web_img, eink_img, content_path, displayed_blocks  # Return images, content path, and displayed block types
     
-    def render_dual_images_with_cached_meme(self, block_height, block_hash, cached_meme_path, mempool_api=None):
+    def render_dual_images_with_cached_meme(self, block_height, block_hash, cached_meme_path, mempool_api=None,
+                                             precached_price=None, precached_bitaxe=None, precached_fee=None,
+                                             precached_network=None):
         """
         Render both web-quality and e-ink optimized images using a specific cached meme.
         Used when configuration changes require image refresh but meme should stay the same.
@@ -1988,6 +2300,9 @@ class ImageRenderer:
             block_hash (str): Current Bitcoin block hash
             cached_meme_path (str): Path to the cached meme to use
             mempool_api (MempoolAPI, optional): Mempool API instance for formatting
+            precached_price (dict, optional): Pre-cached price data as fallback
+            precached_bitaxe (dict, optional): Pre-cached Bitaxe data as fallback
+            precached_fee (dict, optional): Pre-cached fee data as fallback
             
         Returns:
             tuple: (web_image, eink_image, meme_path) - Both PIL.Image objects and used meme path
@@ -1996,10 +2311,14 @@ class ImageRenderer:
         # Get holiday info once
         holiday_info = self.get_today_btc_holiday()
         
-        # Get fee info once
-        configured_fee, api_block_height = self.get_fee_and_block_info(mempool_api)
+        # Get fee info - use pre-cached as fallback if API fails
+        if precached_fee is not None:
+            fee_param = self.config.get("fee_parameter", "minimumFee")
+            configured_fee = precached_fee.get(fee_param, 1)
+            api_block_height = block_height
+        else:
+            configured_fee, api_block_height = self.get_fee_and_block_info(mempool_api)
         # Always prefer the explicitly passed block_height over API-fetched value
-        # (the API tip may lag behind the block we're rendering for)
         if block_height is not None:
             api_block_height = block_height
         
@@ -2010,15 +2329,41 @@ class ImageRenderer:
         btc_price_data = None
         bitaxe_data = None
         wallet_data = None
+        network_data = precached_network
+
+        # Fetch live network stats if not precached and any of the new blocks are enabled
+        config = self.config
+        _need_network = (
+            config.get("show_countdown_block", True)
+            or config.get("show_halving_block", True)
+            or config.get("show_network_block", True)
+        )
+        if _need_network and network_data is None and mempool_api:
+            _hd = mempool_api.get_hashrate_and_difficulty()
+            _da = mempool_api.get_difficulty_adjustment()
+            if _hd:
+                network_data = {
+                    "currentHashrate": _hd.get("currentHashrate", 0),
+                    "currentDifficulty": _hd.get("currentDifficulty", 0),
+                    "timeAvg": _da.get("timeAvg", 600000) if _da else 600000,
+                }
 
         # Randomly select info blocks ONCE
         info_blocks = []
-        config = self.config
         if config.get("show_btc_price_block", True):
-            btc_price_data = self.btc_price_api.fetch_btc_price()
+            btc_price_data = precached_price or self.btc_price_api.fetch_btc_price()
             info_blocks.append((self.render_btc_price_block, btc_price_data))
+        if config.get("show_countdown_block", True):
+            _supply = self._compute_supply_stats(block_height)
+            info_blocks.append((self.render_countdown_block, _supply))
+        if config.get("show_halving_block", True):
+            _time_avg = network_data.get("timeAvg", 600000) if network_data else 600000
+            _halving = self._compute_halving_stats(block_height, _time_avg)
+            info_blocks.append((self.render_halving_block, _halving))
+        if config.get("show_network_block", True):
+            info_blocks.append((self.render_network_block, network_data or {}))
         if config.get("show_bitaxe_block", True):
-            bitaxe_data = self.bitaxe_api.fetch_bitaxe_stats()
+            bitaxe_data = precached_bitaxe or self.bitaxe_api.fetch_bitaxe_stats()
             info_blocks.append((self.render_bitaxe_block, bitaxe_data))
         if config.get("show_wallet_balances_block", True):
             wallet_data = self.wallet_api.get_cached_wallet_balances()
@@ -2087,7 +2432,8 @@ class ImageRenderer:
         return web_img, eink_img, meme_path
     
     def _render_image_with_shared_data(self, block_height, block_hash, mempool_api,
-                                      shared_data, web_quality=False, startup_mode=False):
+                                      shared_data, web_quality=False, startup_mode=False,
+                                      skip_hash_frame=False):
         """
         Render image using pre-collected shared data to avoid duplicate API calls.
         
@@ -2095,12 +2441,10 @@ class ImageRenderer:
             block_height (str): Current Bitcoin block height
             block_hash (str): Current Bitcoin block hash
             mempool_api (MempoolAPI, optional): Mempool API instance for formatting
-            holiday_info (dict): Pre-collected holiday information
-            configured_fee (int): Pre-collected fee information
-            api_block_height (int): Pre-collected API block height
-            meme_path (str): Pre-selected meme path
+            shared_data (dict): Pre-collected data (holiday, fee, meme, etc.)
             web_quality (bool): True for web display, False for e-ink
-            startup_mode (bool): If True, use cached data only and skip expensive gap limit detection
+            startup_mode (bool): If True, use cached data only
+            skip_hash_frame (bool): If True, skip drawing the decorative hash border
             
         Returns:
             PIL.Image: Rendered dashboard image
@@ -2330,7 +2674,8 @@ class ImageRenderer:
             
             self._render_block_info_with_data(block_info_img, block_info_draw, block_height, block_hash, font_block_label,
                                             font_block_value, mempool_api, configured_fee,
-                                            api_block_height, web_quality, y_override=10)
+                                            api_block_height, web_quality, y_override=10,
+                                            skip_hash_frame=skip_hash_frame)
             
             # --- 3. Render Center Content (Holiday + Info Blocks) ---
             # Calculate available vertical space
@@ -2547,11 +2892,17 @@ class ImageRenderer:
             block_count = 0
             if config_ref.get("show_btc_price_block", True):
                 block_count += 1
+            if config_ref.get("show_countdown_block", True):
+                block_count += 1
+            if config_ref.get("show_halving_block", True):
+                block_count += 1
+            if config_ref.get("show_network_block", True):
+                block_count += 1
             if config_ref.get("show_bitaxe_block", True):
                 block_count += 1
             if config_ref.get("show_wallet_balances_block", True):
                 block_count += 1
-            
+
             if block_count == 0:
                 return 0
             # Each block: INFO_BLOCK_HEIGHT + BLOCK_MARGIN, plus one extra BLOCK_MARGIN at top
@@ -2878,7 +3229,8 @@ class ImageRenderer:
         # Block info at bottom
         self._render_block_info_with_data(img, draw, block_height, block_hash, font_block_label,
                                         font_block_value, mempool_api, configured_fee,
-                                        api_block_height, web_quality)
+                                        api_block_height, web_quality,
+                                        skip_hash_frame=skip_hash_frame)
 
         return img
     
@@ -3108,9 +3460,14 @@ class ImageRenderer:
 
     def _render_block_info_with_data(self, img, draw, block_height, block_hash, font_block_label,
                                     font_block_value, mempool_api, configured_fee,
-                                    api_block_height, web_quality, y_override=None):
+                                    api_block_height, web_quality, y_override=None,
+                                    skip_hash_frame=False):
         """
         Render block information using pre-collected fee and block data.
+        
+        Args:
+            skip_hash_frame: If True, skip drawing the decorative hash border.
+                            Used for pre-rendering where hash is not yet known.
         """
         # Use pre-collected data instead of making new API calls
         if api_block_height is not None:
@@ -3200,7 +3557,8 @@ class ImageRenderer:
         if self.orientation == "vertical":
             # --- VERTICAL MODE (Legacy Logic) ---
             # Draw hash frame centered using measured geometry
-            self.draw_hash_frame(draw, 12, y+3, block_hash, web_quality=web_quality, center=True)
+            if not skip_hash_frame:
+                self.draw_hash_frame(draw, 12, y+3, block_hash, web_quality=web_quality, center=True)
             y = y + self._scale_px(24, min_value=8)
 
             # When the font is scaled down (7-digit number), shift the text down by
@@ -3250,7 +3608,8 @@ class ImageRenderer:
         # --- LANDSCAPE/RESPONSIVE MODE ---
         # Draw hash frame centered using measured geometry.
         # width auto-scaled by draw_hash_frame if max_width passed
-        self.draw_hash_frame(draw, 32, y, block_hash, web_quality=web_quality, max_width=max_available_width, center=True)
+        if not skip_hash_frame:
+            self.draw_hash_frame(draw, 32, y, block_hash, web_quality=web_quality, max_width=max_available_width, center=True)
         
         # Center Block Height Text inside the frame (approx y+15)
         # User requested: "Can you even further move up the block height?". Old value_y=y+25. New = y+15.
@@ -3302,6 +3661,38 @@ class ImageRenderer:
         y += self._scale_px(105, min_value=35)
         # self.draw_centered(draw, short_hash, y, font_block_label)
     
+    def patch_hash_frame_on_image(self, img, block_hash, web_quality, y_override=None):
+        """
+        Draw only the hash frame border onto an existing pre-rendered image.
+        
+        Used to stamp the actual block hash onto a pre-rendered image that was
+        generated with skip_hash_frame=True. This avoids a full re-render when
+        only the decorative hash border needs updating.
+        
+        Args:
+            img: PIL Image to draw on (modified in-place)
+            block_hash: The actual block hash string
+            web_quality: True for web image, False for e-ink
+            y_override: Override y position (for split-screen block_info_img)
+        """
+        draw = ImageDraw.Draw(img)
+        
+        # Replicate the y calculation from _render_block_info_with_data
+        if y_override is not None:
+            y = y_override
+        elif self.orientation == "vertical":
+            y = self.height - self.block_height_area
+        else:
+            y = self.height - (self.block_height_area - self._scale_px(70, min_value=20))
+        
+        max_available_width = self.width - self._scale_px(24, min_value=8)
+        
+        if self.orientation == "vertical":
+            self.draw_hash_frame(draw, 12, y + 3, block_hash, web_quality=web_quality, center=True)
+        else:
+            self.draw_hash_frame(draw, 32, y, block_hash, web_quality=web_quality,
+                                max_width=max_available_width, center=True)
+
     @staticmethod
     def _wrap_text_to_lines(text: str, font, max_width: float, max_lines: int):
         """Word-wrap *text* into at most *max_lines* pixel-width-limited lines.

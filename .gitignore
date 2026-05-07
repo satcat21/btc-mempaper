@@ -56,3 +56,7 @@ tmp/
 
 # Generated service file
 mempaper.service
+
+# Removed scripts — kept here so local copies are not re-tracked by git
+scripts/einundzwanzig_memes.py
+scripts/download_all_memes.py

@@ -22,7 +22,7 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
         const result = await response.json();
         
         if (result.success) {
-            window.location.href = '/';
+            window.location.href = result.redirect || '/';
         } else {
             errorDiv.textContent = result.message || 'Login failed';
             errorDiv.style.display = 'block';
@@ -39,7 +39,7 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
 // Focus username field on load
 document.getElementById('username').focus();
 
-// Apply dark mode from localStorage or fetch from backend
+// Apply dark mode from localStorage or system preference
 (async function() {
     const storedDarkMode = localStorage.getItem('mempaper_dark_mode');
     if (storedDarkMode === 'true') {
@@ -47,9 +47,9 @@ document.getElementById('username').focus();
     } else if (storedDarkMode === 'false') {
         document.body.classList.remove('dark-mode');
     } else {
-        // No localStorage value - fetch from backend (public endpoint not available on login)
-        // For login page, default to light mode
-        // After login, the dashboard will fetch the correct theme
-        console.log('⚙️ No theme preference in localStorage, defaulting to light mode');
+        // No localStorage value - use system preference
+        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.body.classList.add('dark-mode');
+        }
     }
 })();

@@ -181,23 +181,11 @@ pip install -r requirements.txt
 3. **Application Setup and Service Configuration**
 
    ```bash
-   # Download all memes (first time — takes a while, resumable if interrupted)
-   python scripts/download_all_memes.py
-
    # Start the application
    python serve.py
    ```
 
-   > **Keeping memes up to date:** Once the initial download is done, run with `--update` to fetch only newly added memes — takes a few seconds.
-   > ```bash
-   > python scripts/download_all_memes.py --update
-   > ```
-   > To automate this, add a crontab entry (`crontab -e`):
-   > ```
-   > # Check for new memes every 3 days at 3 AM
-   > 0 3 */3 * * cd /home/pi/btc-mempaper && .venv/bin/python scripts/download_all_memes.py --update > /dev/null 2>&1
-   > ```
-   > Adjust the path to match your installation directory.
+   > **Memes:** Upload your own meme images via the web interface (Meme Management section in Settings). Supported formats: PNG, JPG, JPEG, GIF, WebP.
 
    Access the dashboard at [http://mempaper-ip:5000](http://mempaper-ip:5000)
 
@@ -260,19 +248,19 @@ sudo raspi-config
 # Navigate to: 3 Interface Options -> I4 SPI -> Yes
 ```
 
-### 2. Install Display Drivers
+### 2. Configure Display
 
-The easiest way is to run the bundled install script, which downloads the official Waveshare files and places them directly into the project:
+Run the configuration tool to select your display. It automatically downloads and installs the required driver files for the selected display:
 
 ```bash
-bash scripts/install_waveshare_drivers.sh
+python scripts/configure_display.py
 ```
 
-This installs drivers for both supported displays:
+Supported native displays:
 - **13.3" E-Paper E (Spectra 6 / epd13in3E)** — 6-color, recommended
 - **7.3" F (7-color / epd7in3f)**
 
-The files are placed in `display/drivers/` and loaded automatically. Driver files are MIT licensed by Waveshare Electronics (see [display/drivers/README.md](display/drivers/README.md)).
+The driver files are placed in `display/drivers/<device>/` and loaded automatically. Driver files are MIT licensed by Waveshare Electronics (see [display/drivers/README.md](display/drivers/README.md)).
 
 **Option: Omni-EPD**
 Use this if you need support for many different display types or prefer the abstraction layer.
@@ -282,12 +270,6 @@ git clone https://github.com/robweber/omni-epd.git
 cd omni-epd
 pip3 install --upgrade pip setuptools wheel
 pip3 install --prefer-binary .
-```
-
-### Configure Mempaper
-Run the configuration tool to select your discovered display:
-```bash
-python configure_display.py
 ```
 
 > **Note:** Service setup is covered in the [Quick Start](#-quick-start) section above.
@@ -344,8 +326,6 @@ btc-mempaper/
 │   ├── delivery_state.py      # Prepare device for delivery with factory default image
 │   ├── diagnose_mempool_api.py # Mempool API connectivity diagnostics
 │   ├── generate_service_file.py # Generate systemd service configuration
-│   ├── einundzwanzig_memes.py # API library for einundzwanzig-memes.space (random fetch, bulk discovery)
-│   ├── download_all_memes.py  # Bulk-download all memes from einundzwanzig-memes.space → static/memes/
 │   ├── backup_manager.py      # Backup & maintenance utility
 │   ├── start_fast.py          # Quick development start
 │   ├── start_pc.py            # PC-specific startup
@@ -432,6 +412,22 @@ Navigate to **Settings** in the web interface ([http://mempaper-ip:5000](http://
 - **Bitaxe**: Add miner IPs to monitor hashrate.
 
 For advanced manual configuration, edit `config/config.json`.
+
+### 📊 Info Blocks
+
+The dashboard image is composed of a meme and a set of optional info blocks displayed alongside it. Each block can be independently enabled or disabled in **Settings → the relevant category**. If more blocks are enabled than fit the available space, a random subset is shown each refresh.
+
+| Block | Config key | What it shows |
+|-------|-----------|---------------|
+| **BTC Price** | `show_btc_price_block` | Current Bitcoin price in your chosen fiat currency and Moscow Time (sats per fiat unit) |
+| **Countdown** | `show_countdown_block` | Remaining BTC supply to be mined and percentage already mined |
+| **Halving** | `show_halving_block` | Estimated date of the next halving and blocks remaining until it |
+| **Network** | `show_network_block` | Global network hashrate and current mining difficulty |
+| **Bitaxe** | `show_bitaxe_block` | Aggregate hashrate of your Bitaxe miners and found blocks (or best difficulty) |
+| **Wallet Balances** | `show_wallet_balances_block` | On-chain balances for configured addresses / XPUBs / ZPUBs |
+| **Lightning Donation** | `show_donation_block` | Amount and message of the latest (or largest) Lightning donation received via LNbits webhook |
+
+> All blocks are **on** by default except Bitaxe, Wallet Balances, and Donation, which require additional setup (miner IPs, wallet addresses, or a webhook URL respectively).
 
 📖 **See [Configuration Reference](docs/CONFIG_REFERENCE.md) for detailed explanation of all settings.**
 

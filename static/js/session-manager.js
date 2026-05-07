@@ -201,16 +201,16 @@ async function saveConfigurationWithSessionHandling(configData) {
 function showSessionWarning(minutes) {
     if (typeof showNotification === 'function') {
         showNotification(`Session expires in ${minutes} minutes. Click 'Refresh Session' to extend.`, 'warning');
-    } else {
-        alert(`Session expires in ${minutes} minutes. Please refresh your session to continue.`);
+    } else if (typeof showAlertModal === 'function') {
+        showAlertModal({ title: 'Session', message: `Session expires in ${minutes} minutes. Please refresh your session to continue.` });
     }
 }
 
 function showSessionExpiredMessage() {
     if (typeof showNotification === 'function') {
         showNotification('Session expired. Redirecting to login...', 'error');
-    } else {
-        alert('Session expired. Please login again.');
+    } else if (typeof showAlertModal === 'function') {
+        showAlertModal({ title: 'Session Expired', message: 'Session expired. Please login again.' });
     }
     
     setTimeout(() => {
@@ -227,8 +227,8 @@ function showSessionRefreshedMessage() {
 function showFailedRefreshMessage() {
     if (typeof showNotification === 'function') {
         showNotification('Failed to refresh session. Please save your work and login again.', 'error');
-    } else {
-        alert('Failed to refresh session. Please save your work and login again.');
+    } else if (typeof showAlertModal === 'function') {
+        showAlertModal({ title: 'Session Error', message: 'Failed to refresh session. Please save your work and login again.' });
     }
 }
 

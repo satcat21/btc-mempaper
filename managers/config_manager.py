@@ -382,21 +382,33 @@ class ConfigManager:
             "omni_device_name": "epd7in3f",  # Default to native Waveshare 7.3" driver
             "admin_username": "admin",
             "admin_password": "mempaper2025",
+            "public_dashboard": False,
             # --- Info block config additions ---
             "show_btc_price_block": True,
             "btc_price_currency": "USD",  # USD, EUR, GBP, CAD, CHF, AUD, JPY
-            "show_bitaxe_block": True,
+            # --- Countdown block (BTC supply scarcity) ---
+            "show_countdown_block": True,
+            "color_countdown_light": "#C55A00",
+            "color_countdown_dark": "#FF9E40",
+            # --- Halving block ---
+            "show_halving_block": True,
+            "color_halving_light": "#1565C0",
+            "color_halving_dark": "#4FC3F7",
+            # --- Network block (global hashrate + difficulty) ---
+            "show_network_block": True,
+            "color_network_light": "#6A1B9A",
+            "color_network_dark": "#CE93D8",
+            "show_bitaxe_block": False,
             "bitaxe_display_mode": "blocks",  # "blocks" or "difficulty"
             "bitaxe_miner_table": [],  # List of {address, comment} objects for table view
             "block_reward_addresses_table": [],  # List of {address, comment} objects for block reward monitoring
-            "show_wallet_balances_block": True,
+            "show_wallet_balances_block": False,
             "wallet_balance_addresses_with_comments": [],  # List of {address, comment, type} objects for table view
             "wallet_balance_unit": "sats",  # "btc" or "sats"
             "wallet_balance_currency": "EUR",  # USD, EUR, GBP, CAD, CHF, AUD, JPY - fiat currency for wallet balance display
             "prioritize_large_scaled_meme": False,
             "color_mode_dark": True,
             "opsec_mode_enabled": False,
-            "einundzwanzig_meme_source": False,
             # --- Donation block ---
             "show_donation_block": False,
             "donation_display_mode": "latest",
@@ -498,6 +510,9 @@ class ConfigManager:
             "prioritize_large_scaled_meme",
             "e-ink-display-connected",
             "show_btc_price_block",
+            "show_countdown_block",
+            "show_halving_block",
+            "show_network_block",
             "show_bitaxe_block",
             "show_wallet_balances_block",
             "show_donation_block",
@@ -506,7 +521,7 @@ class ConfigManager:
             "mempool_use_https",
             "mempool_verify_ssl",
             "opsec_mode_enabled",
-            "einundzwanzig_meme_source",
+            "public_dashboard",
         ]
         for setting in bool_settings:
             if setting in config:
@@ -718,7 +733,7 @@ class ConfigManager:
 
         # Single value settings that should be passed through directly
         passthrough_settings = [
-            "language", "web_orientation", "eink_orientation", "fee_parameter", 
+            "language", "web_orientation", "eink_orientation", "fee_parameter",
             "moscow_time_unit", "bitaxe_display_mode",
             "color_holiday_light", "color_holiday_dark",
             "color_btc_price_light", "color_btc_price_dark",
@@ -726,6 +741,9 @@ class ConfigManager:
             "color_wallets_light", "color_wallets_dark",
             "webhook_relay_ws_url", "donation_display_mode",
             "color_donation_light", "color_donation_dark",
+            "color_countdown_light", "color_countdown_dark",
+            "color_halving_light", "color_halving_dark",
+            "color_network_light", "color_network_dark",
         ]
         for setting in passthrough_settings:
             if setting in config:
@@ -852,11 +870,77 @@ class ConfigManager:
                 "default": "#00c896",
                 "category": "price_stats"
             },
+            # --- Countdown block ---
+            "show_countdown_block": {
+                "type": "boolean",
+                "label": t.get("show_countdown_block", "Show Countdown Block"),
+                "description": t.get("show_countdown_block_desc", "Show Bitcoin supply countdown block with remaining BTC and percentage mined."),
+                "default": True,
+                "category": "countdown"
+            },
+            "color_countdown_light": {
+                "type": "color",
+                "label": t.get("color_countdown_light", "Countdown (Light Mode)"),
+                "description": t.get("color_countdown_light_desc", "Color for countdown values in light mode"),
+                "default": "#C55A00",
+                "category": "countdown"
+            },
+            "color_countdown_dark": {
+                "type": "color",
+                "label": t.get("color_countdown_dark", "Countdown (Dark Mode)"),
+                "description": t.get("color_countdown_dark_desc", "Color for countdown values in dark mode"),
+                "default": "#FF9E40",
+                "category": "countdown"
+            },
+            # --- Halving block ---
+            "show_halving_block": {
+                "type": "boolean",
+                "label": t.get("show_halving_block", "Show Halving Block"),
+                "description": t.get("show_halving_block_desc", "Show next Bitcoin halving date and countdown block."),
+                "default": True,
+                "category": "halving"
+            },
+            "color_halving_light": {
+                "type": "color",
+                "label": t.get("color_halving_light", "Halving (Light Mode)"),
+                "description": t.get("color_halving_light_desc", "Color for halving countdown values in light mode"),
+                "default": "#1565C0",
+                "category": "halving"
+            },
+            "color_halving_dark": {
+                "type": "color",
+                "label": t.get("color_halving_dark", "Halving (Dark Mode)"),
+                "description": t.get("color_halving_dark_desc", "Color for halving countdown values in dark mode"),
+                "default": "#4FC3F7",
+                "category": "halving"
+            },
+            # --- Network block ---
+            "show_network_block": {
+                "type": "boolean",
+                "label": t.get("show_network_block", "Show Network Block"),
+                "description": t.get("show_network_block_desc", "Show global Bitcoin network hashrate and current mining difficulty."),
+                "default": True,
+                "category": "network_stats"
+            },
+            "color_network_light": {
+                "type": "color",
+                "label": t.get("color_network_light", "Network Stats (Light Mode)"),
+                "description": t.get("color_network_light_desc", "Color for network stats values in light mode"),
+                "default": "#6A1B9A",
+                "category": "network_stats"
+            },
+            "color_network_dark": {
+                "type": "color",
+                "label": t.get("color_network_dark", "Network Stats (Dark Mode)"),
+                "description": t.get("color_network_dark_desc", "Color for network stats values in dark mode"),
+                "default": "#CE93D8",
+                "category": "network_stats"
+            },
             "show_bitaxe_block": {
                 "type": "boolean",
                 "label": t.get("show_bitaxe_block", "Show Bitaxe Hashrate/Blocks Block"),
                 "description": t.get("show_bitaxe_block_desc", "Show Bitaxe hashrate and valid blocks info block if space allows."),
-                "default": True,
+                "default": False,
                 "category": "bitaxe_stats"
             },
             "bitaxe_display_mode": {
@@ -902,7 +986,7 @@ class ConfigManager:
                 "type": "boolean",
                 "label": t.get("show_wallet_balances_block", "Show Wallet Balances Block"),
                 "description": t.get("show_wallet_balances_block_desc", "Show wallet balances info block if space allows."),
-                "default": True,
+                "default": False,
                 "category": "wallet_monitoring"
             },
             "wallet_balance_addresses_with_comments": {
@@ -956,11 +1040,11 @@ class ConfigManager:
                 "type": "select",
                 "label": t.get("language", "Language"),
                 "options": [
-                    {"value": "en", "label": t.get("english", "English"), "flag": "🇺🇸"},
-                    {"value": "de", "label": t.get("german", "Deutsch"), "flag": "🇩🇪"},
-                    {"value": "es", "label": t.get("spanish", "Español"), "flag": "🇪🇸"},
-                    {"value": "fr", "label": t.get("french", "Français"), "flag": "🇫🇷"},
-                    {"value": "it", "label": t.get("italian", "Italiano"), "flag": "🇮🇹"}
+                    {"value": "en", "label": t.get("english", "English"), "flag": "<img src='/static/icons/en.svg' style='width:20px;height:14px;border-radius:2px;vertical-align:middle;'>"},
+                    {"value": "de", "label": t.get("german", "Deutsch"), "flag": "<img src='/static/icons/de.svg' style='width:20px;height:14px;border-radius:2px;vertical-align:middle;'>"},
+                    {"value": "es", "label": t.get("spanish", "Español"), "flag": "<img src='/static/icons/es.svg' style='width:20px;height:14px;border-radius:2px;vertical-align:middle;'>"},
+                    {"value": "fr", "label": t.get("french", "Français"), "flag": "<img src='/static/icons/fr.svg' style='width:20px;height:14px;border-radius:2px;vertical-align:middle;'>"},
+                    {"value": "it", "label": t.get("italian", "Italiano"), "flag": "<img src='/static/icons/it.svg' style='width:20px;height:14px;border-radius:2px;vertical-align:middle;'>"}
                 ],
                 "category": "general"
             },
@@ -1159,19 +1243,19 @@ class ConfigManager:
                 "default": False,
                 "category": "eink_display"
             },
+            "public_dashboard": {
+                "type": "boolean",
+                "label": t.get("public_dashboard", "Public Dashboard"),
+                "description": t.get("public_dashboard_desc", "Allow unauthenticated users to view the dashboard. Admin login is still required to access settings."),
+                "default": False,
+                "category": "general"
+            },
             "color_mode_dark": {
                 "type": "boolean",
                 "label":  t.get("color_mode_dark", "Dark Mode"),
                 "description":  t.get("color_mode_dark_desc", "Enable dark mode for the webinterface."),
                 "default": True,
                 "category": "general"
-            },
-            "einundzwanzig_meme_source": {
-                "type": "boolean",
-                "label": t.get("einundzwanzig_meme_source", "Einundzwanzig Memes (Live)"),
-                "description": t.get("einundzwanzig_meme_source_desc", "Fetch memes live from einundzwanzig-memes.space instead of using locally downloaded images. Requires an active internet connection, but always has the latest memes available."),
-                "default": False,
-                "category": "meme_management"
             },
             "meme_management": {
                 "type": "meme_management",
@@ -1263,6 +1347,9 @@ class ConfigManager:
             {"id": "mempool", "label": t.get("mempool_settings", "Mempool"), "icon": "/static/icons/bottom_drawer.svg"},
             {"id": "eink_display", "label": t.get("eink_display", "E-Ink Display"), "icon": "/static/icons/photo_frame.svg"},
             {"id": "price_stats", "label": t.get("price_stats", "Price Stats"), "icon": "/static/icons/price_change.svg"},
+            {"id": "countdown", "label": t.get("countdown_settings", "Countdown"), "icon": "/static/icons/price_change.svg"},
+            {"id": "halving", "label": t.get("halving_settings", "Halving"), "icon": "/static/icons/price_change.svg"},
+            {"id": "network_stats", "label": t.get("network_settings", "Network"), "icon": "/static/icons/calculate.svg"},
             {"id": "wallet_monitoring", "label": t.get("wallet_monitoring", "Wallet Monitoring"), "icon": "/static/icons/wallet.svg"},
             {"id": "bitaxe_stats", "label": t.get("bitaxe_stats", "Bitaxe Stats"), "icon": "/static/icons/calculate.svg"},
             {"id": "donation", "label": t.get("donation_settings", "Lightning Donation"), "icon": "/static/icons/price_change.svg"},

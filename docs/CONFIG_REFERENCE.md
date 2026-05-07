@@ -9,7 +9,7 @@ These settings can be modified via the Web Dashboard (recommended) or by editing
 
 | Web Label | Config Key | Type | Description | Allowed Values / Examples |
 | :--- | :--- | :--- | :--- | :--- |
-| **Language** | `language` | Select | Interface language | `en` (English), `de` (German), `es` (Spanish), `fr` (French) |
+| **Language** | `language` | Select | Interface language | `en` (English), `de` (German), `es` (Spanish), `fr` (French), `it` (Italian) |
 | **Web Orientation** | `web_orientation` | Toggle | Web dashboard orientation | `vertical` (Portrait), `horizontal` (Landscape) |
 | **E-ink Orientation** | `eink_orientation` | Toggle | E-ink display orientation | `vertical` (Portrait), `horizontal` (Landscape) |
 | **Color Mode** | `color_mode_dark` | Switch | Dark theme for dashboard | `true` (Dark), `false` (Light) |
@@ -22,10 +22,14 @@ These settings can be modified via the Web Dashboard (recommended) or by editing
 
 | Web Label | Config Key | Type | Description | Default Light / Dark |
 | :--- | :--- | :--- | :--- | :--- |
-| **Holiday Color** | `color_holiday_light`<br>`color_holiday_dark` | Color | Text color for holiday events | `#CD853F` / `#F7931A` |
+| **Holiday Color** | `color_holiday_light`<br>`color_holiday_dark` | Color | Text color for holiday events | `#CD853F` / `#09A3BA` |
 | **BTC Price Color** | `color_btc_price_light`<br>`color_btc_price_dark` | Color | Text color for Bitcoin price | `#17805B` / `#00C896` |
+| **Countdown Color** | `color_countdown_light`<br>`color_countdown_dark` | Color | Text color for supply countdown | `#C55A00` / `#FF9E40` |
+| **Halving Color** | `color_halving_light`<br>`color_halving_dark` | Color | Text color for halving countdown | `#1565C0` / `#4FC3F7` |
+| **Network Color** | `color_network_light`<br>`color_network_dark` | Color | Text color for network stats | `#6A1B9A` / `#CE93D8` |
 | **Bitaxe Color** | `color_bitaxe_stats_light`<br>`color_bitaxe_stats_dark` | Color | Text color for mining stats | `#B89C1D` / `#FFE566` |
 | **Wallet Color** | `color_wallets_light`<br>`color_wallets_dark` | Color | Text color for wallet balances | `#1565C0` / `#09A3BA` |
+| **Donation Color** | `color_donation_light`<br>`color_donation_dark` | Color | Text color for donation block | `#F7931A` / `#F7931A` |
 
 ---
 
@@ -39,7 +43,9 @@ These settings can be modified via the Web Dashboard (recommended) or by editing
 | **REST Port** | `mempool_rest_port` | Number | API port | `443` (public), `80`, `3006` (local MyNode/Umbrel) |
 | **WebSocket Port** | `mempool_ws_port` | Number | Real-time data port | `443` (public), `8999` (local standard) |
 | **WebSocket Path** | `mempool_ws_path` | String | Websocket endpoint path | `/api/v1/ws` (default) |
-| **Fee Preference** | `fee_parameter` | Select | Which fee to display | `fastestFee` (High Priority), `halfHourFee` (Standard), `hourFee` (Low Priority), `minimumFee` (No Priority) |
+| **Username** | `mempool_username` | String | Optional Basic auth username | Leave empty if not required |
+| **Password** | `mempool_password` | String | Optional Basic auth password | Leave empty if not required |
+| **Fee Preference** | `fee_parameter` | Select | Which fee to display | `fastestFee` (High Priority), `halfHourFee` (Standard), `hourFee` (Low Priority), `economyFee` (Economy), `minimumFee` (No Priority) |
 
 ---
 
@@ -87,6 +93,42 @@ These settings can be modified via the Web Dashboard (recommended) or by editing
 
 ---
 
+## 📉 BTC Countdown Block
+
+| Web Label | Config Key | Type | Description | Allowed Values / Examples |
+| :--- | :--- | :--- | :--- | :--- |
+| **Show Countdown Block** | `show_countdown_block` | Switch | Display remaining BTC supply and % mined | `true`, `false` |
+
+---
+
+## ⏳ Halving Block
+
+| Web Label | Config Key | Type | Description | Allowed Values / Examples |
+| :--- | :--- | :--- | :--- | :--- |
+| **Show Halving Block** | `show_halving_block` | Switch | Display next halving date and block countdown | `true`, `false` |
+
+---
+
+## 🌐 Network Block
+
+| Web Label | Config Key | Type | Description | Allowed Values / Examples |
+| :--- | :--- | :--- | :--- | :--- |
+| **Show Network Block** | `show_network_block` | Switch | Display global hashrate and mining difficulty | `true`, `false` |
+
+---
+
+## ⚡ Donation Block
+
+Displays the latest (or largest) Lightning donation received via a LNbits webhook. Requires a webhook URL to be configured — either a direct connection (same network) or via a self-hosted [event-hub](https://github.com/satcat21/event-hub) relay.
+
+| Web Label | Config Key | Type | Description | Allowed Values / Examples |
+| :--- | :--- | :--- | :--- | :--- |
+| **Show Donation Block** | `show_donation_block` | Switch | Display Lightning donation block | `true`, `false` |
+| **Display Mode** | `donation_display_mode` | Select | Which donation to show | `latest` (most recent), `highest` (largest ever), `auto` (latest → largest after 432 blocks) |
+| **Webhook Relay URL** | `webhook_relay_ws_url` | String | WebSocket URL for Option B relay | `wss://your-host/ws/your-token` (leave empty for direct webhook) |
+
+---
+
 ## 🕵️ OPSec Mode
 
 When OPSec Mode is enabled the e-ink display shows a randomly selected cover image (e.g. a family photo) instead of Bitcoin data. The web dashboard is **not** affected and always shows normal BTC data.
@@ -105,6 +147,7 @@ Upload OPSec images via the **Meme Management** section of the config page, in t
 | :--- | :--- | :--- | :--- | :--- |
 | **Admin Username** | `admin_username` | String | Dashboard login username | default: `admin` |
 | **Password** | `admin_password_hash` | String | *Hashed managed field* | *Managed by `setup_secure_password.py`* |
+| **Public Dashboard** | `public_dashboard` | Switch | Allow unauthenticated users to view the dashboard (settings still require login) | `true`, `false` (default: `false`) |
 
 ---
 
@@ -115,8 +158,13 @@ These settings are typically managed by the system or only available in `config.
 | Config Key | Default | Description |
 | :--- | :--- | :--- |
 | `precache_update_interval_seconds` | `300` | How often to fetch price/Bitaxe data (seconds). Lower = fresher data but more CPU/API calls. 300s = 5 min (recommended for RPi Zero) |
-| `xpub_enable_gap_limit` | `true` | Stop scanning XPUB after N unused addresses |
-| `xpub_gap_limit_last_n` | `20` | Number of empty addresses before stopping |
+| `disable_config_file_watching` | `false` | Disable automatic config reload on file change. Set to `true` for faster startup on development machines |
 | `network_outage_tolerance_minutes` | `45` | Minutes to retry WebSocket reconnection during outages |
+| `xpub_enable_gap_limit` | `true` | Stop scanning XPUB after N unused addresses |
+| `xpub_gap_limit_last_n` | `20` | Number of consecutive empty addresses before stopping scan |
+| `xpub_gap_limit_increment` | `10` | How many addresses to scan per increment step |
+| `xpub_enable_bootstrap_search` | `false` | Perform a wider initial address scan to find all used addresses (slower but more thorough) |
+| `xpub_bootstrap_max_addresses` | `100` | Maximum addresses to scan during bootstrap search |
+| `xpub_bootstrap_increment` | `10` | Addresses per step during bootstrap search |
 | `font_regular` | `static/fonts/Roboto-Regular.ttf` | Path to regular font file |
 | `font_bold` | `static/fonts/Roboto-Bold.ttf` | Path to bold font file |

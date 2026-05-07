@@ -1,0 +1,353 @@
+/* ============================================================
+   MEMPAPER – Shared Theme Variables
+   Light & Dark mode via body.dark-mode class
+   ============================================================ */
+
+@font-face {
+    font-family: 'IBMPlexMono';
+    src: url('../fonts/IBMPlexMono-Medium.ttf') format('truetype');
+    font-weight: 500;
+    font-style: normal;
+}
+
+/* ── Light Mode (default) ──────────────────────────────────── */
+:root {
+    --bg-primary: #f5f5f7;
+    --bg-card: #ffffff;
+    --bg-card-hover: #f8f8fa;
+    --bg-input: #f0f0f3;
+    --bg-elevated: #e8e8ec;
+    --border-color: #d4d4d8;
+    --border-subtle: #e4e4e8;
+    --text-primary: #1a1a1e;
+    --text-secondary: #6a6a78;
+    --text-muted: #9a9aaa;
+    --accent: #F7931A;
+    --accent-hover: #e8860f;
+    --accent-dim: rgba(247, 147, 26, 0.10);
+    --accent-border: rgba(247, 147, 26, 0.30);
+    --danger: #e53e3e;
+    --success: #38a169;
+    --info: #2b6cb0;
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 14px;
+    --radius-xl: 18px;
+    --font-sans: 'Roboto', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    --font-mono: 'IBMPlexMono', 'IBM Plex Mono', 'Roboto Mono', monospace;
+    --shadow-card: 0 1px 3px rgba(0,0,0,0.08), 0 0 0 1px var(--border-color);
+    --shadow-elevated: 0 8px 30px rgba(0,0,0,0.12);
+    --transition: 0.2s ease;
+    --nav-bg: rgba(255, 255, 255, 0.92);
+    --nav-btn-bg: #ffffff;
+    --nav-btn-border: #e0e0e4;
+    --nav-btn-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    --nav-icon-fill: #4a4a58;
+    --modal-overlay: rgba(0,0,0,0.35);
+}
+
+/* ── Dark Mode ─────────────────────────────────────────────── */
+body.dark-mode {
+    --bg-primary: #131316;
+    --bg-card: #1a1a1f;
+    --bg-card-hover: #1e1e24;
+    --bg-input: #222228;
+    --bg-elevated: #252530;
+    --border-color: #2a2a32;
+    --border-subtle: #222228;
+    --text-primary: #e8e8ec;
+    --text-secondary: #9a9aaa;
+    --text-muted: #6a6a78;
+    --accent: #F7931A;
+    --accent-hover: #e8860f;
+    --accent-dim: rgba(247, 147, 26, 0.12);
+    --accent-border: rgba(247, 147, 26, 0.25);
+    --danger: #e53e3e;
+    --success: #38a169;
+    --info: #4da6ff;
+    --shadow-card: 0 1px 3px rgba(0,0,0,0.3), 0 0 0 1px var(--border-color);
+    --shadow-elevated: 0 8px 30px rgba(0,0,0,0.4);
+    --nav-bg: rgba(19, 19, 22, 0.92);
+    --nav-btn-bg: #1a1a1f;
+    --nav-btn-border: #2a2a32;
+    --nav-btn-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    --nav-icon-fill: #e8e8ec;
+    --modal-overlay: rgba(0,0,0,0.6);
+}
+
+/* ── Base Reset ─────────────────────────────────────────────── */
+*, *::before, *::after {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: var(--font-sans);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* ── Shared Navigation Styles ───────────────────────────────── */
+
+/* Desktop: vertical nav on left */
+.desktop-nav-buttons {
+    position: fixed;
+    left: 20px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    z-index: 1000;
+}
+
+.nav-button {
+    padding: 0;
+    border: 1px solid var(--nav-btn-border);
+    border-radius: 50%;
+    cursor: pointer;
+    transition: all var(--transition);
+    box-shadow: var(--nav-btn-shadow);
+    background: var(--nav-btn-bg);
+    color: var(--nav-icon-fill);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: auto;
+    z-index: 1001;
+    min-width: auto;
+    font-size: 14px;
+    font-weight: 500;
+    text-decoration: none;
+}
+
+.nav-button:hover {
+    background: var(--bg-card-hover);
+    border-color: var(--accent-border);
+    transform: translateX(-2px);
+}
+
+.nav-button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.nav-button.icon-only {
+    min-width: 44px;
+    width: 44px;
+    height: 44px;
+    padding: 10px;
+}
+
+.nav-button.icon-only svg {
+    width: 20px;
+    height: 20px;
+}
+
+/* Mobile: bottom nav bar */
+.mobile-nav-buttons {
+    position: fixed;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: var(--nav-bg);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-top: 1px solid var(--border-color);
+    border-radius: 16px 16px 0 0;
+    padding: 12px 28px;
+    gap: 24px;
+    z-index: 1000;
+    width: auto;
+    min-width: 180px;
+}
+
+.mobile-nav-button {
+    width: 44px;
+    height: 44px;
+    border: 1px solid var(--nav-btn-border);
+    border-radius: 50%;
+    cursor: pointer;
+    transition: all var(--transition);
+    box-shadow: var(--nav-btn-shadow);
+    background: var(--nav-btn-bg);
+    color: var(--nav-icon-fill);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    pointer-events: auto;
+    z-index: 1001;
+    margin: 0;
+    font-size: 18px;
+    font-weight: 500;
+    text-align: center;
+    text-decoration: none;
+}
+
+.mobile-nav-button:hover,
+.mobile-nav-button:active {
+    background: var(--bg-card-hover);
+    border-color: var(--accent-border);
+    transform: translateY(-2px);
+}
+
+.mobile-nav-button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.mobile-nav-button.icon-only svg {
+    width: 22px;
+    height: 22px;
+}
+
+/* Nav button SVG icon colors */
+.nav-button svg, .nav-button svg path,
+.mobile-nav-button svg, .mobile-nav-button svg path {
+    fill: var(--nav-icon-fill) !important;
+    color: var(--nav-icon-fill) !important;
+    stroke: var(--nav-icon-fill) !important;
+    transition: fill var(--transition), stroke var(--transition);
+}
+
+.nav-button:hover svg path, .nav-button:hover svg *,
+.mobile-nav-button:hover svg path, .mobile-nav-button:hover svg * {
+    fill: var(--accent) !important;
+    stroke: var(--accent) !important;
+}
+
+/* Pending icon animation */
+.pending-icon {
+    animation: spin 1s linear infinite;
+}
+
+/* ── Confirm / Alert Modal ──────────────────────────────────── */
+.confirm-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: var(--modal-overlay);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 200000;
+    padding: 20px;
+    backdrop-filter: blur(4px);
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.confirm-modal-overlay.visible {
+    opacity: 1;
+}
+
+.confirm-modal-dialog {
+    background: var(--bg-card);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-xl);
+    padding: 28px;
+    max-width: 420px;
+    width: 90%;
+    text-align: center;
+    box-shadow: var(--shadow-elevated);
+    transform: scale(0.95);
+    transition: transform 0.2s ease;
+}
+
+.confirm-modal-overlay.visible .confirm-modal-dialog {
+    transform: scale(1);
+}
+
+.confirm-modal-title {
+    margin: 0 0 12px;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.confirm-modal-message {
+    margin: 0 0 24px;
+    color: var(--text-secondary);
+    font-size: 0.92rem;
+    line-height: 1.55;
+}
+
+.confirm-modal-buttons {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+}
+
+.confirm-modal-btn {
+    flex: 1;
+    padding: 10px 20px;
+    border: none;
+    border-radius: var(--radius-md);
+    font-size: 0.88rem;
+    font-weight: 600;
+    font-family: var(--font-sans);
+    cursor: pointer;
+    transition: all var(--transition);
+}
+
+.confirm-modal-btn.cancel {
+    background: var(--bg-elevated);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+}
+
+.confirm-modal-btn.cancel:hover {
+    background: var(--bg-card-hover);
+    color: var(--text-primary);
+}
+
+.confirm-modal-btn.confirm {
+    background: var(--accent);
+    color: #fff;
+}
+
+.confirm-modal-btn.confirm:hover {
+    background: var(--accent-hover);
+}
+
+.confirm-modal-btn.danger {
+    background: var(--danger);
+    color: #fff;
+}
+
+.confirm-modal-btn.danger:hover {
+    background: #c53030;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+/* Desktop: show desktop nav, hide mobile */
+@media (min-width: 1000px) {
+    .desktop-nav-buttons { display: flex; }
+    .mobile-nav-buttons { display: none; }
+    .mobile-nav-toggle { display: none; }
+}
+
+/* Mobile: hide desktop nav, show mobile */
+@media (max-width: 999px) {
+    .desktop-nav-buttons { display: none; }
+    .mobile-nav-buttons { display: flex; }
+}
+
+@media (max-width: 480px) {
+    .mobile-nav-button { width: 40px; height: 40px; }
+    .mobile-nav-buttons { padding: 10px 20px; gap: 16px; }
+}

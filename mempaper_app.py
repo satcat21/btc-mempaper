@@ -36,7 +36,7 @@ from utils.technical_config import TechnicalConfig, build_mempool_api_url
 from utils.security_config import SecurityConfig
 from utils.color_lut import ColorLUT
 from managers.secure_cache_manager import SecureCacheManager
-from managers.auth_manager import AuthManager, require_auth, require_web_auth, require_rate_limit, require_mobile_auth
+from managers.auth_manager import AuthManager, require_auth, require_web_auth, allow_public_or_auth, require_rate_limit, require_mobile_auth
 from managers.mobile_token_manager import MobileTokenManager
 
 # Privacy utilities for secure logging
@@ -227,6 +227,25 @@ class MempaperApp:
         self.current_eink_image_path = "cache/current_eink.png"  # E-ink optimized image
         self.cache_metadata_path = "cache/cache.json"  # Persistent cache state
         
+        # In-memory image cache for instant web serving (avoids disk I/O)
+        self._cached_web_image_base64 = None  # Ready-to-emit data URI string
+        self._cached_eink_image = None  # PIL Image for e-ink (avoids disk read-back)
+        
+        # 🚀 Pre-rendered next-block images (ready before block arrives)
+        self._prerendered = {
+            'block_height': None,        # Expected next block height
+            'web_base64': None,          # Pre-rendered web image as base64 data URI
+            'eink_img': None,            # Pre-rendered e-ink PIL Image
+            'web_img': None,             # Pre-rendered web PIL Image (for disk save)
+            'meme_path': None,           # Meme used in pre-render
+            'displayed_blocks': None,    # Info blocks shown
+            'timestamp': 0,              # When pre-rendered
+            'lock': threading.Lock(),    # Prevent concurrent pre-renders
+        }
+        # Deferred disk persistence (batch writes instead of per-event)
+        self._disk_save_pending = False
+        self._last_disk_save_time = 0
+        
         self.current_block_height = None
         self.current_block_hash = None
         self.current_meme_path = None  # Cache current meme for config-triggered regeneration
@@ -261,10 +280,6 @@ class MempaperApp:
         # Flag: an e-ink refresh was requested while the display was busy (e.g. donation during block update)
         self._pending_eink_refresh = False
 
-        # Pre-fetched meme path ready for the next image generation (avoids blocking online fetch)
-        self._precached_meme_path = None
-        self._meme_prefetch_in_progress = False
-        
         # Image generation lock to prevent concurrent generation
         self.generation_lock = threading.Lock()
         
@@ -277,12 +292,15 @@ class MempaperApp:
             'bitaxe_data': None,
             'fee_data': None,  # Fee recommendations cache
             'block_height': None,  # Current block height cache
+            'network_data': None,  # Network hashrate, difficulty, timeAvg
             'price_last_update': 0,
             'bitaxe_last_update': 0,
             'fee_last_update': 0,
+            'network_last_update': 0,
             'last_price_value': None,  # Track last price to detect changes
             'last_bitaxe_blocks': None,  # Track last Bitaxe blocks to detect changes
             'last_fee_value': None,  # Track last fee to detect changes
+            'last_hashrate': None,  # Track last hashrate to detect changes
             'lock': threading.Lock()
         }
         
@@ -484,6 +502,8 @@ class MempaperApp:
         if self.config.get("show_donation_block", False):
             self.image_renderer._donation_data = self._get_active_donation()
             self.image_is_current = False
+            # Invalidate pre-render so next block shows updated donation
+            self._invalidate_prerender()
             threading.Thread(
                 target=self._background_image_generation,
                 kwargs={"force_eink": True, "use_cached_block": True, "force_new_meme": True},
@@ -760,11 +780,10 @@ class MempaperApp:
             # Track displayed info blocks
             self.displayed_info_blocks = displayed_blocks
             
-            # Save both images for caching
-            if web_img is not None:
-                web_img.save(self.current_image_path)
-            if eink_img is not None:
-                eink_img.save(self.current_eink_image_path)
+            # Cache in RAM for instant web serving, save to disk for persistence
+            self._cache_web_image(web_img)
+            self._cached_eink_image = eink_img
+            self._save_images_to_disk(web_img, eink_img)
             
             # Update cache state
             self.current_block_height = block_info['block_height']
@@ -791,6 +810,9 @@ class MempaperApp:
                     args=(self.current_eink_image_path, self.current_block_height, self.current_block_hash),
                     daemon=True
                 ).start()
+            
+            # Pre-render next block in background
+            threading.Thread(target=self._prerender_next_block, daemon=True).start()
             
         except Exception as e:
             print(f"⚠️ Failed to generate initial image: {e}")
@@ -1051,9 +1073,10 @@ class MempaperApp:
             bottom_gray = (140, 140, 140) if is_dark_mode else (102, 102, 102)
             draw.text((bottom_x, bottom_y), bottom_msg, fill=bottom_gray, font=small_font)
             
-            # Save placeholder images
-            img.save(self.current_image_path)
-            img.save(self.current_eink_image_path)
+            # Cache placeholder in RAM and save to disk
+            self._cache_web_image(img)
+            self._cached_eink_image = img
+            self._save_images_to_disk(img, img)
             
             print("💾 Created informative placeholder images for instant startup")
             
@@ -1092,7 +1115,7 @@ class MempaperApp:
             
             # If blocks were missed during downtime, regenerate now that APIs are warmed up
             if not self.image_is_current and self.current_block_height and self.current_block_hash:
-                print(f"⚙️ Missed blocks detected at startup — regenerating image for block {self.current_block_height}...")
+                print(f"⚙️ Image outdated at startup — regenerating for block {self.current_block_height}...")
                 self._generate_new_image(
                     self.current_block_height,
                     self.current_block_hash,
@@ -1172,9 +1195,6 @@ class MempaperApp:
                         # Only log if this is actually the latest block (avoid confusion)
                         if int(block_height) >= int(latest_block):
                             print(f"💾 E-ink display tracking updated: Block {block_height}")
-
-                # Pre-fetch the next meme while display is idle
-                threading.Thread(target=self._prefetch_next_meme, daemon=True).start()
 
                 # Execute any refresh that was queued while we were busy
                 if getattr(self, '_pending_eink_refresh', False):
@@ -1317,30 +1337,6 @@ class MempaperApp:
                 'timestamp': time.time()
             })
     
-    def _prefetch_next_meme(self):
-        """Pre-fetch the next meme from einundzwanzig-memes.space in the background.
-
-        Called after every successful e-ink display so the meme is ready before
-        the next block or donation triggers image generation, avoiding the blocking
-        online fetch (~5-15 s) on the critical path.
-        Only runs when einundzwanzig_meme_source is enabled in config.
-        """
-        if not self.config.get("einundzwanzig_meme_source", False):
-            return
-        if self._meme_prefetch_in_progress:
-            return
-        self._meme_prefetch_in_progress = True
-        try:
-            path = self.image_renderer._pick_online_meme()
-            if path:
-                self._precached_meme_path = path
-            else:
-                print("⚠️ Meme pre-fetch returned no path, will fetch on demand")
-        except Exception as e:
-            print(f"⚠️ Meme pre-fetch error: {e}")
-        finally:
-            self._meme_prefetch_in_progress = False
-
     def _extract_wallet_addresses_from_config(self, config):
         """
         Extract all wallet addresses from configuration.
@@ -1637,13 +1633,12 @@ class MempaperApp:
                 force_eink=force_eink
             )
             
-            # Emit to web clients
+            # Emit to web clients from RAM cache
             with self.app.app_context():
                 try:
-                    with open(self.current_image_path, 'rb') as f:
-                        image_data = 'data:image/png;base64,' + base64.b64encode(f.read()).decode()
-                        if len(image_data) > 50 and image_data.startswith('data:image/png;base64,'):
-                            self.socketio.emit('new_image', {'image': image_data})
+                    image_data = self._get_web_image_base64()
+                    if image_data and len(image_data) > 50:
+                        self.socketio.emit('new_image', {'image': image_data})
                 except Exception as e:
                     print(f"⚠️ Failed to read generated image: {e}")
                     
@@ -1742,7 +1737,19 @@ class MempaperApp:
             self.image_is_current = False
     
     def _save_cache_metadata(self):
-        """Save current cache state to persistent file."""
+        """Save current cache state to persistent file (immediate write)."""
+        self._write_cache_metadata_to_disk()
+
+    def _deferred_save_cache_metadata(self):
+        """Deferred disk save — writes at most once per 5 minutes to reduce SD card wear."""
+        now = time.time()
+        if now - self._last_disk_save_time < 300:
+            self._disk_save_pending = True
+            return
+        self._write_cache_metadata_to_disk()
+
+    def _write_cache_metadata_to_disk(self):
+        """Actually write cache metadata to disk."""
         try:
             metadata = {
                 'block_height': self.current_block_height,
@@ -1750,15 +1757,17 @@ class MempaperApp:
                 'timestamp': time.time(),
                 'image_path': self.current_image_path,
                 'eink_image_path': self.current_eink_image_path,
-                'current_meme_path': getattr(self, 'current_meme_path', None),  # Add meme caching
-                'last_eink_block_height': self.last_eink_block_height,  # Persist e-ink display state
-                'last_eink_block_hash': self.last_eink_block_hash,  # Persist e-ink display hash
-                'displayed_info_blocks': getattr(self, 'displayed_info_blocks', []),  # Track which blocks are shown
-                'displayed_bitaxe_data': getattr(self, 'displayed_bitaxe_data', None)  # Cache Bitaxe state
+                'current_meme_path': getattr(self, 'current_meme_path', None),
+                'last_eink_block_height': self.last_eink_block_height,
+                'last_eink_block_hash': self.last_eink_block_hash,
+                'displayed_info_blocks': getattr(self, 'displayed_info_blocks', []),
+                'displayed_bitaxe_data': getattr(self, 'displayed_bitaxe_data', None)
             }
             
             with open(self.cache_metadata_path, 'w') as f:
                 json.dump(metadata, f, indent=2)
+            self._last_disk_save_time = time.time()
+            self._disk_save_pending = False
         except Exception as e:
             print(f"⚠️ Error saving cache metadata: {e}")
     
@@ -1777,14 +1786,24 @@ class MempaperApp:
                     # Update every N seconds (default 5 minutes)
                     time.sleep(update_interval)
                     self._update_precache_data()
+                    # Flush any pending cache metadata to disk
+                    if self._disk_save_pending:
+                        self._write_cache_metadata_to_disk()
+                    # Refresh pre-rendered next-block image with latest data
+                    self._prerender_next_block()
                 except Exception as e:
                     print(f"⚠️ Pre-cache update error: {e}")
                     time.sleep(update_interval)  # Continue despite errors
         
         threading.Thread(target=update_precache, daemon=True, name="PreCacheUpdater").start()
     
+    def _invalidate_prerender(self):
+        """Invalidate the pre-rendered next-block image so it gets regenerated."""
+        self._prerendered['web_base64'] = None
+
     def _update_precache_data(self):
         """Update pre-cached data (price, bitaxe, fees) in background."""
+        data_changed = False
         with self._precache['lock']:
             now = time.time()
             update_interval = self.config.get("precache_update_interval_seconds", 300)
@@ -1803,6 +1822,7 @@ class MempaperApp:
                         if price != self._precache['last_price_value']:
                             print(f"💰 Pre-cache updated: Price {price:,.0f} {currency}")
                             self._precache['last_price_value'] = price
+                            data_changed = True
                 except Exception as e:
                     print(f"⚠️ Failed to pre-cache price: {e}")
             
@@ -1820,9 +1840,36 @@ class MempaperApp:
                         if blocks != self._precache['last_bitaxe_blocks']:
                             print(f"⛏️ Pre-cache updated: Bitaxe {blocks} blocks, diff {difficulty}")
                             self._precache['last_bitaxe_blocks'] = blocks
+                            data_changed = True
                 except Exception as e:
                     print(f"⚠️ Failed to pre-cache Bitaxe: {e}")
             
+            # Update network stats (hashrate/difficulty/timeAvg) when any of the 3 new blocks enabled
+            _need_network = (
+                self.config.get("show_countdown_block", True)
+                or self.config.get("show_halving_block", True)
+                or self.config.get("show_network_block", True)
+            )
+            if _need_network and now - self._precache['network_last_update'] > update_interval:
+                try:
+                    hd = self.mempool_api.get_hashrate_and_difficulty()
+                    da = self.mempool_api.get_difficulty_adjustment()
+                    if hd:
+                        network_data = {
+                            "currentHashrate": hd.get("currentHashrate", 0),
+                            "currentDifficulty": hd.get("currentDifficulty", 0),
+                            "timeAvg": da.get("timeAvg", 600000) if da else 600000,
+                        }
+                        self._precache['network_data'] = network_data
+                        self._precache['network_last_update'] = now
+                        hashrate = network_data["currentHashrate"]
+                        if hashrate != self._precache['last_hashrate']:
+                            print(f"🌐 Pre-cache updated: Hashrate {hashrate/1e18:.2f} EH/s")
+                            self._precache['last_hashrate'] = hashrate
+                            data_changed = True
+                except Exception as e:
+                    print(f"⚠️ Failed to pre-cache network stats: {e}")
+
             # Update fee data if stale (fees change more frequently, so use shorter interval)
             fee_update_interval = min(update_interval, 60)  # Update fees at least every 60s
             if now - self._precache['fee_last_update'] > fee_update_interval:
@@ -1841,8 +1888,13 @@ class MempaperApp:
                         if fee_value != self._precache['last_fee_value']:
                             print(f"💾 Pre-cache updated: Fee {fee_value} sat/vB ({fee_param})")
                             self._precache['last_fee_value'] = fee_value
+                            data_changed = True
                 except Exception as e:
                     print(f"⚠️ Failed to pre-cache fees: {e}")
+
+        # Invalidate pre-rendered image so it gets regenerated with fresh data
+        if data_changed:
+            self._invalidate_prerender()
     
     def _get_precached_data(self):
         """Get pre-cached data with fallback to fresh fetch if needed."""
@@ -1888,8 +1940,38 @@ class MempaperApp:
                     print(f"⚠️ Failed to fetch fresh fees: {e}")
                     fee_data = None
                     block_height = None
-            
-            return price_data, bitaxe_data, fee_data, block_height
+
+            # Use cached network data if fresh (<120s old), otherwise fetch new
+            _need_network = (
+                self.config.get("show_countdown_block", True)
+                or self.config.get("show_halving_block", True)
+                or self.config.get("show_network_block", True)
+            )
+            if _need_network:
+                if self._precache['network_data'] and (now - self._precache['network_last_update'] < 120):
+                    network_data = self._precache['network_data']
+                else:
+                    print("🔄 Pre-cache stale, fetching fresh network stats...")
+                    try:
+                        hd = self.mempool_api.get_hashrate_and_difficulty()
+                        da = self.mempool_api.get_difficulty_adjustment()
+                        if hd:
+                            network_data = {
+                                "currentHashrate": hd.get("currentHashrate", 0),
+                                "currentDifficulty": hd.get("currentDifficulty", 0),
+                                "timeAvg": da.get("timeAvg", 600000) if da else 600000,
+                            }
+                            self._precache['network_data'] = network_data
+                            self._precache['network_last_update'] = now
+                        else:
+                            network_data = self._precache.get('network_data')
+                    except Exception as e:
+                        print(f"⚠️ Failed to fetch fresh network stats: {e}")
+                        network_data = self._precache.get('network_data')
+            else:
+                network_data = None
+
+            return price_data, bitaxe_data, fee_data, block_height, network_data
     
     def _on_config_change(self, new_config):
         """
@@ -1956,6 +2038,9 @@ class MempaperApp:
 
             # Recreate image renderer with new config
             self.image_renderer = ImageRenderer(self.config, self.translations)
+
+            # Discard stale pre-rendered image so the next block doesn't use it
+            self._invalidate_prerender()
 
             # Trigger immediate refresh regardless of image_is_current state.
             # Run in a background thread to avoid blocking the save response.
@@ -2046,22 +2131,28 @@ class MempaperApp:
                 
                 # Generate images with the cached meme
                 self.image_renderer._donation_data = self._get_active_donation()
+                precached_price, precached_bitaxe, precached_fee, _, precached_network = self._get_precached_data()
                 web_img, eink_img, meme_path = self.image_renderer.render_dual_images_with_cached_meme(
                     self.current_block_height,
                     self.current_block_hash,
                     self.current_meme_path,
-                    mempool_api=self.mempool_api
+                    mempool_api=self.mempool_api,
+                    precached_price=precached_price,
+                    precached_bitaxe=precached_bitaxe,
+                    precached_fee=precached_fee,
+                    precached_network=precached_network
                 )
-                
-                # Save both images for caching
-                if web_img is not None:
-                    web_img.save(self.current_image_path)
+
+                # Cache in RAM and save to disk in background
+                self._cache_web_image(web_img)
+                self._cached_eink_image = eink_img
                 if eink_img is not None:
-                    eink_img.save(self.current_eink_image_path)
+                    eink_img.save(self.current_eink_image_path, compress_level=1)
+                self._save_images_to_disk(web_img, None)  # eink already saved above
                 
-                # Update cache metadata
+                # Update cache metadata (deferred to reduce SD writes)
                 self.image_is_current = True
-                self._save_cache_metadata()
+                self._deferred_save_cache_metadata()
 
                 # Display on e-Paper if enabled
                 if self.e_ink_enabled:
@@ -2071,11 +2162,11 @@ class MempaperApp:
                         daemon=True
                     ).start()
                 
-                # Push fresh image to connected web clients
+                # Push fresh image to connected web clients from RAM cache
                 try:
-                    with open(self.current_image_path, 'rb') as f:
-                        image_data = 'data:image/png;base64,' + base64.b64encode(f.read()).decode()
-                    self.socketio.emit('new_image', {'image': image_data})
+                    image_data = self._get_web_image_base64()
+                    if image_data:
+                        self.socketio.emit('new_image', {'image': image_data})
                 except Exception as e:
                     print(f"⚠️ Failed to send image to web clients: {e}")
                 
@@ -2089,6 +2180,9 @@ class MempaperApp:
                         ).start()
                     except Exception as proc_e:
                         print(f"❌ Failed to start wallet refresh thread: {proc_e}")
+
+                # Re-build pre-rendered next-block image with updated settings
+                threading.Thread(target=self._prerender_next_block, daemon=True).start()
 
         except Exception as e:
             print(f"❌ Error regenerating image with cached meme: {e}")
@@ -2120,22 +2214,24 @@ class MempaperApp:
                 print("🔒 OPSec e-ink image rendered")
             else:
                 # Convert the existing web image to e-ink format — no data fetch needed
-                if not (hasattr(self, 'current_image_path') and
-                        self.current_image_path and
-                        os.path.exists(self.current_image_path)):
+                # Try RAM cache first, fall back to disk
+                if self._cached_eink_image is not None:
+                    eink_img = self._cached_eink_image
+                    print("🔓 Using cached e-ink image from RAM")
+                elif hasattr(self, 'current_image_path') and self.current_image_path and os.path.exists(self.current_image_path):
+                    web_img = Image.open(self.current_image_path).convert('RGB')
+                    self.image_renderer._apply_orientation_settings(self.image_renderer.eink_orientation)
+                    eink_img = self.image_renderer.convert_to_7color(web_img)
+                    self.image_renderer._apply_orientation_settings(self.image_renderer.web_orientation)
+                    print("🔓 Converted existing web image to e-ink format")
+                else:
                     print("⚠️ No cached web image found — falling back to full regeneration")
                     if self.image_is_current and self.current_block_height and self.current_block_hash:
                         self._regenerate_image_with_cached_meme()
                     return
 
-                web_img = Image.open(self.current_image_path).convert('RGB')
-                self.image_renderer._apply_orientation_settings(self.image_renderer.eink_orientation)
-                eink_img = self.image_renderer.convert_to_7color(web_img)
-                self.image_renderer._apply_orientation_settings(self.image_renderer.web_orientation)
-                print("🔓 Converted existing web image to e-ink format")
-
             # Save the new e-ink image
-            eink_img.save(self.current_eink_image_path)
+            eink_img.save(self.current_eink_image_path, compress_level=1)
 
             # Display on e-Paper in background thread
             threading.Thread(
@@ -2220,7 +2316,7 @@ class MempaperApp:
                     self.socketio.emit('wallet_balance_updated', fresh_wallet_data)
                 
                 # Get pre-cached data for fast rendering
-                precached_price, precached_bitaxe, precached_fee, precached_block_height = self._get_precached_data()
+                precached_price, precached_bitaxe, precached_fee, precached_block_height, precached_network = self._get_precached_data()
 
                 # Sync latest donation data to renderer
                 self.image_renderer._donation_data = self._get_active_donation()
@@ -2235,20 +2331,20 @@ class MempaperApp:
                     precached_price=precached_price,
                     precached_bitaxe=precached_bitaxe,
                     precached_fee=precached_fee,
-                    precached_block_height=precached_block_height
+                    precached_block_height=precached_block_height,
+                    precached_network=precached_network
                 )
                 # Update displayed blocks tracking
                 self.displayed_info_blocks = displayed_blocks
-                # Save images
-                if web_img is not None:
-                    web_img.save(self.current_image_path)
-                if eink_img is not None:
-                    eink_img.save(self.current_eink_image_path)
+                # Cache in RAM and save to disk in background
+                self._cache_web_image(web_img)
+                self._cached_eink_image = eink_img
+                self._save_images_to_disk(web_img, eink_img)
             else:
                 pass  # No visible data changes
                 
-            # Update cache metadata
-            self._save_cache_metadata()
+            # Defer cache metadata save to reduce SD card writes
+            self._deferred_save_cache_metadata()
             
         except Exception as e:
             print(f"❌ [WALLET] Error during wallet refresh: {e}")
@@ -2294,6 +2390,204 @@ class MempaperApp:
             print(f"❌ Wallet refresh failed: {e}")
             traceback.print_exc()
 
+    def _cache_web_image(self, img):
+        """Cache a PIL web image as a ready-to-emit base64 data URI string."""
+        if img is None:
+            return
+        buf = io.BytesIO()
+        img.save(buf, format='PNG', compress_level=1)
+        self._cached_web_image_base64 = 'data:image/png;base64,' + base64.b64encode(buf.getvalue()).decode()
+
+    def _encode_pil_to_base64(self, img):
+        """Encode a PIL image to a base64 data URI string without caching."""
+        if img is None:
+            return None
+        buf = io.BytesIO()
+        img.save(buf, format='PNG', compress_level=1)
+        return 'data:image/png;base64,' + base64.b64encode(buf.getvalue()).decode()
+
+    def _get_web_image_base64(self):
+        """Get the web image as base64 data URI, from RAM cache or disk fallback."""
+        if self._cached_web_image_base64:
+            return self._cached_web_image_base64
+        # Fallback: read from disk (e.g. after restart before first generation)
+        if os.path.exists(self.current_image_path):
+            with open(self.current_image_path, 'rb') as f:
+                data = 'data:image/png;base64,' + base64.b64encode(f.read()).decode()
+                self._cached_web_image_base64 = data  # warm RAM cache
+                return data
+        return None
+
+    def _save_images_to_disk(self, web_img, eink_img):
+        """Save images to disk in background for crash recovery persistence."""
+        def _save():
+            try:
+                if web_img is not None:
+                    web_img.save(self.current_image_path, compress_level=1)
+                if eink_img is not None:
+                    eink_img.save(self.current_eink_image_path, compress_level=1)
+            except Exception as e:
+                print(f"⚠️ Background image save failed: {e}")
+        threading.Thread(target=_save, daemon=True).start()
+
+    def _prerender_next_block(self):
+        """Pre-render the dashboard image for the expected next block.
+        
+        Uses current pre-cached data (price, fees, bitaxe, wallet, meme) and
+        next_height = current_block_height + 1.  The block hash is not yet known,
+        so a placeholder is used for the decorative hash frame.
+        
+        Called in background after every successful block processing.
+        """
+        if not self._prerendered['lock'].acquire(blocking=False):
+            return  # Another pre-render already running
+        try:
+            current = self.current_block_height
+            if current is None:
+                return
+            next_height = int(current) + 1
+
+            # Skip if already pre-rendered for this height with valid data
+            if (self._prerendered['block_height'] == next_height
+                    and self._prerendered['web_base64']):
+                return
+
+            # Gather pre-cached data
+            precached_price, precached_bitaxe, precached_fee, _, precached_network = self._get_precached_data()
+
+            # Use a deterministic placeholder hash for the decorative frame
+            placeholder_hash = "0" * 64
+
+            # Sync donation data
+            self.image_renderer._donation_data = self._get_active_donation()
+
+            web_img, eink_img, content_path, displayed_blocks = self.image_renderer.render_dual_images(
+                next_height,
+                placeholder_hash,
+                mempool_api=self.mempool_api,
+                startup_mode=True,
+                override_content_path=None,
+                precached_price=precached_price,
+                precached_bitaxe=precached_bitaxe,
+                precached_fee=precached_fee,
+                precached_block_height=next_height,
+                precached_network=precached_network,
+                skip_hash_frame=True
+            )
+
+            # Encode and store in RAM
+            web_base64 = self._encode_pil_to_base64(web_img)
+
+            self._prerendered['block_height'] = next_height
+            self._prerendered['web_base64'] = web_base64
+            self._prerendered['eink_img'] = eink_img
+            self._prerendered['web_img'] = web_img
+            self._prerendered['meme_path'] = content_path
+            self._prerendered['displayed_blocks'] = displayed_blocks
+            self._prerendered['timestamp'] = time.time()
+
+            print(f"🚀 Pre-rendered image ready for next block {next_height}")
+        except Exception as e:
+            print(f"⚠️ Pre-render failed: {e}")
+        finally:
+            self._prerendered['lock'].release()
+
+    def _use_prerendered_image(self, block_height, block_hash):
+        """Try to use a pre-rendered image for instant block delivery.
+        
+        Returns True if pre-rendered image was used, False otherwise.
+        """
+        pr = self._prerendered
+        if pr['block_height'] != block_height or not pr['web_base64']:
+            return False
+
+        # Pre-rendered image matches! Use it instantly.
+        age = time.time() - pr['timestamp']
+        if age > 600:  # Too old (>10 min), data may be stale
+            print(f"⚠️ Pre-rendered image for block {block_height} is {age:.0f}s old, regenerating")
+            return False
+
+        print(f"⚡ Using pre-rendered image for block {block_height} (ready {age:.1f}s ago)")
+
+        # Patch hash frame onto pre-rendered images (fast ~10ms per image)
+        web_img_patched = pr['web_img'].copy() if pr['web_img'] is not None else None
+        if web_img_patched is not None:
+            self.image_renderer._apply_orientation_settings(self.image_renderer.web_orientation)
+            self.image_renderer.patch_hash_frame_on_image(web_img_patched, block_hash, web_quality=True)
+
+        eink_img_patched = None
+        if self.e_ink_enabled and pr['eink_img'] is not None:
+            eink_img_patched = pr['eink_img'].copy()
+            self.image_renderer._apply_orientation_settings(self.image_renderer.eink_orientation)
+            self.image_renderer.patch_hash_frame_on_image(eink_img_patched, block_hash, web_quality=False)
+            self.image_renderer._apply_orientation_settings(self.image_renderer.web_orientation)
+
+        # Promote to current (with patched hash frame)
+        if web_img_patched is not None:
+            self._cache_web_image(web_img_patched)
+        else:
+            self._cached_web_image_base64 = pr['web_base64']
+        self._cached_eink_image = eink_img_patched or pr['eink_img']
+        self.current_meme_path = pr['meme_path']
+        self.displayed_info_blocks = pr['displayed_blocks']
+
+        # Update state
+        self.current_block_height = block_height
+        self.current_block_hash = block_hash
+        self.image_is_current = True
+
+        # Emit to web clients IMMEDIATELY (with correct hash frame)
+        with self.app.app_context():
+            try:
+                image_data = self._get_web_image_base64()
+                self.socketio.emit('new_image', {'image': image_data})
+                print("📶 Pre-rendered image sent to web clients instantly")
+            except Exception as e:
+                print(f"⚠️ Failed to emit pre-rendered image: {e}")
+
+        # Start e-ink display immediately
+        if self.e_ink_enabled and eink_img_patched is not None:
+            eink_img_patched.save(self.current_eink_image_path, compress_level=1)
+            threading.Thread(
+                target=self._display_on_epaper_async,
+                args=(self.current_eink_image_path, block_height, block_hash),
+                daemon=True
+            ).start()
+
+        # Background: save web image + metadata to disk (non-blocking)
+        def _persist():
+            if web_img_patched is not None:
+                try:
+                    web_img_patched.save(self.current_image_path, compress_level=1)
+                except Exception as e:
+                    print(f"⚠️ Background web image save failed: {e}")
+            self._deferred_save_cache_metadata()
+        threading.Thread(target=_persist, daemon=True).start()
+
+        # Clear pre-rendered state
+        pr['block_height'] = None
+        pr['web_base64'] = None
+        pr['eink_img'] = None
+        pr['web_img'] = None
+
+        # Background: pre-render next block and wallet refresh
+        def _post_block_tasks():
+            self._prerender_next_block()
+
+            # Start wallet refresh
+            if self.config.get("show_wallet_balances_block", True):
+                try:
+                    threading.Thread(
+                        target=self._safe_wallet_refresh_thread,
+                        args=(block_height, block_hash, False),
+                        daemon=True
+                    ).start()
+                except Exception:
+                    pass
+
+        threading.Thread(target=_post_block_tasks, daemon=True).start()
+        return True
+
     def _generate_new_image(self, block_height: int, block_hash: str, skip_epaper: bool = False, use_new_meme: bool = True, force_eink: bool = False):
         """Generate a new dashboard image and cache it."""
         print(f"⚙️ Generating dashboard image for block {block_height}...")
@@ -2302,28 +2596,22 @@ class MempaperApp:
         self.image_renderer._donation_data = self._get_active_donation()
 
         # 🚀 Get pre-cached data for instant image generation
-        precached_price, precached_bitaxe, precached_fee, precached_block_height = self._get_precached_data()
+        precached_price, precached_bitaxe, precached_fee, precached_block_height, precached_network = self._get_precached_data()
         
         # Decide whether to use cached meme or pick a new one
         if use_new_meme or not hasattr(self, 'current_meme_path') or not self.current_meme_path or not os.path.exists(self.current_meme_path):
-            # Use pre-fetched meme if available (avoids blocking online fetch)
-            precached_meme = getattr(self, '_precached_meme_path', None)
-            if precached_meme and os.path.exists(precached_meme):
-                print(f"⚡ Using pre-fetched meme (fast!): {os.path.basename(precached_meme)}")
-                self._precached_meme_path = None  # consume it
-            else:
-                print("⚙️ Selecting new random meme for this block...")
-                precached_meme = None  # will be selected inside render_dual_images
+            print("⚙️ Selecting new random meme for this block...")
             web_img, eink_img, content_path, displayed_blocks = self.image_renderer.render_dual_images(
                 block_height,
                 block_hash,
                 mempool_api=self.mempool_api,
                 startup_mode=True,  # Use cached wallet data for instant response
-                override_content_path=precached_meme,  # None = pick randomly, path = use pre-fetched
+                override_content_path=None,
                 precached_price=precached_price,  # Use pre-cached price
                 precached_bitaxe=precached_bitaxe,  # Use pre-cached Bitaxe
                 precached_fee=precached_fee,  # Use pre-cached fee
-                precached_block_height=precached_block_height  # Use pre-cached block height
+                precached_block_height=precached_block_height,  # Use pre-cached block height
+                precached_network=precached_network  # Use pre-cached network stats
             )
             # Cache the selected meme and displayed blocks for this block
             self.current_meme_path = content_path
@@ -2337,10 +2625,14 @@ class MempaperApp:
                 block_height,
                 block_hash,
                 self.current_meme_path,
-                mempool_api=self.mempool_api
+                mempool_api=self.mempool_api,
+                precached_price=precached_price,
+                precached_bitaxe=precached_bitaxe,
+                precached_fee=precached_fee,
+                precached_network=precached_network
             )
         
-        # Save both images for caching
+        # Save images: cache in RAM instantly, persist to disk in background
         # Race condition check: Verify block is still current before saving
         current_stored_height = getattr(self, 'current_block_height', 0) or 0
         if block_height < current_stored_height:
@@ -2348,11 +2640,19 @@ class MempaperApp:
             return  # Abort - newer block already processed
         
         try:
-            if web_img is not None:
-                web_img.save(self.current_image_path)
+            # Cache web image in RAM for instant serving to web clients
+            self._cache_web_image(web_img)
+            self._cached_eink_image = eink_img
+            # E-ink display subprocess needs file on disk — save synchronously
             if eink_img is not None:
-                eink_img.save(self.current_eink_image_path)
-            print(f"💾 Images saved for block {block_height}")
+                eink_img.save(self.current_eink_image_path, compress_level=1)
+            # Web image only needed on disk for crash recovery — save in background
+            if web_img is not None:
+                threading.Thread(
+                    target=lambda: web_img.save(self.current_image_path, compress_level=1),
+                    daemon=True
+                ).start()
+            print(f"💾 Images cached for block {block_height}")
         except Exception as e:
             print(f"❌ Failed to save images: {e}")
             traceback.print_exc()
@@ -2363,8 +2663,8 @@ class MempaperApp:
         self.current_block_hash = block_hash
         self.image_is_current = True
         
-        # Save persistent cache metadata to survive app restarts
-        self._save_cache_metadata()
+        # Defer cache metadata save to reduce SD card writes
+        self._deferred_save_cache_metadata()
         
         # Start e-ink display update in background
         if self.e_ink_enabled and not skip_epaper:
@@ -2393,6 +2693,9 @@ class MempaperApp:
         
         # Schedule wallet refresh to run after a short delay to prioritize e-ink
         threading.Thread(target=start_wallet_refresh, daemon=True).start()
+        
+        # Pre-render next block's image in background
+        threading.Thread(target=self._prerender_next_block, daemon=True).start()
         
         return web_img  # Return web image for web clients IMMEDIATELY
     
@@ -2442,8 +2745,12 @@ class MempaperApp:
             if current_height_int is not None and block_height_int <= current_height_int:
                 return
             
-            # Always regenerate dashboard and update e-ink display immediately after new block
-            self.image_is_current = False  # Invalidate cache to force regeneration
+            # 🚀 Try pre-rendered image first for instant delivery
+            self.image_is_current = False
+            if self._use_prerendered_image(block_height_int, block_hash):
+                return  # Pre-rendered image used — all tasks handled
+            
+            # Fallback: generate fresh image (no pre-render available)
             self.regenerate_dashboard(block_height_int, block_hash)
             
         finally:
@@ -2488,7 +2795,7 @@ class MempaperApp:
                     
                     print(f"🌐 Enriching block notification with API data...")
                     base_url = self._get_mempool_base_url()
-                    block_response = requests.get(f"{base_url}/block/{block_hash}", timeout=10, verify=False)
+                    block_response = requests.get(f"{base_url}/v1/block/{block_hash}", timeout=10, verify=False)
                     
                     if block_response.ok:
                         block_data = block_response.json()
@@ -2595,13 +2902,10 @@ class MempaperApp:
                         
                     img = self._generate_new_image(block_height, block_hash, use_new_meme=True)
                     if img:
-                        buf = io.BytesIO()
-                        img.save(buf, format='PNG')
-                        buf.seek(0)
                         with self.app.app_context():
                             try:
-                                image_data = 'data:image/png;base64,' + base64.b64encode(buf.read()).decode()
-                                if len(image_data) > 50 and image_data.startswith('data:image/png;base64,'):
+                                image_data = self._get_web_image_base64()
+                                if image_data and len(image_data) > 50:
                                     self.socketio.emit('new_image', {'image': image_data})
                                     print("📶 New image sent to web clients via WebSocket")
                                 else:
@@ -2694,7 +2998,7 @@ class MempaperApp:
             return response
         
         @self.app.route('/image')
-        @require_web_auth(self.auth_manager)
+        @allow_public_or_auth(self.auth_manager, self.config_manager)
         def image():
             """Return current dashboard image (optimized for fast serving)."""
             # Get client info for debugging repeated requests
@@ -2762,7 +3066,7 @@ class MempaperApp:
                 return "Image generation failed", 503
         
         @self.app.route('/')
-        @require_web_auth(self.auth_manager)
+        @allow_public_or_auth(self.auth_manager, self.config_manager)
         def dashboard():
             """Serve the main dashboard web page."""
             display_status = "enabled" if self.e_ink_enabled else "disabled"
@@ -2777,13 +3081,17 @@ class MempaperApp:
             # Get current block height for cache-busting
             block_height = self.current_block_height if self.current_block_height else 0
             
+            # Check if user is authenticated (for showing/hiding logout button)
+            is_authenticated = self.auth_manager.is_authenticated()
+            
             return render_template('dashboard.html', 
                                  translations=current_translations,
                                  display_icon=display_icon,
                                  e_ink_enabled=self.e_ink_enabled,
                                  # This orientation determines the CSS class for layout
                                  orientation=orientation,
-                                 block_height=block_height)
+                                 block_height=block_height,
+                                 is_authenticated=is_authenticated)
         
         @self.app.route('/config')
         @require_web_auth(self.auth_manager)
@@ -2799,6 +3107,10 @@ class MempaperApp:
         @self.app.route('/login')
         def login_page():
             """Serve the login page."""
+            # If already authenticated, redirect to config page
+            if self.auth_manager.is_authenticated():
+                return redirect(url_for('config_page'))
+            
             # Get current language
             lang = self.config.get("language", "en")
             current_translations = translations.get(lang, translations["en"])
@@ -2836,7 +3148,10 @@ class MempaperApp:
                     return jsonify({'success': False, 'message': f'Authentication error: {str(auth_err)}'}), 500
                 
                 if auth_result:
-                    response_data = {'success': True, 'message': 'Login successful'}
+                    # Determine redirect: if public dashboard is on, login is only for config access
+                    public_dashboard = self.config.get('public_dashboard', False)
+                    redirect_url = '/config' if public_dashboard else '/'
+                    response_data = {'success': True, 'message': 'Login successful', 'redirect': redirect_url}
                     
                     # Create response with explicit handling
                     try:
@@ -2872,8 +3187,13 @@ class MempaperApp:
         @self.app.route('/api/logout', methods=['POST'])
         def logout():
             """Handle logout requests."""
+            public_dashboard = self.config.get('public_dashboard', False)
             self.auth_manager.logout()
-            return jsonify({'success': True, 'message': 'Logout successful'})
+            return jsonify({
+                'success': True,
+                'message': 'Logout successful',
+                'public_dashboard': public_dashboard
+            })
 
         # User management endpoints
         @self.app.route('/api/users', methods=['GET'])
@@ -3481,6 +3801,7 @@ class MempaperApp:
                 # Get pagination parameters
                 page = request.args.get('page', 1, type=int)
                 per_page = request.args.get('per_page', 50, type=int)  # Limit to 50 memes per request
+                search = request.args.get('search', '', type=str).strip().lower()
                 
                 memes_dir = os.path.join('static', 'memes')
                 if not os.path.exists(memes_dir):
@@ -3493,7 +3814,48 @@ class MempaperApp:
                             and not filename.startswith('_')):
                         all_files.append(filename)
                 
+                # If search term provided, filter by tags, descriptions and filename
+                if search:
+                    import json as _json
+                    # Build metadata map from index.jsonl and _state_memes.jsonl
+                    meta_map = {}  # id -> list of searchable strings
+                    for jsonl_name in ('index.jsonl', '_state_memes.jsonl'):
+                        jsonl_path = os.path.join(memes_dir, jsonl_name)
+                        if not os.path.exists(jsonl_path):
+                            continue
+                        with open(jsonl_path, encoding='utf-8') as fh:
+                            for line in fh:
+                                line = line.strip()
+                                if not line:
+                                    continue
+                                try:
+                                    entry = _json.loads(line)
+                                    mid = entry.get('id', '')
+                                    if not mid or mid in meta_map:
+                                        continue
+                                    searchable = []
+                                    searchable.extend(t.lower() for t in entry.get('tags', []))
+                                    for key in ('description_en', 'description_de', 'ocr_text',
+                                                'meme_template', 'sentiment', 'humor_type'):
+                                        val = entry.get(key, '')
+                                        if val:
+                                            searchable.append(val.lower())
+                                    meta_map[mid] = searchable
+                                except _json.JSONDecodeError:
+                                    continue
+                    
+                    filtered = []
+                    for filename in all_files:
+                        stem = os.path.splitext(filename)[0]
+                        searchable = meta_map.get(stem, [])
+                        # Match by metadata fields or filename substring
+                        if (any(search in s for s in searchable)
+                                or search in filename.lower()):
+                            filtered.append(filename)
+                    all_files = filtered
+                
                 # Sort files for consistent pagination
+                all_files.sort()
                 all_files.sort()
                 
                 # Calculate pagination
@@ -3708,150 +4070,6 @@ class MempaperApp:
             except Exception as e:
                 return jsonify({'success': False, 'message': str(e)}), 500
         
-        @self.app.route('/api/download-einundzwanzig', methods=['POST'])
-        @require_auth(self.auth_manager)
-        def download_einundzwanzig_memes():
-            """Start a background bulk-download from einundzwanzig-memes.space."""
-            if getattr(self, '_einundzwanzig_download_running', False):
-                return jsonify({'success': False, 'message': 'Download already in progress'}), 409
-
-            def _run():
-                self._einundzwanzig_download_running = True
-                try:
-                    import re as _re
-                    import hashlib
-                    from scripts.einundzwanzig_memes import collect_all_ids, fetch_image_bytes, image_url as get_image_url
-
-                    memes_dir = os.path.join('static', 'memes')
-                    os.makedirs(memes_dir, exist_ok=True)
-
-                    # Duplicate detection strategy:
-                    #   UUID-named files ({uuid}.webp) → fast filename check, no download needed.
-                    #   Manually uploaded files (any other name) → SHA-256 hash so a re-upload
-                    #   of the same image under a different filename is detected.
-                    _UUID_RE = _re.compile(
-                        r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
-                        _re.I,
-                    )
-                    _IMG_EXTS = {'.webp', '.png', '.jpg', '.jpeg', '.gif'}
-
-                    existing_ids: set[str] = set()    # stems of UUID-named files
-                    existing_hashes: set[str] = set() # SHA-256 of manually-uploaded files
-
-                    manual_files = []
-                    for fname in os.listdir(memes_dir):
-                        stem, ext = os.path.splitext(fname)
-                        if ext.lower() not in _IMG_EXTS or fname.startswith('_'):
-                            continue
-                        if _UUID_RE.match(stem):
-                            existing_ids.add(stem)
-                        else:
-                            manual_files.append(fname)
-
-                    if manual_files:
-                        self.socketio.emit('einundzwanzig_download_progress', {
-                            'stage': 'hashing',
-                            'message': f'Hashing {len(manual_files)} manually-uploaded file(s)…',
-                        })
-                        for fname in manual_files:
-                            try:
-                                h = hashlib.sha256()
-                                with open(os.path.join(memes_dir, fname), 'rb') as f:
-                                    for chunk in iter(lambda: f.read(65536), b''):
-                                        h.update(chunk)
-                                existing_hashes.add(h.hexdigest())
-                            except Exception:
-                                pass
-
-                    # Discovery — tag-based semantic search (~5 800 tags).
-                    # workers=2 keeps the API request rate reasonable.
-                    _last_emit = [0]
-
-                    def _on_discovery_progress(tag, page, new_count, total):
-                        # Throttle socketio emits to at most one per second
-                        now = time.time()
-                        if new_count > 0 and now - _last_emit[0] >= 1.0:
-                            _last_emit[0] = now
-                            self.socketio.emit('einundzwanzig_download_progress', {
-                                'stage': 'discovering',
-                                'message': f'{total} memes discovered so far…',
-                                'discovered': total,
-                            })
-
-                    self.socketio.emit('einundzwanzig_download_progress', {
-                        'stage': 'discovering',
-                        'message': 'Fetching tag list and searching…',
-                        'discovered': 0,
-                    })
-
-                    all_memes = collect_all_ids(
-                        verbose=False,
-                        on_progress=_on_discovery_progress,
-                        workers=2,
-                        state_dir=memes_dir,
-                    )
-                    total = len(all_memes)
-
-                    self.socketio.emit('einundzwanzig_download_progress', {
-                        'stage': 'downloading',
-                        'message': f'Found {total} memes, downloading new ones…',
-                        'total': total, 'done': 0,
-                        'downloaded': 0, 'duplicates': 0, 'failed': 0
-                    })
-
-                    # Download — fast filename check first; SHA-256 only when
-                    # manually-uploaded files exist (to catch content duplicates).
-                    downloaded = 0
-                    duplicates = 0
-                    failed = 0
-
-                    for i, (uid, _) in enumerate(all_memes.items(), 1):
-                        if uid in existing_ids:
-                            # UUID file already on disk — instant skip
-                            duplicates += 1
-                        else:
-                            try:
-                                img_bytes = fetch_image_bytes(get_image_url(uid))
-                                if existing_hashes:
-                                    file_hash = hashlib.sha256(img_bytes).hexdigest()
-                                    if file_hash in existing_hashes:
-                                        duplicates += 1
-                                        continue
-                                dest = os.path.join(memes_dir, f'{uid}.webp')
-                                with open(dest, 'wb') as f:
-                                    f.write(img_bytes)
-                                existing_ids.add(uid)
-                                downloaded += 1
-                            except Exception:
-                                failed += 1
-
-                        if i % 20 == 0 or i == total:
-                            self.socketio.emit('einundzwanzig_download_progress', {
-                                'stage': 'downloading',
-                                'message': f'Downloading… {i}/{total}',
-                                'total': total, 'done': i,
-                                'downloaded': downloaded, 'duplicates': duplicates, 'failed': failed
-                            })
-
-                    self.socketio.emit('einundzwanzig_download_complete', {
-                        'success': True,
-                        'total': total,
-                        'downloaded': downloaded,
-                        'duplicates': duplicates,
-                        'failed': failed
-                    })
-
-                except Exception as exc:
-                    self.socketio.emit('einundzwanzig_download_complete', {
-                        'success': False,
-                        'message': str(exc)
-                    })
-                finally:
-                    self._einundzwanzig_download_running = False
-
-            threading.Thread(target=_run, daemon=True).start()
-            return jsonify({'success': True, 'message': 'Download started'})
-
         @self.app.route('/api/opsec-thumb/<filename>', methods=['GET'])
         def serve_opsec_thumb(filename):
             """Serve a cached 200×200 WebP thumbnail for an OPSec image, generating on first request."""
@@ -4325,43 +4543,25 @@ class MempaperApp:
             @self.socketio.on('request_latest_image')
             def handle_request_latest_image():
                 """Handle client request for latest image - avoid unnecessary regeneration."""
-                print("📶 Client requested latest image")
                 try:
-                    # First check if we have a current cached image
-                    if os.path.exists(self.current_image_path):
-                        # Check if image is current and valid
-                        if self._has_valid_cached_image():
-                            print("✅ Serving current cached image (no regeneration needed)")
-                            with open(self.current_image_path, 'rb') as f:
-                                image_data = 'data:image/png;base64,' + base64.b64encode(f.read()).decode()
-                                # Validate image data before sending
-                                if len(image_data) > 50 and image_data.startswith('data:image/png;base64,'):
-                                    self.socketio.emit('new_image', {'image': image_data})
-                                    print("📡 Current image sent to requesting client")
-                                    return
-                        else:
-                            print("⚠️ Cached image exists but is outdated")
+                    # Try serving from RAM cache first (instant)
+                    image_data = self._get_web_image_base64()
+                    if image_data and self._has_valid_cached_image():
+                        self.socketio.emit('new_image', {'image': image_data})
+                        return
                     
-                    # Only generate new image if we don't have a current one
-                    print("⚙️ No current image available, starting background generation")
+                    # No current image — generate in background
                     threading.Thread(
                         target=self._background_image_generation,
                         daemon=True
                     ).start()
                     
-                    # If we have any cached image (even outdated), send it while generating new one
-                    if os.path.exists(self.current_image_path):
-                        print("📶 Sending existing image while generating fresh one")
-                        with open(self.current_image_path, 'rb') as f:
-                            image_data = 'data:image/png;base64,' + base64.b64encode(f.read()).decode()
-                            if len(image_data) > 50 and image_data.startswith('data:image/png;base64,'):
-                                self.socketio.emit('new_image', {'image': image_data})
-                    else:
-                        print("⚠️ No cached image available at all")
+                    # Send stale image while generating fresh one
+                    if image_data:
+                        self.socketio.emit('new_image', {'image': image_data})
                         
                 except Exception as e:
                     print(f"❌ Error handling latest image request: {e}")
-                    # Don't send invalid data to client
             
             @self.socketio.on('subscribe_block_notifications')
             def handle_subscribe_block_notifications(data):

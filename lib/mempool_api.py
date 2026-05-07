@@ -197,10 +197,10 @@ class MempoolAPI:
     def get_configured_fee(self, fee_parameter="minimumFee"):
         """
         Get the fee value for the specified parameter.
-        
+
         Args:
             fee_parameter (str): Which fee parameter to use (fastestFee, halfHourFee, hourFee, economyFee, minimumFee)
-        
+
         Returns:
             int: Fee in sat/vB or None if failed
         """
@@ -210,3 +210,40 @@ class MempoolAPI:
             print(f"💾 Fee info: {fee_value} sat/vB ({fee_parameter})")
             return fee_value
         return None
+
+    def get_hashrate_and_difficulty(self):
+        """
+        Get current network hashrate and difficulty from mempool API.
+
+        Returns:
+            dict: {'currentHashrate': float (H/s), 'currentDifficulty': float} or None if failed
+        """
+        try:
+            url = f"{self.base_url}/v1/mining/hashrate/1m"
+            response = requests.get(url, timeout=10, verify=self.verify_ssl, auth=self.auth)
+            response.raise_for_status()
+            data = response.json()
+            return {
+                "currentHashrate": data.get("currentHashrate", 0),
+                "currentDifficulty": data.get("currentDifficulty", 0),
+            }
+        except requests.RequestException as e:
+            print(f"Error fetching hashrate/difficulty: {e}")
+            return None
+
+    def get_difficulty_adjustment(self):
+        """
+        Get difficulty adjustment info including average block time for current epoch.
+
+        Returns:
+            dict with keys: timeAvg (ms per block), remainingBlocks, estimatedRetargetDate, etc.
+            or None if failed
+        """
+        try:
+            url = f"{self.base_url}/v1/difficulty-adjustment"
+            response = requests.get(url, timeout=10, verify=self.verify_ssl, auth=self.auth)
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            print(f"Error fetching difficulty adjustment: {e}")
+            return None

@@ -151,7 +151,7 @@ translations = {
         # Info Blocks - New Features
         "btc_price": "BTC Price",
         "moscow_time": "Moscow Time",
-        "total_hashrate": "Total Hashrate",
+        "total_hashrate": "Bitaxe Hashrate",
         "valid_blocks": "Valid Blocks Found",
         "best_difficulty": "Best Difficulty",
         "total_balance": "Total Balance",
@@ -242,6 +242,8 @@ translations = {
         "configure_dashboard": "Configure your mempaper dashboard",
         "colors_design": "Colors & Design",
         "color_mode_dark_desc": "Enable dark mode for the webinterface.",
+        "public_dashboard": "Public Dashboard",
+        "public_dashboard_desc": "Allow unauthenticated users to view the dashboard. Admin login is still required to access settings.",
         "eink_dark_mode": "Dark Mode E-Ink",
         "eink_dark_mode_desc": "Enable dark mode for the e-ink display.",
         "bitaxe_stats": "Bitaxe Stats",
@@ -359,6 +361,45 @@ translations = {
         "webhook_relay_ws_url": "Webhook Relay WebSocket URL",
         "webhook_relay_ws_url_placeholder": "wss://your-host/ws/your-token",
         "webhook_relay_ws_url_desc": "For Option B — paste the WebSocket URL from your webhook-relay instance.",
+
+        # Countdown block (BTC supply scarcity)
+        "show_countdown_block": "Show Countdown Block",
+        "show_countdown_block_desc": "Show Bitcoin supply countdown block with remaining BTC to ever be mined and percentage already mined.",
+        "countdown_settings": "Countdown",
+        "btc_remaining": "Unmined BTC",
+        "pct_mined": "% Mined",
+        "color_countdown_light": "Countdown (Light Mode)",
+        "color_countdown_light_desc": "Color for countdown values in light mode",
+        "color_countdown_dark": "Countdown (Dark Mode)",
+        "color_countdown_dark_desc": "Color for countdown values in dark mode",
+
+        # Halving block
+        "show_halving_block": "Show Halving Block",
+        "show_halving_block_desc": "Show next Bitcoin halving estimated date and blocks remaining countdown.",
+        "halving_settings": "Halving",
+        "halving_date": "Next Halving",
+        "halving_days_left": "Days Until Halving",
+        "halving_hours_left": "Hours Until Halving",
+        "color_halving_light": "Halving (Light Mode)",
+        "color_halving_light_desc": "Color for halving countdown values in light mode",
+        "color_halving_dark": "Halving (Dark Mode)",
+        "color_halving_dark_desc": "Color for halving countdown values in dark mode",
+
+        # Network block (global hashrate + difficulty)
+        "show_network_block": "Show Network Block",
+        "show_network_block_desc": "Show global Bitcoin network hashrate and current mining difficulty.",
+        "network_settings": "Network",
+        "network_hashrate": "Network Hashrate",
+        "network_difficulty": "Difficulty",
+        "color_network_light": "Network Stats (Light Mode)",
+        "color_network_light_desc": "Color for network stats values in light mode",
+        "color_network_dark": "Network Stats (Dark Mode)",
+        "color_network_dark_desc": "Color for network stats values in dark mode",
+
+        # Footer
+        "footer_open_source_heading": "Open Source = Bitcoin Ethos",
+        "footer_open_source_text": "This project is <strong>100% Open Source</strong> under GPL-3.0 license. Clone it, build your own mempaper, or contribute to the project!",
+        "footer_built_with": "Built with \u2665 for the Bitcoin community",
     },
     "de": {
         # Dashboard UI
@@ -510,7 +551,7 @@ translations = {
         # Info Blocks - New Features
         "btc_price": "BTC-Preis",
         "moscow_time": "Moskauer Zeit",
-        "total_hashrate": "Gesamt-Hashrate",
+        "total_hashrate": "Bitaxe-Hashrate",
         "valid_blocks": "Gefundene Blöcke",
         "best_difficulty": "Beste Schwierigkeit",
         "total_balance": "Gesamtguthaben",
@@ -607,6 +648,8 @@ translations = {
         "configure_dashboard": "Konfigurieren Sie Ihr mempaper-Dashboard",
         "colors_design": "Farben & Design",
         "color_mode_dark_desc": "Dunklen Modus für die Weboberfläche aktivieren.",
+        "public_dashboard": "Öffentliches Dashboard",
+        "public_dashboard_desc": "Nicht angemeldeten Benutzern den Zugriff auf das Dashboard erlauben. Zum Ändern der Einstellungen ist weiterhin eine Admin-Anmeldung erforderlich.",
         "bitaxe_stats": "Bitaxe-Statistiken",
         "bitaxe_table_add": "Miner hinzufügen",
         "bitaxe_table_remove": "Entfernen",
@@ -720,6 +763,45 @@ translations = {
         "webhook_relay_ws_url": "Webhook-Relay WebSocket-URL",
         "webhook_relay_ws_url_placeholder": "wss://dein-host/ws/dein-token",
         "webhook_relay_ws_url_desc": "Für Option B — die WebSocket-URL der Webhook-Relay-Instanz einfügen.",
+
+        # Countdown-Block (Bitcoin-Knappheit)
+        "show_countdown_block": "Countdown-Block anzeigen",
+        "show_countdown_block_desc": "Bitcoin-Knappheits-Countdown mit verbleibenden BTC und Abbau-Prozentsatz anzeigen.",
+        "countdown_settings": "Countdown",
+        "btc_remaining": "Nicht geschürfte BTC",
+        "pct_mined": "% abgebaut",
+        "color_countdown_light": "Countdown (Hell)",
+        "color_countdown_light_desc": "Farbe für Countdown-Werte im hellen Modus",
+        "color_countdown_dark": "Countdown (Dunkel)",
+        "color_countdown_dark_desc": "Farbe für Countdown-Werte im dunklen Modus",
+
+        # Halving-Block
+        "show_halving_block": "Halving-Block anzeigen",
+        "show_halving_block_desc": "Nächstes Bitcoin-Halving mit geschätztem Datum und Restblöcken anzeigen.",
+        "halving_settings": "Halving",
+        "halving_date": "Nächstes Halving",
+        "halving_days_left": "Tage bis Halving",
+        "halving_hours_left": "Stunden bis Halving",
+        "color_halving_light": "Halving (Hell)",
+        "color_halving_light_desc": "Farbe für Halving-Countdown-Werte im hellen Modus",
+        "color_halving_dark": "Halving (Dunkel)",
+        "color_halving_dark_desc": "Farbe für Halving-Countdown-Werte im dunklen Modus",
+
+        # Netzwerk-Block (globale Hashrate + Schwierigkeitsgrad)
+        "show_network_block": "Netzwerk-Block anzeigen",
+        "show_network_block_desc": "Globale Bitcoin-Netzwerk-Hashrate und aktuellen Mining-Schwierigkeitsgrad anzeigen.",
+        "network_settings": "Netzwerk",
+        "network_hashrate": "Netzwerk-Hashrate",
+        "network_difficulty": "Schwierigkeit",
+        "color_network_light": "Netzwerk-Statistiken (Hell)",
+        "color_network_light_desc": "Farbe für Netzwerkstatistikwerte im hellen Modus",
+        "color_network_dark": "Netzwerk-Statistiken (Dunkel)",
+        "color_network_dark_desc": "Farbe für Netzwerkstatistikwerte im dunklen Modus",
+
+        # Footer
+        "footer_open_source_heading": "Open Source = Bitcoin-Ethos",
+        "footer_open_source_text": "Dieses Projekt ist <strong>100% Open Source</strong> unter GPL-3.0-Lizenz. Klone es, baue dein eigenes Mempaper oder trage zum Projekt bei!",
+        "footer_built_with": "Gebaut mit \u2665 für die Bitcoin-Community",
     },
     "es": {
         # Dashboard UI
@@ -866,7 +948,7 @@ translations = {
         # Info Blocks - New Features
         "btc_price": "Precio BTC",
         "moscow_time": "Hora de Moscú",
-        "total_hashrate": "Hashrate Total",
+        "total_hashrate": "Hashrate Bitaxe",
         "valid_blocks": "Bloques Encontrados",
         "best_difficulty": "Mejor Dificultad",
         "total_balance": "Saldo Total",
@@ -964,6 +1046,8 @@ translations = {
         "configure_dashboard": "Configure su panel de mempaper",
         "colors_design": "Colores y Diseño",
         "color_mode_dark_desc": "Habilitar modo oscuro para la interfaz web.",
+        "public_dashboard": "Dashboard Público",
+        "public_dashboard_desc": "Permitir que usuarios no autenticados vean el dashboard. Se requiere inicio de sesión de administrador para acceder a la configuración.",
         "bitaxe_stats": "Estadísticas de Bitaxe",
         "bitaxe_table_placeholder_comment": "Ingrese descripción o etiqueta",
         "price_stats": "Estadísticas de Precios",
@@ -1066,6 +1150,45 @@ translations = {
         "webhook_relay_ws_url": "URL WebSocket del Webhook-Relay",
         "webhook_relay_ws_url_placeholder": "wss://tu-host/ws/tu-token",
         "webhook_relay_ws_url_desc": "Para la Opción B — pega la URL de WebSocket de tu instancia de webhook-relay.",
+
+        # Bloque de cuenta atrás (escasez de BTC)
+        "show_countdown_block": "Mostrar bloque de cuenta atrás",
+        "show_countdown_block_desc": "Muestra la cuenta atrás de suministro de Bitcoin con BTC restantes y porcentaje minado.",
+        "countdown_settings": "Cuenta atrás",
+        "btc_remaining": "BTC sin minar",
+        "pct_mined": "% minado",
+        "color_countdown_light": "Cuenta atrás (modo claro)",
+        "color_countdown_light_desc": "Color para los valores de cuenta atrás en modo claro",
+        "color_countdown_dark": "Cuenta atrás (modo oscuro)",
+        "color_countdown_dark_desc": "Color para los valores de cuenta atrás en modo oscuro",
+
+        # Bloque de halving
+        "show_halving_block": "Mostrar bloque de halving",
+        "show_halving_block_desc": "Muestra la fecha estimada del próximo halving de Bitcoin y el conteo de bloques restantes.",
+        "halving_settings": "Halving",
+        "halving_date": "Próximo halving",
+        "halving_days_left": "Días hasta el halving",
+        "halving_hours_left": "Horas hasta el halving",
+        "color_halving_light": "Halving (modo claro)",
+        "color_halving_light_desc": "Color para los valores de cuenta atrás del halving en modo claro",
+        "color_halving_dark": "Halving (modo oscuro)",
+        "color_halving_dark_desc": "Color para los valores de cuenta atrás del halving en modo oscuro",
+
+        # Bloque de red (hashrate global + dificultad)
+        "show_network_block": "Mostrar bloque de red",
+        "show_network_block_desc": "Muestra el hashrate global de la red Bitcoin y la dificultad de minería actual.",
+        "network_settings": "Red",
+        "network_hashrate": "Hashrate de la red",
+        "network_difficulty": "Dificultad",
+        "color_network_light": "Estadísticas de red (modo claro)",
+        "color_network_light_desc": "Color para los valores de estadísticas de red en modo claro",
+        "color_network_dark": "Estadísticas de red (modo oscuro)",
+        "color_network_dark_desc": "Color para los valores de estadísticas de red en modo oscuro",
+
+        # Footer
+        "footer_open_source_heading": "Open Source = Espíritu Bitcoin",
+        "footer_open_source_text": "Este proyecto es <strong>100% Open Source</strong> bajo licencia GPL-3.0. ¡Clónalo, construye tu propio Mempaper o contribuye al proyecto!",
+        "footer_built_with": "Hecho con \u2665 para la comunidad Bitcoin",
     },
     "fr": {
         # Dashboard UI
@@ -1212,7 +1335,7 @@ translations = {
         # Info Blocks - New Features
         "btc_price": "Prix BTC",
         "moscow_time": "Heure de Moscou",
-        "total_hashrate": "Hashrate Total",
+        "total_hashrate": "Hashrate Bitaxe",
         "valid_blocks": "Blocs Trouvés",
         "best_difficulty": "Meilleure Difficulté",
         "total_balance": "Solde Total",
@@ -1310,6 +1433,8 @@ translations = {
         "configure_dashboard": "Configurez votre tableau de bord mempaper",
         "colors_design": "Couleurs et Design",
         "color_mode_dark_desc": "Activer le mode sombre pour l'interface web.",
+        "public_dashboard": "Dashboard Public",
+        "public_dashboard_desc": "Autoriser les utilisateurs non authentifiés à voir le dashboard. La connexion administrateur est toujours requise pour accéder aux paramètres.",
         "bitaxe_stats": "Statistiques Bitaxe",
         "bitaxe_table_placeholder_comment": "Entrez une description ou étiquette",
         "price_stats": "Statistiques de Prix",
@@ -1413,6 +1538,45 @@ translations = {
         "webhook_relay_ws_url": "URL WebSocket du Webhook-Relay",
         "webhook_relay_ws_url_placeholder": "wss://votre-host/ws/votre-token",
         "webhook_relay_ws_url_desc": "Pour l'Option B — collez l'URL WebSocket de votre instance webhook-relay.",
+
+        # Bloc de compte à rebours (rareté BTC)
+        "show_countdown_block": "Afficher le bloc de compte à rebours",
+        "show_countdown_block_desc": "Affiche le compte à rebours de l'offre Bitcoin avec les BTC restants et le pourcentage déjà miné.",
+        "countdown_settings": "Compte à rebours",
+        "btc_remaining": "BTC non minés",
+        "pct_mined": "% miné",
+        "color_countdown_light": "Compte à rebours (mode clair)",
+        "color_countdown_light_desc": "Couleur des valeurs du compte à rebours en mode clair",
+        "color_countdown_dark": "Compte à rebours (mode sombre)",
+        "color_countdown_dark_desc": "Couleur des valeurs du compte à rebours en mode sombre",
+
+        # Bloc de halving
+        "show_halving_block": "Afficher le bloc de halving",
+        "show_halving_block_desc": "Affiche la date estimée du prochain halving Bitcoin et le décompte des blocs restants.",
+        "halving_settings": "Halving",
+        "halving_date": "Prochain halving",
+        "halving_days_left": "Jours avant le halving",
+        "halving_hours_left": "Heures avant le halving",
+        "color_halving_light": "Halving (mode clair)",
+        "color_halving_light_desc": "Couleur des valeurs du compte à rebours du halving en mode clair",
+        "color_halving_dark": "Halving (mode sombre)",
+        "color_halving_dark_desc": "Couleur des valeurs du compte à rebours du halving en mode sombre",
+
+        # Bloc réseau (hashrate global + difficulté)
+        "show_network_block": "Afficher le bloc réseau",
+        "show_network_block_desc": "Affiche le hashrate global du réseau Bitcoin et la difficulté de minage actuelle.",
+        "network_settings": "Réseau",
+        "network_hashrate": "Hashrate réseau",
+        "network_difficulty": "Difficulté",
+        "color_network_light": "Statistiques réseau (mode clair)",
+        "color_network_light_desc": "Couleur des valeurs des statistiques réseau en mode clair",
+        "color_network_dark": "Statistiques réseau (mode sombre)",
+        "color_network_dark_desc": "Couleur des valeurs des statistiques réseau en mode sombre",
+
+        # Footer
+        "footer_open_source_heading": "Open Source = Éthique Bitcoin",
+        "footer_open_source_text": "Ce projet est <strong>100% Open Source</strong> sous licence GPL-3.0. Clonez-le, construisez votre propre Mempaper ou contribuez au projet !",
+        "footer_built_with": "Construit avec \u2665 pour la communauté Bitcoin",
     },
     "it": {
         # Dashboard UI
@@ -1564,7 +1728,7 @@ translations = {
         # Info Blocks - New Features
         "btc_price": "Prezzo BTC",
         "moscow_time": "Ora di Mosca",
-        "total_hashrate": "Hashrate Totale",
+        "total_hashrate": "Hashrate Bitaxe",
         "valid_blocks": "Blocchi Trovati",
         "best_difficulty": "Difficoltà Migliore",
         "total_balance": "Saldo Totale",
@@ -1655,6 +1819,8 @@ translations = {
         "configure_dashboard": "Configura la tua dashboard mempaper",
         "colors_design": "Colori e Design",
         "color_mode_dark_desc": "Abilita la modalità scura per l'interfaccia web.",
+        "public_dashboard": "Dashboard Pubblico",
+        "public_dashboard_desc": "Consenti agli utenti non autenticati di visualizzare il dashboard. L'accesso amministratore è comunque necessario per le impostazioni.",
         "eink_dark_mode": "Modalità Scura E-Ink",
         "eink_dark_mode_desc": "Abilita la modalità scura per il display e-ink.",
         "bitaxe_stats": "Statistiche Bitaxe",
@@ -1747,5 +1913,44 @@ translations = {
         "webhook_relay_ws_url": "URL WebSocket del Webhook-Relay",
         "webhook_relay_ws_url_placeholder": "wss://tuo-host/ws/tuo-token",
         "webhook_relay_ws_url_desc": "Per l'Opzione B — incolla l'URL WebSocket della tua istanza webhook-relay.",
+
+        # Blocco conto alla rovescia (scarsità BTC)
+        "show_countdown_block": "Mostra blocco conto alla rovescia",
+        "show_countdown_block_desc": "Mostra il conto alla rovescia dell'offerta Bitcoin con i BTC rimanenti e la percentuale già minata.",
+        "countdown_settings": "Conto alla rovescia",
+        "btc_remaining": "BTC non minati",
+        "pct_mined": "% minato",
+        "color_countdown_light": "Conto alla rovescia (modalità chiara)",
+        "color_countdown_light_desc": "Colore per i valori del conto alla rovescia in modalità chiara",
+        "color_countdown_dark": "Conto alla rovescia (modalità scura)",
+        "color_countdown_dark_desc": "Colore per i valori del conto alla rovescia in modalità scura",
+
+        # Blocco halving
+        "show_halving_block": "Mostra blocco halving",
+        "show_halving_block_desc": "Mostra la data stimata del prossimo halving Bitcoin e il conto alla rovescia dei blocchi rimanenti.",
+        "halving_settings": "Halving",
+        "halving_date": "Prossimo halving",
+        "halving_days_left": "Giorni all'halving",
+        "halving_hours_left": "Ore all'halving",
+        "color_halving_light": "Halving (modalità chiara)",
+        "color_halving_light_desc": "Colore per i valori del conto alla rovescia dell'halving in modalità chiara",
+        "color_halving_dark": "Halving (modalità scura)",
+        "color_halving_dark_desc": "Colore per i valori del conto alla rovescia dell'halving in modalità scura",
+
+        # Blocco rete (hashrate globale + difficoltà)
+        "show_network_block": "Mostra blocco rete",
+        "show_network_block_desc": "Mostra l'hashrate globale della rete Bitcoin e la difficoltà di mining attuale.",
+        "network_settings": "Rete",
+        "network_hashrate": "Hashrate rete",
+        "network_difficulty": "Difficoltà",
+        "color_network_light": "Statistiche rete (modalità chiara)",
+        "color_network_light_desc": "Colore per i valori delle statistiche di rete in modalità chiara",
+        "color_network_dark": "Statistiche rete (modalità scura)",
+        "color_network_dark_desc": "Colore per i valori delle statistiche di rete in modalità scura",
+
+        # Footer
+        "footer_open_source_heading": "Open Source = Etica Bitcoin",
+        "footer_open_source_text": "Questo progetto è <strong>100% Open Source</strong> sotto licenza GPL-3.0. Clonalo, costruisci il tuo Mempaper o contribuisci al progetto!",
+        "footer_built_with": "Costruito con \u2665 per la comunità Bitcoin",
     }
 }

@@ -219,10 +219,10 @@ function showNotification(message, type = "info") {
     
     // Set style based on type
     const styles = {
-        success: 'background-color: #28a745;',
-        error: 'background-color: #dc3545;',
-        warning: 'background-color: #ffc107; color: black;',
-        info: 'background-color: #17a2b8;'
+        success: 'background-color: #38a169;',
+        error: 'background-color: #e53e3e;',
+        warning: 'background-color: #d69e2e; color: black;',
+        info: 'background-color: #4da6ff;'
     };
     
     notification.style.cssText += styles[type] || styles.info;
@@ -268,14 +268,25 @@ function showBlockToast(blockData) {
         // Create new toast element
         toast = document.createElement('div');
         toast.id = toastId;
+        const isDark = document.body.classList.contains('dark-mode');
+        const toastBg = isDark ? 'rgba(30, 30, 36, 0.92)' : 'rgba(255, 255, 255, 0.95)';
+        const toastColor = isDark ? '#e8e8ec' : '#1a1a2e';
+        const toastBorder = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.1)';
+        const toastShadow = isDark
+            ? '0 8px 32px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255,255,255,0.06)'
+            : '0 8px 32px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0,0,0,0.04)';
+        const closeBtnBg = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)';
+        const closeBtnColor = isDark ? '#9a9aaa' : '#555';
+        const closeBtnHoverBg = isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.12)';
         toast.style.cssText = `
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
+            background: ${toastBg};
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            color: ${toastColor};
             padding: 16px 20px;
-            border-radius: 12px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-            backdrop-filter: blur(15px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 14px;
+            box-shadow: ${toastShadow};
+            border: 1px solid ${toastBorder};
             margin-bottom: 10px;
             min-width: 320px;
             max-width: 400px;
@@ -286,7 +297,7 @@ function showBlockToast(blockData) {
             font-size: 14px;
             line-height: 1.4;
         `;
-    
+
         // Create close button (optimized for mobile touch targets: 44x44px minimum)
         const closeBtn = document.createElement('button');
         closeBtn.innerHTML = '×';
@@ -295,9 +306,9 @@ function showBlockToast(blockData) {
             position: absolute;
             top: 4px;
             right: 8px;
-            background: rgba(255, 255, 255, 0.15);
+            background: ${closeBtnBg};
             border: none;
-            color: white;
+            color: ${closeBtnColor};
             font-size: 24px;
             cursor: pointer;
             width: 44px;
@@ -310,13 +321,13 @@ function showBlockToast(blockData) {
             font-weight: bold;
             z-index: 1;
         `;
-        
+
         closeBtn.addEventListener('mouseenter', () => {
-            closeBtn.style.backgroundColor = 'rgba(255, 255, 255, 0.3)';
+            closeBtn.style.backgroundColor = closeBtnHoverBg;
         });
-        
+
         closeBtn.addEventListener('mouseleave', () => {
-            closeBtn.style.backgroundColor = 'rgba(255, 255, 255, 0.15)';
+            closeBtn.style.backgroundColor = closeBtnBg;
         });
         
         // Close toast function
@@ -366,24 +377,24 @@ function showBlockToast(blockData) {
     
     // Update content (works for both new and enriched data)
     contentDiv.innerHTML = `
-        <div style="font-weight: bold; font-size: 16px; margin-bottom: 8px; color: #FFD700;">
+        <div style="font-weight: bold; font-size: 16px; margin-bottom: 8px; color: #F7931A;">
             New Block ${heightFormatted}
         </div>
         <div style="margin-bottom: 4px;">
-            <span style="opacity: 0.8;">Time:</span> <span style="font-weight: 500;">${timeString}</span>
+            <span style="opacity: 0.6;">Time:</span> <span style="font-weight: 500;">${timeString}</span>
         </div>
         <div style="margin-bottom: 4px;">
-            <span style="opacity: 0.8;">Hash:</span> <span style="font-family: monospace; font-size: 12px;">${blockData.block_hash}</span>
+            <span style="opacity: 0.6;">Hash:</span> <span style="font-family: monospace; font-size: 12px;">${blockData.block_hash}</span>
         </div>
         <div style="margin-bottom: 4px;">
-            <span style="opacity: 0.8;">Pool:</span> <span style="font-weight: 500;">${blockData.pool_name}</span>
+            <span style="opacity: 0.6;">Pool:</span> <span style="font-weight: 500;">${blockData.pool_name}</span>
         </div>
         <div style="margin-bottom: 4px;">
-            <span style="opacity: 0.8;">Reward:</span> <span style="font-weight: 500; color: #90EE90;">${rewardFormatted} BTC</span>
-            <span style="font-size: 12px; opacity: 0.7;">(+${feesFormatted} fees)</span>
+            <span style="opacity: 0.6;">Reward:</span> <span style="font-weight: 500; color: #68d391;">${rewardFormatted} BTC</span>
+            <span style="font-size: 12px; opacity: 0.5;">(+${feesFormatted} fees)</span>
         </div>
         <div>
-            <span style="opacity: 0.8;">Median Fee:</span> <span style="font-weight: 500;">${medianFeeFormatted} sat/vB</span>
+            <span style="opacity: 0.6;">Median Fee:</span> <span style="font-weight: 500;">${medianFeeFormatted} sat/vB</span>
         </div>
     `;
     

@@ -488,7 +488,7 @@ class BlockRewardMonitor:
                         else:
                             print(f"⚠️ Could not fetch block hash for height {h}")
                 else:
-                    print("✅ No missed blocks detected at startup.")
+                    print("✅ Block reward cache is up to date.")
         except Exception as e:
             print(f"⚠️ Error during startup catch-up for missed blocks: {e}")
     

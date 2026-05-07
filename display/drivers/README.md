@@ -13,13 +13,14 @@ with the mempaper project for convenience.
 
 ## Installation
 
-Run the install script from the project root:
+Run the display configuration tool from the project root:
 
 ```bash
-bash scripts/install_waveshare_drivers.sh
+python scripts/configure_display.py
 ```
 
-This downloads the official Waveshare zips and extracts the relevant files here.
+This downloads the official Waveshare driver files for your selected display
+and places them in the appropriate subdirectory here.
 
 ## License
 
