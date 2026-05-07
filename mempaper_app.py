@@ -1090,9 +1090,15 @@ class MempaperApp:
             # Warm up APIs
             self._warm_up_apis()
             
-            # Don't force image regeneration here - let block monitor handle new blocks naturally
-            # The cached image is served immediately, and new blocks will trigger updates via WebSocket/monitor
-            
+            # If blocks were missed during downtime, regenerate now that APIs are warmed up
+            if not self.image_is_current and self.current_block_height and self.current_block_hash:
+                print(f"⚙️ Missed blocks detected at startup — regenerating image for block {self.current_block_height}...")
+                self._generate_new_image(
+                    self.current_block_height,
+                    self.current_block_hash,
+                    use_new_meme=True
+                )
+
             print("✅ Background initialization completed!")
             
         except Exception as e:
