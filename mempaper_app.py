@@ -2015,6 +2015,14 @@ class MempaperApp:
             'web_orientation', 'eink_orientation', 'display_width', 'display_height', 'e-ink-display-connected',
             'omni_device_name', 'block_height_area',
 
+            # Meme layout settings
+            'prioritize_large_scaled_meme',
+
+            # Block visibility / content settings
+            'show_btc_price_block', 'btc_price_currency',
+            'show_bitaxe_block',
+            'show_wallet_balances_block', 'wallet_balance_unit', 'wallet_balance_currency',
+
             # Design settings (colors, fonts)
             'font_regular', 'font_bold', 'color_mode_dark',
 
