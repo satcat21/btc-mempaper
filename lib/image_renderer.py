@@ -249,10 +249,21 @@ class LayoutCalculator:
         remaining_space = available_height - content_height
         return max(STANDARD_SPACING, remaining_space // num_gaps)
     
+    def get_column_max_text_width(self, num_columns, inner_padding=2):
+        """Max pixel width for value text centered in one column of a num_columns layout.
+
+        Accounts for the outer block border (SECTION_SIDE_PADDING + BLOCK_INNER_MARGIN)
+        plus an optional inner_padding cushion so text never touches the block edge.
+        """
+        col_width = self.width // num_columns
+        col_half = col_width // 2
+        block_margin = SECTION_SIDE_PADDING + BLOCK_INNER_MARGIN
+        return max(0, 2 * (col_half - block_margin - inner_padding))
+
     def get_label_y(self, block_y):
         """Get Y position for labels in info blocks."""
         return block_y + LABEL_PADDING_TOP
-    
+
     def get_value_y(self, block_y, label_height):
         """Get Y position for values in info blocks."""
         return block_y + label_height + LABEL_TO_VALUE_SPACING + LABEL_PADDING_TOP
@@ -415,6 +426,15 @@ class ImageRenderer:
             font = ImageFont.truetype(font_path, size)
             self._font_cache[key] = font
         return font
+
+    def _shrink_font_to_fit(self, font_path, texts, max_width, start_size, min_size=10):
+        """Return the largest font at or below start_size where every string in *texts*
+        fits within max_width pixels.  Falls back to min_size if nothing fits."""
+        for size in range(start_size, min_size - 1, -1):
+            font = self._get_font(font_path, size)
+            if all((font.getbbox(t)[2] - font.getbbox(t)[0]) <= max_width for t in texts):
+                return font
+        return self._get_font(font_path, min_size)
 
     def _get_resolution_scale(self, orientation):
         """Return orientation-aware scale factor based on original baseline canvas."""
@@ -678,15 +698,7 @@ class ImageRenderer:
         draw.text((left_x, text_y), header_left_text, font=font_small_label, fill=self.get_color("info_header", web_quality))
         draw.text((right_x, text_y), header_right_text, font=font_small_label, fill=self.get_color("info_header", web_quality))
 
-        # Render values
-        label_height = bbox_left[3] - bbox_left[1]
-        value_y = self.layout.get_value_y(info_block_y, label_height)
-
-        try:
-            font_large_value = self._get_font(self.font_bold, FONT_SIZE_LARGE_VALUE)
-        except:
-            font_large_value = font_value
-
+        # Render values — compute strings first so font can be sized to fit
         price_value_text = f"{fiat_currency_symbol} {self._format_number(price, 0)}"
         if moscow_time_unit == "hour":
             hours = moscow_time // 100
@@ -694,6 +706,14 @@ class ImageRenderer:
             moscow_time_text = f"{hours:02d}:{minutes:02d}"
         else:
             moscow_time_text = f"{self._format_number(moscow_time, 0)} sats"
+
+        max_col_w = self.layout.get_column_max_text_width(2)
+        font_large_value = self._shrink_font_to_fit(
+            self.font_bold, [price_value_text, moscow_time_text], max_col_w, FONT_SIZE_LARGE_VALUE
+        )
+
+        label_height = bbox_left[3] - bbox_left[1]
+        value_y = self.layout.get_value_y(info_block_y, label_height)
 
         bbox_price = font_large_value.getbbox(price_value_text)
         bbox_moscow = font_large_value.getbbox(moscow_time_text)
@@ -770,16 +790,17 @@ class ImageRenderer:
         draw.text((left_x, text_y), header_left_text, font=font_small_label, fill=self.get_color("info_header", web_quality))
         draw.text((right_x, text_y), header_right_text, font=font_small_label, fill=self.get_color("info_header", web_quality))
 
-        # Render values
+        # Render values — compute strings first so font can be sized to fit
+        hashrate_value_text = f"{total_ths:.2f} TH/s"
+
+        max_col_w = self.layout.get_column_max_text_width(2)
+        font_large_value = self._shrink_font_to_fit(
+            self.font_bold, [hashrate_value_text, blocks_value_text], max_col_w, FONT_SIZE_LARGE_VALUE
+        )
+
         label_height = bbox_left[3] - bbox_left[1]
         value_y = self.layout.get_value_y(info_block_y, label_height)
 
-        try:
-            font_large_value = self._get_font(self.font_bold, FONT_SIZE_LARGE_VALUE)
-        except:
-            font_large_value = font_value
-
-        hashrate_value_text = f"{total_ths:.2f} TH/s"
         bbox_hashrate = font_large_value.getbbox(hashrate_value_text)
         bbox_blocks = font_large_value.getbbox(blocks_value_text)
 
@@ -925,16 +946,16 @@ class ImageRenderer:
         draw.text((left_x, text_y), header_left_text, font=font_small_label, fill=self.get_color("info_header", web_quality))
         draw.text((right_x, text_y), header_right_text, font=font_small_label, fill=self.get_color("info_header", web_quality))
 
-        label_height = bbox_left[3] - bbox_left[1]
-        value_y = self.layout.get_value_y(info_block_y, label_height)
-
-        try:
-            font_large_value = self._get_font(self.font_bold, FONT_SIZE_LARGE_VALUE)
-        except Exception:
-            font_large_value = font_value
-
         remaining_text = f"{self._format_number(remaining_btc, 2)} BTC"
         pct_text = self._format_pct_mined(pct_mined)
+
+        max_col_w = self.layout.get_column_max_text_width(2)
+        font_large_value = self._shrink_font_to_fit(
+            self.font_bold, [remaining_text, pct_text], max_col_w, FONT_SIZE_LARGE_VALUE
+        )
+
+        label_height = bbox_left[3] - bbox_left[1]
+        value_y = self.layout.get_value_y(info_block_y, label_height)
 
         bbox_remaining = font_large_value.getbbox(remaining_text)
         bbox_pct = font_large_value.getbbox(pct_text)
@@ -990,11 +1011,6 @@ class ImageRenderer:
         label_height = bbox_left[3] - bbox_left[1]
         value_y = self.layout.get_value_y(info_block_y, label_height)
 
-        try:
-            font_large_value = self._get_font(self.font_bold, FONT_SIZE_LARGE_VALUE)
-        except Exception:
-            font_large_value = font_value
-
         # Format date matching the top-of-image date style (locale-aware)
         if estimated_date:
             try:
@@ -1022,6 +1038,11 @@ class ImageRenderer:
             countdown_text = f"{hours_remaining:.1f}h"
         else:
             countdown_text = f"{days_remaining:.0f}d"
+
+        max_col_w = self.layout.get_column_max_text_width(2)
+        font_large_value = self._shrink_font_to_fit(
+            self.font_bold, [date_text, countdown_text], max_col_w, FONT_SIZE_LARGE_VALUE
+        )
 
         bbox_date = font_large_value.getbbox(date_text)
         bbox_countdown = font_large_value.getbbox(countdown_text)
@@ -1073,13 +1094,13 @@ class ImageRenderer:
         label_height = bbox_left[3] - bbox_left[1]
         value_y = self.layout.get_value_y(info_block_y, label_height)
 
-        try:
-            font_large_value = self._get_font(self.font_bold, FONT_SIZE_LARGE_VALUE)
-        except Exception:
-            font_large_value = font_value
-
         hashrate_text = self._format_hashrate(hashrate)
         difficulty_text = self._format_difficulty(difficulty)
+
+        max_col_w = self.layout.get_column_max_text_width(2)
+        font_large_value = self._shrink_font_to_fit(
+            self.font_bold, [hashrate_text, difficulty_text], max_col_w, FONT_SIZE_LARGE_VALUE
+        )
 
         bbox_hashrate = font_large_value.getbbox(hashrate_text)
         bbox_diff = font_large_value.getbbox(difficulty_text)
@@ -1251,6 +1272,97 @@ class ImageRenderer:
             return layout["block_height"]
         return INFO_BLOCK_HEIGHT
 
+    def _estimate_max_info_blocks(self, meme_path, block_height=None):
+        """
+        Estimate how many info blocks can fit below the meme in
+        prioritize_large_scaled_meme=True layout.  Only reads the meme header.
+
+        Returns:
+            -1  on any error → caller should treat as "all blocks fit"
+             0  when the meme fills all available space
+            >0  estimated number of blocks that fit
+        """
+        if not meme_path or not os.path.exists(meme_path):
+            return -1
+        try:
+            with Image.open(meme_path) as img:
+                meme_w, meme_h = img.size
+        except Exception:
+            return -1
+
+        # Estimate where the date text ends (y=20, bbox[3] ≈ font descent)
+        try:
+            date_text = self.get_localized_date(block_height)
+            opt_size = self.get_optimal_date_font_size(date_text)
+            font = self._get_font(self.font_bold, opt_size)
+            bbox = font.getbbox(date_text)
+            date_bottom_y = 20 + bbox[3] + 5
+        except Exception:
+            date_bottom_y = 70  # conservative fallback
+
+        hash_frame_y = self.height - self.block_height_area + 3
+        available = hash_frame_y - date_bottom_y
+        min_gaps = 2 * STANDARD_SPACING  # top + bottom gap around meme
+        max_meme_h = max(0, available - min_gaps)
+
+        aspect = meme_w / meme_h
+        max_w = self.width - 40
+        scaled_w = min(max_w, int(max_meme_h * aspect))
+        scaled_h = int(scaled_w / aspect)
+        if scaled_h > max_meme_h:
+            scaled_h = max_meme_h
+
+        # 3 gaps: above meme, meme→blocks, blocks→hash frame
+        space_for_blocks = (available - scaled_h) - 3 * STANDARD_SPACING
+        if space_for_blocks <= 0:
+            return 0
+
+        # Approximate block unit: INFO_BLOCK_HEIGHT + ~10 px margin between blocks
+        block_unit = INFO_BLOCK_HEIGHT + 10
+        return max(0, int(space_for_blocks // block_unit))
+
+    def _info_blocks_can_fit(self, meme_path, block_height=None):
+        """Return True when at least one info block fits below the meme."""
+        return self._estimate_max_info_blocks(meme_path, block_height) != 0
+
+    def _preselect_info_blocks(self, meme_path, block_height=None):
+        """
+        For prioritize_large_scaled_meme=True layouts: estimate which block
+        types will be shown and return them in random display order so the
+        caller can fetch only the necessary data.
+
+        Returns:
+            None  — default layout (all enabled blocks always shown)
+            []    — meme fills screen, no info blocks
+            list  — randomly-ordered type strings, e.g. ['network', 'price']
+        """
+        import random as _random
+
+        if not self.config.get("prioritize_large_scaled_meme", False):
+            return None  # default layout always shows all blocks
+
+        config = self.config
+        enabled = []
+        if config.get("show_btc_price_block", True):       enabled.append('price')
+        if config.get("show_countdown_block", True):        enabled.append('countdown')
+        if config.get("show_halving_block", True):          enabled.append('halving')
+        if config.get("show_network_block", True):          enabled.append('network')
+        if config.get("show_bitaxe_block", True):           enabled.append('bitaxe')
+        if config.get("show_wallet_balances_block", True):  enabled.append('wallet')
+
+        if not enabled:
+            return []
+
+        max_n = self._estimate_max_info_blocks(meme_path, block_height)
+        if max_n == 0:
+            return []
+        if max_n < 0:
+            max_n = len(enabled)  # error: assume all fit
+
+        _random.shuffle(enabled)
+        # +1 safety margin: over-estimate by 1 to avoid a boundary miss
+        return enabled[:min(max_n + 1, len(enabled))]
+
     def render_donation_block(self, draw, info_block_y, font_label, font_value, donation_data, web_quality=False):
         """Render a Lightning donation info block with adaptive 2-line body and dynamic height."""
         if not donation_data:
@@ -1344,11 +1456,6 @@ class ImageRenderer:
             right_x = self.layout.get_text_centered_x(bbox_right, right_col_center_x)
             draw.text((right_x, text_y), header_right_text, font=font_small_label, fill=self.get_color("info_header", web_quality))
 
-        try:
-            font_large_value = self._get_font(self.font_bold, FONT_SIZE_LARGE_VALUE)
-        except Exception:
-            font_large_value = font_value
-
         if balance_unit.lower() == "sats":
             total_balance_sats = int(total_balance_btc * 1e8)
             balance_value_text = self._format_number(total_balance_sats, 0)
@@ -1357,31 +1464,37 @@ class ImageRenderer:
             if self.lang in ("de", "es", "fr", "it"):
                 balance_value_text = balance_value_text.replace(".", ",")
 
-        bbox_balance = font_large_value.getbbox(balance_value_text)
-        balance_x = self.layout.get_text_centered_x(bbox_balance, left_col_center_x)
-        label_height = bbox_left[3] - bbox_left[1]
-        text_y = self.layout.get_value_y(info_block_y, label_height)
-        draw.text((balance_x, text_y), balance_value_text, font=font_large_value, fill=self.get_color("wallet_balance", web_quality))
-
+        texts_to_fit = [balance_value_text]
+        fiat_value_text = None
         if show_fiat:
             currency_symbols = {
-                "USD": "$", "EUR": "€", "GBP": "£", "CAD": "C$", 
+                "USD": "$", "EUR": "€", "GBP": "£", "CAD": "C$",
                 "CHF": "CHF", "AUD": "A$", "JPY": "¥"
             }
             fiat_currency_symbol = currency_symbols.get(fiat_currency, fiat_currency)
-
             if fiat_value is not None:
                 if fiat_currency == "JPY":
                     fiat_value_text = f"{fiat_currency_symbol} {self._format_number(fiat_value, 0)}"
                 else:
                     fiat_value_text = f"{fiat_currency_symbol} {self._format_number(fiat_value, 2)}"
             else:
-                zero_text = self._format_number(0, 2)
-                fiat_value_text = f"{fiat_currency_symbol} {zero_text}"
+                fiat_value_text = f"{fiat_currency_symbol} {self._format_number(0, 2)}"
+            texts_to_fit.append(fiat_value_text)
 
+        max_col_w = self.layout.get_column_max_text_width(num_columns)
+        font_large_value = self._shrink_font_to_fit(
+            self.font_bold, texts_to_fit, max_col_w, FONT_SIZE_LARGE_VALUE
+        )
+
+        bbox_balance = font_large_value.getbbox(balance_value_text)
+        balance_x = self.layout.get_text_centered_x(bbox_balance, left_col_center_x)
+        label_height = bbox_left[3] - bbox_left[1]
+        text_y = self.layout.get_value_y(info_block_y, label_height)
+        draw.text((balance_x, text_y), balance_value_text, font=font_large_value, fill=self.get_color("wallet_balance", web_quality))
+
+        if show_fiat and fiat_value_text is not None:
             bbox_fiat = font_large_value.getbbox(fiat_value_text)
             fiat_x = self.layout.get_text_centered_x(bbox_fiat, right_col_center_x)
-            label_height = bbox_left[3] - bbox_left[1]
             text_y = self.layout.get_value_y(info_block_y, label_height)
             draw.text((fiat_x, text_y), fiat_value_text, font=font_large_value, fill=self.get_color("fiat_balance", web_quality))
 
@@ -1657,8 +1770,6 @@ class ImageRenderer:
             str or None: Path to a randomly selected OPSec image
         """
         image = self.pick_random_opsec_image()
-        if image:
-            print(f"OPSec: selected image: {os.path.basename(image)}")
         return image
 
     def _cover_crop(self, img, target_width, target_height):
@@ -2093,24 +2204,43 @@ class ImageRenderer:
         if not content_path:
             content_path = self.pick_random_meme()
         
-        # Build info blocks based on preserve_info_blocks or config
+        # Determine which block types to build:
+        #   preserve_info_blocks set → keep an existing layout (config change / wallet refresh)
+        #   prioritize_large_scaled_meme → pre-select only the types that fit the meme
+        #   otherwise (default layout) → all enabled blocks (renderer will randomise)
+        #
+        # active_types:
+        #   None  = build all enabled blocks (renderer randomises)
+        #   []    = meme fills screen — nothing to build
+        #   list  = pre-selected / preserved types in display order
         info_blocks = []
         bitaxe_data = None
         btc_price_data = None
         wallet_data = None
-        countdown_data = None
-        halving_data = None
         network_data = None
-        displayed_blocks = []  # Track which blocks are actually added
+        displayed_blocks = []
         config = self.config
 
-        # Fetch network stats once (shared by countdown, halving, network blocks)
+        if preserve_info_blocks is not None:
+            active_types = preserve_info_blocks
+            print(f"🎭 Preserving info block layout: {active_types}")
+        else:
+            active_types = self._preselect_info_blocks(content_path, block_height)
+            if active_types is not None and not active_types:
+                print("ℹ️ Meme fills available space — skipping info block data fetch")
+
+        # Fetch shared network data only when at least one of the three network-dependent
+        # blocks will actually be shown.
+        _network_types = {'countdown', 'halving', 'network'}
         _need_network = (
-            config.get("show_countdown_block", True)
-            or config.get("show_halving_block", True)
-            or config.get("show_network_block", True)
+            (active_types is None and (
+                config.get("show_countdown_block", True)
+                or config.get("show_halving_block", True)
+                or config.get("show_network_block", True)
+            )) or
+            (active_types and any(t in _network_types for t in active_types))
         )
-        if _need_network and not preserve_info_blocks:
+        if _need_network:
             if precached_network:
                 network_data = precached_network
             elif mempool_api:
@@ -2123,71 +2253,45 @@ class ImageRenderer:
                         "timeAvg": _da.get("timeAvg", 600000) if _da else 600000,
                     }
 
-        # If preserving layout, build blocks in the same order as displayed_info_blocks
-        if preserve_info_blocks:
-            print(f"🎭 Preserving info block layout: {preserve_info_blocks}")
-            for block_type in preserve_info_blocks:
-                if block_type == 'price' and config.get("show_btc_price_block", True):
-                    if precached_price:
-                        btc_price_data = precached_price
-                    else:
-                        btc_price_data = self.btc_price_api.fetch_btc_price()
-                    info_blocks.append((self.render_btc_price_block, btc_price_data))
-                    displayed_blocks.append('price')
-                elif block_type == 'countdown' and config.get("show_countdown_block", True):
-                    countdown_data = self._compute_supply_stats(block_height)
-                    info_blocks.append((self.render_countdown_block, countdown_data))
-                    displayed_blocks.append('countdown')
-                elif block_type == 'halving' and config.get("show_halving_block", True):
-                    _time_avg = (precached_network or {}).get("timeAvg", 600000)
-                    halving_data = self._compute_halving_stats(block_height, _time_avg)
-                    info_blocks.append((self.render_halving_block, halving_data))
-                    displayed_blocks.append('halving')
-                elif block_type == 'network' and config.get("show_network_block", True):
-                    _nd = precached_network or {}
-                    info_blocks.append((self.render_network_block, _nd))
-                    displayed_blocks.append('network')
-                elif block_type == 'bitaxe' and config.get("show_bitaxe_block", True):
-                    if precached_bitaxe:
-                        bitaxe_data = precached_bitaxe
-                    else:
-                        bitaxe_data = self.bitaxe_api.fetch_bitaxe_stats()
-                    info_blocks.append((self.render_bitaxe_block, bitaxe_data))
-                    displayed_blocks.append('bitaxe')
-                elif block_type == 'wallet' and config.get("show_wallet_balances_block", True):
-                    # Wallet data will be added below
-                    pass
-        else:
-            # Normal mode: add all enabled blocks
-            if config.get("show_btc_price_block", True):
-                if precached_price:
-                    btc_price_data = precached_price
-                else:
-                    btc_price_data = self.btc_price_api.fetch_btc_price()
+        # Unified block builder — handles both "all enabled" and "specific types" paths.
+        def _add_block(block_type):
+            nonlocal btc_price_data, bitaxe_data
+            if block_type == 'price' and config.get("show_btc_price_block", True):
+                btc_price_data = precached_price or self.btc_price_api.fetch_btc_price()
                 info_blocks.append((self.render_btc_price_block, btc_price_data))
                 displayed_blocks.append('price')
-            if config.get("show_countdown_block", True):
-                countdown_data = self._compute_supply_stats(block_height)
-                info_blocks.append((self.render_countdown_block, countdown_data))
+            elif block_type == 'countdown' and config.get("show_countdown_block", True):
+                _supply = self._compute_supply_stats(block_height)
+                info_blocks.append((self.render_countdown_block, _supply))
                 displayed_blocks.append('countdown')
-            if config.get("show_halving_block", True):
-                _time_avg = network_data.get("timeAvg", 600000) if network_data else 600000
-                halving_data = self._compute_halving_stats(block_height, _time_avg)
-                info_blocks.append((self.render_halving_block, halving_data))
+            elif block_type == 'halving' and config.get("show_halving_block", True):
+                _time_avg = (network_data or {}).get("timeAvg", 600000)
+                _halving = self._compute_halving_stats(block_height, _time_avg)
+                info_blocks.append((self.render_halving_block, _halving))
                 displayed_blocks.append('halving')
-            if config.get("show_network_block", True):
+            elif block_type == 'network' and config.get("show_network_block", True):
                 info_blocks.append((self.render_network_block, network_data or {}))
                 displayed_blocks.append('network')
-            if config.get("show_bitaxe_block", True):
-                if precached_bitaxe:
-                    bitaxe_data = precached_bitaxe
-                else:
-                    bitaxe_data = self.bitaxe_api.fetch_bitaxe_stats()
+            elif block_type == 'bitaxe' and config.get("show_bitaxe_block", True):
+                bitaxe_data = precached_bitaxe or self.bitaxe_api.fetch_bitaxe_stats()
                 info_blocks.append((self.render_bitaxe_block, bitaxe_data))
                 displayed_blocks.append('bitaxe')
-        
-        # Handle wallet block (always last, or in preserved position)
-        if config.get("show_wallet_balances_block", True) and (not preserve_info_blocks or 'wallet' in preserve_info_blocks):
+            # 'wallet' is intentionally excluded — handled separately below
+
+        if active_types is None:
+            # Default layout: add all enabled blocks; renderer will randomise order.
+            for bt in ('price', 'countdown', 'halving', 'network', 'bitaxe'):
+                _add_block(bt)
+        else:
+            for bt in active_types:
+                _add_block(bt)
+
+        # Wallet block — always positioned last (or at its preserved index) and needs
+        # fiat conversion, so it is handled outside the unified loop.
+        _want_wallet = config.get("show_wallet_balances_block", True) and (
+            active_types is None or 'wallet' in (active_types or [])
+        )
+        if _want_wallet:
             if startup_mode:
                 wallet_data = self.wallet_api.get_cached_wallet_balances()
                 if wallet_data is None or wallet_data.get("error"):
@@ -2228,10 +2332,9 @@ class ImageRenderer:
                     else:
                         print("⚠️ Failed to fetch BTC price data for wallet balance updates. Use cache as it is.")
 
-            # Add wallet block to appropriate position
-            if preserve_info_blocks:
-                # Insert wallet at its preserved position
-                wallet_index = preserve_info_blocks.index('wallet') if 'wallet' in preserve_info_blocks else len(info_blocks)
+            # Add wallet block at its correct position
+            if active_types is not None and 'wallet' in active_types:
+                wallet_index = active_types.index('wallet')
                 info_blocks.insert(wallet_index, (self.render_wallet_balances_block, wallet_data))
             else:
                 info_blocks.append((self.render_wallet_balances_block, wallet_data))
@@ -2241,6 +2344,10 @@ class ImageRenderer:
         if donation_data and config.get("show_donation_block", False):
             info_blocks.append((self.render_donation_block, donation_data))
             displayed_blocks.append('donation')
+
+        # When blocks were pre-selected (active_types is a list), pass them directly to
+        # the renderer as 'selected_info_blocks' so it skips the random re-shuffle.
+        _pre_selected_layout = active_types is not None and bool(active_types)
 
         # Pass all shared data to both renders
         shared_data = {
@@ -2252,10 +2359,11 @@ class ImageRenderer:
             "bitaxe_data": bitaxe_data,
             "wallet_data": wallet_data,
             "info_blocks": info_blocks,
-            "displayed_blocks": displayed_blocks,  # Track which blocks are shown
-            "preserve_layout": preserve_info_blocks is not None,  # Flag for layout preservation
-            "selected_info_blocks": None,  # Populated on first render, reused on second
-            # ...add any other shared data...
+            "displayed_blocks": displayed_blocks,
+            "preserve_layout": preserve_info_blocks is not None,
+            # Pre-populate selected_info_blocks to skip renderer re-shuffle when the
+            # block order was already decided here (pre-selection or preservation).
+            "selected_info_blocks": info_blocks if _pre_selected_layout else None,
         }
 
         # === GENERATE WEB IMAGE ===
@@ -2331,14 +2439,25 @@ class ImageRenderer:
         wallet_data = None
         network_data = precached_network
 
-        # Fetch live network stats if not precached and any of the new blocks are enabled
         config = self.config
+
+        # When the meme-first layout is active, check upfront whether any info block
+        # could actually fit below the cached meme.  If not, skip all data fetching.
+        _skip_info_blocks = (
+            config.get("prioritize_large_scaled_meme", False)
+            and meme_path is not None
+            and not self._info_blocks_can_fit(meme_path, block_height)
+        )
+        if _skip_info_blocks:
+            print("ℹ️ Meme fills available space — skipping info block data fetch")
+
+        # Fetch live network stats if not precached and any of the new blocks are enabled
         _need_network = (
             config.get("show_countdown_block", True)
             or config.get("show_halving_block", True)
             or config.get("show_network_block", True)
         )
-        if _need_network and network_data is None and mempool_api:
+        if _need_network and not _skip_info_blocks and network_data is None and mempool_api:
             _hd = mempool_api.get_hashrate_and_difficulty()
             _da = mempool_api.get_difficulty_adjustment()
             if _hd:
@@ -2348,48 +2467,47 @@ class ImageRenderer:
                     "timeAvg": _da.get("timeAvg", 600000) if _da else 600000,
                 }
 
-        # Randomly select info blocks ONCE
+        # Build info blocks ONCE
         info_blocks = []
-        if config.get("show_btc_price_block", True):
-            btc_price_data = precached_price or self.btc_price_api.fetch_btc_price()
-            info_blocks.append((self.render_btc_price_block, btc_price_data))
-        if config.get("show_countdown_block", True):
-            _supply = self._compute_supply_stats(block_height)
-            info_blocks.append((self.render_countdown_block, _supply))
-        if config.get("show_halving_block", True):
-            _time_avg = network_data.get("timeAvg", 600000) if network_data else 600000
-            _halving = self._compute_halving_stats(block_height, _time_avg)
-            info_blocks.append((self.render_halving_block, _halving))
-        if config.get("show_network_block", True):
-            info_blocks.append((self.render_network_block, network_data or {}))
-        if config.get("show_bitaxe_block", True):
-            bitaxe_data = precached_bitaxe or self.bitaxe_api.fetch_bitaxe_stats()
-            info_blocks.append((self.render_bitaxe_block, bitaxe_data))
-        if config.get("show_wallet_balances_block", True):
-            wallet_data = self.wallet_api.get_cached_wallet_balances()
-            if wallet_data is None or wallet_data.get("error"):
-                wallet_data = {
-                    "total_btc": 0,
-                    "total_fiat": 0,
-                    "fiat_currency": "USD",
-                    "addresses": [],
-                    "xpubs": [],
-                }
-            else:
-                pass
-            
-            # Only try to convert to fiat if we have valid wallet data
-            if wallet_data.get("total_btc") is not None and not wallet_data.get("error"):
-                if btc_price_data:
-                    wallet_data["total_fiat"] = self.wallet_api._convert_to_fiat(wallet_data["total_btc"], wallet_data["fiat_currency"])
-                else:
-                    btc_price_data = self.btc_price_api.fetch_btc_price()
+        if not _skip_info_blocks:
+            if config.get("show_btc_price_block", True):
+                btc_price_data = precached_price or self.btc_price_api.fetch_btc_price()
+                info_blocks.append((self.render_btc_price_block, btc_price_data))
+            if config.get("show_countdown_block", True):
+                _supply = self._compute_supply_stats(block_height)
+                info_blocks.append((self.render_countdown_block, _supply))
+            if config.get("show_halving_block", True):
+                _time_avg = network_data.get("timeAvg", 600000) if network_data else 600000
+                _halving = self._compute_halving_stats(block_height, _time_avg)
+                info_blocks.append((self.render_halving_block, _halving))
+            if config.get("show_network_block", True):
+                info_blocks.append((self.render_network_block, network_data or {}))
+            if config.get("show_bitaxe_block", True):
+                bitaxe_data = precached_bitaxe or self.bitaxe_api.fetch_bitaxe_stats()
+                info_blocks.append((self.render_bitaxe_block, bitaxe_data))
+            if config.get("show_wallet_balances_block", True):
+                wallet_data = self.wallet_api.get_cached_wallet_balances()
+                if wallet_data is None or wallet_data.get("error"):
+                    wallet_data = {
+                        "total_btc": 0,
+                        "total_fiat": 0,
+                        "fiat_currency": "USD",
+                        "addresses": [],
+                        "xpubs": [],
+                    }
+
+                # Only try to convert to fiat if we have valid wallet data
+                if wallet_data.get("total_btc") is not None and not wallet_data.get("error"):
                     if btc_price_data:
                         wallet_data["total_fiat"] = self.wallet_api._convert_to_fiat(wallet_data["total_btc"], wallet_data["fiat_currency"])
                     else:
-                        print("⚠️ Failed to fetch BTC price data for wallet balance updates. Use cache as it is.")
+                        btc_price_data = self.btc_price_api.fetch_btc_price()
+                        if btc_price_data:
+                            wallet_data["total_fiat"] = self.wallet_api._convert_to_fiat(wallet_data["total_btc"], wallet_data["fiat_currency"])
+                        else:
+                            print("⚠️ Failed to fetch BTC price data for wallet balance updates. Use cache as it is.")
 
-            info_blocks.append((self.render_wallet_balances_block, wallet_data))
+                info_blocks.append((self.render_wallet_balances_block, wallet_data))
         donation_data = getattr(self, '_donation_data', None)
         if donation_data and config.get("show_donation_block", False):
             info_blocks.append((self.render_donation_block, donation_data))

@@ -301,6 +301,9 @@ class MempaperApp:
             'last_bitaxe_blocks': None,  # Track last Bitaxe blocks to detect changes
             'last_fee_value': None,  # Track last fee to detect changes
             'last_hashrate': None,  # Track last hashrate to detect changes
+            # Pre-selection for the next render (only used in prioritize_large_scaled_meme mode)
+            'next_meme_path': None,       # Pre-selected meme for the upcoming render
+            'selected_block_types': None, # Pre-selected info block types for that meme
             'lock': threading.Lock()
         }
         
@@ -339,7 +342,9 @@ class MempaperApp:
         mempool_username = self.config.get("mempool_username", "")
         mempool_password = self.config.get("mempool_password", "")
         
-        print(f"🌐 Mempool API: {build_mempool_api_url(mempool_host, mempool_rest_port, mempool_use_https)}")
+        if not hasattr(self, '_api_clients_initialized'):
+            print(f"🌐 Mempool API: {build_mempool_api_url(mempool_host, mempool_rest_port, mempool_use_https)}")
+            self._api_clients_initialized = True
         
         self.mempool_api = MempoolAPI(
             host=mempool_host,
@@ -1022,6 +1027,7 @@ class MempaperApp:
             draw = ImageDraw.Draw(img)
             
             # Try to use the configured font, fallback to default
+            unicode_fonts = True
             try:
                 font_path = self.config.get("font_bold", "static/fonts/Roboto-Bold.ttf")
                 font = ImageFont.truetype(font_path, 48)
@@ -1031,9 +1037,10 @@ class MempaperApp:
                 font = ImageFont.load_default()
                 medium_font = ImageFont.load_default()
                 small_font = ImageFont.load_default()
-            
-            # Draw Bitcoin symbol at the top
-            btc_symbol = "₿"
+                unicode_fonts = False
+
+            # Draw Bitcoin symbol at the top (default font is latin-1 only, can't render ₿)
+            btc_symbol = "₿" if unicode_fonts else "BTC"
             bbox = draw.textbbox((0, 0), btc_symbol, font=font)
             symbol_width = bbox[2] - bbox[0]
             symbol_x = (width - symbol_width) // 2
@@ -1546,14 +1553,6 @@ class MempaperApp:
         
         if image_affecting_changes:
             self.image_is_current = False
-            print("⚙️ Image cache invalidated due to configuration change")
-        else:
-            print("✅ Configuration reloaded without affecting image cache")
-        
-        # Note: Image regeneration is handled by _on_config_change() callback
-        # to avoid duplicate generation processes
-        
-        print("✅ Components reinitialized after configuration change")
     
     def _on_config_file_changed(self, new_config=None):
         """Handle configuration file changes (external edits)."""
@@ -1807,9 +1806,26 @@ class MempaperApp:
         with self._precache['lock']:
             now = time.time()
             update_interval = self.config.get("precache_update_interval_seconds", 300)
-            
+
+            # In prioritize_large_scaled_meme mode, pre-select the next meme and the
+            # info block types that will actually be shown.  Data is then only fetched
+            # for the pre-selected types, eliminating wasted API calls.
+            if self.config.get("prioritize_large_scaled_meme", False):
+                next_meme = self.image_renderer.pick_random_meme()
+                selected = self.image_renderer._preselect_info_blocks(next_meme)
+                # selected: None (shouldn't happen here), [] (meme fills screen), or list
+                self._precache['next_meme_path'] = next_meme
+                self._precache['selected_block_types'] = selected if selected is not None else []
+                _selected = self._precache['selected_block_types']
+            else:
+                _selected = None  # None → fetch all (default layout shows all blocks)
+
+            # Helper: should a specific block type's data be fetched?
+            def _need_type(*types):
+                return _selected is None or any(t in _selected for t in types)
+
             # Update price data if stale
-            if now - self._precache['price_last_update'] > update_interval:
+            if _need_type('price', 'wallet') and now - self._precache['price_last_update'] > update_interval:
                 try:
                     price_data = self.image_renderer.fetch_btc_price()
                     if price_data:
@@ -1826,8 +1842,8 @@ class MempaperApp:
                 except Exception as e:
                     print(f"⚠️ Failed to pre-cache price: {e}")
             
-            # Update Bitaxe data only when Bitaxe block is enabled and stale.
-            if self.config.get("show_bitaxe_block", True) and self.config.get("bitaxe_enabled", True) and now - self._precache['bitaxe_last_update'] > update_interval:
+            # Update Bitaxe data only when the Bitaxe block will be shown and data is stale.
+            if _need_type('bitaxe') and self.config.get("show_bitaxe_block", True) and self.config.get("bitaxe_enabled", True) and now - self._precache['bitaxe_last_update'] > update_interval:
                 try:
                     bitaxe_data = self.image_renderer.bitaxe_api.fetch_bitaxe_stats()
                     if bitaxe_data:
@@ -1844,8 +1860,8 @@ class MempaperApp:
                 except Exception as e:
                     print(f"⚠️ Failed to pre-cache Bitaxe: {e}")
             
-            # Update network stats (hashrate/difficulty/timeAvg) when any of the 3 new blocks enabled
-            _need_network = (
+            # Update network stats when at least one network-dependent block will be shown.
+            _need_network = _need_type('countdown', 'halving', 'network') and (
                 self.config.get("show_countdown_block", True)
                 or self.config.get("show_halving_block", True)
                 or self.config.get("show_network_block", True)
@@ -1897,22 +1913,36 @@ class MempaperApp:
             self._invalidate_prerender()
     
     def _get_precached_data(self):
-        """Get pre-cached data with fallback to fresh fetch if needed."""
+        """Get pre-cached data with fallback to fresh fetch if needed.
+
+        When prioritize_large_scaled_meme is active, only fetches data for the
+        pre-selected block types stored in _precache['selected_block_types'].
+        """
         with self._precache['lock']:
             now = time.time()
-            
-            # Use cached price if fresh (<120s old), otherwise fetch new
-            if self._precache['price_data'] and (now - self._precache['price_last_update'] < 120):
-                price_data = self._precache['price_data']
+
+            # Determine which block types will actually be shown.
+            # None  → all blocks (default layout)
+            # list  → only those types (pre-selected for prioritize_large_scaled_meme)
+            _selected = self._precache.get('selected_block_types')  # None or list
+
+            def _need_type(*types):
+                return _selected is None or any(t in _selected for t in types)
+
+            # Price — needed by price block and wallet fiat conversion
+            if _need_type('price', 'wallet'):
+                if self._precache['price_data'] and (now - self._precache['price_last_update'] < 120):
+                    price_data = self._precache['price_data']
+                else:
+                    print("🔄 Pre-cache stale, fetching fresh price...")
+                    price_data = self.image_renderer.fetch_btc_price()
+                    self._precache['price_data'] = price_data
+                    self._precache['price_last_update'] = now
             else:
-                print("🔄 Pre-cache stale, fetching fresh price...")
-                price_data = self.image_renderer.fetch_btc_price()
-                self._precache['price_data'] = price_data
-                self._precache['price_last_update'] = now
-            
-            # Use cached Bitaxe if fresh (<120s old), otherwise fetch new.
-            # Skip entirely when Bitaxe block is disabled to avoid unnecessary network traffic.
-            if self.config.get("show_bitaxe_block", True) and self.config.get("bitaxe_enabled", True):
+                price_data = None
+
+            # Bitaxe — skip when block is disabled or not in pre-selected types
+            if _need_type('bitaxe') and self.config.get("show_bitaxe_block", True) and self.config.get("bitaxe_enabled", True):
                 if self._precache['bitaxe_data'] and (now - self._precache['bitaxe_last_update'] < 120):
                     bitaxe_data = self._precache['bitaxe_data']
                 else:
@@ -1922,9 +1952,8 @@ class MempaperApp:
                     self._precache['bitaxe_last_update'] = now
             else:
                 bitaxe_data = None
-            
-            # Use cached fee if fresh (<90s old), otherwise fetch new
-            # Fees change more frequently, so use shorter cache lifetime
+
+            # Fees — always needed (hash frame at bottom uses current fee rate)
             if self._precache['fee_data'] and (now - self._precache['fee_last_update'] < 90):
                 fee_data = self._precache['fee_data']
                 block_height = self._precache['block_height']
@@ -1941,8 +1970,8 @@ class MempaperApp:
                     fee_data = None
                     block_height = None
 
-            # Use cached network data if fresh (<120s old), otherwise fetch new
-            _need_network = (
+            # Network stats — only when at least one network-dependent block is selected
+            _need_network = _need_type('countdown', 'halving', 'network') and (
                 self.config.get("show_countdown_block", True)
                 or self.config.get("show_halving_block", True)
                 or self.config.get("show_network_block", True)
@@ -2019,19 +2048,21 @@ class MempaperApp:
         for setting in image_affecting_settings:
             old_value = old_config.get(setting)
             new_value = new_config.get(setting)
-            if old_value != new_value:
+            # Ignore transitions from a real value to absent (None) — that means
+            # the field was an auto-set default not stored in config.json, not a
+            # deliberate user change.
+            if old_value != new_value and not (old_value is not None and new_value is None):
                 config_changed = True
-                changed_settings.append(f"{setting}: {old_value} → {new_value}")
+                changed_settings.append(setting)
 
         if config_changed:
-            print(f"⚙️ Image-affecting settings changed: {', '.join(changed_settings)}")
-            print("⚙️ Triggering immediate image refresh with cached meme...")
+            print(f"⚙️ Settings changed ({', '.join(changed_settings)}) — triggering image refresh")
 
             # Update config references
             self.config = new_config
 
             # Update translations if language changed
-            if 'language' in [s.split(':')[0] for s in changed_settings]:
+            if 'language' in changed_settings:
                 lang = new_config.get("language", "en")
                 self.translations = translations.get(lang, translations["en"])
                 print(f"🌐 Updated translations to language: {lang}")
@@ -2070,7 +2101,11 @@ class MempaperApp:
             print(f"🔒 OPSec mode {'enabled' if opsec_enabled else 'disabled'} — refreshing e-ink only...")
             self.config = new_config
             self.image_renderer = ImageRenderer(self.config, self.translations)
-            self._refresh_eink_for_opsec_toggle(opsec_enabled)
+            threading.Thread(
+                target=self._refresh_eink_for_opsec_toggle,
+                args=(opsec_enabled,),
+                daemon=True
+            ).start()
         else:
             # Update config reference even if no image refresh needed
             self.config = new_config
@@ -2201,8 +2236,6 @@ class MempaperApp:
             return
 
         try:
-            from PIL import Image
-
             if opsec_enabled:
                 # Render a fresh opsec cover image
                 eink_img = self.image_renderer.render_opsec_eink_image()
@@ -2213,24 +2246,18 @@ class MempaperApp:
                     return
                 print("🔒 OPSec e-ink image rendered")
             else:
-                # Convert the existing web image to e-ink format — no data fetch needed
-                # Try RAM cache first, fall back to disk
-                if self._cached_eink_image is not None:
-                    eink_img = self._cached_eink_image
-                    print("🔓 Using cached e-ink image from RAM")
-                elif hasattr(self, 'current_image_path') and self.current_image_path and os.path.exists(self.current_image_path):
-                    web_img = Image.open(self.current_image_path).convert('RGB')
-                    self.image_renderer._apply_orientation_settings(self.image_renderer.eink_orientation)
-                    eink_img = self.image_renderer.convert_to_7color(web_img)
-                    self.image_renderer._apply_orientation_settings(self.image_renderer.web_orientation)
-                    print("🔓 Converted existing web image to e-ink format")
-                else:
-                    print("⚠️ No cached web image found — falling back to full regeneration")
-                    if self.image_is_current and self.current_block_height and self.current_block_hash:
-                        self._regenerate_image_with_cached_meme()
-                    return
+                # OPSec disabled: re-render the full dashboard through the normal e-ink
+                # pipeline. Converting the web image with convert_to_7color gives wrong
+                # colours because the web image was rendered for a full RGB display.
+                print("🔓 OPSec disabled — re-rendering dashboard for e-ink")
+                if self.current_block_height and self.current_block_hash:
+                    threading.Thread(
+                        target=self._regenerate_image_with_cached_meme,
+                        daemon=True
+                    ).start()
+                return  # _regenerate_image_with_cached_meme handles save + display push
 
-            # Save the new e-ink image
+            # Save the new e-ink image (only reached for the opsec-enabled path)
             eink_img.save(self.current_eink_image_path, compress_level=1)
 
             # Display on e-Paper in background thread
@@ -2452,7 +2479,15 @@ class MempaperApp:
                     and self._prerendered['web_base64']):
                 return
 
-            # Gather pre-cached data
+            # Consume the pre-selected meme and block types (if any) — clear after use
+            # so the next _update_precache_data cycle picks fresh ones.
+            with self._precache['lock']:
+                precached_meme = self._precache.get('next_meme_path')
+                precached_selected = self._precache.get('selected_block_types')
+                self._precache['next_meme_path'] = None
+                self._precache['selected_block_types'] = None
+
+            # Gather pre-cached data (filtered to pre-selected types when applicable)
             precached_price, precached_bitaxe, precached_fee, _, precached_network = self._get_precached_data()
 
             # Use a deterministic placeholder hash for the decorative frame
@@ -2466,7 +2501,10 @@ class MempaperApp:
                 placeholder_hash,
                 mempool_api=self.mempool_api,
                 startup_mode=True,
-                override_content_path=None,
+                override_content_path=precached_meme,
+                # Pass pre-selected types only when the list is non-empty; an empty list or
+                # None lets render_dual_images run _preselect_info_blocks itself.
+                preserve_info_blocks=precached_selected if precached_selected else None,
                 precached_price=precached_price,
                 precached_bitaxe=precached_bitaxe,
                 precached_fee=precached_fee,
@@ -2516,11 +2554,15 @@ class MempaperApp:
             self.image_renderer.patch_hash_frame_on_image(web_img_patched, block_hash, web_quality=True)
 
         eink_img_patched = None
-        if self.e_ink_enabled and pr['eink_img'] is not None:
-            eink_img_patched = pr['eink_img'].copy()
-            self.image_renderer._apply_orientation_settings(self.image_renderer.eink_orientation)
-            self.image_renderer.patch_hash_frame_on_image(eink_img_patched, block_hash, web_quality=False)
-            self.image_renderer._apply_orientation_settings(self.image_renderer.web_orientation)
+        if self.e_ink_enabled:
+            if self.config.get("opsec_mode_enabled", False):
+                # OPSec active: always show a fresh opsec cover, not the pre-rendered dashboard
+                eink_img_patched = self.image_renderer.render_opsec_eink_image()
+            elif pr['eink_img'] is not None:
+                eink_img_patched = pr['eink_img'].copy()
+                self.image_renderer._apply_orientation_settings(self.image_renderer.eink_orientation)
+                self.image_renderer.patch_hash_frame_on_image(eink_img_patched, block_hash, web_quality=False)
+                self.image_renderer._apply_orientation_settings(self.image_renderer.web_orientation)
 
         # Promote to current (with patched hash frame)
         if web_img_patched is not None:
@@ -2747,9 +2789,14 @@ class MempaperApp:
             
             # 🚀 Try pre-rendered image first for instant delivery
             self.image_is_current = False
-            if self._use_prerendered_image(block_height_int, block_hash):
+            try:
+                used_prerender = self._use_prerendered_image(block_height_int, block_hash)
+            except Exception as e:
+                print(f"⚠️ Pre-rendered image failed, falling back to fresh generation: {e}")
+                used_prerender = False
+            if used_prerender:
                 return  # Pre-rendered image used — all tasks handled
-            
+
             # Fallback: generate fresh image (no pre-render available)
             self.regenerate_dashboard(block_height_int, block_hash)
             
@@ -3913,7 +3960,6 @@ class MempaperApp:
             thumb_dir = os.path.join('static', 'memes', 'thumbs')
             os.makedirs(thumb_dir, exist_ok=True)
 
-            # Thumbnails are always stored as webp for efficiency
             stem = os.path.splitext(filename)[0]
             thumb_path = os.path.join(thumb_dir, f'{stem}.webp')
 
@@ -3928,9 +3974,9 @@ class MempaperApp:
                     with Image.open(orig_path) as img:
                         # Preserve animation frames for GIFs by only taking frame 0
                         img.seek(0) if hasattr(img, 'seek') else None
-                        img = img.convert('RGBA') if img.mode in ('P', 'RGBA') else img.convert('RGB')
+                        img = img.convert('RGBA')
                         img.thumbnail((200, 200), Image.LANCZOS)
-                        img.save(thumb_path, 'WEBP', quality=70, method=4)
+                        img.save(thumb_path, 'WEBP', quality=70)
                 except Exception:
                     # Thumbnail generation failed — fall back to the original
                     response = send_file(orig_path)
@@ -4099,9 +4145,9 @@ class MempaperApp:
                 try:
                     with Image.open(orig_path) as img:
                         img.seek(0) if hasattr(img, 'seek') else None
-                        img = img.convert('RGBA') if img.mode in ('P', 'RGBA') else img.convert('RGB')
+                        img = img.convert('RGBA')
                         img.thumbnail((200, 200), Image.LANCZOS)
-                        img.save(thumb_path, 'WEBP', quality=70, method=4)
+                        img.save(thumb_path, 'WEBP', quality=70)
                 except Exception:
                     response = send_file(orig_path)
                     response.headers['Cache-Control'] = 'private, max-age=3600'
@@ -4566,7 +4612,6 @@ class MempaperApp:
             @self.socketio.on('subscribe_block_notifications')
             def handle_subscribe_block_notifications(data):
                 """Handle client request to subscribe to live block notifications."""
-                print("📶 Client requested to subscribe to block notifications")
                 try:
                     # Check if user is authenticated
                     if not self.auth_manager.is_authenticated():
@@ -4576,8 +4621,11 @@ class MempaperApp:
                     
                     # Add client to subscribers
                     client_id = request.sid
-                    self.block_notification_subscribers.add(client_id)
-                    print(f"✅ Client {client_id} subscribed to block notifications")
+                    if client_id not in self.block_notification_subscribers:
+                        self.block_notification_subscribers.add(client_id)
+                        print(f"📡 Client subscribed to block notifications ({len(self.block_notification_subscribers)} total)")
+                    else:
+                        self.block_notification_subscribers.add(client_id)
                     self.socketio.emit('block_notification_status', {'status': 'subscribed', 'message': 'Subscribed to live block notifications'})
                         
                 except Exception as e:

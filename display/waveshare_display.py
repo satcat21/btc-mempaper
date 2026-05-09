@@ -35,14 +35,17 @@ _DISPLAY_CONFIGS = [
     ('epd13in3k', 'epd13in3k', []),
 ]
 
-def _import_display_isolated(module_name, subdir, fallback_paths):
+def _import_display_isolated(module_name, subdir, fallback_paths, _retried=False):
     """Import a display module with its own isolated epdconfig.
 
-    Adds only this display's directory to sys.path, imports the module
-    (which binds epdconfig into the module's own namespace), then removes
-    the directory and clears epdconfig from sys.modules so the next display
-    gets a fresh load from its own directory.
+    Uses importlib to load the driver as a submodule of a temporary package so
+    that relative imports (e.g. ``from . import epdconfig``) work correctly.
+    The temporary package entries are cleaned up afterwards; only the driver
+    module itself is kept in sys.modules under its original name for caching.
     """
+    import importlib.util
+    import types
+
     candidate_paths = []
     bundled = os.path.join(_drivers_base, subdir)
     if os.path.exists(bundled):
@@ -54,30 +57,73 @@ def _import_display_isolated(module_name, subdir, fallback_paths):
     if not candidate_paths:
         return None
 
-    added = []
-    for p in candidate_paths:
-        if p not in sys.path:
-            sys.path.insert(0, p)
-            added.append(p)
+    if module_name in sys.modules:
+        return sys.modules[module_name]
 
-    sys.modules.pop('epdconfig', None)  # ensure a fresh load from this display's dir
+    driver_dir = candidate_paths[0]
+
+    # Temporary package name used to give the driver a __package__ context so
+    # relative imports like "from . import epdconfig" resolve correctly.
+    _pkg = f"_epd_isolated_{module_name}"
+
+    pkg_stub = types.ModuleType(_pkg)
+    pkg_stub.__path__ = [driver_dir]
+    pkg_stub.__package__ = _pkg
+    sys.modules[_pkg] = pkg_stub
+
+    driver_mod = None
     try:
-        if module_name in sys.modules:
-            return sys.modules[module_name]
-        return __import__(module_name)
+        # Load epdconfig first as a submodule of the temp package so that
+        # "from . import epdconfig" inside the driver resolves to it.
+        epdconfig_path = os.path.join(driver_dir, 'epdconfig.py')
+        if os.path.exists(epdconfig_path):
+            spec = importlib.util.spec_from_file_location(
+                f"{_pkg}.epdconfig", epdconfig_path)
+            epdconfig_mod = importlib.util.module_from_spec(spec)
+            epdconfig_mod.__package__ = _pkg
+            sys.modules[f"{_pkg}.epdconfig"] = epdconfig_mod
+            sys.modules['epdconfig'] = epdconfig_mod
+            spec.loader.exec_module(epdconfig_mod)
+            pkg_stub.epdconfig = epdconfig_mod
+
+        driver_path = os.path.join(driver_dir, f'{module_name}.py')
+        if not os.path.exists(driver_path):
+            return None
+
+        spec = importlib.util.spec_from_file_location(
+            f"{_pkg}.{module_name}", driver_path)
+        driver_mod = importlib.util.module_from_spec(spec)
+        driver_mod.__package__ = _pkg
+        sys.modules[f"{_pkg}.{module_name}"] = driver_mod
+        sys.modules[module_name] = driver_mod
+        spec.loader.exec_module(driver_mod)
+        return driver_mod
+
     except ImportError:
+        sys.modules.pop(module_name, None)
         return None
     except Exception as e:
+        err_str = str(e)
         print(f"⚠️ Error importing {module_name}: {e}")
+        sys.modules.pop(module_name, None)
+        sys.modules.pop(_pkg, None)
+        sys.modules.pop(f"{_pkg}.epdconfig", None)
+        sys.modules.pop(f"{_pkg}.{module_name}", None)
+        # GPIO left busy by a previously crashed worker — clean up and retry once
+        if not _retried and ('busy' in err_str.lower() or 'gpio' in err_str.lower()):
+            try:
+                import RPi.GPIO as GPIO
+                GPIO.cleanup()
+            except Exception:
+                pass
+            return _import_display_isolated(module_name, subdir, fallback_paths, _retried=True)
         return None
     finally:
-        for p in added:
-            try:
-                sys.path.remove(p)
-            except ValueError:
-                pass
+        # Remove temporary package scaffolding; the driver itself stays cached.
+        sys.modules.pop(_pkg, None)
+        sys.modules.pop(f"{_pkg}.epdconfig", None)
+        sys.modules.pop(f"{_pkg}.{module_name}", None)
         # Clear epdconfig so the next display's import gets its own version.
-        # The already-imported module retains its own reference via its namespace.
         sys.modules.pop('epdconfig', None)
 
 WAVESHARE_AVAILABLE = False

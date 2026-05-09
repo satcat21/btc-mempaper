@@ -16,6 +16,8 @@ import sys
 import os
 import json
 import traceback
+import atexit
+import signal
 
 
 def main():
@@ -25,6 +27,20 @@ def main():
 
     config = ConfigManager().config
     display = WaveshareDisplay(config=config)
+
+    def _cleanup():
+        try:
+            display.cleanup()
+        except Exception:
+            pass
+
+    atexit.register(_cleanup)
+
+    def _sigterm_handler(signum, frame):
+        _cleanup()
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, _sigterm_handler)
 
     sys.stdout.write(json.dumps({"status": "ready"}) + "\n")
     sys.stdout.flush()

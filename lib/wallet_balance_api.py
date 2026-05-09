@@ -238,16 +238,10 @@ class WalletBalanceAPI:
                 )
             else:
                 price_str = str(price_data)
-            print(f"✅ Price API response: {price_str}")
-            
             if price_data and 'error' not in price_data:
                 price = price_data.get('price_in_selected_currency', 0)
                 if price and price > 0:
                     result = btc_amount * price
-                    if btc_amount > 0:
-                        print(f"💰 Conversion: {btc_amount:.8f} BTC × {price:.2f} {fiat_currency} = {result:.2f} {fiat_currency}")
-                    else:
-                        print(f"💰 Current price: {price:.2f} {fiat_currency} per BTC (no wallet configured)")
                     return result
                 else:
                     print(f"⚠️ Price data issue: received price={price}, unable to calculate conversion")
@@ -412,9 +406,6 @@ class WalletBalanceAPI:
                 
                 # Only do optimized monitoring if NO fresh addresses found (regardless of startup_mode)
                 if not fresh_addresses_found and monitoring_addresses:
-                    cache_age_hours = (current_time - cache_data['last_full_scan']) / 3600
-                    print(f"👁️ [OPTIMIZED] Monitoring {xpub[:20]}... (cache age: {cache_age_hours:.1f}h)")
-                    print(f"   💾 Monitoring {len(monitoring_addresses)} critical addresses (cached full scan has {cache_data.get('funded_address_count', 0)} funded addresses)")
                     
                     # Check if any monitored address balance has changed
                     balance_changed = False
@@ -1686,8 +1677,6 @@ class WalletBalanceAPI:
             if not entries_with_comments:
                 return {"error": "No wallet addresses, XPUBs, or ZPUBs configured"}
             
-            print(f"💰 Processing {len(entries_with_comments)} wallet entries...")
-            
             # Extract simple list for conflict detection (backwards compatibility)
             simple_wallet_list = [entry["address"] if isinstance(entry, dict) else entry for entry in entries_with_comments]
             
@@ -1696,7 +1685,7 @@ class WalletBalanceAPI:
             if conflicts and conflicts.get("has_conflicts"):
                 return {"error": conflicts["error_message"], "conflicts": conflicts}
             
-            print(f"🔑 Found {len(user_xpubs)} extended keys and {len(user_addresses)} regular addresses")
+            print(f"📊 Wallet scan: {len(user_xpubs)} extended keys, {len(user_addresses)} addresses")
             
             # 1. Fetch all addresses from all XPUBs/ZPUBs
             all_xpub_addresses = set()
@@ -1737,7 +1726,6 @@ class WalletBalanceAPI:
                 """Fetch balance for a single XPUB/ZPUB with error handling."""
                 xpub, entries_with_comments, startup_mode = xpub_info
                 try:
-                    print(f"⚙️ [PARALLEL] Starting balance calculation for {xpub[:20]}...")
                     balance = self.get_optimized_xpub_balance(xpub, startup_mode=startup_mode)
                     
                     if balance > 0:  # Only include XPUBs/ZPUBs with positive balance

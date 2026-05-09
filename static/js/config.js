@@ -3103,17 +3103,25 @@ function addBitaxeTableRow(tbody, entry) {
     bestDiffDisplay.style.color = '#666';
     bestDiffCell.appendChild(bestDiffDisplay);
 
-    // Update best diff when IP changes
+    // Update best diff when IP changes — debounced so we only fetch once typing stops
+    let _bitaxeIpDebounce = null;
     addressInput.addEventListener('input', () => {
+        clearTimeout(_bitaxeIpDebounce);
         const newIp = addressInput.value.trim();
-        if (newIp) {
-            bestDiffDisplay.textContent = '...';
-            bestDiffDisplay.style.color = '#aaa';
-            fetchBitaxeBestDiff(newIp, bestDiffDisplay);
-        } else {
+        if (!newIp) {
             bestDiffDisplay.textContent = '-';
             bestDiffDisplay.style.color = '#666';
+            return;
         }
+        // Wait until the field looks like a complete IPv4 address before fetching
+        _bitaxeIpDebounce = setTimeout(() => {
+            const ip = addressInput.value.trim();
+            if (/^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) {
+                bestDiffDisplay.textContent = '...';
+                bestDiffDisplay.style.color = '#aaa';
+                fetchBitaxeBestDiff(ip, bestDiffDisplay);
+            }
+        }, 1000);
     });
 
     // Load initial best diff if IP is set

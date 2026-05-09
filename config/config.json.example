@@ -29,7 +29,7 @@
   "display_width": 800,
   "display_height": 480,
 
-  "show_btc_price_block": false,
+  "show_btc_price_block": true,
   "btc_price_currency": "USD",
   "moscow_time_unit": "hour",
 
@@ -46,7 +46,7 @@
   "color_network_dark": "#CE93D8",
 
   "show_bitaxe_block": false,
-  "bitaxe_display_mode": "blocks",
+  "bitaxe_display_mode": "difficulty",
   "bitaxe_miner_table": [],
 
   "show_wallet_balances_block": false,

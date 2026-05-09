@@ -10,15 +10,32 @@ BTC Mempaper connects to your local (or public) mempool instance to visualize th
 
 ### Hardware Setup
 
+**Waveshare 7.3" e-Paper (7-color)**
+
 <table>
   <tr>
     <td width="50%">
-      <img src="images/hardware/mempaper-display-darkmode.jpg" alt="Display Dark Mode" width="100%"/>
-      <p align="center"><em>E-Paper Display - Dark Mode</em></p>
+      <img src="images/hardware/mempaper-display-darkmode.jpg" alt="7.3 inch Display Dark Mode" width="100%"/>
+      <p align="center"><em>7.3" E-Paper Display - Dark Mode</em></p>
     </td>
     <td width="50%">
-      <img src="images/hardware/mempaper-display-lightmode.jpg" alt="Display Light Mode" width="100%"/>
-      <p align="center"><em>E-Paper Display - Light Mode</em></p>
+      <img src="images/hardware/mempaper-display-lightmode.jpg" alt="7.3 inch Display Light Mode" width="100%"/>
+      <p align="center"><em>7.3" E-Paper Display - Light Mode</em></p>
+    </td>
+  </tr>
+</table>
+
+**Waveshare 13.3" e-Paper (6-color)**
+
+<table>
+  <tr>
+    <td width="50%">
+      <img src="images/hardware/mempaper-13inch-darkmode.jpg" alt="13.3 inch Display Dark Mode" width="100%"/>
+      <p align="center"><em>13.3" E-Paper Display - Dark Mode</em></p>
+    </td>
+    <td width="50%">
+      <img src="images/hardware/mempaper-13inch-lightmode.jpg" alt="13.3 inch Display Light Mode" width="100%"/>
+      <p align="center"><em>13.3" E-Paper Display - Light Mode</em></p>
     </td>
   </tr>
 </table>
@@ -92,26 +109,41 @@ BTC Mempaper connects to your local (or public) mempool instance to visualize th
 
 ## 🛒 Shopping List
 
-Here are the components needed to build your own Mempaper display:
+Here are the components needed to build your own Mempaper display.
+
+> **Note:** Prices are approximate and may vary by region and vendor. The Raspberry Pi Zero 2 W is recommended over the original Zero W for better performance.
+
+### 🔧 Shared Components (~63€)
+
+These components are the same regardless of which display you choose:
 
 | Component | Description | Estimated Price | Link |
 |-----------|-------------|-----------------|------|
 | **Raspberry Pi Zero 1 WH / 2 WH** | Main controller (512MB RAM, WiFi/BT) | ~21€ | [Raspberry Pi Zero 1 WH](https://www.berrybase.de/raspberry-pi-zero-wh) \| [Raspberry Pi Zero 2 WH](https://www.berrybase.de/raspberry-pi-zero-2-wh) |
-| **Waveshare 7.3" e-Paper (F)** | 7-color e-ink display (800×480) | ~88€ | [Waveshare Official](https://www.waveshare.com/7.3inch-e-paper-hat-f.htm?srsltid=AfmBOorcEBNFbDLf1tDJAonJ3p7ACz8wrDXwkRo22J22eUblwLKQoO9Y) \| [Amazon](https://www.amazon.de/dp/B0C3R7Q75T) |
 | **MicroSD Card** | 32GB or larger, Class 10 recommended | ~13€ | [SanDisk Extreme 64GB, Amazon](https://www.amazon.de/dp/B09X7CXWQQ) |
 | **USB-C Power Supply** | 5V/2.5A minimum for Raspberry Pi Zero 2 W | ~10€ | |
 | **USB-C to Micro-USB Adapter** | 2-pack adapter for power routing | ~4€ | [Amazon](https://www.amazon.de/dp/B0B7RMFMN4) |
 | **90° USB-C Panel Mount Cable** | Right-angle USB-C extension for clean cable routing | ~15€ | [Amazon](https://www.amazon.de/dp/B0BQGBWVWM) |
-| **Photo Frame** | 18x24cm frame for display mounting | ~47€ | [Solid wood picture frame with spacer strip, https://allesrahmen.de](https://www.allesrahmen.de/bilderrahmen-ystad-aus-massivholz-mit-distanzleiste-18x24-cmweiss-gemasert27-2043000.html) |
-| **Passepartout (Mat Board)** | White/Tortora, 180x240mm outer, 94×158mm opening | ~17€ | [Passepartout, https://wandstyle.com](https://www.wandstyle.com/passepartout-bianco-naturale-30-x-40-cm/psta-254-030-040p-p1) |
 
-**Total Cost:** ~215€
+> **Cable Routing:** The USB-C to Micro-USB adapter and 90° panel mount cable allow you to cleanly route power from the Raspberry Pi to the back of the picture frame for a professional finish.
 
-> **Note:** Prices are approximate and may vary by region and vendor. The Raspberry Pi Zero 2 W is recommended over the original Zero W for better performance.
-> 
-> **Cable Routing Components:** The USB-C to Micro-USB adapter and 90° panel mount cable allow you to cleanly route power from the Raspberry Pi to the back of the picture frame for a professional finish.
-> 
-> **Passepartout Dimensions:** The e-ink display has a visible area of 160×96mm. The passepartout opening is 158×94mm (2mm smaller on each side) to create a frame that holds the display securely in place.
+### 🖼️ Option A — Waveshare 7.3" e-Paper (7-color) — Total ~215€
+
+| Component | Description | Estimated Price | Link |
+|-----------|-------------|-----------------|------|
+| **Waveshare 7.3" e-Paper (F)** | 7-color e-ink display (800×480) | ~88€ | [Waveshare Official](https://www.waveshare.com/7.3inch-e-paper-hat-f.htm) \| [Amazon](https://www.amazon.de/dp/B0C3R7Q75T) |
+| **Photo Frame** | 18×24cm frame for display mounting | ~47€ | [Solid wood picture frame with spacer strip, allesrahmen.de](https://www.allesrahmen.de/bilderrahmen-ystad-aus-massivholz-mit-distanzleiste-18x24-cmweiss-gemasert27-2043000.html) |
+| **Passepartout (Mat Board)** | White/Tortora, 180×240mm outer, 94×158mm opening | ~17€ | [Passepartout, wandstyle.com](https://www.wandstyle.com/passepartout-bianco-naturale-30-x-40-cm/psta-254-030-040p-p1) |
+
+> **Passepartout Dimensions:** The 7.3" display has a visible area of 160×96mm. The passepartout opening is 158×94mm (2mm smaller on each side) to hold the display securely in place.
+
+### 🖼️ Option B — Waveshare 13.3" e-Paper (6-color) — Total ~518€
+
+| Component | Description | Estimated Price | Link |
+|-----------|-------------|-----------------|------|
+| **Waveshare 13.3" e-Paper (E)** | 6-color Spectra 6 e-ink display (1200×1600) | ~362€ | [Waveshare Official](https://www.waveshare.com/13.3inch-e-paper-hat-plus-e.htm) \| [Amazon](https://www.amazon.de/Waveshare-13-3inch-HAT-1600x1200-Communication/dp/B0DPBW2R25) |
+| **Photo Frame** | 28×35cm frame for display mounting | ~76€ | [Solid wood picture frame with spacer strip, allesrahmen.de](https://www.allesrahmen.de/bilderrahmen-ystad-aus-massivholz-mit-distanzleiste-28x35-cmweiss-gemasert27-1001000.html)
+| **Passepartout (Mat Board)** | White/Tortora, 280×350mm outer, 200×268mm opening | ~17€ | [Passepartout, wandstyle.com](https://www.wandstyle.com/passepartout-bianco-naturale-30-x-40-cm/psta-254-030-040p-p1) |
 
 ---
 
@@ -131,18 +163,20 @@ Here are the components needed to build your own Mempaper display:
 
 ### 1. Installation
 
+> **Recommended OS:** Raspberry Pi OS Lite **Bookworm (Debian 12, 32-bit)** — this is the tested and supported OS version. Debian 13 (trixie) with Python 3.13 causes Pillow SIGILL crashes on Pi Zero 1 WH due to incompatible SIMD instructions in the piwheels armv6l build.
+
 **Raspberry Pi / Linux**
 ```bash
 # Install system dependencies
 sudo apt update && sudo apt upgrade -y
-sudo apt install -y libffi-dev build-essential python3-pip python3-pil python3-dev python3-numpy python3-gpiozero libopenjp2-7 pkg-config
+sudo apt install -y libffi-dev build-essential python3-pip python3-pil python3-dev python3-numpy python3-gpiozero libopenjp2-7 pkg-config libjpeg-dev zlib1g-dev libfreetype-dev libwebp-dev
 
 # Clone and install
 git clone https://github.com/satcat21/btc-mempaper.git
 cd btc-mempaper
 python3 -m venv .venv
 source .venv/bin/activate
-pip3 install spidev gpiozero lgpio
+pip install spidev gpiozero lgpio
 pip install -r requirements.txt
 ```
 

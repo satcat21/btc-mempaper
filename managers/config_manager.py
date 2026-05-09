@@ -196,7 +196,7 @@ class ConfigManager:
                     # Notify all registered callbacks
                     self._notify_change_callbacks(new_config)
                 else:
-                    print("📝 Config file changed but content is identical")
+                    pass  # file touched but content unchanged — no action needed
                     
         except Exception as e:
             print(f"❌ Error reloading config: {e}")
