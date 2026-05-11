@@ -38,8 +38,8 @@ COLOR_SETS = {
         "background": "#ffffff",
         "date_normal": "#222222",
         "date_holiday": "#b22222",
-        "holiday_title": "#cd853f",
-        "holiday_desc": "#d2691e",
+        "holiday_start": "#F7931A",
+        "holiday_end": "#C62828",
         "btc_price": "#17805B",      # darker green for BTC price (was #228B22)
         "moscow_time": "#17805B",    # darker blue for Moscow time (was #4682B4)
         "hashrate": "#B89C1D",       # darker gold for Bitaxe (was #DAA520)
@@ -69,8 +69,8 @@ COLOR_SETS = {
         "background": "#1a1a1f",
         "date_normal": "#BA68C8",
         "date_holiday": "#09a3ba",
-        "holiday_title": "#09a3ba",
-        "holiday_desc": "#09a3ba",
+        "holiday_start": "#F7931A",
+        "holiday_end": "#FF6F6F",
         "btc_price": "#00c896",
         "moscow_time": "#00c896",
         "hashrate": "#ffe566",
@@ -278,13 +278,15 @@ class ImageRenderer:
         self.color_sets = {k: v.copy() for k, v in COLOR_SETS.items()}
         
         # Override with configured colors
-        # Holidays
+        # Holidays (gradient: start → end)
         if "color_holiday_light" in config:
-            self.color_sets["light"]["holiday_title"] = config["color_holiday_light"]
-            self.color_sets["light"]["holiday_desc"] = config["color_holiday_light"]
+            self.color_sets["light"]["holiday_start"] = config["color_holiday_light"]
+        if "color_holiday_end_light" in config:
+            self.color_sets["light"]["holiday_end"] = config["color_holiday_end_light"]
         if "color_holiday_dark" in config:
-            self.color_sets["dark"]["holiday_title"] = config["color_holiday_dark"]
-            self.color_sets["dark"]["holiday_desc"] = config["color_holiday_dark"]
+            self.color_sets["dark"]["holiday_start"] = config["color_holiday_dark"]
+        if "color_holiday_end_dark" in config:
+            self.color_sets["dark"]["holiday_end"] = config["color_holiday_end_dark"]
 
         # BTC Price
         if "color_btc_price_light" in config:
@@ -1209,9 +1211,9 @@ class ImageRenderer:
         max_lines = 2
         min_size = self._scale_font_size(8, min_value=8)
         two_line_max_size = max(min_size, self._scale_font_size(27, min_value=12))
-        # Max body font is 40 pt — short messages stay proportional,
-        # longer ones shrink automatically until they fit 2 lines.
-        start_size = max(min_size, self._scale_font_size(40, min_value=18))
+        # Max body font matches info block large value size so single-line
+        # donation blocks have the same height as other info blocks.
+        start_size = max(min_size, self._scale_font_size(FONT_SIZE_LARGE_VALUE, min_value=12))
         line_gap = self._scale_px(3, min_value=1)
 
         content_font = None
@@ -1567,6 +1569,7 @@ class ImageRenderer:
             # Exceptions: date colors and fee-based colors (green/yellow/orange/red/blue/black)
             if mode == "dark" and color_name not in ["date_normal", "date_holiday", "background",
                                                        "info_bg", "info_outline", "hash_start", "hash_end",
+                                                       "holiday_start", "holiday_end",
                                                        "green", "yellow", "orange", "red", "blue", "black"]:
                 hex_color = "#ffffff"
 
@@ -3004,7 +3007,7 @@ class ImageRenderer:
                     outline=self.get_color("info_outline", web_quality),
                     width=4
                 )
-                self._render_holiday_info(info_draw, holiday_info, font_holiday_title, font_holiday_desc,
+                self._render_holiday_info(info_img, info_draw, holiday_info, font_holiday_title, font_holiday_desc,
                                         info_y, HOLIDAY_HEIGHT, web_quality)
                 info_y += HOLIDAY_HEIGHT + 10
 
@@ -3091,44 +3094,76 @@ class ImageRenderer:
 
             return img
 
-        # Date
-        # y = self.draw_centered(draw, self.get_localized_date(), top_y, font_date, fill=self.get_color("date_holiday" if holiday_info else "date_normal", web_quality))
-        # Choose gradient colors (can use hash frame colors or any theme keys)
+        # Date (merged with holiday title when a holiday is active)
         start_color = self.get_color("hash_start", web_quality)
         end_color = self.get_color("hash_end", web_quality)
 
-        # Use the date_text we already calculated
-        bbox = font_date.getbbox(date_text)
-        text_width = bbox[2] - bbox[0]
-        x = (self.width - text_width) // 2
         y = 20
-        # Always set date_bottom_y to the bottom of the date text plus margin.
-        # Use bbox[3] (actual bottom offset from y), not bbox[3]-bbox[1] (height), so
-        # descenders (e.g. "p" in "April") never overlap the meme image.
-        date_bottom_y = y + bbox[3] + 5
+        if holiday_info:
+            # Merge date + holiday title into a single line with holiday gradient
+            holiday_title = holiday_info.get("title", "")
+            combined_text = f"{date_text}  {holiday_title}" if holiday_title else date_text
+            # Find a font size that fits the combined text in one line
+            combined_font_size = self.get_optimal_date_font_size(combined_text)
+            font_date_combined = self._get_font(self.font_bold, combined_font_size)
+            bbox = font_date_combined.getbbox(combined_text)
+            text_width = bbox[2] - bbox[0]
+            x = (self.width - text_width) // 2
+            date_bottom_y = y + bbox[3] + 5
+            # Horizontal gradient mapped to absolute x positions across all lines.
+            # The longest line (date+title or any desc line) defines the full
+            # gradient range; shorter centered lines use the inner portion.
+            hol_start = self.get_color("holiday_start", web_quality)
+            hol_end = self.get_color("holiday_end", web_quality)
 
-        # Always draw the date at the top, with gradient color
-        date_color = self.get_color("date_holiday", web_quality) if holiday_info else self.get_color("date_normal", web_quality)
-        for i, char in enumerate(date_text):
-            t = i / max(len(date_text) - 1, 1)
-            color = self.interpolate_color(start_color, end_color, t)
-            char_bbox = font_date.getbbox(char)
-            char_width = char_bbox[2] - char_bbox[0]
-            draw.text((x, y), char, font=font_date, fill=color)
-            x += char_width
+            # Find global x extents across all lines (this line + description)
+            desc_text_tmp = holiday_info.get("description", "")
+            holiday_desc_font_tmp, desc_lines_tmp = self._get_holiday_description_layout(desc_text_tmp)
+            global_x_min = x
+            global_x_max = x + text_width
+            for dl in desc_lines_tmp:
+                dl_bbox = holiday_desc_font_tmp.getbbox(dl)
+                dl_w = dl_bbox[2] - dl_bbox[0]
+                dl_x = (self.width - dl_w) // 2
+                global_x_min = min(global_x_min, dl_x)
+                global_x_max = max(global_x_max, dl_x + dl_w)
+            global_span = max(global_x_max - global_x_min, 1)
+
+            # Render date+title via mask + horizontal gradient
+            title_h = bbox[3] - bbox[1]
+            text_mask = Image.new("L", (text_width, title_h), 0)
+            ImageDraw.Draw(text_mask).text((-bbox[0], -bbox[1]), combined_text,
+                                           font=font_date_combined, fill=255)
+            title_grad = Image.new("RGBA", (text_width, title_h))
+            title_grad_draw = ImageDraw.Draw(title_grad)
+            for px in range(text_width):
+                t = (x + px - global_x_min) / global_span
+                c = tuple(int(hol_start[i] + (hol_end[i] - hol_start[i]) * t) for i in range(3)) + (255,)
+                title_grad_draw.line([(px, 0), (px, title_h)], fill=c)
+            title_grad.putalpha(text_mask)
+            img.paste(title_grad, (x, y), title_grad)
+            # Store for _render_holiday_info to use the same gradient mapping
+            holiday_x_range = (global_x_min, global_span)
+        else:
+            bbox = font_date.getbbox(date_text)
+            text_width = bbox[2] - bbox[0]
+            x = (self.width - text_width) // 2
+            date_bottom_y = y + bbox[3] + 5
+            for i, char in enumerate(date_text):
+                t = i / max(len(date_text) - 1, 1)
+                color = self.interpolate_color(start_color, end_color, t)
+                char_bbox = font_date.getbbox(char)
+                char_width = char_bbox[2] - char_bbox[0]
+                draw.text((x, y), char, font=font_date, fill=color)
+                x += char_width
 
         # Define constants needed for calculations
         BLOCK_MARGIN = 8
         HOLIDAY_HEIGHT = 0
         if holiday_info:
-            # Calculate exact height needed based on text content
-            title_text = holiday_info.get("title", "Bitcoin Holiday")
+            # Title is merged into the date line — only description needs its own block
             desc_text = holiday_info.get("description", "")
-            
-            # Title height
-            title_bbox = font_holiday_title.getbbox(title_text)
-            title_height = title_bbox[3] - title_bbox[1]
-            
+
             # Description layout (adaptive font and wrapping)
             holiday_desc_font, desc_lines = self._get_holiday_description_layout(desc_text)
 
@@ -3136,7 +3171,7 @@ class ImageRenderer:
             line_height = desc_bbox[3] - desc_bbox[1]
             desc_total_height = len(desc_lines) * line_height + (len(desc_lines) - 1) * LINE_SPACING_MULTILINE
 
-            HOLIDAY_HEIGHT = title_height + HOLIDAY_TITLE_DESC_GAP + desc_total_height + HOLIDAY_PADDING
+            HOLIDAY_HEIGHT = desc_total_height + HOLIDAY_PADDING
         # Reserve space for hash frame — must stay in sync with y formula in _render_block_info_with_data.
         # y = self.height - self.block_height_area, hash frame drawn at y+3
         hash_frame_y_position = self.height - self.block_height_area + 3
@@ -3202,8 +3237,13 @@ class ImageRenderer:
             return fitted
 
         if prioritize_large_meme:
-            # --- PRIORITY ORDER: Donation (if guaranteed) > Meme (max remaining) > Holiday > Other Info Blocks ---
-            # Step 0: If donation is guaranteed (within 144 blocks), pre-reserve its space so
+            # --- PRIORITY ORDER: Holiday (always) + Donation (if guaranteed) > Meme (max remaining) > Other Info Blocks ---
+            # Step 0a: Always reserve space for holiday description block
+            holiday_reserved = 0
+            if holiday_info:
+                holiday_reserved = HOLIDAY_HEIGHT + 2 * STANDARD_SPACING
+
+            # Step 0b: If donation is guaranteed (within 144 blocks), pre-reserve its space so
             #         the meme is sized into what is left — guaranteeing the block is shown.
             _donation_entry = next(
                 (b for b in info_blocks if b[0].__name__ == 'render_donation_block'), None
@@ -3217,7 +3257,7 @@ class ImageRenderer:
             if _donation_entry and _donation_guaranteed_render:
                 donation_reserved = _block_height(_donation_entry) + 2 * STANDARD_SPACING
 
-            # Step 1: Size meme to MAXIMUM possible size (minus any guaranteed donation reservation)
+            # Step 1: Size meme to MAXIMUM possible size (minus reserved space)
             meme_img = None
             meme_height = 0
             meme_width = 0
@@ -3230,7 +3270,7 @@ class ImageRenderer:
 
                     # Calculate maximum meme height with only mandatory gaps (top + bottom)
                     min_gaps = 2 * STANDARD_SPACING  # Top gap + Bottom gap
-                    max_meme_height = available_content_height - min_gaps - donation_reserved
+                    max_meme_height = available_content_height - min_gaps - donation_reserved - holiday_reserved
                     max_meme_height = max(max_meme_height, 0)
 
                     # Scale meme to fit max width and max height
@@ -3245,19 +3285,12 @@ class ImageRenderer:
                     meme_width = scaled_width
                 except Exception as e:
                     print(f"⚠️ Error loading meme for scaling: {e}")
-            
+
             # --- Step 2: Calculate remaining space after meme ---
             space_after_meme = available_content_height - meme_height
-            
-            # --- Step 3: Try to fit Holiday (higher priority than info blocks) ---
-            holiday_space = 0
-            if holiday_info:
-                # Space needed: gap after meme + holiday + gap before hash = 3 gaps total + holiday
-                space_needed_for_holiday = (3 * STANDARD_SPACING) + HOLIDAY_HEIGHT
-                if space_after_meme >= space_needed_for_holiday:
-                    holiday_space = HOLIDAY_HEIGHT
-                else:
-                    print(f"⚠️ Not enough space for holiday. Need {space_needed_for_holiday}px, have {space_after_meme}px")
+
+            # --- Step 3: Holiday is always shown (space was pre-reserved) ---
+            holiday_space = HOLIDAY_HEIGHT if holiday_info else 0
             
             # --- Step 4: Try to fit Info Blocks in remaining space ---
             remaining_after_holiday = space_after_meme - holiday_space
@@ -3285,54 +3318,36 @@ class ImageRenderer:
                 if shared_data.get('selected_info_blocks') is None:
                     shared_data['selected_info_blocks'] = info_blocks_to_render
             
-            # --- Step 5: Calculate balanced vertical spacing with actual content ---
-            # When no holiday and no info blocks, center the meme vertically
-            if not holiday_space and len(info_blocks_to_render) == 0:
-                # Center meme between date and hash frame
+            # --- Step 5: Render holiday description tight against the date, then distribute remaining space ---
+            # Holiday description is pinned right below the date with a small fixed gap
+            HOLIDAY_DATE_GAP = 5  # Small fixed gap between date line and holiday description
+            current_y = content_top_y
+            current_y = max(current_y, min_content_start_y)
+
+            if holiday_space:
+                current_y += HOLIDAY_DATE_GAP
+                self._render_holiday_info(img, draw, holiday_info, font_holiday_title, font_holiday_desc,
+                                        current_y, HOLIDAY_HEIGHT, web_quality, skip_title=True,
+                                        global_x_range=holiday_x_range)
+                current_y += holiday_space
+
+            # Calculate even gaps for remaining elements (meme + info blocks)
+            remaining_content_top = current_y
+            remaining_available = meme_bottom_y - remaining_content_top
+            remaining_content_height = meme_height
+            if len(info_blocks_to_render):
+                remaining_content_height += _blocks_total_height(info_blocks_to_render)
+
+            if len(info_blocks_to_render) == 0 and not holiday_space:
+                # No holiday, no info blocks — center the meme vertically
                 center_point = content_top_y + (available_content_height // 2)
                 current_y = center_point - (meme_height // 2) if meme_height > 0 else center_point
+                current_y = max(current_y, min_content_start_y)
             else:
-                # Calculate total content height (actual heights, no gaps included)
-                total_content_height = 0
-                if holiday_space:
-                    total_content_height += holiday_space
-                total_content_height += meme_height
-                if len(info_blocks_to_render):
-                    total_content_height += _blocks_total_height(info_blocks_to_render)
-                
-                # Calculate remaining space to distribute evenly across gaps
-                remaining_space = available_content_height - total_content_height
-                
-                # Calculate number of gaps for even distribution
-                # Gaps: Top (after date) + Between elements + Bottom (before hash)
-                num_gaps = 2  # Top and bottom gaps are mandatory
-                if holiday_space: num_gaps += 1  # gap between holiday and meme
+                num_gaps = 2  # top + bottom
                 if len(info_blocks_to_render): num_gaps += 1  # gap between meme and info blocks
-                
-                # Distribute spacing evenly across all gaps, ensuring minimum spacing
-                gap_size = max(STANDARD_SPACING, remaining_space // num_gaps) if num_gaps > 0 else STANDARD_SPACING
-                
-                # Start positioning elements with balanced spacing
-                current_y = content_top_y + gap_size
-
-            # Enforce a hard minimum margin below the date, even for centered/tall memes.
-            current_y = max(current_y, min_content_start_y)
-                    
-            # Render holiday (centered in assigned space)
-            if holiday_space:
-                # Draw background
-                draw.rounded_rectangle(
-                    [(SECTION_SIDE_PADDING + BLOCK_INNER_MARGIN, current_y),
-                     (self.width - SECTION_SIDE_PADDING - BLOCK_INNER_MARGIN, current_y + HOLIDAY_HEIGHT)],
-                    radius=BLOCK_RADIUS,
-                    fill=self.get_color("info_bg", web_quality),
-                    outline=self.get_color("info_outline", web_quality),
-                    width=4
-                )
-                
-                self._render_holiday_info(draw, holiday_info, font_holiday_title, font_holiday_desc,
-                                        current_y, HOLIDAY_HEIGHT, web_quality)
-                current_y += holiday_space + gap_size  # Add gap after holiday
+                gap_size = max(STANDARD_SPACING, (remaining_available - remaining_content_height) // num_gaps) if num_gaps > 0 else STANDARD_SPACING
+                current_y = remaining_content_top + gap_size
 
             # Render meme (centered horizontally)
             if meme_img:
@@ -3376,32 +3391,30 @@ class ImageRenderer:
             # Treat all elements (Holiday, Meme, Info Block 1, Info Block 2, ...) as separate items
             # and distribute vertical space evenly between them, as well as top and bottom.
             
-            # 1. Count elements and gaps
+            # 1. Count elements and gaps (holiday is pinned to date, not part of even distribution)
             num_elements = 1  # Meme is always present (or fallback)
-            if holiday_info:
-                num_elements += 1
-            
+
             # Add count of info blocks
             num_info_blocks = len(info_blocks)
             num_elements += num_info_blocks
-            
+
             # Gaps = Elements + 1 (Top, between each, Bottom)
             num_gaps = num_elements + 1
-            
-            # 2. Calculate fixed content height (Holiday + Info Blocks raw height)
-            # Note: We don't include fixed margins here, as we'll use dynamic gaps
-            fixed_content_height = 0
-            if holiday_info:
-                fixed_content_height += HOLIDAY_HEIGHT
-            
-            fixed_content_height += _blocks_total_height(info_blocks)
-            
+
+            # 2. Calculate fixed content height (Info Blocks raw height)
+            # Holiday is rendered tight against the date, not part of the gap distribution
+            fixed_content_height = _blocks_total_height(info_blocks)
+
+            # Account for holiday space consumed above the gap-distributed area
+            HOLIDAY_DATE_GAP = 5
+            holiday_pinned_space = (HOLIDAY_HEIGHT + HOLIDAY_DATE_GAP) if holiday_info else 0
+
             # 3. Calculate Gaps estimate to find available Meme Height
             # We use STANDARD_SPACING as a minimum/target estimate
             estimated_total_gaps = num_gaps * STANDARD_SPACING
-            
+
             # 4. Calculate Max Meme Height
-            max_meme_height = available_content_height - fixed_content_height - estimated_total_gaps
+            max_meme_height = available_content_height - fixed_content_height - estimated_total_gaps - holiday_pinned_space
             if max_meme_height < 50: 
                 max_meme_height = 50  # Minimum height constraint
 
@@ -3430,11 +3443,11 @@ class ImageRenderer:
                 # Fallback height if no meme
                 meme_height = max(50, max_meme_height)
             
-            # 6. Calculate Actual Total Content Height
+            # 6. Calculate Actual Total Content Height (excluding pinned holiday)
             total_content_height = fixed_content_height + meme_height
-            
+
             # 7. Calculate Real Remaining Space and Gap Size
-            remaining_space = available_content_height - total_content_height
+            remaining_space = available_content_height - total_content_height - holiday_pinned_space
             
             # Distribute spacing evenly, ensuring at least STANDARD_SPACING if possible, 
             # but allow shrinking if space is tight (which shouldn't happen with our meme calc)
@@ -3442,24 +3455,19 @@ class ImageRenderer:
             gap_size = max(5, remaining_space // num_gaps) if num_gaps > 0 else STANDARD_SPACING
             
             # 8. Render Elements Loop
-            current_y = content_top_y + gap_size
+            # Pin holiday description tight against the date first
+            current_y = content_top_y
             current_y = max(current_y, min_content_start_y)
-            
-            # Render Holiday
-            if holiday_info:
-                # Draw background
-                draw.rounded_rectangle(
-                    [(SECTION_SIDE_PADDING + BLOCK_INNER_MARGIN, current_y),
-                     (self.width - SECTION_SIDE_PADDING - BLOCK_INNER_MARGIN, current_y + HOLIDAY_HEIGHT)],
-                    radius=BLOCK_RADIUS,
-                    fill=self.get_color("info_bg", web_quality),
-                    outline=self.get_color("info_outline", web_quality),
-                    width=4
-                )
 
-                self._render_holiday_info(draw, holiday_info, font_holiday_title, font_holiday_desc,
-                                        current_y, HOLIDAY_HEIGHT, web_quality)
-                current_y += HOLIDAY_HEIGHT + gap_size
+            if holiday_info:
+                current_y += HOLIDAY_DATE_GAP
+                self._render_holiday_info(img, draw, holiday_info, font_holiday_title, font_holiday_desc,
+                                        current_y, HOLIDAY_HEIGHT, web_quality, skip_title=True,
+                                        global_x_range=holiday_x_range)
+                current_y += HOLIDAY_HEIGHT
+
+            # Start even distribution after holiday
+            current_y += gap_size
 
             # Render Meme
             if meme_img:
@@ -4144,61 +4152,143 @@ class ImageRenderer:
             print("⚠️ No fallback meme available")
     
 
-    def _render_holiday_info(self, draw, holiday_info, font_title, font_desc, 
-                           holiday_box_top_y, holiday_height, web_quality=False):
-        """Render Bitcoin holiday information dynamically centered in available space.
-        
+    def _render_holiday_info(self, img, draw, holiday_info, font_title, font_desc,
+                           holiday_box_top_y, holiday_height, web_quality=False,
+                           skip_title=False, global_x_range=None):
+        """Render Bitcoin holiday information with a horizontal gradient.
+
+        The gradient flows left-to-right (holiday_start → holiday_end) mapped
+        to absolute x positions.  The longest line spans the full colour range;
+        shorter centered lines use the inner portion so equal x positions
+        always show the same colour tone.
+
         Args:
-            draw (ImageDraw): Drawing context
+            img (Image): Target image to composite onto
+            draw (ImageDraw): Drawing context (used only for layout calculations)
             holiday_info (dict): Holiday information
             font_title (ImageFont): Font for holiday title
             font_desc (ImageFont): Font for holiday description
             holiday_box_top_y (int): Top Y position of the holiday box
             holiday_height (int): Reserved height for holiday content
             web_quality (bool): True for web display, False for e-ink
+            skip_title (bool): If True, only render description (title merged with date)
+            global_x_range (tuple|None): (x_min, span) from the caller so the
+                date+title line and description share the same gradient mapping.
         """
-        # Get configurable colors using color LUT
-        title_color = self.get_color("holiday_title", web_quality)
-        desc_color = self.get_color("holiday_desc", web_quality)
+        # Get configurable holiday gradient colors
+        hol_start = self.get_color("holiday_start", web_quality)
+        hol_end = self.get_color("holiday_end", web_quality)
 
         print(f"🎄 Rendering holiday: {holiday_info.get('title', 'No title')}")
-            
-        # Calculate text dimensions for dynamic centering
+
         title_text = holiday_info.get("title", "Bitcoin Holiday")
         desc_text = holiday_info.get("description", "")
-            
-        # Calculate title height
-        title_bbox = font_title.getbbox(title_text)
-        title_height = title_bbox[3] - title_bbox[1]
-            
+
         # Calculate description lines with adaptive font and wrapping
         holiday_desc_font, desc_lines = self._get_holiday_description_layout(desc_text)
         print(f"   📝 Holiday description wrapped into {len(desc_lines)} line(s)")
-            
+
         # Calculate total description height
         desc_bbox = holiday_desc_font.getbbox("Ay")  # Sample text for line height
         line_height = desc_bbox[3] - desc_bbox[1]
         desc_total_height = len(desc_lines) * line_height + (len(desc_lines) - 1) * LINE_SPACING_MULTILINE
-            
-        # Calculate total holiday content height
-        total_holiday_height = title_height + HOLIDAY_TITLE_DESC_GAP + desc_total_height
-            
-        # Calculate equal top and bottom padding
-        vertical_padding = (holiday_height - total_holiday_height) // 2
-        
-        y = holiday_box_top_y + vertical_padding - 5
-            
-        # Render the holiday title
-        y = self.draw_centered(draw, title_text, y, font_title, fill=title_color)
-            
-        # Render the holiday description lines
-        y += HOLIDAY_TITLE_DESC_GAP
+
+        if skip_title:
+            # Title already merged with date line — pin description to top of block
+            content_y = holiday_box_top_y - 5
+        else:
+            # Full render: title + description (landscape mode)
+            title_bbox_val = font_title.getbbox(title_text)
+            title_height_val = title_bbox_val[3] - title_bbox_val[1]
+            total_holiday_height = title_height_val + HOLIDAY_TITLE_DESC_GAP + desc_total_height
+            vertical_padding = (holiday_height - total_holiday_height) // 2
+            content_y = holiday_box_top_y + vertical_padding - 5
+
+        # --- Horizontal gradient mapped to absolute x positions ---
+        # The longest line (title or any description line) defines the full
+        # gradient range (x_min → x_max = start_color → end_color).
+        # Shorter centered lines use the inner portion of the gradient,
+        # so equal x positions always have the same colour tone.
+
+        img_width = img.size[0]
+
+        # Use caller-provided global x range, or compute from local lines
+        if global_x_range:
+            global_x_min, global_span = global_x_range
+        else:
+            # Collect x extents of all lines to find global min/max
+            # Use visual width and simple centering to match the date+title code
+            line_extents = []  # (x_start, width) for each line
+            for line in desc_lines:
+                lb = holiday_desc_font.getbbox(line)
+                lw = lb[2] - lb[0]
+                lx = (img_width - lw) // 2
+                line_extents.append((lx, lw))
+
+            if not skip_title:
+                title_bbox_full = font_title.getbbox(title_text)
+                title_w = title_bbox_full[2] - title_bbox_full[0]
+                title_h = title_bbox_full[3] - title_bbox_full[1]
+                tx = (img_width - title_w) // 2
+                line_extents.append((tx, title_w))
+
+            global_x_min = min(lx for lx, _ in line_extents) if line_extents else 0
+            global_x_max = max(lx + lw for lx, lw in line_extents) if line_extents else img_width
+            global_span = max(global_x_max - global_x_min, 1)
+
+        # Render title (landscape mode only) using mask + horizontal gradient
+        if not skip_title:
+            if global_x_range:
+                # Ensure title dimensions are available even when extents were not computed
+                title_bbox_full = font_title.getbbox(title_text)
+                title_w = title_bbox_full[2] - title_bbox_full[0]
+                title_h = title_bbox_full[3] - title_bbox_full[1]
+                tx = (img_width - title_w) // 2
+            title_mask = Image.new("L", (title_w, title_h), 0)
+            ImageDraw.Draw(title_mask).text((-title_bbox_full[0], -title_bbox_full[1]),
+                                            title_text, font=font_title, fill=255)
+            title_grad = Image.new("RGBA", (title_w, title_h))
+            tg_draw = ImageDraw.Draw(title_grad)
+            for px in range(title_w):
+                t = (tx + px - global_x_min) / global_span
+                c = tuple(int(hol_start[i] + (hol_end[i] - hol_start[i]) * t) for i in range(3)) + (255,)
+                tg_draw.line([(px, 0), (px, title_h)], fill=c)
+            title_grad.putalpha(title_mask)
+            img.paste(title_grad, (tx, content_y), title_grad)
+
+            content_y += title_height_val + HOLIDAY_TITLE_DESC_GAP
+
+        # Render description lines using mask + horizontal gradient
+        # Use ascent+descent for line height to avoid clipping descenders (g, p, q, y)
+        ascent, descent = holiday_desc_font.getmetrics()
+        full_line_height = ascent + descent
+        desc_canvas_w = img_width
+        desc_canvas_h = max(len(desc_lines) * full_line_height + (len(desc_lines) - 1) * LINE_SPACING_MULTILINE, 1)
+
+        desc_mask = Image.new("L", (desc_canvas_w, desc_canvas_h), 0)
+        desc_mask_draw = ImageDraw.Draw(desc_mask)
+
+        local_y = 0
         for line in desc_lines:
             bbox = holiday_desc_font.getbbox(line)
-            text_height = bbox[3] - bbox[1]
-            x = self.layout.get_text_centered_x(bbox)
-            draw.text((x, y), line, font=holiday_desc_font, fill=desc_color)
-            y += text_height + LINE_SPACING_MULTILINE
+            text_w = bbox[2] - bbox[0]
+            # Centre using visual width, then offset by -bbox[0] so the visual
+            # left edge lands exactly at the centred x — matching the date+title
+            # gradient coordinate system.
+            lx = (img_width - text_w) // 2
+            desc_mask_draw.text((lx - bbox[0], local_y), line, font=holiday_desc_font, fill=255)
+            local_y += full_line_height + LINE_SPACING_MULTILINE
+
+        # Horizontal gradient across the full canvas width
+        desc_grad = Image.new("RGBA", (desc_canvas_w, desc_canvas_h))
+        dg_draw = ImageDraw.Draw(desc_grad)
+        for px in range(desc_canvas_w):
+            t = (px - global_x_min) / global_span
+            t = max(0.0, min(1.0, t))
+            c = tuple(int(hol_start[i] + (hol_end[i] - hol_start[i]) * t) for i in range(3)) + (255,)
+            dg_draw.line([(px, 0), (px, desc_canvas_h)], fill=c)
+        desc_grad.putalpha(desc_mask)
+        img.paste(desc_grad, (0, content_y), desc_grad)
     
 
     def display_on_epaper(self, image_path="current.png", message=None):

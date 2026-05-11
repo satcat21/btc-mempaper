@@ -735,7 +735,8 @@ class ConfigManager:
         passthrough_settings = [
             "language", "web_orientation", "eink_orientation", "fee_parameter",
             "moscow_time_unit", "bitaxe_display_mode",
-            "color_holiday_light", "color_holiday_dark",
+            "color_holiday_light", "color_holiday_end_light",
+            "color_holiday_dark", "color_holiday_end_dark",
             "color_btc_price_light", "color_btc_price_dark",
             "color_bitaxe_stats_light", "color_bitaxe_stats_dark",
             "color_wallets_light", "color_wallets_dark",
@@ -1159,16 +1160,30 @@ class ConfigManager:
             },
             "color_holiday_light": {
                 "type": "color",
-                "label": t.get("color_holiday_light", "Holiday (Light Mode)"),
-                "description": t.get("color_holiday_light_desc", "Color for holiday text in light mode"),
-                "default": "#cd853f",
+                "label": t.get("color_holiday_light", "Holiday Start (Light)"),
+                "description": t.get("color_holiday_light_desc", "Gradient start color for holiday text in light mode"),
+                "default": "#F7931A",
+                "category": "general"
+            },
+            "color_holiday_end_light": {
+                "type": "color",
+                "label": t.get("color_holiday_end_light", "Holiday End (Light)"),
+                "description": t.get("color_holiday_end_light_desc", "Gradient end color for holiday text in light mode"),
+                "default": "#C62828",
                 "category": "general"
             },
             "color_holiday_dark": {
                 "type": "color",
-                "label": t.get("color_holiday_dark", "Holiday (Dark Mode)"),
-                "description": t.get("color_holiday_dark_desc", "Color for holiday text in dark mode"),
-                "default": "#09a3ba",
+                "label": t.get("color_holiday_dark", "Holiday Start (Dark)"),
+                "description": t.get("color_holiday_dark_desc", "Gradient start color for holiday text in dark mode"),
+                "default": "#F7931A",
+                "category": "general"
+            },
+            "color_holiday_end_dark": {
+                "type": "color",
+                "label": t.get("color_holiday_end_dark", "Holiday End (Dark)"),
+                "description": t.get("color_holiday_end_dark_desc", "Gradient end color for holiday text in dark mode"),
+                "default": "#FF6F6F",
                 "category": "general"
             },
             "omni_device_name": {

@@ -13,8 +13,10 @@
   "prioritize_large_scaled_meme": true,
   "color_mode_dark": true,
 
-  "color_holiday_light": "#CD853F",
+  "color_holiday_light": "#F7931A",
+  "color_holiday_end_light": "#C62828",
   "color_holiday_dark": "#F7931A",
+  "color_holiday_end_dark": "#FF6F6F",
   "color_btc_price_light": "#17805B",
   "color_btc_price_dark": "#00C896",
   "color_bitaxe_stats_light": "#B89C1D",
