@@ -385,9 +385,10 @@ class ImageRenderer:
         self._meme_cache_stems = set()       # filename stems (no extension) for quick lookup
         self._meme_cache_meta = {}           # stem -> list of searchable strings
         self._meme_cache_ts = 0.0            # last rebuild timestamp
-        self._MEME_CACHE_TTL = 86400         # seconds before auto-refresh
+        self._MEME_CACHE_TTL = 86400         # seconds before auto-refresh (24h; mutations invalidate immediately)
         self._recent_memes = []              # last N meme paths to avoid repeats
         self._RECENT_MEMES_MAX = 50          # remember this many recent selections
+        self._holiday_rr_index = {}          # round-robin index per date key (MM-DD)
 
         self.font_regular = os.path.join("static", "fonts", "Roboto-Regular.ttf")
         self.font_bold = os.path.join("static", "fonts", "Roboto-Bold.ttf")
@@ -1683,10 +1684,18 @@ class ImageRenderer:
             str or None: Path to selected meme or None if no memes found
         """
         # Try holiday-themed selection first
-        holiday = self.get_today_btc_holiday()
-        if holiday:
-            holiday_title = holiday.get("title", "")
-            keywords = self._holiday_keywords(holiday_title)
+        # Extract keywords from English + German titles (memes may be tagged in either)
+        # Use the current round-robin entry (same one get_today_btc_holiday will display)
+        today_key = datetime.now().strftime("%m-%d")
+        holiday_list = btc_holidays.get(today_key)
+        if holiday_list and isinstance(holiday_list, list) and len(holiday_list) > 0:
+            idx = self._holiday_rr_index.get(today_key, 0) % len(holiday_list)
+            holiday_data = holiday_list[idx]
+            en_title = holiday_data.get("en", {}).get("title", "")
+            de_title = holiday_data.get("de", {}).get("title", "")
+            keywords = list(dict.fromkeys(
+                self._holiday_keywords(en_title) + self._holiday_keywords(de_title)
+            ))
             if keywords:
                 result = self._pick_local_meme_by_keywords(keywords)
                 if result:
@@ -1711,10 +1720,22 @@ class ImageRenderer:
         and words shorter than 3 characters.
         """
         import re
-        STOPWORDS = {'bitcoin', 'btc', 'day', 'the', 'of', 'a', 'an', 'is', 'this', 'in', 'on'}
+        STOPWORDS = {
+            # English
+            'bitcoin', 'btc', 'day', 'the', 'of', 'a', 'an', 'is', 'this', 'in', 'on',
+            'not', 'for', 'its', 'was', 'has', 'are', 'but', 'all', 'can',
+            'first', 'good',
+            # German
+            'tag', 'der', 'die', 'das', 'den', 'dem', 'des', 'ein', 'eine', 'und',
+            'von', 'auf', 'aus', 'mit', 'zum', 'zur', 'als', 'bei', 'vor', 'nach',
+            'erster', 'erste', 'ersten', 'erstes', 'guten', 'gute', 'guter',
+            'nicht', 'oder', 'auch', 'noch', 'nur', 'wie',
+        }
+        # Also filter out pure-numeric tokens (e.g. "000" from "$1,000")
         cleaned = re.sub(r"[^a-z0-9 ]", " ", title.lower())
         return [w for w in cleaned.split()
-                if w not in STOPWORDS and not w.startswith('#') and len(w) >= 3]
+                if w not in STOPWORDS and not w.startswith('#') and len(w) >= 3
+                and not w.isdigit()]
 
     # ------------------------------------------------------------------
     # Meme cache helpers
@@ -2010,16 +2031,18 @@ class ImageRenderer:
         """
         today_key = datetime.now().strftime("%m-%d")
         holiday_list = btc_holidays.get(today_key)
-        
+
         if holiday_list and isinstance(holiday_list, list) and len(holiday_list) > 0:
-            # Take the first holiday entry (there could be multiple)
-            holiday = holiday_list[0]
-            
+            # Round-robin across multiple entries for the same date
+            idx = self._holiday_rr_index.get(today_key, 0)
+            holiday = holiday_list[idx % len(holiday_list)]
+            self._holiday_rr_index[today_key] = idx + 1
+
             if holiday and self.lang in holiday:
                 return holiday[self.lang]
             elif holiday and "en" in holiday:
                 return holiday["en"]  # fallback to English
-        
+
         return None
     
     def get_fee_and_block_info(self, mempool_api=None):
