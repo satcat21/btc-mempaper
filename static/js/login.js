@@ -39,17 +39,4 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
 // Focus username field on load
 document.getElementById('username').focus();
 
-// Apply dark mode from localStorage or system preference
-(async function() {
-    const storedDarkMode = localStorage.getItem('mempaper_dark_mode');
-    if (storedDarkMode === 'true') {
-        document.body.classList.add('dark-mode');
-    } else if (storedDarkMode === 'false') {
-        document.body.classList.remove('dark-mode');
-    } else {
-        // No localStorage value - use system preference
-        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-            document.body.classList.add('dark-mode');
-        }
-    }
-})();
+

@@ -97,18 +97,13 @@ let memeToDelete = null;
 function applyDarkMode(isDarkMode) {
     if (isDarkMode) {
         document.body.classList.add('dark-mode');
-        localStorage.setItem('mempaper_dark_mode', 'true');
     } else {
         document.body.classList.remove('dark-mode');
-        localStorage.setItem('mempaper_dark_mode', 'false');
     }
 }
 
 function applyDarkModeFromStorage() {
-    const storedDarkMode = localStorage.getItem('mempaper_dark_mode');
-    if (storedDarkMode === 'true') {
-        document.body.classList.add('dark-mode');
-    }
+    // Theme is applied server-side via body class — no client-side action needed
 }
 
 // Check if we're on the config page

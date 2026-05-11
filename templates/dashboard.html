@@ -9,7 +9,7 @@
     <script src="static/js/socket.io.min.js"></script>
     <script src="static/js/confirm-modal.js"></script>
 </head>
-<body class="orientation-{{ orientation }}">
+<body class="orientation-{{ orientation }}{% if dark_mode %} dark-mode{% endif %}">
     <!-- Desktop Navigation - Left Side -->
     <div class="desktop-nav-buttons">
         <a href="/config" id="desktop-config-button" class="nav-button icon-only" title="{{ translations.settings }}">

@@ -420,10 +420,34 @@ class MempaperApp:
           highest — always show the all-time largest donation.
           auto    — show latest for 432 blocks after the last donation; fall back
                     to highest when 432 blocks have passed without a new donation.
+
+        The returned dict always includes:
+          _guaranteed — True for the first 144 blocks after the latest donation
+                        (renderer pre-reserves space and shows unconditionally).
+                        False afterwards (block competes with others for space).
         """
         mode = self.config.get("donation_display_mode", "latest")
+
+        # Within 144 blocks (~24h) of the last received donation: guarantee display
+        guaranteed = False
+        if (self._latest_donation is not None
+                and self._latest_donation_block_height is not None
+                and self.current_block_height is not None):
+            try:
+                blocks_since = int(self.current_block_height) - int(self._latest_donation_block_height)
+                guaranteed = blocks_since <= 144
+            except (TypeError, ValueError):
+                guaranteed = True  # safe default when comparison fails
+
+        def _tag(d):
+            if d is None:
+                return None
+            d = dict(d)
+            d["_guaranteed"] = guaranteed
+            return d
+
         if mode == "highest":
-            return self._highest_donation
+            return _tag(self._highest_donation)
         if mode == "auto":
             if self._latest_donation is None:
                 d = self._highest_donation
@@ -447,13 +471,13 @@ class MempaperApp:
                         else:
                             d = self._highest_donation
                             effective = "highest"
-            # Return a tagged copy so the renderer knows which label to show
             if d is not None:
                 d = dict(d)
                 d["_effective_mode"] = effective
+                d["_guaranteed"] = guaranteed
             return d
         # default: "latest"
-        return self._latest_donation
+        return _tag(self._latest_donation)
 
     def _save_donations(self):
         """Persist donation history to disk."""
@@ -3146,7 +3170,8 @@ class MempaperApp:
                                  # This orientation determines the CSS class for layout
                                  orientation=orientation,
                                  block_height=block_height,
-                                 is_authenticated=is_authenticated)
+                                 is_authenticated=is_authenticated,
+                                 dark_mode=self.config.get('color_mode_dark', True))
         
         @self.app.route('/config')
         @require_web_auth(self.auth_manager)
@@ -3157,7 +3182,8 @@ class MempaperApp:
             current_translations = translations.get(lang, translations["en"])
             
             return render_template('config.html', 
-                                 translations=current_translations)
+                                 translations=current_translations,
+                                 dark_mode=self.config.get('color_mode_dark', True))
         
         @self.app.route('/login')
         def login_page():
@@ -3170,7 +3196,8 @@ class MempaperApp:
             lang = self.config.get("language", "en")
             current_translations = translations.get(lang, translations["en"])
             
-            return render_template('login.html', translations=current_translations)
+            return render_template('login.html', translations=current_translations,
+                                 dark_mode=self.config.get('color_mode_dark', True))
         
         @self.app.route('/api/login', methods=['POST', 'OPTIONS'])
         @require_rate_limit(self.auth_manager)
@@ -3839,6 +3866,8 @@ class MempaperApp:
                 # Save file
                 file.save(upload_path)
                 
+                self.image_renderer.invalidate_meme_cache()
+                
                 return jsonify({
                     'success': True, 
                     'message': f'Meme uploaded successfully: {filename}',
@@ -3862,56 +3891,22 @@ class MempaperApp:
                 if not os.path.exists(memes_dir):
                     return jsonify({'memes': [], 'total': 0, 'page': page, 'per_page': per_page})
                 
-                # Get all meme files (skip internal cache files prefixed with _)
-                all_files = []
-                for filename in os.listdir(memes_dir):
-                    if (filename.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp'))
-                            and not filename.startswith('_')):
-                        all_files.append(filename)
+                # Use cached file list + metadata from image_renderer
+                all_files = list(self.image_renderer.get_cached_meme_files())
                 
-                # If search term provided, filter by tags, descriptions and filename
+                # If search term provided, filter by cached metadata and filename
                 if search:
-                    import json as _json
-                    # Build metadata map from index.jsonl and _state_memes.jsonl
-                    meta_map = {}  # id -> list of searchable strings
-                    for jsonl_name in ('index.jsonl', '_state_memes.jsonl'):
-                        jsonl_path = os.path.join(memes_dir, jsonl_name)
-                        if not os.path.exists(jsonl_path):
-                            continue
-                        with open(jsonl_path, encoding='utf-8') as fh:
-                            for line in fh:
-                                line = line.strip()
-                                if not line:
-                                    continue
-                                try:
-                                    entry = _json.loads(line)
-                                    mid = entry.get('id', '')
-                                    if not mid or mid in meta_map:
-                                        continue
-                                    searchable = []
-                                    searchable.extend(t.lower() for t in entry.get('tags', []))
-                                    for key in ('description_en', 'description_de', 'ocr_text',
-                                                'meme_template', 'sentiment', 'humor_type'):
-                                        val = entry.get(key, '')
-                                        if val:
-                                            searchable.append(val.lower())
-                                    meta_map[mid] = searchable
-                                except _json.JSONDecodeError:
-                                    continue
-                    
+                    meta_map = self.image_renderer.get_cached_meme_meta()
                     filtered = []
                     for filename in all_files:
                         stem = os.path.splitext(filename)[0]
                         searchable = meta_map.get(stem, [])
-                        # Match by metadata fields or filename substring
                         if (any(search in s for s in searchable)
                                 or search in filename.lower()):
                             filtered.append(filename)
                     all_files = filtered
                 
-                # Sort files for consistent pagination
-                all_files.sort()
-                all_files.sort()
+                # Already sorted by the cache
                 
                 # Calculate pagination
                 total_files = len(all_files)
@@ -4045,6 +4040,8 @@ class MempaperApp:
                 if os.path.exists(thumb_path):
                     os.remove(thumb_path)
 
+                self.image_renderer.invalidate_meme_cache()
+
                 return jsonify({
                     'success': True,
                     'message': f'Meme deleted successfully: {filename}'
@@ -4079,6 +4076,8 @@ class MempaperApp:
                 
                 # Rename the file
                 os.rename(old_path, new_path)
+                
+                self.image_renderer.invalidate_meme_cache()
                 
                 return jsonify({
                     'success': True,

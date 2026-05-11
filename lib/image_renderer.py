@@ -380,6 +380,15 @@ class ImageRenderer:
         self.meme_dir = os.path.join("static", "memes")
         self.opsec_dir = os.path.join("static", "opsec")
 
+        # Meme file list + metadata cache (avoids re-scanning 4000+ files on every call)
+        self._meme_cache_files = []          # sorted list of image filenames
+        self._meme_cache_stems = set()       # filename stems (no extension) for quick lookup
+        self._meme_cache_meta = {}           # stem -> list of searchable strings
+        self._meme_cache_ts = 0.0            # last rebuild timestamp
+        self._MEME_CACHE_TTL = 86400         # seconds before auto-refresh
+        self._recent_memes = []              # last N meme paths to avoid repeats
+        self._RECENT_MEMES_MAX = 50          # remember this many recent selections
+
         self.font_regular = os.path.join("static", "fonts", "Roboto-Regular.ttf")
         self.font_bold = os.path.join("static", "fonts", "Roboto-Bold.ttf")
         self.font_mono = os.path.join("static", "fonts", "IBMPlexMono-Bold.ttf")
@@ -1342,6 +1351,13 @@ class ImageRenderer:
             return None  # default layout always shows all blocks
 
         config = self.config
+        _donation_data_self = getattr(self, '_donation_data', None)
+        _donation_guaranteed = (
+            isinstance(_donation_data_self, dict)
+            and bool(_donation_data_self.get('_guaranteed'))
+            and config.get("show_donation_block", False)
+        )
+
         enabled = []
         if config.get("show_btc_price_block", True):       enabled.append('price')
         if config.get("show_countdown_block", True):        enabled.append('countdown')
@@ -1349,15 +1365,25 @@ class ImageRenderer:
         if config.get("show_network_block", True):          enabled.append('network')
         if config.get("show_bitaxe_block", True):           enabled.append('bitaxe')
         if config.get("show_wallet_balances_block", True):  enabled.append('wallet')
+        # Non-guaranteed donation competes in the random pool; guaranteed is handled below
+        if not _donation_guaranteed and config.get("show_donation_block", False) and _donation_data_self:
+            enabled.append('donation')
+
+        max_n = self._estimate_max_info_blocks(meme_path, block_height)
+
+        if _donation_guaranteed:
+            # Always include donation even if the meme fills the screen (renderer reserves space)
+            if max_n < 0:
+                max_n = len(enabled)
+            _random.shuffle(enabled)
+            return ['donation'] + enabled[:min(max_n, len(enabled))]
 
         if not enabled:
             return []
-
-        max_n = self._estimate_max_info_blocks(meme_path, block_height)
         if max_n == 0:
             return []
         if max_n < 0:
-            max_n = len(enabled)  # error: assume all fit
+            max_n = len(enabled)
 
         _random.shuffle(enabled)
         # +1 safety margin: over-estimate by 1 to avoid a boundary miss
@@ -1651,6 +1677,7 @@ class ImageRenderer:
     def pick_random_meme(self):
         """
         Select a random meme image from the local memes directory.
+        Avoids repeating recently shown memes.
 
         Returns:
             str or None: Path to selected meme or None if no memes found
@@ -1663,8 +1690,18 @@ class ImageRenderer:
             if keywords:
                 result = self._pick_local_meme_by_keywords(keywords)
                 if result:
+                    self._track_recent_meme(result)
                     return result
-        return self._pick_local_meme()
+        result = self._pick_local_meme()
+        if result:
+            self._track_recent_meme(result)
+        return result
+
+    def _track_recent_meme(self, path: str) -> None:
+        """Record a meme path in the recent history ring buffer."""
+        self._recent_memes.append(path)
+        if len(self._recent_memes) > self._RECENT_MEMES_MAX:
+            self._recent_memes = self._recent_memes[-self._RECENT_MEMES_MAX:]
 
     @staticmethod
     def _holiday_keywords(title: str) -> list:
@@ -1679,47 +1716,120 @@ class ImageRenderer:
         return [w for w in cleaned.split()
                 if w not in STOPWORDS and not w.startswith('#') and len(w) >= 3]
 
+    # ------------------------------------------------------------------
+    # Meme cache helpers
+    # ------------------------------------------------------------------
+
+    def _refresh_meme_cache(self, force: bool = False) -> None:
+        """Rebuild the cached meme file list + metadata if stale or forced."""
+        import json as _json
+        import time as _time
+
+        now = _time.time()
+        if not force and (now - self._meme_cache_ts) < self._MEME_CACHE_TTL and self._meme_cache_files:
+            return  # cache still fresh
+
+        memes_dir = self.meme_dir
+        if not os.path.isdir(memes_dir):
+            self._meme_cache_files = []
+            self._meme_cache_stems = set()
+            self._meme_cache_meta = {}
+            self._meme_cache_ts = now
+            return
+
+        # 1. Scan directory once
+        files = [
+            f for f in os.listdir(memes_dir)
+            if f.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp'))
+            and not f.startswith('_')
+        ]
+        files.sort()
+        stems = {os.path.splitext(f)[0] for f in files}
+
+        # 2. Build metadata map from index.jsonl + _state_memes.jsonl
+        meta: dict[str, list[str]] = {}
+        for jsonl_name in ('index.jsonl', '_state_memes.jsonl'):
+            jsonl_path = os.path.join(memes_dir, jsonl_name)
+            if not os.path.exists(jsonl_path):
+                continue
+            try:
+                with open(jsonl_path, encoding='utf-8') as fh:
+                    for line in fh:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            entry = _json.loads(line)
+                        except _json.JSONDecodeError:
+                            continue
+                        mid = entry.get('id', '')
+                        if not mid or mid in meta:
+                            continue
+                        searchable: list[str] = []
+                        searchable.extend(t.lower() for t in entry.get('tags', []))
+                        for key in ('description_en', 'description_de', 'ocr_text',
+                                    'meme_template', 'sentiment', 'humor_type'):
+                            val = entry.get(key, '')
+                            if val:
+                                searchable.append(val.lower())
+                        meta[mid] = searchable
+            except OSError:
+                continue
+
+        self._meme_cache_files = files
+        self._meme_cache_stems = stems
+        self._meme_cache_meta = meta
+        self._meme_cache_ts = now
+
+    def invalidate_meme_cache(self) -> None:
+        """Force the meme cache to rebuild on next access."""
+        self._meme_cache_ts = 0.0
+
+    def get_cached_meme_files(self) -> list[str]:
+        """Return the cached sorted list of meme filenames."""
+        self._refresh_meme_cache()
+        return self._meme_cache_files
+
+    def get_cached_meme_meta(self) -> dict[str, list[str]]:
+        """Return the cached metadata map (stem -> searchable strings)."""
+        self._refresh_meme_cache()
+        return self._meme_cache_meta
+
+    # ------------------------------------------------------------------
+
     def _pick_local_meme_by_keywords(self, keywords: list) -> str | None:
         """Return a random local meme whose tags contain any of the keywords.
 
-        Loads index.jsonl (written by the bulk downloader) and filters to
-        memes whose tag list contains at least one keyword as a substring.
-        Only returns memes whose .webp file is actually on disk.
-        Falls back to None if the index is missing or no matches found.
+        Uses the cached metadata from index.jsonl and filters to memes whose
+        tag list contains at least one keyword as a substring.
+        Only returns memes whose file is actually on disk.
+        Avoids recently shown memes when possible.
+        Falls back to None if no metadata or no matches found.
         """
-        import json as _json
-        index_path = os.path.join(self.meme_dir, "index.jsonl")
-        if not os.path.exists(index_path):
+        self._refresh_meme_cache()
+        if not self._meme_cache_meta:
             return None
         try:
-            on_disk = {
-                os.path.splitext(f)[0]
-                for f in os.listdir(self.meme_dir)
-                if f.lower().endswith('.webp') and not f.startswith('_')
-            }
+            on_disk = self._meme_cache_stems
             matches = []
-            with open(index_path, encoding="utf-8") as fh:
-                for line in fh:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        meme = _json.loads(line)
-                    except _json.JSONDecodeError:
-                        continue
-                    uid = meme.get("id", "")
-                    if uid not in on_disk:
-                        continue
-                    tags = [t.lower() for t in meme.get("tags", [])]
-                    if any(kw in tag for kw in keywords for tag in tags):
-                        matches.append(uid)
+            for mid, searchable in self._meme_cache_meta.items():
+                if mid not in on_disk:
+                    continue
+                if any(kw in s for kw in keywords for s in searchable):
+                    matches.append(mid)
 
             if not matches:
                 print(f"No local memes matched keywords {keywords}, using random")
                 return None
 
-            chosen = random.choice(matches)
-            print(f"Holiday meme match (keywords={keywords}): {chosen}")
+            # Prefer memes not recently shown
+            recent_set = set(self._recent_memes)
+            unseen = [m for m in matches
+                      if os.path.join(self.meme_dir, f"{m}.webp") not in recent_set]
+            pool = unseen if unseen else matches
+
+            chosen = random.choice(pool)
+            print(f"Holiday meme match (keywords={keywords}, pool={len(pool)}/{len(matches)}): {chosen}")
             return os.path.join(self.meme_dir, f"{chosen}.webp")
         except Exception as e:
             print(f"Error in holiday meme selection: {e}")
@@ -1728,13 +1838,16 @@ class ImageRenderer:
     def _pick_local_meme(self):
         """Select a random meme from the local memes directory."""
         try:
-            memes = [f for f in os.listdir(self.meme_dir)
-                    if f.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp'))
-                    and not f.startswith('_')]
+            memes = self.get_cached_meme_files()
             if not memes:
                 print("No meme images found in directory")
                 return None
-            selected = random.choice(memes)
+            # Prefer memes not recently shown
+            recent_set = set(self._recent_memes)
+            unseen = [f for f in memes
+                      if os.path.join(self.meme_dir, f) not in recent_set]
+            pool = unseen if unseen else memes
+            selected = random.choice(pool)
             return os.path.join(self.meme_dir, selected)
         except Exception as e:
             print(f"Error selecting meme: {e}")
@@ -2276,12 +2389,19 @@ class ImageRenderer:
                 bitaxe_data = precached_bitaxe or self.bitaxe_api.fetch_bitaxe_stats()
                 info_blocks.append((self.render_bitaxe_block, bitaxe_data))
                 displayed_blocks.append('bitaxe')
+            elif block_type == 'donation' and config.get("show_donation_block", False):
+                _donation_data = getattr(self, '_donation_data', None)
+                if _donation_data:
+                    info_blocks.append((self.render_donation_block, _donation_data))
+                    displayed_blocks.append('donation')
             # 'wallet' is intentionally excluded — handled separately below
 
         if active_types is None:
             # Default layout: add all enabled blocks; renderer will randomise order.
             for bt in ('price', 'countdown', 'halving', 'network', 'bitaxe'):
                 _add_block(bt)
+            # Donation included like any other block; renderer handles guarantee vs. random
+            _add_block('donation')
         else:
             for bt in active_types:
                 _add_block(bt)
@@ -2339,11 +2459,6 @@ class ImageRenderer:
             else:
                 info_blocks.append((self.render_wallet_balances_block, wallet_data))
             displayed_blocks.append('wallet')
-
-        donation_data = getattr(self, '_donation_data', None)
-        if donation_data and config.get("show_donation_block", False):
-            info_blocks.append((self.render_donation_block, donation_data))
-            displayed_blocks.append('donation')
 
         # When blocks were pre-selected (active_types is a list), pass them directly to
         # the renderer as 'selected_info_blocks' so it skips the random re-shuffle.
@@ -2442,11 +2557,19 @@ class ImageRenderer:
         config = self.config
 
         # When the meme-first layout is active, check upfront whether any info block
-        # could actually fit below the cached meme.  If not, skip all data fetching.
+        # could actually fit below the cached meme.  If not, skip all data fetching —
+        # unless donation is guaranteed (renderer will pre-reserve space for it).
+        _donation_data_pre = getattr(self, '_donation_data', None)
+        _donation_guaranteed_pre = (
+            isinstance(_donation_data_pre, dict)
+            and bool(_donation_data_pre.get('_guaranteed'))
+            and config.get("show_donation_block", False)
+        )
         _skip_info_blocks = (
             config.get("prioritize_large_scaled_meme", False)
             and meme_path is not None
             and not self._info_blocks_can_fit(meme_path, block_height)
+            and not _donation_guaranteed_pre
         )
         if _skip_info_blocks:
             print("ℹ️ Meme fills available space — skipping info block data fetch")
@@ -2508,10 +2631,12 @@ class ImageRenderer:
                             print("⚠️ Failed to fetch BTC price data for wallet balance updates. Use cache as it is.")
 
                 info_blocks.append((self.render_wallet_balances_block, wallet_data))
-        donation_data = getattr(self, '_donation_data', None)
-        if donation_data and config.get("show_donation_block", False):
-            info_blocks.append((self.render_donation_block, donation_data))
-        # Random selection logic here if needed
+        # Add donation when info blocks are not skipped, OR when donation is guaranteed
+        # (even if the meme fills the screen, the renderer will pre-reserve space).
+        if not _skip_info_blocks or _donation_guaranteed_pre:
+            _donation_data = getattr(self, '_donation_data', None)
+            if _donation_data and config.get("show_donation_block", False):
+                info_blocks.append((self.render_donation_block, _donation_data))
 
         shared_data = {
             "holiday_info": holiday_info,
@@ -3054,19 +3179,22 @@ class ImageRenderer:
             return fitted
 
         if prioritize_large_meme:
-            # --- PRIORITY ORDER: Donation (guaranteed) > Meme (max remaining) > Holiday > Other Info Blocks ---
-            # Step 0: If donation block is enabled, pre-reserve its ACTUAL measured space so the
-            #         meme is scaled into what is left — guaranteeing the block is always shown.
-            donation_reserved = 0
+            # --- PRIORITY ORDER: Donation (if guaranteed) > Meme (max remaining) > Holiday > Other Info Blocks ---
+            # Step 0: If donation is guaranteed (within 144 blocks), pre-reserve its space so
+            #         the meme is sized into what is left — guaranteeing the block is shown.
             _donation_entry = next(
                 (b for b in info_blocks if b[0].__name__ == 'render_donation_block'), None
             )
-            if _donation_entry and self.config.get("show_donation_block", False):
-                # Use actual measured height (not the hardcoded INFO_BLOCK_HEIGHT) so the
-                # meme doesn't steal the space the donation block really needs.
+            _donation_guaranteed_render = False
+            if _donation_entry:
+                _d = _donation_entry[1]
+                _donation_guaranteed_render = isinstance(_d, dict) and bool(_d.get('_guaranteed'))
+
+            donation_reserved = 0
+            if _donation_entry and _donation_guaranteed_render:
                 donation_reserved = _block_height(_donation_entry) + 2 * STANDARD_SPACING
 
-            # Step 1: Size meme to MAXIMUM possible size (minus donation reservation)
+            # Step 1: Size meme to MAXIMUM possible size (minus any guaranteed donation reservation)
             meme_img = None
             meme_height = 0
             meme_width = 0
@@ -3120,13 +3248,15 @@ class ImageRenderer:
                 if shared_data.get('selected_info_blocks') is not None:
                     candidate_order = shared_data['selected_info_blocks']
                 else:
-                    donation_entry = _donation_entry  # already computed above
                     if shared_data.get('preserve_layout', False):
                         candidate_order = info_blocks
+                    elif _donation_entry and _donation_guaranteed_render:
+                        # Guaranteed: donation first, others in random order
+                        others = [b for b in info_blocks if b is not _donation_entry]
+                        candidate_order = [_donation_entry] + random.sample(others, len(others))
                     else:
-                        others = [b for b in info_blocks if b is not donation_entry]
-                        random_order = random.sample(others, len(others)) if others else []
-                        candidate_order = ([donation_entry] if donation_entry else []) + random_order
+                        # Not guaranteed: all blocks (including donation if present) compete randomly
+                        candidate_order = random.sample(info_blocks, len(info_blocks))
 
                 info_blocks_to_render = _fit_blocks_to_height(candidate_order, space_for_blocks)
                 if shared_data.get('selected_info_blocks') is None:

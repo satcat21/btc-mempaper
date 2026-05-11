@@ -10,7 +10,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
 </head>
 
-<body>
+<body{% if dark_mode %} class="dark-mode"{% endif %}>
     <!-- Desktop Navigation Buttons (left side) -->
     <div class="desktop-nav-buttons">
         <button id="desktop-back-button" class="nav-button icon-only" onclick="window.location.href='/'" title="{{ translations.back_to_dashboard }}">
