@@ -1800,10 +1800,11 @@ class MempaperApp:
             """Background worker to refresh price and bitaxe data between blocks."""
             # Initial pre-fill on startup
             self._update_precache_data()
-            
+
             # Get update interval from config (default 5 minutes to reduce RPi load)
             update_interval = self.config.get("precache_update_interval_seconds", 300)
-            
+            last_date = datetime.now().date()
+
             while True:
                 try:
                     # Update every N seconds (default 5 minutes)
@@ -1812,6 +1813,23 @@ class MempaperApp:
                     # Flush any pending cache metadata to disk
                     if self._disk_save_pending:
                         self._write_cache_metadata_to_disk()
+
+                    # Detect date change (midnight rollover) — regenerate the
+                    # currently displayed image so date and holiday update immediately,
+                    # then invalidate + rebuild the pre-render for the next block.
+                    current_date = datetime.now().date()
+                    if current_date != last_date:
+                        print(f"📅 Date changed ({last_date} → {current_date}) — refreshing displayed image")
+                        last_date = current_date
+                        self._invalidate_prerender()
+                        if (self.current_block_height and self.current_block_hash
+                                and hasattr(self, 'current_meme_path')
+                                and self.current_meme_path
+                                and os.path.exists(self.current_meme_path)):
+                            self._regenerate_image_with_cached_meme()
+                        else:
+                            self._background_image_generation(force_eink=True, use_cached_block=True)
+
                     # Refresh pre-rendered next-block image with latest data
                     self._prerender_next_block()
                 except Exception as e:
@@ -2578,6 +2596,12 @@ class MempaperApp:
         age = time.time() - pr['timestamp']
         if age > 600:  # Too old (>10 min), data may be stale
             print(f"⚠️ Pre-rendered image for block {block_height} is {age:.0f}s old, regenerating")
+            return False
+
+        # Reject pre-renders from a different calendar day (date/holiday would be wrong)
+        pre_date = datetime.fromtimestamp(pr['timestamp']).date()
+        if pre_date != datetime.now().date():
+            print(f"⚠️ Pre-rendered image is from {pre_date}, today is {datetime.now().date()} — regenerating")
             return False
 
         print(f"⚡ Using pre-rendered image for block {block_height} (ready {age:.1f}s ago)")
