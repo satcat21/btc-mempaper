@@ -2018,13 +2018,47 @@ class ImageRenderer:
             font_desc = self._get_font(self.font_regular, font_size)
             lines = self._wrap_text_to_lines(text, font_desc, max_text_width, max_lines)
             if lines is not None:
+                if len(lines) > 1:
+                    lines = self._balance_lines(text, font_desc, max_text_width)
                 return font_desc, lines
 
         # Last resort: keep max line count and truncate with ellipsis.
         fallback_font = self._get_font(self.font_regular, min_size)
         fallback_lines = self._wrap_text_truncated(text, fallback_font, max_text_width, max_lines)
         return fallback_font, fallback_lines
-    
+
+    @staticmethod
+    def _balance_lines(text, font, max_width):
+        """Re-wrap text so that multi-line results have similar pixel widths.
+
+        Tries every possible word-boundary split point and picks the one that
+        minimises the difference between the longest and shortest line, while
+        still fitting within max_width.
+        """
+        words = text.split()
+        if len(words) <= 1:
+            return [text]
+
+        best_lines = None
+        best_diff = float('inf')
+
+        for split in range(1, len(words)):
+            line1 = " ".join(words[:split])
+            line2 = " ".join(words[split:])
+            w1 = font.getlength(line1)
+            w2 = font.getlength(line2)
+            if w1 > max_width or w2 > max_width:
+                continue
+            diff = abs(w1 - w2)
+            if diff < best_diff:
+                best_diff = diff
+                best_lines = [line1, line2]
+
+        if best_lines is not None:
+            return best_lines
+        # Fallback: greedy wrap (should not happen since caller already verified fit)
+        return [text]
+
     def get_today_btc_holiday(self):
         """
         Get Bitcoin holiday information for today in the configured language.
@@ -3329,7 +3363,8 @@ class ImageRenderer:
                 self._render_holiday_info(img, draw, holiday_info, font_holiday_title, font_holiday_desc,
                                         current_y, HOLIDAY_HEIGHT, web_quality, skip_title=True,
                                         global_x_range=holiday_x_range)
-                current_y += holiday_space
+                # Advance by actual visual height (description is rendered 5px higher)
+                current_y += holiday_space - 5
 
             # Calculate even gaps for remaining elements (meme + info blocks)
             remaining_content_top = current_y
@@ -3406,8 +3441,9 @@ class ImageRenderer:
             fixed_content_height = _blocks_total_height(info_blocks)
 
             # Account for holiday space consumed above the gap-distributed area
+            # The -5 matches the upward shift applied in _render_holiday_info
             HOLIDAY_DATE_GAP = 5
-            holiday_pinned_space = (HOLIDAY_HEIGHT + HOLIDAY_DATE_GAP) if holiday_info else 0
+            holiday_pinned_space = (HOLIDAY_HEIGHT + HOLIDAY_DATE_GAP - 5) if holiday_info else 0
 
             # 3. Calculate Gaps estimate to find available Meme Height
             # We use STANDARD_SPACING as a minimum/target estimate
@@ -3464,7 +3500,7 @@ class ImageRenderer:
                 self._render_holiday_info(img, draw, holiday_info, font_holiday_title, font_holiday_desc,
                                         current_y, HOLIDAY_HEIGHT, web_quality, skip_title=True,
                                         global_x_range=holiday_x_range)
-                current_y += HOLIDAY_HEIGHT
+                current_y += HOLIDAY_HEIGHT - 5
 
             # Start even distribution after holiday
             current_y += gap_size

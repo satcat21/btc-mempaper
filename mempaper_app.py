@@ -2056,6 +2056,9 @@ class MempaperApp:
             # Holiday settings
             'hide_holiday_if_large_meme',
 
+            # E-ink display settings
+            'eink_dark_mode',
+
             # General settings that affect display
             'language',
 
