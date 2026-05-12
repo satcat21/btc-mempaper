@@ -386,6 +386,9 @@ class ImageRenderer:
         self._meme_cache_files = []          # sorted list of image filenames
         self._meme_cache_stems = set()       # filename stems (no extension) for quick lookup
         self._meme_cache_meta = {}           # stem -> list of searchable strings
+        self._meme_cache_tags = {}           # stem -> list of tag strings (for display/editing)
+        self._meme_cache_api_tags = {}       # stem -> list of API-sourced tags (read-only)
+        self._meme_cache_stem_to_file = {}   # stem -> actual filename on disk
         self._meme_cache_ts = 0.0            # last rebuild timestamp
         self._MEME_CACHE_TTL = 86400         # seconds before auto-refresh (24h; mutations invalidate immediately)
         self._recent_memes = []              # last N meme paths to avoid repeats
@@ -1757,7 +1760,10 @@ class ImageRenderer:
         if not os.path.isdir(memes_dir):
             self._meme_cache_files = []
             self._meme_cache_stems = set()
+            self._meme_cache_stem_to_file = {}
             self._meme_cache_meta = {}
+            self._meme_cache_tags = {}
+            self._meme_cache_api_tags = {}
             self._meme_cache_ts = now
             return
 
@@ -1770,8 +1776,25 @@ class ImageRenderer:
         files.sort()
         stems = {os.path.splitext(f)[0] for f in files}
 
-        # 2. Build metadata map from index.jsonl + _state_memes.jsonl
+        # 2. Load rename map (_renames.json): {current_stem: original_uuid}
+        renames: dict[str, str] = {}
+        renames_path = os.path.join(memes_dir, '_renames.json')
+        if os.path.exists(renames_path):
+            try:
+                with open(renames_path, encoding='utf-8') as fh:
+                    renames = _json.load(fh)
+            except (OSError, _json.JSONDecodeError):
+                pass
+        # Build reverse map: uuid -> current_stem (for re-keying)
+        uuid_to_stem: dict[str, str] = {}
+        for cur_stem, orig_uuid in renames.items():
+            uuid_to_stem[orig_uuid] = cur_stem
+
+        # 3. Build metadata map from index.jsonl + _state_memes.jsonl
+        #    Keys are resolved to current filename stems (accounting for renames).
         meta: dict[str, list[str]] = {}
+        tags_map: dict[str, list[str]] = {}
+        api_tags_map: dict[str, list[str]] = {}  # tags from API (read-only)
         for jsonl_name in ('index.jsonl', '_state_memes.jsonl'):
             jsonl_path = os.path.join(memes_dir, jsonl_name)
             if not os.path.exists(jsonl_path):
@@ -1787,22 +1810,56 @@ class ImageRenderer:
                         except _json.JSONDecodeError:
                             continue
                         mid = entry.get('id', '')
-                        if not mid or mid in meta:
+                        if not mid:
                             continue
+                        # Resolve UUID to current filename stem
+                        key = uuid_to_stem.get(mid, mid)
+                        if key in meta:
+                            continue
+                        raw_tags = entry.get('tags', []) or []
                         searchable: list[str] = []
-                        searchable.extend(t.lower() for t in entry.get('tags', []))
-                        for key in ('description_en', 'description_de', 'ocr_text',
+                        searchable.extend(t.lower() for t in raw_tags)
+                        for fld in ('description_en', 'description_de', 'ocr_text',
                                     'meme_template', 'sentiment', 'humor_type'):
-                            val = entry.get(key, '')
+                            val = entry.get(fld, '')
                             if val:
                                 searchable.append(val.lower())
-                        meta[mid] = searchable
+                        meta[key] = searchable
+                        tags_map[key] = list(raw_tags)
+                        api_tags_map[key] = list(raw_tags)
             except OSError:
                 continue
 
+        # 4. Load user-defined tag overrides (_user_tags.json)
+        user_tags_path = os.path.join(memes_dir, '_user_tags.json')
+        if os.path.exists(user_tags_path):
+            try:
+                with open(user_tags_path, encoding='utf-8') as fh:
+                    user_tags = _json.load(fh)
+                for stem, utags in user_tags.items():
+                    api_tags = api_tags_map.get(stem, [])
+                    merged = list(api_tags) + [t for t in utags
+                                               if t.lower() not in {a.lower() for a in api_tags}]
+                    tags_map[stem] = merged
+                    # Update searchable meta
+                    existing = meta.get(stem, [])
+                    existing_set = set(existing)
+                    meta[stem] = existing + [t.lower() for t in utags
+                                             if t.lower() not in existing_set]
+            except (OSError, _json.JSONDecodeError):
+                pass
+
+        # Build stem -> filename lookup for path resolution
+        stem_to_file: dict[str, str] = {}
+        for f in files:
+            stem_to_file[os.path.splitext(f)[0]] = f
+
         self._meme_cache_files = files
         self._meme_cache_stems = stems
+        self._meme_cache_stem_to_file = stem_to_file
         self._meme_cache_meta = meta
+        self._meme_cache_tags = tags_map
+        self._meme_cache_api_tags = api_tags_map
         self._meme_cache_ts = now
 
     def invalidate_meme_cache(self) -> None:
@@ -1818,6 +1875,49 @@ class ImageRenderer:
         """Return the cached metadata map (stem -> searchable strings)."""
         self._refresh_meme_cache()
         return self._meme_cache_meta
+
+    def get_cached_meme_tags(self) -> dict[str, list[str]]:
+        """Return the cached tags map (stem -> list of tag strings)."""
+        self._refresh_meme_cache()
+        return self._meme_cache_tags
+
+    def get_cached_meme_api_tags(self) -> dict[str, list[str]]:
+        """Return the cached API-sourced tags (stem -> read-only tag list)."""
+        self._refresh_meme_cache()
+        return self._meme_cache_api_tags
+
+    def record_rename(self, old_stem: str, new_stem: str) -> None:
+        """Track a file rename in _renames.json so metadata stays linked."""
+        import json as _json
+        renames_path = os.path.join(self.meme_dir, '_renames.json')
+        renames: dict[str, str] = {}
+        if os.path.exists(renames_path):
+            try:
+                with open(renames_path, encoding='utf-8') as fh:
+                    renames = _json.load(fh)
+            except (OSError, _json.JSONDecodeError):
+                pass
+        # Resolve chain: if old_stem was itself a rename, follow to the original UUID
+        original_uuid = renames.pop(old_stem, old_stem)
+        renames[new_stem] = original_uuid
+        with open(renames_path, 'w', encoding='utf-8') as fh:
+            _json.dump(renames, fh, ensure_ascii=False, indent=2)
+
+    def set_meme_tags(self, stem: str, tags: list[str]) -> None:
+        """Save user-defined tags for a meme (persisted in _user_tags.json)."""
+        import json as _json
+        user_tags_path = os.path.join(self.meme_dir, '_user_tags.json')
+        user_tags: dict[str, list[str]] = {}
+        if os.path.exists(user_tags_path):
+            try:
+                with open(user_tags_path, encoding='utf-8') as fh:
+                    user_tags = _json.load(fh)
+            except (OSError, _json.JSONDecodeError):
+                pass
+        user_tags[stem] = tags
+        with open(user_tags_path, 'w', encoding='utf-8') as fh:
+            _json.dump(user_tags, fh, ensure_ascii=False, indent=2)
+        self.invalidate_meme_cache()
 
     # ------------------------------------------------------------------
 
@@ -1848,13 +1948,15 @@ class ImageRenderer:
 
             # Prefer memes not recently shown
             recent_set = set(self._recent_memes)
+            s2f = self._meme_cache_stem_to_file
             unseen = [m for m in matches
-                      if os.path.join(self.meme_dir, f"{m}.webp") not in recent_set]
+                      if os.path.join(self.meme_dir, s2f.get(m, f"{m}.webp")) not in recent_set]
             pool = unseen if unseen else matches
 
             chosen = random.choice(pool)
-            print(f"Holiday meme match (keywords={keywords}, pool={len(pool)}/{len(matches)}): {chosen}")
-            return os.path.join(self.meme_dir, f"{chosen}.webp")
+            chosen_file = s2f.get(chosen, f"{chosen}.webp")
+            print(f"Holiday meme match (keywords={keywords}, pool={len(pool)}/{len(matches)}): {chosen_file}")
+            return os.path.join(self.meme_dir, chosen_file)
         except Exception as e:
             print(f"Error in holiday meme selection: {e}")
             return None

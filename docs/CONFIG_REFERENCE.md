@@ -1,11 +1,11 @@
-# Configuration Reference
+# CONFIGURATION REFERENCE
 
-This document provides a comprehensive list of all configuration settings available in Mempaper.
+This document provides a comprehensive list of all configuration settings available in mempaper.
 These settings can be modified via the Web Dashboard (recommended) or by editing `config/config.json`.
 
 ---
 
-## 🖼️ General Appearance
+## GENERAL APPEARANCE
 
 | Web Label | Config Key | Type | Description | Allowed Values / Examples |
 | :--- | :--- | :--- | :--- | :--- |
@@ -18,7 +18,7 @@ These settings can be modified via the Web Dashboard (recommended) or by editing
 
 ---
 
-## 🎨 Color Customization
+## COLOR CUSTOMIZATION
 
 | Web Label | Config Key | Type | Description | Default Light / Dark |
 | :--- | :--- | :--- | :--- | :--- |
@@ -33,13 +33,13 @@ These settings can be modified via the Web Dashboard (recommended) or by editing
 
 ---
 
-## 🌩️ Mempool Integration
+## MEMPOOL INTEGRATION
 
 | Web Label | Config Key | Type | Description | Allowed Values / Examples |
 | :--- | :--- | :--- | :--- | :--- |
 | **Mempool Host** | `mempool_host` | String | Mempool instance hostname | `mempool.space` (public), `192.168.1.50` (local) |
 | **Use HTTPS/SSL** | `mempool_use_https` | Switch | Secure connection | `true` (https://), `false` (http://) |
-| **Verify SSL Cert** | `mempool_verify_ssl` | Switch | Validate SSL certificate | `true` (Verify), `false` (Skip - for self-signed) |
+| **Verify SSL Cert** | `mempool_verify_ssl` | Switch | Validate SSL certificate | `true` (Verify), `false` (Skip -- for self-signed) |
 | **REST Port** | `mempool_rest_port` | Number | API port | `443` (public), `80`, `3006` (local MyNode/Umbrel) |
 | **WebSocket Port** | `mempool_ws_port` | Number | Real-time data port | `443` (public), `8999` (local standard) |
 | **WebSocket Path** | `mempool_ws_path` | String | Websocket endpoint path | `/api/v1/ws` (default) |
@@ -49,19 +49,19 @@ These settings can be modified via the Web Dashboard (recommended) or by editing
 
 ---
 
-## 🖥️ Display Hardware
+## DISPLAY HARDWARE
 
 | Web Label | Config Key | Type | Description | Allowed Values / Examples |
 | :--- | :--- | :--- | :--- | :--- |
 | **E-Ink Display Connected** | `e-ink-display-connected` | Switch | Enable hardware driver | `true` (Enable), `false` (Disable) |
-| **Display Driver** | `omni_device_name` | String | Driver name (Native or Omni-EPD) | `epd13in3E` (Recommended - Waveshare 13.3"), `epd7in3f` (Default - Waveshare 7.3"), `inky.impression`, `inky.auto` |
-| **Display Width** | `display_width` | Number | Resolution Width (pixels) - Auto-set by device selection | Automatically determined from selected device or orientation |
-| **Display Height** | `display_height` | Number | Resolution Height (pixels) - Auto-set by device selection | Automatically determined from selected device or orientation |
+| **Display Driver** | `omni_device_name` | String | Driver name (Native or Omni-EPD) | `epd13in3E` (Recommended -- Waveshare 13.3"), `epd7in3f` (Default -- Waveshare 7.3"), `inky.impression`, `inky.auto` |
+| **Display Width** | `display_width` | Number | Resolution Width (pixels) -- Auto-set by device selection | Automatically determined from selected device or orientation |
+| **Display Height** | `display_height` | Number | Resolution Height (pixels) -- Auto-set by device selection | Automatically determined from selected device or orientation |
 | **Skip Clear Display** | `skip_clear_display` | Boolean | Skip clearing before refresh (faster) | `true` (Fast ~39s, default), `false` (Full clear ~70s) |
 
 ---
 
-## 💰 Bitcoin Price Block
+## BITCOIN PRICE BLOCK
 
 | Web Label | Config Key | Type | Description | Allowed Values / Examples |
 | :--- | :--- | :--- | :--- | :--- |
@@ -71,7 +71,7 @@ These settings can be modified via the Web Dashboard (recommended) or by editing
 
 ---
 
-## ⛏️ Bitaxe / Mining Stats
+## BITAXE / MINING STATS
 
 | Web Label | Config Key | Type | Description | Allowed Values / Examples |
 | :--- | :--- | :--- | :--- | :--- |
@@ -82,7 +82,7 @@ These settings can be modified via the Web Dashboard (recommended) or by editing
 
 ---
 
-## 💼 Wallet Monitoring
+## WALLET MONITORING
 
 | Web Label | Config Key | Type | Description | Allowed Values / Examples |
 | :--- | :--- | :--- | :--- | :--- |
@@ -93,7 +93,7 @@ These settings can be modified via the Web Dashboard (recommended) or by editing
 
 ---
 
-## 📉 BTC Countdown Block
+## BTC COUNTDOWN BLOCK
 
 | Web Label | Config Key | Type | Description | Allowed Values / Examples |
 | :--- | :--- | :--- | :--- | :--- |
@@ -101,7 +101,7 @@ These settings can be modified via the Web Dashboard (recommended) or by editing
 
 ---
 
-## ⏳ Halving Block
+## HALVING BLOCK
 
 | Web Label | Config Key | Type | Description | Allowed Values / Examples |
 | :--- | :--- | :--- | :--- | :--- |
@@ -109,7 +109,7 @@ These settings can be modified via the Web Dashboard (recommended) or by editing
 
 ---
 
-## 🌐 Network Block
+## NETWORK BLOCK
 
 | Web Label | Config Key | Type | Description | Allowed Values / Examples |
 | :--- | :--- | :--- | :--- | :--- |
@@ -117,19 +117,19 @@ These settings can be modified via the Web Dashboard (recommended) or by editing
 
 ---
 
-## ⚡ Donation Block
+## DONATION BLOCK
 
-Displays the latest (or largest) Lightning donation received via a LNbits webhook. Requires a webhook URL to be configured — either a direct connection (same network) or via a self-hosted [event-hub](https://github.com/satcat21/event-hub) relay.
+Displays the latest (or largest) Lightning donation received via a LNbits webhook. Requires a webhook URL to be configured -- either a direct connection (same network) or via a self-hosted [event-hub](https://github.com/satcat21/event-hub) relay.
 
 | Web Label | Config Key | Type | Description | Allowed Values / Examples |
 | :--- | :--- | :--- | :--- | :--- |
 | **Show Donation Block** | `show_donation_block` | Switch | Display Lightning donation block | `true`, `false` |
-| **Display Mode** | `donation_display_mode` | Select | Which donation to show | `latest` (most recent), `highest` (largest ever), `auto` (latest → largest after 432 blocks) |
+| **Display Mode** | `donation_display_mode` | Select | Which donation to show | `latest` (most recent), `highest` (largest ever), `auto` (latest then largest after 432 blocks) |
 | **Webhook Relay URL** | `webhook_relay_ws_url` | String | WebSocket URL for Option B relay | `wss://your-host/ws/your-token` (leave empty for direct webhook) |
 
 ---
 
-## 🕵️ OPSec Mode
+## OPSEC MODE
 
 When OPSec Mode is enabled the e-ink display shows a randomly selected cover image (e.g. a family photo) instead of Bitcoin data. The web dashboard is **not** affected and always shows normal BTC data.
 
@@ -141,7 +141,7 @@ Upload OPSec images via the **Meme Management** section of the config page, in t
 
 ---
 
-## 🔒 Security & Admin
+## SECURITY AND ADMIN
 
 | Web Label | Config Key | Type | Description | Allowed Values / Examples |
 | :--- | :--- | :--- | :--- | :--- |
@@ -151,7 +151,7 @@ Upload OPSec images via the **Meme Management** section of the config page, in t
 
 ---
 
-## ⚙️ Advanced (File-Only)
+## ADVANCED (FILE-ONLY)
 
 These settings are typically managed by the system or only available in `config.json` directly.
 

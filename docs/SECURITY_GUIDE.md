@@ -1,18 +1,22 @@
-# 🔒 Configuration Security Guide for Raspberry Pi
+# CONFIGURATION SECURITY GUIDE
 
-## 🎯 **Overview**
+## OVERVIEW
 
-This guide provides lightweight but effective protection for sensitive Bitcoin data (XPUBs, wallet addresses, API keys) on Raspberry Pi Zero W. The solution uses industry-standard encryption while maintaining optimal performance for embedded devices.
+Lightweight but effective protection for sensitive Bitcoin data (XPUBs, wallet addresses, API keys) on Raspberry Pi Zero W. The solution uses industry-standard encryption while maintaining optimal performance for embedded devices.
 
-## 🔐 **Security Implementation**
+---
 
-### **Encryption Method:**
-- **Algorithm**: AES-128 via Fernet (cryptography library)
-- **Key Derivation**: PBKDF2-HMAC-SHA256 with 100,000 iterations
-- **Device Binding**: Hardware fingerprint from CPU serial + MAC address
-- **File Separation**: Public config (plain) + sensitive data (encrypted)
+## SECURITY IMPLEMENTATION
 
-### **What Gets Encrypted:**
+### Encryption Method
+
+- **Algorithm** -- AES-128 via Fernet (cryptography library)
+- **Key Derivation** -- PBKDF2-HMAC-SHA256 with 100,000 iterations
+- **Device Binding** -- Hardware fingerprint from CPU serial + MAC address
+- **File Separation** -- Public config (plain) + sensitive data (encrypted)
+
+### What Gets Encrypted
+
 ```json
 {
   "wallet_balance_addresses": ["bc1q..."],
@@ -23,7 +27,8 @@ This guide provides lightweight but effective protection for sensitive Bitcoin d
 }
 ```
 
-### **What Stays Public:**
+### What Stays Public
+
 ```json
 {
   "language": "en",
@@ -33,9 +38,11 @@ This guide provides lightweight but effective protection for sensitive Bitcoin d
 }
 ```
 
-## 🚀 **Quick Setup**
+---
 
-### **1. Install Dependencies**
+## QUICK SETUP
+
+### 1. Install Dependencies
 
 If you installed from `requirements.txt`, these are already installed:
 ```bash
@@ -49,7 +56,8 @@ If installing manually or updating:
 pip install cryptography psutil
 ```
 
-### **2. Enable Secure Configuration**
+### 2. Enable Secure Configuration
+
 ```bash
 # Test encryption functionality
 python secure_config_cli.py test
@@ -61,7 +69,8 @@ python secure_config_cli.py status
 python secure_config_cli.py migrate
 ```
 
-### **3. Verify Security**
+### 3. Verify Security
+
 ```bash
 # Check file permissions
 python secure_config_cli.py permissions
@@ -70,17 +79,22 @@ python secure_config_cli.py permissions
 python secure_config_cli.py backup
 ```
 
-## 📁 **File Structure After Setup**
+---
+
+## FILE STRUCTURE AFTER SETUP
 
 ```
-├── config.json              # Public configuration (readable)
-├── config.secure.json       # Encrypted sensitive data (600 permissions)
-├── .config_key              # Salt for key derivation (600 permissions)
-├── config.json.backup       # Backup of original config
-└── config_backup_*.secure.json  # Encrypted backups
+config/
+  config.json              Public configuration (readable)
+  config.secure.json       Encrypted sensitive data (600 permissions)
+  .config_key              Salt for key derivation (600 permissions)
+  config.json.backup       Backup of original config
+  config_backup_*.secure.json  Encrypted backups
 ```
 
-## 🔧 **Automatic Integration**
+---
+
+## AUTOMATIC INTEGRATION
 
 The system automatically integrates with existing code:
 
@@ -96,68 +110,82 @@ wallet_addresses = config.get("wallet_balance_addresses", [])
 admin_hash = config.get("admin_password_hash", "")
 ```
 
-## 🛡️ **Security Features**
+---
 
-### **Device Binding**
-- **CPU Serial**: Uses Raspberry Pi's unique hardware serial number
-- **MAC Address**: Network interface hardware identifier  
-- **System Info**: Platform and user ID for additional entropy
-- **Result**: Config encrypted to specific device, won't decrypt elsewhere
+## SECURITY FEATURES
 
-### **Key Management**
-- **No Plain Keys**: Actual encryption key never stored on disk
-- **Salt Storage**: Only PBKDF2 salt stored in `.config_key`
-- **Key Derivation**: Encryption key regenerated from device fingerprint each time
-- **Hardware Security**: Bound to specific Raspberry Pi hardware
+### Device Binding
 
-### **File Permissions**
+- **CPU Serial** -- Uses Raspberry Pi's unique hardware serial number
+- **MAC Address** -- Network interface hardware identifier
+- **System Info** -- Platform and user ID for additional entropy
+- **Result** -- Config encrypted to specific device, won't decrypt elsewhere
+
+### Key Management
+
+- **No Plain Keys** -- Actual encryption key never stored on disk
+- **Salt Storage** -- Only PBKDF2 salt stored in `.config_key`
+- **Key Derivation** -- Encryption key regenerated from device fingerprint each time
+- **Hardware Security** -- Bound to specific Raspberry Pi hardware
+
+### File Permissions
+
 ```bash
 -rw------- 1 pi pi  config.secure.json    # 600: Owner read/write only
--rw------- 1 pi pi  .config_key           # 600: Owner read/write only  
+-rw------- 1 pi pi  .config_key           # 600: Owner read/write only
 -rw-r--r-- 1 pi pi  config.json          # 644: Public config readable
 ```
 
-## ⚡ **Performance Optimized for Pi Zero W**
+---
 
-### **Lightweight Encryption:**
-- **Fast Algorithm**: AES-128 (faster than AES-256 on ARM)
-- **Minimal Memory**: ~1MB additional RAM usage
-- **Quick Operations**: Encrypt/decrypt in <100ms
-- **Low CPU**: Optimized iteration count for ARM processor
+## PERFORMANCE -- OPTIMIZED FOR PI ZERO W
 
-### **Smart Caching:**
-- **Device Fingerprint**: Cached to avoid repeated hardware queries
-- **Encryption Key**: Derived once and reused during session
-- **Minimal I/O**: Only reads encrypted file when config changes
+### Lightweight Encryption
 
-## 🔍 **Security Status Monitoring**
+- **Fast Algorithm** -- AES-128 (faster than AES-256 on ARM)
+- **Minimal Memory** -- ~1MB additional RAM usage
+- **Quick Operations** -- Encrypt/decrypt in <100ms
+- **Low CPU** -- Optimized iteration count for ARM processor
 
-### **Check Security Status:**
+### Smart Caching
+
+- **Device Fingerprint** -- Cached to avoid repeated hardware queries
+- **Encryption Key** -- Derived once and reused during session
+- **Minimal I/O** -- Only reads encrypted file when config changes
+
+---
+
+## SECURITY STATUS MONITORING
+
+### Check Security Status
+
 ```bash
 python secure_config_cli.py status
 ```
 
 **Example Output:**
 ```
-📊 Security Status Check
+Security Status Check
 
-🔐 Encryption Status:
-   Encryption enabled: ✅
-   Key file exists: ✅  
-   Public config exists: ✅
+Encryption Status:
+   Encryption enabled: YES
+   Key file exists: YES
+   Public config exists: YES
    Device fingerprint: a1b2c3d4e5f6...
 
-📁 File Permissions:
-   🔒 config.secure.json: 600 (Encrypted configuration)
-   🔒 .config_key: 600 (Encryption key salt)
-   📄 config.json: 644 (Public configuration)
+File Permissions:
+   config.secure.json: 600 (Encrypted configuration)
+   .config_key: 600 (Encryption key salt)
+   config.json: 644 (Public configuration)
 
-✅ No security recommendations - configuration is secure!
+No security recommendations -- configuration is secure.
 ```
 
-## 🔄 **Migration Process**
+---
 
-### **Step-by-Step Migration:**
+## MIGRATION PROCESS
+
+### Step-by-Step Migration
 
 1. **Backup Current Config:**
    ```bash
@@ -185,9 +213,11 @@ python secure_config_cli.py status
    rm config.json.backup  # Remove backup if everything works
    ```
 
-## 🆘 **Recovery & Troubleshooting**
+---
 
-### **If Decryption Fails:**
+## RECOVERY AND TROUBLESHOOTING
+
+### If Decryption Fails
 
 1. **Check Dependencies:**
    ```bash
@@ -204,12 +234,12 @@ python secure_config_cli.py status
    ```bash
    # Restore from original
    cp config.json.original config.json
-   
+
    # Or restore from encrypted backup
    python secure_config_cli.py decrypt
    ```
 
-### **Emergency Access:**
+### Emergency Access
 
 If encryption fails, the system gracefully falls back to plain config:
 
@@ -218,15 +248,19 @@ If encryption fails, the system gracefully falls back to plain config:
 config_manager = ConfigManager(enable_secure_config=False)
 ```
 
-## 🛡️ **Security Best Practices**
+---
 
-### **Recommended Setup:**
-1. **Enable Encryption**: `python secure_config_cli.py migrate`
-2. **Set Permissions**: `python secure_config_cli.py permissions`
-3. **Regular Backups**: `python secure_config_cli.py backup`
-4. **Monitor Status**: `python secure_config_cli.py status`
+## SECURITY BEST PRACTICES
 
-### **File System Security:**
+### Recommended Setup
+
+1. **Enable Encryption** -- `python secure_config_cli.py migrate`
+2. **Set Permissions** -- `python secure_config_cli.py permissions`
+3. **Regular Backups** -- `python secure_config_cli.py backup`
+4. **Monitor Status** -- `python secure_config_cli.py status`
+
+### File System Security
+
 ```bash
 # Set restrictive permissions on entire config directory
 chmod 700 /home/pi/btc-mempaper/
@@ -238,7 +272,8 @@ sudo ufw allow ssh
 sudo ufw allow 5000  # For web interface on local network only
 ```
 
-### **Network Security:**
+### Network Security
+
 ```bash
 # Web interface only on local network
 python mempaper_app.py --host 192.168.1.100  # Bind to local IP only
@@ -247,37 +282,44 @@ python mempaper_app.py --host 192.168.1.100  # Bind to local IP only
 sudo ufw allow from 192.168.1.0/24 to any port 5000
 ```
 
-## 🔍 **Advanced Security Options**
+---
 
-### **Hardware Security Module (Future):**
+## ADVANCED SECURITY OPTIONS
+
+### Hardware Security Module (Future)
+
 For production deployments, consider:
-- **TPM Integration**: Use Raspberry Pi's TPM chip if available
-- **Hardware RNG**: Use `/dev/hwrng` for better entropy
-- **Secure Boot**: Enable secure boot in Raspberry Pi firmware
+- **TPM Integration** -- Use Raspberry Pi's TPM chip if available
+- **Hardware RNG** -- Use `/dev/hwrng` for better entropy
+- **Secure Boot** -- Enable secure boot in Raspberry Pi firmware
 
-### **Network Isolation:**
-- **Air-Gapped Setup**: Use Pi without internet connection
-- **VPN Only**: Access only through VPN tunnel
-- **Local Network**: Restrict to local subnet only
+### Network Isolation
 
-## 📊 **Security Audit Checklist**
+- **Air-Gapped Setup** -- Use Pi without internet connection
+- **VPN Only** -- Access only through VPN tunnel
+- **Local Network** -- Restrict to local subnet only
 
-### **✅ Configuration Security:**
+---
+
+## SECURITY AUDIT CHECKLIST
+
+### Configuration Security
+
 - [ ] Encryption enabled for sensitive data
 - [ ] File permissions set to 600 for encrypted files
 - [ ] Device fingerprinting working correctly
 - [ ] Backup strategy implemented
 
-### **✅ System Security:**
+### System Security
+
 - [ ] SSH keys configured (disable password auth)
 - [ ] Firewall enabled and configured
 - [ ] System updates applied
 - [ ] User accounts secured
 
-### **✅ Application Security:**
+### Application Security
+
 - [ ] Admin password strong and unique
 - [ ] Session timeout configured
 - [ ] HTTPS enabled for remote access
 - [ ] Rate limiting configured
-
-This security implementation provides enterprise-grade protection for your Bitcoin data while maintaining the simplicity and performance needed for Raspberry Pi Zero W deployment.

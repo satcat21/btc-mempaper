@@ -3941,21 +3941,26 @@ class MempaperApp:
                 end_idx = start_idx + per_page
                 page_files = all_files[start_idx:end_idx]
                 
+                tags_map = self.image_renderer.get_cached_meme_tags()
+                api_tags_map = self.image_renderer.get_cached_meme_api_tags()
                 memes = []
                 for filename in page_files:
                     file_path = os.path.join(memes_dir, filename)
                     try:
                         file_size = os.path.getsize(file_path)
                         file_stat = os.stat(file_path)
-                        
+                        stem = os.path.splitext(filename)[0]
+
                         meme_data = {
                             'filename': filename,
                             'size': file_size,
                             'url': f'/static/memes/{filename}',
                             'thumb_url': f'/api/thumb/{filename}?v={int(file_stat.st_mtime)}',
-                            'last_modified': file_stat.st_mtime
+                            'last_modified': file_stat.st_mtime,
+                            'tags': tags_map.get(stem, []),
+                            'api_tags': api_tags_map.get(stem, [])
                         }
-                        
+
                         memes.append(meme_data)
                     except OSError:
                         # Skip files that can't be read
@@ -4103,7 +4108,27 @@ class MempaperApp:
                 
                 # Rename the file
                 os.rename(old_path, new_path)
-                
+
+                old_stem = os.path.splitext(old_filename)[0]
+                new_stem = os.path.splitext(new_filename)[0]
+
+                # Track rename so metadata stays linked to UUID
+                self.image_renderer.record_rename(old_stem, new_stem)
+
+                # Update user tags key if it exists
+                import json as _json
+                user_tags_path = os.path.join('static', 'memes', '_user_tags.json')
+                if os.path.exists(user_tags_path):
+                    try:
+                        with open(user_tags_path, encoding='utf-8') as fh:
+                            user_tags = _json.load(fh)
+                        if old_stem in user_tags:
+                            user_tags[new_stem] = user_tags.pop(old_stem)
+                            with open(user_tags_path, 'w', encoding='utf-8') as fh:
+                                _json.dump(user_tags, fh, ensure_ascii=False, indent=2)
+                    except (OSError, _json.JSONDecodeError):
+                        pass
+
                 self.image_renderer.invalidate_meme_cache()
                 
                 return jsonify({
@@ -4115,7 +4140,25 @@ class MempaperApp:
                 
             except Exception as e:
                 return jsonify({'success': False, 'message': str(e)}), 500
-        
+
+        @self.app.route('/api/meme-tags', methods=['POST'])
+        @require_auth(self.auth_manager)
+        def update_meme_tags():
+            """Update tags for a meme."""
+            try:
+                data = request.json
+                if not data or 'filename' not in data or 'tags' not in data:
+                    return jsonify({'success': False, 'message': 'Missing filename or tags'}), 400
+                filename = data['filename']
+                tags = data['tags']
+                if not isinstance(tags, list):
+                    return jsonify({'success': False, 'message': 'Tags must be a list'}), 400
+                stem = os.path.splitext(filename)[0]
+                self.image_renderer.set_meme_tags(stem, tags)
+                return jsonify({'success': True, 'tags': tags})
+            except Exception as e:
+                return jsonify({'success': False, 'message': str(e)}), 500
+
         @self.app.route('/api/meme-hashes', methods=['GET'])
         @require_auth(self.auth_manager)
         def get_meme_hashes():

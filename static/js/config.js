@@ -1047,8 +1047,10 @@ async function renameMeme(oldFilename, newFilename) {
                             `;
                         }
                         
-                        // Update onclick for the image
-                        imgElement.onclick = () => openMemeModal(newFilename, newUrl);
+                        // Update onclick for the image (preserve tags from current modal)
+                        const currentTags = currentModalMeme?.tags || [];
+                        const currentApiTags = currentModalMeme?.apiTags || [];
+                        imgElement.onclick = () => openMemeModal(newFilename, newUrl, currentTags, currentApiTags);
                     }
                 }
             }
@@ -1377,7 +1379,7 @@ async function loadMemes(search = '') {
                 img.loading = 'lazy'; // Native lazy loading as fallback
                 img.style.cursor = 'pointer';
                 img.title = 'Click to inspect';
-                img.onclick = () => openMemeModal(meme.filename, meme.url);
+                img.onclick = () => openMemeModal(meme.filename, meme.url, meme.tags || [], meme.api_tags || []);
                 // Add placeholder until loaded
                 img.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100%" height="100%" fill="%23222228"/><text x="50%" y="50%" text-anchor="middle" dy=".3em" fill="%23999">📷</text></svg>';
                 img.classList.add('meme-lazy');
@@ -1466,10 +1468,10 @@ async function loadMoreMemes(page, sentinel) {
             img.loading = 'lazy';
             img.style.cursor = 'pointer';
             img.title = 'Click to inspect';
-            img.onclick = () => openMemeModal(meme.filename, meme.url);
+            img.onclick = () => openMemeModal(meme.filename, meme.url, meme.tags || [], meme.api_tags || []);
             img.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100%" height="100%" fill="%23222228"/><text x="50%" y="50%" text-anchor="middle" dy=".3em" fill="%23999">📷</text></svg>';
             img.classList.add('meme-lazy');
-            
+
             memeLoader.observer.observe(img);
             
             memeDiv.innerHTML = `
@@ -2616,12 +2618,23 @@ function createTagsInput(values, placeholder) {
 }
 
 function addTag(container, value) {
-    // Check if tag already exists to avoid duplicates
+    // Case-insensitive duplicate check against existing tags in the input
+    const valueLower = value.toLowerCase();
     const existingTags = Array.from(container.querySelectorAll('.tag'))
         .map(tag => tag.textContent.replace('×', '').trim());
-    
-    if (existingTags.includes(value)) {
+
+    if (existingTags.some(t => t.toLowerCase() === valueLower)) {
         return; // Don't add duplicate tags
+    }
+
+    // Also check against API tags (read-only pills rendered outside this input)
+    if (container.dataset.apiTags) {
+        try {
+            const apiTags = JSON.parse(container.dataset.apiTags);
+            if (apiTags.some(t => t.toLowerCase() === valueLower)) {
+                return; // Already exists as an API tag
+            }
+        } catch (e) { /* ignore */ }
     }
     
     const tag = document.createElement('div');
@@ -4388,8 +4401,8 @@ document.addEventListener('configChange', async (event) => {
 // Meme Modal Functions
 let currentModalMeme = null;
 
-function openMemeModal(filename, url) {
-    currentModalMeme = { filename, url };
+function openMemeModal(filename, url, tags, apiTags) {
+    currentModalMeme = { filename, url, tags: tags || [], apiTags: apiTags || [] };
     
     // Set basic info with null checks
     const modalTitle = document.getElementById('meme-modal-title');
@@ -4423,6 +4436,53 @@ function openMemeModal(filename, url) {
         cancelBtn.style.display = 'none';
     }
     
+    // Render tags: API tags (read-only) + user tags (editable)
+    const tagsContainer = document.getElementById('meme-modal-tags-container');
+    const saveTagsBtn = document.getElementById('meme-modal-save-tags-btn');
+    if (tagsContainer) {
+        tagsContainer.innerHTML = '';
+        const apiTagsLower = new Set((currentModalMeme.apiTags || []).map(t => t.toLowerCase()));
+        // User tags = tags that are NOT in the API set
+        const userTags = (currentModalMeme.tags || []).filter(t => !apiTagsLower.has(t.toLowerCase()));
+
+        // Wrapper div for the combined display
+        const wrapper = document.createElement('div');
+        wrapper.style.display = 'flex';
+        wrapper.style.flexWrap = 'wrap';
+        wrapper.style.gap = '6px';
+        wrapper.style.alignItems = 'center';
+        wrapper.style.flex = '1';
+
+        // Render API tags as read-only pills
+        (currentModalMeme.apiTags || []).forEach(tagText => {
+            const pill = document.createElement('div');
+            pill.className = 'tag';
+            pill.style.opacity = '0.7';
+            pill.style.cursor = 'default';
+            pill.textContent = tagText;
+            pill.title = 'API tag (read-only)';
+            wrapper.appendChild(pill);
+        });
+
+        // Editable tags input for user-added tags
+        const placeholder = window.translations?.tags_placeholder || 'Add tag...';
+        const tagsInput = createTagsInput(userTags, placeholder);
+        tagsInput.style.flex = '1';
+        tagsInput.style.minWidth = '120px';
+        // Store api tags as data attribute so duplicate check includes them
+        tagsInput.dataset.apiTags = JSON.stringify(currentModalMeme.apiTags || []);
+        wrapper.appendChild(tagsInput);
+
+        tagsContainer.appendChild(wrapper);
+        // Show save button when user tags change
+        if (saveTagsBtn) {
+            saveTagsBtn.style.display = 'none';
+            HTMLElement.prototype.addEventListener.call(tagsInput, 'change', () => {
+                saveTagsBtn.style.display = 'inline-block';
+            });
+        }
+    }
+
     // Set loading state for dimensions
     if (modalDimensions) {
         const loadingText = window.translations?.loading || 'Loading...';
@@ -4518,6 +4578,36 @@ function deleteMemeFromModal() {
     if (currentModalMeme) {
         closeMemeModal();
         showDeleteModal(currentModalMeme.filename);
+    }
+}
+
+async function saveMemeTags() {
+    if (!currentModalMeme) return;
+    const tagsContainer = document.getElementById('meme-modal-tags-container');
+    const tagsInput = tagsContainer?.querySelector('.tags-input');
+    if (!tagsInput) return;
+    const tags = tagsInput.getValue();
+    try {
+        const response = await fetch('/api/meme-tags', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ filename: currentModalMeme.filename, tags })
+        });
+        const result = await response.json();
+        if (result.success) {
+            // Merge API tags + user tags for the full list
+            const apiTags = currentModalMeme.apiTags || [];
+            const apiLower = new Set(apiTags.map(t => t.toLowerCase()));
+            const uniqueUserTags = tags.filter(t => !apiLower.has(t.toLowerCase()));
+            currentModalMeme.tags = [...apiTags, ...uniqueUserTags];
+            const saveBtn = document.getElementById('meme-modal-save-tags-btn');
+            if (saveBtn) saveBtn.style.display = 'none';
+            showNotification(window.translations?.tags_saved || 'Tags saved', 'success');
+        } else {
+            showNotification(result.message || window.translations?.tags_save_failed || 'Failed to save tags', 'error');
+        }
+    } catch (error) {
+        showNotification((window.translations?.tags_save_failed || 'Failed to save tags') + ': ' + error.message, 'error');
     }
 }
 
