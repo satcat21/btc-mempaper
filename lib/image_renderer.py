@@ -1382,7 +1382,10 @@ class ImageRenderer:
             if max_n < 0:
                 max_n = len(enabled)
             _random.shuffle(enabled)
-            return ['donation'] + enabled[:min(max_n, len(enabled))]
+            # Remove donation if present in enabled (shouldn't be, but for safety)
+            enabled_no_donation = [b for b in enabled if b != 'donation']
+            # Always put donation last
+            return enabled_no_donation[:min(max_n, len(enabled_no_donation))] + ['donation']
 
         if not enabled:
             return []
@@ -1392,8 +1395,11 @@ class ImageRenderer:
             max_n = len(enabled)
 
         _random.shuffle(enabled)
-        # +1 safety margin: over-estimate by 1 to avoid a boundary miss
-        return enabled[:min(max_n + 1, len(enabled))]
+        # If donation is present, move it to the end
+        selected = enabled[:min(max_n + 1, len(enabled))]
+        if 'donation' in selected:
+            selected = [b for b in selected if b != 'donation'] + ['donation']
+        return selected
 
     def render_donation_block(self, draw, info_block_y, font_label, font_value, donation_data, web_quality=False):
         """Render a Lightning donation info block with adaptive 2-line body and dynamic height."""
