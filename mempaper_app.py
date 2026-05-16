@@ -239,6 +239,7 @@ class MempaperApp:
             'web_img': None,             # Pre-rendered web PIL Image (for disk save)
             'meme_path': None,           # Meme used in pre-render
             'displayed_blocks': None,    # Info blocks shown
+            'mode_signature': None,      # Layout mode signature at pre-render time
             'timestamp': 0,              # When pre-rendered
             'lock': threading.Lock(),    # Prevent concurrent pre-renders
         }
@@ -332,6 +333,12 @@ class MempaperApp:
             self.config_manager._reload_config_from_file()
             self.config_manager._notify_change_callbacks(self.config_manager.config)
         print("✅ Mempaper application initialized successfully")
+
+    def _get_prerender_mode_signature(self):
+        """Return the pre-render compatibility signature for layout-sensitive settings."""
+        return {
+            "prioritize_large_scaled_meme": bool(self.config.get("prioritize_large_scaled_meme", False)),
+        }
     
     def _init_api_clients(self):
         # Mempool API setup with HTTPS support
@@ -1840,7 +1847,15 @@ class MempaperApp:
     
     def _invalidate_prerender(self):
         """Invalidate the pre-rendered next-block image so it gets regenerated."""
-        self._prerendered['web_base64'] = None
+        with self._prerendered['lock']:
+            self._prerendered['block_height'] = None
+            self._prerendered['web_base64'] = None
+            self._prerendered['eink_img'] = None
+            self._prerendered['web_img'] = None
+            self._prerendered['meme_path'] = None
+            self._prerendered['displayed_blocks'] = None
+            self._prerendered['timestamp'] = 0
+            self._prerendered['mode_signature'] = self._get_prerender_mode_signature()
 
     def _update_precache_data(self):
         """Update pre-cached data (price, bitaxe, fees) in background."""
@@ -1860,6 +1875,9 @@ class MempaperApp:
                 self._precache['selected_block_types'] = selected if selected is not None else []
                 _selected = self._precache['selected_block_types']
             else:
+                # Clear meme-first preselection artifacts when switching back to balanced mode.
+                self._precache['next_meme_path'] = None
+                self._precache['selected_block_types'] = None
                 _selected = None  # None → fetch all (default layout shows all blocks)
 
             # Helper: should a specific block type's data be fetched?
@@ -2097,6 +2115,9 @@ class MempaperApp:
         config_changed = False
         changed_settings = []
         opsec_toggled = old_config.get('opsec_mode_enabled') != new_config.get('opsec_mode_enabled')
+        prioritize_layout_toggled = (
+            old_config.get('prioritize_large_scaled_meme') != new_config.get('prioritize_large_scaled_meme')
+        )
 
         for setting in image_affecting_settings:
             old_value = old_config.get(setting)
@@ -2122,6 +2143,21 @@ class MempaperApp:
 
             # Recreate image renderer with new config
             self.image_renderer = ImageRenderer(self.config, self.translations)
+
+            # Force current image refresh path to run even if block height/hash are unchanged.
+            self.image_is_current = False
+
+            # If layout mode toggled, clear stale preselection artifacts immediately.
+            if prioritize_layout_toggled:
+                print("🎭 prioritize_large_scaled_meme toggled — forcing current + next image refresh")
+                with self._precache['lock']:
+                    self._precache['next_meme_path'] = None
+                    self._precache['selected_block_types'] = None
+                # Prime pre-cache now so the very next pre-render uses the new layout mode.
+                try:
+                    self._update_precache_data()
+                except Exception as e:
+                    print(f"⚠️ Failed to refresh pre-cache after layout toggle: {e}")
 
             # Discard stale pre-rendered image so the next block doesn't use it
             self._invalidate_prerender()
@@ -2526,10 +2562,12 @@ class MempaperApp:
             if current is None:
                 return
             next_height = int(current) + 1
+            mode_signature = self._get_prerender_mode_signature()
 
             # Skip if already pre-rendered for this height with valid data
             if (self._prerendered['block_height'] == next_height
-                    and self._prerendered['web_base64']):
+                    and self._prerendered['web_base64']
+                    and self._prerendered.get('mode_signature') == mode_signature):
                 return
 
             # Consume the pre-selected meme and block types (if any) — clear after use
@@ -2576,6 +2614,7 @@ class MempaperApp:
             self._prerendered['meme_path'] = content_path
             self._prerendered['displayed_blocks'] = displayed_blocks
             self._prerendered['timestamp'] = time.time()
+            self._prerendered['mode_signature'] = mode_signature
 
             print(f"🚀 Pre-rendered image ready for next block {next_height}")
         except Exception as e:
@@ -2590,6 +2629,11 @@ class MempaperApp:
         """
         pr = self._prerendered
         if pr['block_height'] != block_height or not pr['web_base64']:
+            return False
+
+        # Do not use pre-rendered images produced under a different layout mode.
+        if pr.get('mode_signature') != self._get_prerender_mode_signature():
+            print("⚠️ Pre-render mode mismatch detected — regenerating with current config")
             return False
 
         # Pre-rendered image matches! Use it instantly.

@@ -1378,14 +1378,16 @@ class ImageRenderer:
         max_n = self._estimate_max_info_blocks(meme_path, block_height)
 
         if _donation_guaranteed:
-            # Always include donation even if the meme fills the screen (renderer reserves space)
+            # Always include donation even if the meme fills the screen (renderer reserves space).
+            # Other blocks are selected randomly and donation is rendered last.
             if max_n < 0:
                 max_n = len(enabled)
             _random.shuffle(enabled)
-            # Remove donation if present in enabled (shouldn't be, but for safety)
             enabled_no_donation = [b for b in enabled if b != 'donation']
-            # Always put donation last
-            return enabled_no_donation[:min(max_n, len(enabled_no_donation))] + ['donation']
+            selected = enabled_no_donation[:min(max_n, len(enabled_no_donation))] + ['donation']
+            if len(selected) > 1 and 'donation' in selected:
+                selected = [b for b in selected if b != 'donation'] + ['donation']
+            return selected
 
         if not enabled:
             return []
@@ -1395,9 +1397,8 @@ class ImageRenderer:
             max_n = len(enabled)
 
         _random.shuffle(enabled)
-        # If donation is present, move it to the end
-        selected = enabled[:min(max_n + 1, len(enabled))]
-        if 'donation' in selected:
+        selected = enabled[:min(max_n, len(enabled))]
+        if len(selected) > 1 and 'donation' in selected:
             selected = [b for b in selected if b != 'donation'] + ['donation']
         return selected
 
@@ -3113,19 +3114,21 @@ class ImageRenderer:
             info_blocks_to_render = []
             if max_blocks > 0 and info_blocks:
                 if len(info_blocks) > max_blocks:
-                    # If preserving layout, keep first N blocks in order, otherwise random sample
+                    # If preserving layout, keep first N blocks in order, otherwise apply
+                    # random selection with donation ordering/guarantee rules.
                     if shared_data.get('preserve_layout', False):
                         print(f"ℹ️ Landscape Mode: Preserving first {int(max_blocks)} of {len(info_blocks)} blocks")
-                        info_blocks_to_render = info_blocks[:int(max_blocks)]
+                        info_blocks_to_render = _truncate_blocks_with_rules(info_blocks, int(max_blocks))
                     elif shared_data.get('selected_info_blocks') is not None:
                         # Reuse selection from first render to keep both screens consistent
-                        info_blocks_to_render = shared_data['selected_info_blocks'][:int(max_blocks)]
+                        preselected = shared_data['selected_info_blocks']
+                        info_blocks_to_render = _truncate_blocks_with_rules(preselected, int(max_blocks))
                     else:
                         print(f"⚠️ Landscape Mode: Not enough space for all blocks. Showing {int(max_blocks)} of {len(info_blocks)}")
-                        info_blocks_to_render = random.sample(info_blocks, int(max_blocks))
+                        info_blocks_to_render = _sample_blocks_with_rules(info_blocks, int(max_blocks))
                         shared_data['selected_info_blocks'] = info_blocks_to_render
                 else:
-                    info_blocks_to_render = info_blocks
+                    info_blocks_to_render = _move_donation_to_bottom(info_blocks)
                     if shared_data.get('selected_info_blocks') is None:
                         shared_data['selected_info_blocks'] = info_blocks_to_render
             
@@ -3378,6 +3381,82 @@ class ImageRenderer:
                     used += add_h
             return fitted
 
+        def _is_donation_entry(entry):
+            return bool(entry and entry[0].__name__ == 'render_donation_block')
+
+        def _is_guaranteed_donation_entry(entry):
+            if not _is_donation_entry(entry):
+                return False
+            _d = entry[1]
+            return isinstance(_d, dict) and bool(_d.get('_guaranteed'))
+
+        def _move_donation_to_bottom(entries):
+            if not entries or len(entries) <= 1:
+                return list(entries)
+            donation_entry = next((e for e in entries if _is_donation_entry(e)), None)
+            if not donation_entry:
+                return list(entries)
+            return [e for e in entries if e is not donation_entry] + [donation_entry]
+
+        def _fit_blocks_with_donation_priority(candidates, limit_height):
+            if not candidates or limit_height <= 0:
+                return []
+
+            candidates = list(candidates)
+            guaranteed_donation = next((e for e in candidates if _is_guaranteed_donation_entry(e)), None)
+
+            if guaranteed_donation is None:
+                fitted = _fit_blocks_to_height(candidates, limit_height)
+                return _move_donation_to_bottom(fitted)
+
+            # Ensure guaranteed donation is always rendered and pinned to the bottom.
+            donation_h = _block_height(guaranteed_donation)
+            if donation_h >= limit_height:
+                return [guaranteed_donation]
+
+            others = [e for e in candidates if e is not guaranteed_donation]
+            reserve_gap = BLOCK_MARGIN if others else 0
+            others_limit = max(0, limit_height - donation_h - reserve_gap)
+            fitted_others = _fit_blocks_to_height(others, others_limit)
+            return fitted_others + [guaranteed_donation]
+
+        def _sample_blocks_with_rules(candidates, max_blocks):
+            if not candidates or max_blocks <= 0:
+                return []
+
+            candidates = list(candidates)
+            guaranteed_donation = next((e for e in candidates if _is_guaranteed_donation_entry(e)), None)
+
+            if guaranteed_donation is None:
+                pick_n = min(len(candidates), int(max_blocks))
+                picked = random.sample(candidates, pick_n)
+                return _move_donation_to_bottom(picked)
+
+            if int(max_blocks) <= 1:
+                return [guaranteed_donation]
+
+            others = [e for e in candidates if e is not guaranteed_donation]
+            pick_others = min(len(others), int(max_blocks) - 1)
+            picked_others = random.sample(others, pick_others) if pick_others > 0 else []
+            return picked_others + [guaranteed_donation]
+
+        def _truncate_blocks_with_rules(candidates, max_blocks):
+            if not candidates or max_blocks <= 0:
+                return []
+
+            candidates = list(candidates)
+            guaranteed_donation = next((e for e in candidates if _is_guaranteed_donation_entry(e)), None)
+
+            if guaranteed_donation is None:
+                trimmed = candidates[:int(max_blocks)]
+                return _move_donation_to_bottom(trimmed)
+
+            if int(max_blocks) <= 1:
+                return [guaranteed_donation]
+
+            others = [e for e in candidates if e is not guaranteed_donation]
+            return others[:int(max_blocks) - 1] + [guaranteed_donation]
+
         if prioritize_large_meme:
             # --- PRIORITY ORDER: Holiday (always) + Donation (if guaranteed) > Meme (max remaining) > Other Info Blocks ---
             # Step 0a: Always reserve space for holiday description block
@@ -3444,19 +3523,16 @@ class ImageRenderer:
             info_blocks_to_render = []
             if space_for_blocks > 0 and info_blocks:
                 if shared_data.get('selected_info_blocks') is not None:
-                    candidate_order = shared_data['selected_info_blocks']
+                    candidate_order = _move_donation_to_bottom(shared_data['selected_info_blocks'])
                 else:
                     if shared_data.get('preserve_layout', False):
-                        candidate_order = info_blocks
-                    elif _donation_entry and _donation_guaranteed_render:
-                        # Guaranteed: donation first, others in random order
-                        others = [b for b in info_blocks if b is not _donation_entry]
-                        candidate_order = [_donation_entry] + random.sample(others, len(others))
+                        candidate_order = _move_donation_to_bottom(info_blocks)
                     else:
-                        # Not guaranteed: all blocks (including donation if present) compete randomly
+                        # Non-preserved layouts compete randomly.
                         candidate_order = random.sample(info_blocks, len(info_blocks))
+                        candidate_order = _move_donation_to_bottom(candidate_order)
 
-                info_blocks_to_render = _fit_blocks_to_height(candidate_order, space_for_blocks)
+                info_blocks_to_render = _fit_blocks_with_donation_priority(candidate_order, space_for_blocks)
                 if shared_data.get('selected_info_blocks') is None:
                     shared_data['selected_info_blocks'] = info_blocks_to_render
             

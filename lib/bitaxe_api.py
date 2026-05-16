@@ -11,9 +11,32 @@ import requests
 from typing import Dict, List, Optional, Union
 
 
+def _parse_diff_value(raw) -> float:
+    """Parse a difficulty value that may be numeric or a suffixed string (e.g. '156M')."""
+    if raw is None:
+        return 0.0
+    if isinstance(raw, (int, float)):
+        return float(raw)
+    if isinstance(raw, str):
+        raw = raw.strip()
+        if not raw:
+            return 0.0
+        suffixes = {'k': 1e3, 'K': 1e3, 'M': 1e6, 'G': 1e9, 'T': 1e12, 'P': 1e15}
+        if raw[-1] in suffixes:
+            try:
+                return float(raw[:-1]) * suffixes[raw[-1]]
+            except ValueError:
+                return 0.0
+        try:
+            return float(raw)
+        except ValueError:
+            return 0.0
+    return 0.0
+
+
 class BitaxeAPI:
     """API client for Bitaxe miner monitoring and hashrate aggregation."""
-    
+
     def __init__(self, config: Dict = None):
         """
         Initialize Bitaxe API client.
@@ -75,7 +98,7 @@ class BitaxeAPI:
                 "fan_speed": data.get("fanSpeed", 0),
                 "frequency": data.get("frequency", 0),
                 "voltage": data.get("voltage", 0),
-                "best_diff": data.get("bestDiff", 0),
+                "best_diff": _parse_diff_value(data.get("bestDiff") or data.get("bestSessionDiff", 0)),
                 "online": True
             }
         except Exception as e:
