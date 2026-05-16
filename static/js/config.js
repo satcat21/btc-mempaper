@@ -2175,7 +2175,7 @@ function createHolidayColorGroup() {
 
         // Theme label spanning full width
         const label = document.createElement('div');
-        label.style.cssText = 'width:100%; font-weight:600; font-size:0.95em; margin-bottom:4px; color:' + (previewBg === '#ffffff' ? '#333' : '#ddd');
+        label.style.cssText = 'width:100%; font-weight:600; font-size:0.95em; margin-bottom:4px; color:var(--text-primary)';
         label.textContent = themeLabel;
         row.appendChild(label);
 
@@ -2183,7 +2183,7 @@ function createHolidayColorGroup() {
         const startGroup = document.createElement('div');
         startGroup.style.cssText = 'display:flex; flex-direction:column; gap:4px;';
         const startLabel = document.createElement('span');
-        startLabel.style.cssText = 'font-size:0.8em; opacity:0.7; color:' + (previewBg === '#ffffff' ? '#333' : '#ccc');
+        startLabel.style.cssText = 'font-size:0.8em; color:var(--text-secondary)';
         startLabel.textContent = t.holiday_color_start || 'Start Color';
         startGroup.appendChild(startLabel);
         const startInput = createColorInput(startVal);
@@ -2195,7 +2195,7 @@ function createHolidayColorGroup() {
         const endGroup = document.createElement('div');
         endGroup.style.cssText = 'display:flex; flex-direction:column; gap:4px;';
         const endLabel = document.createElement('span');
-        endLabel.style.cssText = 'font-size:0.8em; opacity:0.7; color:' + (previewBg === '#ffffff' ? '#333' : '#ccc');
+        endLabel.style.cssText = 'font-size:0.8em; color:var(--text-secondary)';
         endLabel.textContent = t.holiday_color_end || 'End Color';
         endGroup.appendChild(endLabel);
         const endInput = createColorInput(endVal);
