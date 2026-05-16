@@ -1158,33 +1158,34 @@ class ConfigManager:
                 "default": False,
                 "category": "general"
             },
+            "holiday_color_group": {
+                "type": "holiday_color_group",
+                "label": t.get("holiday_color_group_label", "Holiday Text Gradient Colors"),
+                "category": "general"
+            },
             "color_holiday_light": {
                 "type": "color",
-                "label": t.get("color_holiday_light", "Holiday Start (Light)"),
-                "description": t.get("color_holiday_light_desc", "Gradient start color for holiday text in light mode"),
+                "label": t.get("color_holiday_light", "Start Color"),
                 "default": "#F7931A",
-                "category": "general"
+                "category": "_holiday_color"
             },
             "color_holiday_end_light": {
                 "type": "color",
-                "label": t.get("color_holiday_end_light", "Holiday End (Light)"),
-                "description": t.get("color_holiday_end_light_desc", "Gradient end color for holiday text in light mode"),
+                "label": t.get("color_holiday_end_light", "End Color"),
                 "default": "#C62828",
-                "category": "general"
+                "category": "_holiday_color"
             },
             "color_holiday_dark": {
                 "type": "color",
-                "label": t.get("color_holiday_dark", "Holiday Start (Dark)"),
-                "description": t.get("color_holiday_dark_desc", "Gradient start color for holiday text in dark mode"),
+                "label": t.get("color_holiday_dark", "Start Color"),
                 "default": "#F7931A",
-                "category": "general"
+                "category": "_holiday_color"
             },
             "color_holiday_end_dark": {
                 "type": "color",
-                "label": t.get("color_holiday_end_dark", "Holiday End (Dark)"),
-                "description": t.get("color_holiday_end_dark_desc", "Gradient end color for holiday text in dark mode"),
+                "label": t.get("color_holiday_end_dark", "End Color"),
                 "default": "#FF6F6F",
-                "category": "general"
+                "category": "_holiday_color"
             },
             "omni_device_name": {
                 "type": "select",

@@ -220,6 +220,12 @@ translations = {
         "economy": "Economy (~1 day)",
         "minimum": "Minimum",
 
+        "holiday_color_group_label": "Holiday Text Gradient Colors",
+        "holiday_color_light_theme": "Light Theme",
+        "holiday_color_dark_theme": "Dark Theme",
+        "holiday_color_start": "Start Color",
+        "holiday_color_end": "End Color",
+
         # Color Configuration
         "color_holiday_light": "Holiday Start (Light)",
         "color_holiday_light_desc": "Gradient start color for holiday text in light mode",
@@ -634,6 +640,12 @@ translations = {
         "spanish": "Spanisch",
         "french": "Französisch",
         
+        "holiday_color_group_label": "Feiertag Text Verlaufsfarben",
+        "holiday_color_light_theme": "Helles Design",
+        "holiday_color_dark_theme": "Dunkles Design",
+        "holiday_color_start": "Startfarbe",
+        "holiday_color_end": "Endfarbe",
+
         # Color Configuration
         "color_holiday_light": "Feiertag Start (Hell)",
         "color_holiday_light_desc": "Verlauf-Startfarbe für Feiertagstext im hellen Modus",
@@ -1040,6 +1052,12 @@ translations = {
         "background_error": "Carga de fondo fallida",
         "loading_bitcoin_data": "Cargando datos de Bitcoin...",
 
+        "holiday_color_group_label": "Colores de Degradado del Texto Festivo",
+        "holiday_color_light_theme": "Tema Claro",
+        "holiday_color_dark_theme": "Tema Oscuro",
+        "holiday_color_start": "Color Inicial",
+        "holiday_color_end": "Color Final",
+
         # Color Configuration
         "color_holiday_light": "Festividad Inicio (Claro)",
         "color_holiday_light_desc": "Color de inicio del degradado para texto de festividad en modo claro",
@@ -1435,6 +1453,12 @@ translations = {
         "background_error": "Chargement en arrière-plan échoué",
         "loading_bitcoin_data": "Chargement des données Bitcoin...",
 
+        "holiday_color_group_label": "Couleurs de Dégradé du Texte Férié",
+        "holiday_color_light_theme": "Thème Clair",
+        "holiday_color_dark_theme": "Thème Sombre",
+        "holiday_color_start": "Couleur de Début",
+        "holiday_color_end": "Couleur de Fin",
+
         # Color Configuration
         "color_holiday_light": "Férié Début (Clair)",
         "color_holiday_light_desc": "Couleur de début du dégradé pour le texte de jour férié en mode clair",
@@ -1828,6 +1852,12 @@ translations = {
         "hour": "Un'ora (~6 blocchi)",
         "economy": "Economica (~1 giorno)",
         "minimum": "Minima",
+
+        "holiday_color_group_label": "Colori Sfumatura Testo Festività",
+        "holiday_color_light_theme": "Tema Chiaro",
+        "holiday_color_dark_theme": "Tema Scuro",
+        "holiday_color_start": "Colore Iniziale",
+        "holiday_color_end": "Colore Finale",
 
         # Color Configuration
         "color_holiday_light": "Festività Inizio (Chiaro)",

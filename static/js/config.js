@@ -1985,6 +1985,10 @@ function createFormField(key, field, value) {
         case 'color':
             input = createColorInput(value);
             break;
+
+        case 'holiday_color_group':
+            input = createHolidayColorGroup();
+            break;
             
         case 'boolean':
             input = createBooleanSwitch(value);
@@ -2071,11 +2075,13 @@ function createFormField(key, field, value) {
     
     if (input) {
         // Ensure the input has the data-config-key attribute for form collection
-        if (input.dataset) {
-            input.dataset.configKey = key;
-        } else {
-            // Fallback for elements that might not have dataset property
-            input.setAttribute('data-config-key', key);
+        // (skip for composite widgets that manage their own child config keys)
+        if (field.type !== 'holiday_color_group') {
+            if (input.dataset) {
+                input.dataset.configKey = key;
+            } else {
+                input.setAttribute('data-config-key', key);
+            }
         }
     } else {
         console.warn(`Failed to create input for field ${key} of type ${field.type}`);
@@ -2144,9 +2150,101 @@ function createColorInput(value) {
     container.getValue = function() {
         return textInput.value;
     };
-    
+
     return container;
 }
+
+
+function createHolidayColorGroup() {
+    const t = window.translations || {};
+    const wrapper = document.createElement('div');
+    wrapper.style.width = '100%';
+
+    // Read current values from the already-loaded config
+    const cfg = window.currentConfig || {};
+    const lightStart = cfg['color_holiday_light'] || '#F7931A';
+    const lightEnd   = cfg['color_holiday_end_light'] || '#C62828';
+    const darkStart  = cfg['color_holiday_dark'] || '#F7931A';
+    const darkEnd    = cfg['color_holiday_end_dark'] || '#FF6F6F';
+
+    const previewText = 'Bitcoin Pizza Day';
+
+    function buildRow(themeLabel, startKey, endKey, startVal, endVal, bgColor, previewBg) {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex; flex-wrap:wrap; align-items:flex-start; gap:12px; margin-bottom:14px; padding:12px; border-radius:8px; background:' + bgColor;
+
+        // Theme label spanning full width
+        const label = document.createElement('div');
+        label.style.cssText = 'width:100%; font-weight:600; font-size:0.95em; margin-bottom:4px; color:' + (previewBg === '#ffffff' ? '#333' : '#ddd');
+        label.textContent = themeLabel;
+        row.appendChild(label);
+
+        // Start color picker
+        const startGroup = document.createElement('div');
+        startGroup.style.cssText = 'display:flex; flex-direction:column; gap:4px;';
+        const startLabel = document.createElement('span');
+        startLabel.style.cssText = 'font-size:0.8em; opacity:0.7; color:' + (previewBg === '#ffffff' ? '#333' : '#ccc');
+        startLabel.textContent = t.holiday_color_start || 'Start Color';
+        startGroup.appendChild(startLabel);
+        const startInput = createColorInput(startVal);
+        startInput.dataset.configKey = startKey;
+        startGroup.appendChild(startInput);
+        row.appendChild(startGroup);
+
+        // End color picker
+        const endGroup = document.createElement('div');
+        endGroup.style.cssText = 'display:flex; flex-direction:column; gap:4px;';
+        const endLabel = document.createElement('span');
+        endLabel.style.cssText = 'font-size:0.8em; opacity:0.7; color:' + (previewBg === '#ffffff' ? '#333' : '#ccc');
+        endLabel.textContent = t.holiday_color_end || 'End Color';
+        endGroup.appendChild(endLabel);
+        const endInput = createColorInput(endVal);
+        endInput.dataset.configKey = endKey;
+        endGroup.appendChild(endInput);
+        row.appendChild(endGroup);
+
+        // Gradient preview
+        const preview = document.createElement('div');
+        preview.style.cssText = 'flex:1; min-width:160px; display:flex; align-items:center; justify-content:center; padding:10px 16px; border-radius:6px; background:' + previewBg;
+        const previewSpan = document.createElement('span');
+        previewSpan.style.cssText = 'font-size:1.1em; font-weight:700; background:linear-gradient(90deg,' + startVal + ',' + endVal + '); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;';
+        previewSpan.textContent = previewText;
+        preview.appendChild(previewSpan);
+        row.appendChild(preview);
+
+        // Live-update the gradient preview when colors change
+        function updatePreview() {
+            const s = startInput.getValue ? startInput.getValue() : startVal;
+            const e = endInput.getValue ? endInput.getValue() : endVal;
+            previewSpan.style.background = 'linear-gradient(90deg,' + s + ',' + e + ')';
+            previewSpan.style.webkitBackgroundClip = 'text';
+            previewSpan.style.backgroundClip = 'text';
+        }
+        startInput.addEventListener('input', updatePreview);
+        endInput.addEventListener('input', updatePreview);
+
+        return row;
+    }
+
+    // Light theme row (first)
+    wrapper.appendChild(buildRow(
+        t.holiday_color_light_theme || 'Light Theme',
+        'color_holiday_light', 'color_holiday_end_light',
+        lightStart, lightEnd,
+        'rgba(255,255,255,0.06)', '#ffffff'
+    ));
+
+    // Dark theme row (second)
+    wrapper.appendChild(buildRow(
+        t.holiday_color_dark_theme || 'Dark Theme',
+        'color_holiday_dark', 'color_holiday_end_dark',
+        darkStart, darkEnd,
+        'rgba(255,255,255,0.06)', '#1a1a2e'
+    ));
+
+    return wrapper;
+}
+
 
 function createColorSelect(value) {
     const container = document.createElement('div');
