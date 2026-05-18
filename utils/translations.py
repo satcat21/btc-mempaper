@@ -78,7 +78,8 @@ translations = {
         "mempool_password": "Mempool Password",
         "mempool_password_desc": "Optional password for Basic authentication (leave empty if not required)",
         "mempool_settings": "Mempool Settings",
-        
+        "advanced_settings": "Advanced",
+
         # Security Settings
         "admin_username": "Admin Username",
         "admin_password": "Admin Password", 
@@ -211,7 +212,7 @@ translations = {
         "xpub_derivation_count": "XPUB/ZPUB Address Count",
         "xpub_derivation_count_desc": "Number of addresses to derive from each XPUB/ZPUB (1-100)",
         "prioritize_large_scaled_meme": "Prioritize Large Scaled Memes",
-        "prioritize_large_scaled_meme_desc": "When enabled, maximize meme display space by hiding holiday info and stats if necessary. Holiday takes priority over stats when both can't fit.",
+        "prioritize_large_scaled_meme_desc": "When enabled, maximize meme display space by hiding stats if necessary.",
         "fee_parameter": "Fee Parameter for Block Height Color",
         "fee_parameter_desc": "Which fee level to use for determining block height color",
         "fastest": "Fastest (~1 block)",
@@ -492,7 +493,8 @@ translations = {
         "mempool_password": "Mempool-Passwort",
         "mempool_password_desc": "Optionales Passwort für Basic-Authentifizierung (leer lassen, falls nicht erforderlich)",
         "mempool_settings": "Mempool-Einstellungen",
-        
+        "advanced_settings": "Erweitert",
+
         # Security Settings
         "admin_username": "Administrator-Benutzername",
         "admin_password": "Administrator-Passwort",
@@ -625,7 +627,7 @@ translations = {
         "xpub_derivation_count": "XPUB/ZPUB Adress-Anzahl",
         "xpub_derivation_count_desc": "Anzahl der Adressen, die von jedem XPUB/ZPUB abgeleitet werden (1-100)",
         "prioritize_large_scaled_meme": "Große skalierte Memes priorisieren",
-        "prioritize_large_scaled_meme_desc": "Wenn aktiviert, wird der Meme-Anzeigebereich maximiert, indem Feiertags-Infos und Statistiken bei Bedarf ausgeblendet werden. Feiertag hat Vorrang vor Statistiken, wenn beides nicht passt.",
+        "prioritize_large_scaled_meme_desc": "Wenn aktiviert, wird der Meme-Anzeigebereich maximiert, indem Statistiken bei Bedarf ausgeblendet werden.",
         "fee_parameter": "Gebührenparameter für Blockhöhenfarbe",
         "fee_parameter_desc": "Welcher Gebührenlevel zur Bestimmung der Blockhöhenfarbe verwendet werden soll",
         "fastest": "Schnellste (~1 Block)",
@@ -908,7 +910,8 @@ translations = {
         "mempool_password": "Contraseña de Mempool",
         "mempool_password_desc": "Contraseña opcional para autenticación básica (dejar vacío si no es necesario)",
         "mempool_settings": "Configuración de Mempool",
-        
+        "advanced_settings": "Avanzado",
+
         # Security Settings
         "admin_username": "Usuario Administrador",
         "admin_password": "Contraseña de Administrador",
@@ -1006,7 +1009,7 @@ translations = {
         "xpub_derivation_count": "Cantidad de Direcciones XPUB/ZPUB",
         "xpub_derivation_count_desc": "Número de direcciones a derivar de cada XPUB/ZPUB (1-100)",
         "prioritize_large_scaled_meme": "Priorizar Memes Escalados Grandes",
-        "prioritize_large_scaled_meme_desc": "Cuando está habilitado, maximiza el espacio de visualización del meme ocultando información de feriados y estadísticas si es necesario. El feriado tiene prioridad sobre las estadísticas cuando ambos no caben.",
+        "prioritize_large_scaled_meme_desc": "Cuando está habilitado, maximiza el espacio de visualización del meme ocultando estadísticas si es necesario.",
         "fee_parameter": "Parámetro de Comisión para Color de Altura de Bloque",
         "fee_parameter_desc": "Qué nivel de comisión usar para determinar el color de la altura del bloque",
         "fastest": "Más Rápido (~1 bloque)",
@@ -1309,7 +1312,8 @@ translations = {
         "mempool_password": "Mot de Passe Mempool",
         "mempool_password_desc": "Mot de passe optionnel pour l'authentification basique (laisser vide si non requis)",
         "mempool_settings": "Paramètres Mempool",
-        
+        "advanced_settings": "Avancé",
+
         # Security Settings
         "admin_username": "Nom d'Utilisateur Admin",
         "admin_password": "Mot de Passe Admin",
@@ -1407,7 +1411,7 @@ translations = {
         "xpub_derivation_count": "Nombre d'Adresses XPUB/ZPUB",
         "xpub_derivation_count_desc": "Nombre d'adresses à dériver de chaque XPUB/ZPUB (1-100)",
         "prioritize_large_scaled_meme": "Prioriser les Mèmes Redimensionnés Grands",
-        "prioritize_large_scaled_meme_desc": "Lorsqu'activé, maximise l'espace d'affichage du mème en masquant les informations de vacances et statistiques si nécessaire. Les vacances ont priorité sur les statistiques quand les deux ne peuvent pas tenir.",
+        "prioritize_large_scaled_meme_desc": "Lorsqu'activé, maximise l'espace d'affichage du mème en masquant les statistiques si nécessaire.",
         "fee_parameter": "Paramètre de Frais pour Couleur de Hauteur de Bloc",
         "fee_parameter_desc": "Quel niveau de frais utiliser pour déterminer la couleur de la hauteur du bloc",
         "fastest": "Plus Rapide (~1 bloc)",
@@ -1711,7 +1715,8 @@ translations = {
         "mempool_password": "Password Mempool",
         "mempool_password_desc": "Password opzionale per l'autenticazione di base (lascia vuoto se non necessario)",
         "mempool_settings": "Impostazioni Mempool",
-        
+        "advanced_settings": "Avanzato",
+
         # Security Settings
         "admin_username": "Nome Utente Amministratore",
         "admin_password": "Password Amministratore",
@@ -1844,7 +1849,7 @@ translations = {
         "xpub_derivation_count": "Numero Indirizzi XPUB/ZPUB",
         "xpub_derivation_count_desc": "Numero di indirizzi da derivare da ogni XPUB/ZPUB (1-100)",
         "prioritize_large_scaled_meme": "Prioritizza Meme Ingranditi",
-        "prioritize_large_scaled_meme_desc": "Quando abilitato, massimizza lo spazio di visualizzazione del meme nascondendo le informazioni sulle festività e le statistiche se necessario. La festività ha priorità sulle statistiche quando entrambe non possono essere visualizzate.",
+        "prioritize_large_scaled_meme_desc": "Quando abilitato, massimizza lo spazio di visualizzazione del meme nascondendo le statistiche se necessario.",
         "fee_parameter": "Parametro Commissione per Colore Altezza Blocco",
         "fee_parameter_desc": "Quale livello di commissione usare per determinare il colore dell'altezza del blocco",
         "fastest": "Più Veloce (~1 blocco)",

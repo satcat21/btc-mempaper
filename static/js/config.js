@@ -1826,7 +1826,9 @@ function renderConfigurationForm() {
         section.appendChild(title);
         
         let fieldsAdded = 0;
-        
+        let advancedContainer = null;
+        let hasAdvancedFields = false;
+
         // Add fields for this category (skip the enable/disable toggle as it's now in header)
         Object.entries(configSchema).forEach(([key, field]) => {
             if (field.category === category.id && key !== enableToggleKey) {
@@ -1836,7 +1838,32 @@ function renderConfigurationForm() {
                     if (field.always_visible) {
                         formGroup.classList.add('form-group--always-visible');
                     }
-                    section.appendChild(formGroup);
+
+                    if (field.advanced) {
+                        // Create collapsible advanced container on first advanced field
+                        if (!advancedContainer) {
+                            advancedContainer = document.createElement('div');
+                            advancedContainer.className = 'advanced-section';
+
+                            const advancedToggle = document.createElement('div');
+                            advancedToggle.className = 'advanced-section-toggle';
+                            advancedToggle.innerHTML = `<span class="advanced-section-arrow">&#9654;</span> ${window.translations?.advanced_settings || 'Advanced'}`;
+                            advancedToggle.addEventListener('click', () => {
+                                advancedContainer.classList.toggle('advanced-section--open');
+                            });
+
+                            const advancedContent = document.createElement('div');
+                            advancedContent.className = 'advanced-section-content';
+
+                            advancedContainer.appendChild(advancedToggle);
+                            advancedContainer.appendChild(advancedContent);
+                            section.appendChild(advancedContainer);
+                        }
+                        advancedContainer.querySelector('.advanced-section-content').appendChild(formGroup);
+                        hasAdvancedFields = true;
+                    } else {
+                        section.appendChild(formGroup);
+                    }
                     fieldsAdded++;
                 } catch (error) {
                     console.error(`Error creating field ${key}:`, error);

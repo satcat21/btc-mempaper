@@ -112,6 +112,49 @@
     margin-bottom: 0;
 }
 
+/* Collapsible advanced section */
+.advanced-section {
+    width: 100%;
+    margin-top: 8px;
+}
+
+.advanced-section-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    user-select: none;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    padding: 8px 0;
+    border-top: 1px solid var(--border-color);
+    transition: color 0.2s;
+}
+
+.advanced-section-toggle:hover {
+    color: var(--text-primary);
+}
+
+.advanced-section-arrow {
+    display: inline-block;
+    font-size: 0.6rem;
+    transition: transform 0.2s;
+}
+
+.advanced-section--open .advanced-section-arrow {
+    transform: rotate(90deg);
+}
+
+.advanced-section-content {
+    display: none;
+    padding-top: 8px;
+}
+
+.advanced-section--open .advanced-section-content {
+    display: block;
+}
+
 .form-label {
     display: block;
     margin-bottom: 6px;

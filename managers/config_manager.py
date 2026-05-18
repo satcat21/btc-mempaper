@@ -1084,15 +1084,17 @@ class ConfigManager:
                 "min": 1,
                 "max": 65535,
                 "description": t.get("mempool_rest_port_desc", "Port for mempool REST API"),
-                "category": "mempool"
+                "category": "mempool",
+                "advanced": True
             },
             "mempool_ws_port": {
-                "type": "number", 
+                "type": "number",
                 "label": t.get("mempool_ws_port", "WebSocket Port"),
                 "min": 1,
                 "max": 65535,
                 "description": t.get("mempool_ws_port_desc", "Port for real-time mempool updates"),
-                "category": "mempool"
+                "category": "mempool",
+                "advanced": True
             },
             "fee_parameter": {
                 "type": "select",
@@ -1113,14 +1115,16 @@ class ConfigManager:
                 "label": t.get("mempool_use_https", "Use HTTPS/WSS"),
                 "description": t.get("mempool_use_https_desc", "Use secure HTTPS for REST API and WSS for WebSocket connections"),
                 "default": False,
-                "category": "mempool"
+                "category": "mempool",
+                "advanced": True
             },
             "mempool_verify_ssl": {
                 "type": "boolean",
                 "label": t.get("mempool_verify_ssl", "Verify SSL Certificates"),
                 "description": t.get("mempool_verify_ssl_desc", "Verify SSL certificates when using HTTPS (disable for self-signed certificates)"),
                 "default": True,
-                "category": "mempool"
+                "category": "mempool",
+                "advanced": True
             },
             "mempool_ws_path": {
                 "type": "text",
@@ -1128,14 +1132,16 @@ class ConfigManager:
                 "placeholder": "/api/v1/ws",
                 "description": t.get("mempool_ws_path_desc", "WebSocket endpoint path for real-time updates"),
                 "default": "/api/v1/ws",
-                "category": "mempool"
+                "category": "mempool",
+                "advanced": True
             },
             "mempool_username": {
                 "type": "text",
                 "label": t.get("mempool_username", "Mempool Username"),
                 "placeholder": "mempool",
                 "description": t.get("mempool_username_desc", "Optional username for Basic authentication (leave empty if not required)"),
-                "category": "mempool"
+                "category": "mempool",
+                "advanced": True
             },
             "mempool_password": {
                 "type": "password",
@@ -1143,7 +1149,8 @@ class ConfigManager:
                 "placeholder": "your-secret-password",
                 "description": t.get("mempool_password_desc", "Optional password for Basic authentication (leave empty if not required)"),
                 "category": "mempool",
-                "secure": True
+                "secure": True,
+                "advanced": True
             },
             "e-ink-display-connected": {
                 "type": "boolean",
@@ -1154,7 +1161,7 @@ class ConfigManager:
             "prioritize_large_scaled_meme": {
                 "type": "boolean",
                 "label": t.get("prioritize_large_scaled_meme", "Prioritize Large Scaled Memes"),
-                "description": t.get("prioritize_large_scaled_meme_desc", "When enabled, maximize meme display space by hiding holiday info and stats if necessary. Holiday takes priority over stats when both can't fit."),
+                "description": t.get("prioritize_large_scaled_meme_desc", "When enabled, maximize meme display space by hiding stats if necessary."),
                 "default": False,
                 "category": "general"
             },
