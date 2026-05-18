@@ -66,7 +66,7 @@ function closeMemeModal() {
                     tr.style.cssText = 'border-bottom:1px solid var(--border-color);';
                     tr.innerHTML = `
                         <td style="padding:5px 8px; white-space:nowrap;">${ts}</td>
-                        <td style="padding:5px 8px; text-align:right; font-weight:bold;">${sats}</td>
+                        <td style="padding:5px 8px; text-align:right; font-weight:bold; color:var(--accent); font-family:var(--font-mono);">${sats}</td>
                         <td style="padding:5px 8px;">${msg}</td>`;
                     tbody.insertBefore(tr, tbody.firstChild);
                     // Update total
@@ -1830,8 +1830,11 @@ function renderConfigurationForm() {
         let hasAdvancedFields = false;
 
         // Add fields for this category (skip the enable/disable toggle as it's now in header)
-        Object.entries(configSchema).forEach(([key, field]) => {
-            if (field.category === category.id && key !== enableToggleKey) {
+        // Sort by order property if present, otherwise preserve original order
+        const categoryFields = Object.entries(configSchema)
+            .filter(([key, field]) => field.category === category.id && key !== enableToggleKey)
+            .sort((a, b) => (a[1].order ?? 999) - (b[1].order ?? 999));
+        categoryFields.forEach(([key, field]) => {
                 //console.log(`Adding field: ${key} to category ${category.id}`);
                 try {
                     const formGroup = createFormField(key, field, currentConfig[key]);
@@ -1847,7 +1850,7 @@ function renderConfigurationForm() {
 
                             const advancedToggle = document.createElement('div');
                             advancedToggle.className = 'advanced-section-toggle';
-                            advancedToggle.innerHTML = `<span class="advanced-section-arrow">&#9654;</span> ${window.translations?.advanced_settings || 'Advanced'}`;
+                            advancedToggle.innerHTML = `<span class="advanced-section-arrow"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" fill="currentColor" class="advanced-chevron-icon"><path d="M480-344 240-584l56-56 184 184 184-184 56 56-240 240Z"/></svg></span> ${window.translations?.advanced_settings || 'Advanced'}`;
                             advancedToggle.addEventListener('click', () => {
                                 advancedContainer.classList.toggle('advanced-section--open');
                             });
@@ -1857,7 +1860,6 @@ function renderConfigurationForm() {
 
                             advancedContainer.appendChild(advancedToggle);
                             advancedContainer.appendChild(advancedContent);
-                            section.appendChild(advancedContainer);
                         }
                         advancedContainer.querySelector('.advanced-section-content').appendChild(formGroup);
                         hasAdvancedFields = true;
@@ -1868,13 +1870,35 @@ function renderConfigurationForm() {
                 } catch (error) {
                     console.error(`Error creating field ${key}:`, error);
                 }
-            }
         });
 
-        // Append user credential fields (username + password) to the General section
+        // Append advanced container after all regular fields so it appears at the bottom
+        if (advancedContainer && !advancedContainer.parentElement) {
+            section.appendChild(advancedContainer);
+        }
+
+        // Append user credential fields (username + password) to the General advanced section
         if (category.id === 'general' && configCurrentUser) {
-            section.appendChild(createCurrentUserUsernameField());
-            section.appendChild(createCurrentUserPasswordField());
+            if (!advancedContainer) {
+                advancedContainer = document.createElement('div');
+                advancedContainer.className = 'advanced-section';
+
+                const advancedToggle = document.createElement('div');
+                advancedToggle.className = 'advanced-section-toggle';
+                advancedToggle.innerHTML = `<span class="advanced-section-arrow"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" fill="currentColor" class="advanced-chevron-icon"><path d="M480-344 240-584l56-56 184 184 184-184 56 56-240 240Z"/></svg></span> ${window.translations?.advanced_settings || 'Advanced'}`;
+                advancedToggle.addEventListener('click', () => {
+                    advancedContainer.classList.toggle('advanced-section--open');
+                });
+
+                const advancedContent = document.createElement('div');
+                advancedContent.className = 'advanced-section-content';
+
+                advancedContainer.appendChild(advancedToggle);
+                advancedContainer.appendChild(advancedContent);
+                section.appendChild(advancedContainer);
+            }
+            advancedContainer.querySelector('.advanced-section-content').appendChild(createCurrentUserUsernameField());
+            advancedContainer.querySelector('.advanced-section-content').appendChild(createCurrentUserPasswordField());
             fieldsAdded += 2;
         }
 
@@ -2802,15 +2826,15 @@ function createWalletTableInput(values, field) {
     const addressHeader = document.createElement('th');
     addressHeader.textContent = window.translations?.wallet_table_address || 'Address/XPUB/ZPUB';
     addressHeader.style.padding = '10px';
-    addressHeader.style.border = '1px solid rgba(255, 255, 255, 0.2)';
+    addressHeader.style.border = '1px solid var(--border-subtle)';
     addressHeader.style.backgroundColor = '#2a2d3e';
     addressHeader.style.color = '#ffffff';
     addressHeader.style.width = '35%';
     
     const commentHeader = document.createElement('th');
-    commentHeader.textContent = window.translations?.wallet_table_comment || 'Comment/Label';
+    commentHeader.innerHTML = (window.translations?.wallet_table_comment || 'Comment/Label').replace('/', '/<br>');
     commentHeader.style.padding = '10px';
-    commentHeader.style.border = '1px solid rgba(255, 255, 255, 0.2)';
+    commentHeader.style.border = '1px solid var(--border-subtle)';
     commentHeader.style.backgroundColor = '#2a2d3e';
     commentHeader.style.color = '#ffffff';
     commentHeader.style.width = '35%';
@@ -2818,7 +2842,7 @@ function createWalletTableInput(values, field) {
     const balanceHeader = document.createElement('th');
     balanceHeader.textContent = window.translations?.wallet_table_balance || 'Balance (BTC)';
     balanceHeader.style.padding = '10px';
-    balanceHeader.style.border = '1px solid rgba(255, 255, 255, 0.2)';
+    balanceHeader.style.border = '1px solid var(--border-subtle)';
     balanceHeader.style.backgroundColor = '#2a2d3e';
     balanceHeader.style.color = '#ffffff';
     balanceHeader.style.width = '20%';
@@ -2826,7 +2850,7 @@ function createWalletTableInput(values, field) {
     const actionsHeader = document.createElement('th');
     actionsHeader.textContent = '';
     actionsHeader.style.padding = '10px';
-    actionsHeader.style.border = '1px solid rgba(255, 255, 255, 0.2)';
+    actionsHeader.style.border = '1px solid var(--border-subtle)';
     actionsHeader.style.backgroundColor = '#2a2d3e';
     actionsHeader.style.color = '#ffffff';
     actionsHeader.style.width = '10%';
@@ -2928,7 +2952,7 @@ function addWalletTableRow(tbody, entry) {
     // Address cell
     const addressCell = document.createElement('td');
     addressCell.style.padding = '8px';
-    addressCell.style.border = '1px solid rgba(255, 255, 255, 0.15)';
+    addressCell.style.border = '1px solid var(--border-subtle)';
     
     const addressInput = document.createElement('input');
     addressInput.type = 'text';
@@ -2948,7 +2972,7 @@ function addWalletTableRow(tbody, entry) {
     // Comment cell
     const commentCell = document.createElement('td');
     commentCell.style.padding = '8px';
-    commentCell.style.border = '1px solid rgba(255, 255, 255, 0.15)';
+    commentCell.style.border = '1px solid var(--border-subtle)';
     
     const commentInput = document.createElement('input');
     commentInput.type = 'text';
@@ -2968,28 +2992,29 @@ function addWalletTableRow(tbody, entry) {
     // Balance cell
     const balanceCell = document.createElement('td');
     balanceCell.style.padding = '8px';
-    balanceCell.style.border = '1px solid rgba(255, 255, 255, 0.15)';
+    balanceCell.style.border = '1px solid var(--border-subtle)';
     balanceCell.style.textAlign = 'right';
     
     const balanceDisplay = document.createElement('span');
     balanceDisplay.className = 'wallet-balance-display';
     balanceDisplay.textContent = entry.cached_balance ? `${entry.cached_balance.toFixed(8)}` : '0.00000000';
-    balanceDisplay.style.fontFamily = 'monospace';
+    balanceDisplay.style.fontFamily = 'var(--font-mono)';
     balanceDisplay.style.fontSize = '0.9em';
-    balanceDisplay.style.color = entry.cached_balance && entry.cached_balance > 0 ? '#4FC3F7' : '#666';
+    balanceDisplay.style.fontWeight = 'bold';
+    balanceDisplay.style.color = 'var(--accent)';
     
     balanceCell.appendChild(balanceDisplay);
     
     // Actions cell
     const actionsCell = document.createElement('td');
     actionsCell.style.padding = '8px';
-    actionsCell.style.border = '1px solid rgba(255, 255, 255, 0.15)';
+    actionsCell.style.border = '1px solid var(--border-subtle)';
     actionsCell.style.textAlign = 'center';
     
     const removeButton = document.createElement('button');
     removeButton.type = 'button';
     removeButton.className = 'wallet-remove-icon';
-    removeButton.innerHTML = '<img src="/static/icons/delete.svg" alt="Delete" style="width: 16px; height: 16px; filter: brightness(0) invert(1);" />';
+    removeButton.innerHTML = '<img src="/static/icons/delete.svg" alt="Delete" class="table-delete-icon" />';
     removeButton.title = window.translations?.wallet_table_remove || 'Remove';
     removeButton.style.background = 'none';
     removeButton.style.border = 'none';
@@ -3064,15 +3089,15 @@ function createBitaxeTableInput(values, field) {
     const addressHeader = document.createElement('th');
     addressHeader.textContent = window.translations?.bitaxe_table_address || 'IP Address';
     addressHeader.style.padding = '10px';
-    addressHeader.style.border = '1px solid rgba(255, 255, 255, 0.2)';
+    addressHeader.style.border = '1px solid var(--border-subtle)';
     addressHeader.style.backgroundColor = '#2a2d3e';
     addressHeader.style.color = '#ffffff';
     addressHeader.style.width = '35%';
 
     const commentHeader = document.createElement('th');
-    commentHeader.textContent = window.translations?.bitaxe_table_comment || 'Comment/Label';
+    commentHeader.innerHTML = (window.translations?.bitaxe_table_comment || 'Comment/Label').replace('/', '/<br>');
     commentHeader.style.padding = '10px';
-    commentHeader.style.border = '1px solid rgba(255, 255, 255, 0.2)';
+    commentHeader.style.border = '1px solid var(--border-subtle)';
     commentHeader.style.backgroundColor = '#2a2d3e';
     commentHeader.style.color = '#ffffff';
     commentHeader.style.width = '30%';
@@ -3080,7 +3105,7 @@ function createBitaxeTableInput(values, field) {
     const bestDiffHeader = document.createElement('th');
     bestDiffHeader.textContent = window.translations?.bitaxe_table_best_diff || 'Best Difficulty';
     bestDiffHeader.style.padding = '10px';
-    bestDiffHeader.style.border = '1px solid rgba(255, 255, 255, 0.2)';
+    bestDiffHeader.style.border = '1px solid var(--border-subtle)';
     bestDiffHeader.style.backgroundColor = '#2a2d3e';
     bestDiffHeader.style.color = '#ffffff';
     bestDiffHeader.style.width = '25%';
@@ -3088,7 +3113,7 @@ function createBitaxeTableInput(values, field) {
     const actionsHeader = document.createElement('th');
     actionsHeader.textContent = '';
     actionsHeader.style.padding = '10px';
-    actionsHeader.style.border = '1px solid rgba(255, 255, 255, 0.2)';
+    actionsHeader.style.border = '1px solid var(--border-subtle)';
     actionsHeader.style.backgroundColor = '#2a2d3e';
     actionsHeader.style.color = '#ffffff';
     actionsHeader.style.width = '10%';
@@ -3185,7 +3210,7 @@ function addBitaxeTableRow(tbody, entry) {
     // Address cell
     const addressCell = document.createElement('td');
     addressCell.style.padding = '8px';
-    addressCell.style.border = '1px solid rgba(255, 255, 255, 0.15)';
+    addressCell.style.border = '1px solid var(--border-subtle)';
     
     const addressInput = document.createElement('input');
     addressInput.type = 'text';
@@ -3195,7 +3220,7 @@ function addBitaxeTableRow(tbody, entry) {
     addressInput.style.width = '100%';
     addressInput.style.border = '1px solid rgba(255, 255, 255, 0.3) !important';
     addressInput.style.padding = '8px !important';
-    addressInput.style.background = 'rgba(255, 255, 255, 0.1) !important';
+    addressInput.style.background = 'var(--bg-input) !important';
     addressInput.style.color = '#ffffff !important';
     addressInput.style.fontSize = '0.9em';
     addressInput.style.borderRadius = '4px !important';
@@ -3205,7 +3230,7 @@ function addBitaxeTableRow(tbody, entry) {
     // Comment cell
     const commentCell = document.createElement('td');
     commentCell.style.padding = '8px';
-    commentCell.style.border = '1px solid rgba(255, 255, 255, 0.15)';
+    commentCell.style.border = '1px solid var(--border-subtle)';
     
     const commentInput = document.createElement('input');
     commentInput.type = 'text';
@@ -3215,7 +3240,7 @@ function addBitaxeTableRow(tbody, entry) {
     commentInput.style.width = '100%';
     commentInput.style.border = '1px solid rgba(255, 255, 255, 0.3) !important';
     commentInput.style.padding = '8px !important';
-    commentInput.style.background = 'rgba(255, 255, 255, 0.1) !important';
+    commentInput.style.background = 'var(--bg-input) !important';
     commentInput.style.color = '#ffffff !important';
     commentInput.style.fontSize = '0.9em';
     commentInput.style.borderRadius = '4px !important';
@@ -3225,15 +3250,16 @@ function addBitaxeTableRow(tbody, entry) {
     // Best Difficulty cell
     const bestDiffCell = document.createElement('td');
     bestDiffCell.style.padding = '8px';
-    bestDiffCell.style.border = '1px solid rgba(255, 255, 255, 0.15)';
+    bestDiffCell.style.border = '1px solid var(--border-subtle)';
     bestDiffCell.style.textAlign = 'right';
 
     const bestDiffDisplay = document.createElement('span');
     bestDiffDisplay.className = 'bitaxe-best-diff-display';
     bestDiffDisplay.textContent = '-';
-    bestDiffDisplay.style.fontFamily = 'monospace';
+    bestDiffDisplay.style.fontFamily = 'var(--font-mono)';
     bestDiffDisplay.style.fontSize = '0.9em';
-    bestDiffDisplay.style.color = '#666';
+    bestDiffDisplay.style.fontWeight = 'bold';
+    bestDiffDisplay.style.color = 'var(--text-muted)';
     bestDiffCell.appendChild(bestDiffDisplay);
 
     // Update best diff when IP changes — debounced so we only fetch once typing stops
@@ -3243,7 +3269,7 @@ function addBitaxeTableRow(tbody, entry) {
         const newIp = addressInput.value.trim();
         if (!newIp) {
             bestDiffDisplay.textContent = '-';
-            bestDiffDisplay.style.color = '#666';
+            bestDiffDisplay.style.color = 'var(--text-muted)';
             return;
         }
         // Wait until the field looks like a complete IPv4 address before fetching
@@ -3251,7 +3277,7 @@ function addBitaxeTableRow(tbody, entry) {
             const ip = addressInput.value.trim();
             if (/^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) {
                 bestDiffDisplay.textContent = '...';
-                bestDiffDisplay.style.color = '#aaa';
+                bestDiffDisplay.style.color = 'var(--text-muted)';
                 fetchBitaxeBestDiff(ip, bestDiffDisplay);
             }
         }, 1000);
@@ -3260,20 +3286,20 @@ function addBitaxeTableRow(tbody, entry) {
     // Load initial best diff if IP is set
     if (entry.address) {
         bestDiffDisplay.textContent = '...';
-        bestDiffDisplay.style.color = '#aaa';
+        bestDiffDisplay.style.color = 'var(--text-muted)';
         fetchBitaxeBestDiff(entry.address, bestDiffDisplay);
     }
 
     // Actions cell
     const actionsCell = document.createElement('td');
     actionsCell.style.padding = '8px';
-    actionsCell.style.border = '1px solid rgba(255, 255, 255, 0.15)';
+    actionsCell.style.border = '1px solid var(--border-subtle)';
     actionsCell.style.textAlign = 'center';
 
     const removeButton = document.createElement('button');
     removeButton.type = 'button';
     removeButton.className = 'bitaxe-remove-icon';
-    removeButton.innerHTML = '<img src="/static/icons/delete.svg" alt="Delete" style="width: 16px; height: 16px; filter: brightness(0) invert(1);" />';
+    removeButton.innerHTML = '<img src="/static/icons/delete.svg" alt="Delete" class="table-delete-icon" />';
     removeButton.title = window.translations?.bitaxe_table_remove || 'Remove';
     removeButton.style.background = 'none';
     removeButton.style.border = 'none';
@@ -3338,15 +3364,15 @@ function createBlockRewardTableInput(values, field) {
     const addressHeader = document.createElement('th');
     addressHeader.textContent = window.translations?.block_reward_table_address || 'BTC Address';
     addressHeader.style.padding = '10px';
-    addressHeader.style.border = '1px solid rgba(255, 255, 255, 0.2)';
+    addressHeader.style.border = '1px solid var(--border-subtle)';
     addressHeader.style.backgroundColor = '#2a2d3e';
     addressHeader.style.color = '#ffffff';
     addressHeader.style.width = '40%';
     
     const commentHeader = document.createElement('th');
-    commentHeader.textContent = window.translations?.block_reward_table_comment || 'Comment/Label';
+    commentHeader.innerHTML = (window.translations?.block_reward_table_comment || 'Comment/Label').replace('/', '/<br>');
     commentHeader.style.padding = '10px';
-    commentHeader.style.border = '1px solid rgba(255, 255, 255, 0.2)';
+    commentHeader.style.border = '1px solid var(--border-subtle)';
     commentHeader.style.backgroundColor = '#2a2d3e';
     commentHeader.style.color = '#ffffff';
     commentHeader.style.width = '30%';
@@ -3354,7 +3380,7 @@ function createBlockRewardTableInput(values, field) {
     const foundBlocksHeader = document.createElement('th');
     foundBlocksHeader.textContent = window.translations?.block_reward_table_found_blocks || 'Found Blocks';
     foundBlocksHeader.style.padding = '10px';
-    foundBlocksHeader.style.border = '1px solid rgba(255, 255, 255, 0.2)';
+    foundBlocksHeader.style.border = '1px solid var(--border-subtle)';
     foundBlocksHeader.style.backgroundColor = '#2a2d3e';
     foundBlocksHeader.style.color = '#ffffff';
     foundBlocksHeader.style.width = '20%';
@@ -3363,7 +3389,7 @@ function createBlockRewardTableInput(values, field) {
     const actionsHeader = document.createElement('th');
     actionsHeader.textContent = '';
     actionsHeader.style.padding = '10px';
-    actionsHeader.style.border = '1px solid rgba(255, 255, 255, 0.2)';
+    actionsHeader.style.border = '1px solid var(--border-subtle)';
     actionsHeader.style.backgroundColor = '#2a2d3e';
     actionsHeader.style.color = '#ffffff';
     actionsHeader.style.width = '10%';
@@ -3490,7 +3516,7 @@ function addBlockRewardTableRow(tbody, entry) {
     // Address cell
     const addressCell = document.createElement('td');
     addressCell.style.padding = '8px';
-    addressCell.style.border = '1px solid rgba(255, 255, 255, 0.15)';
+    addressCell.style.border = '1px solid var(--border-subtle)';
     
     const addressInput = document.createElement('input');
     addressInput.type = 'text';
@@ -3498,9 +3524,10 @@ function addBlockRewardTableRow(tbody, entry) {
     addressInput.value = entry.address || '';
     addressInput.placeholder = window.translations?.block_reward_table_placeholder_address || 'Enter BTC address (e.g., bc1q...)';
     addressInput.style.width = '100%';
-    addressInput.style.padding = '6px';
-    addressInput.style.border = '1px solid #ced4da';
-    addressInput.style.borderRadius = '4px';
+    addressInput.style.padding = '5px';
+    addressInput.style.border = 'none';
+    addressInput.style.background = 'transparent';
+    addressInput.style.color = 'var(--text-primary)';
     addressInput.style.fontSize = '14px';
     
     addressCell.appendChild(addressInput);
@@ -3508,7 +3535,7 @@ function addBlockRewardTableRow(tbody, entry) {
     // Comment cell
     const commentCell = document.createElement('td');
     commentCell.style.padding = '8px';
-    commentCell.style.border = '1px solid rgba(255, 255, 255, 0.15)';
+    commentCell.style.border = '1px solid var(--border-subtle)';
     
     const commentInput = document.createElement('input');
     commentInput.type = 'text';
@@ -3516,9 +3543,10 @@ function addBlockRewardTableRow(tbody, entry) {
     commentInput.value = entry.comment || '';
     commentInput.placeholder = 'Optional comment';
     commentInput.style.width = '100%';
-    commentInput.style.padding = '6px';
-    commentInput.style.border = '1px solid #ced4da';
-    commentInput.style.borderRadius = '4px';
+    commentInput.style.padding = '5px';
+    commentInput.style.border = 'none';
+    commentInput.style.background = 'transparent';
+    commentInput.style.color = 'var(--text-primary)';
     commentInput.style.fontSize = '14px';
     
     commentCell.appendChild(commentInput);
@@ -3526,9 +3554,10 @@ function addBlockRewardTableRow(tbody, entry) {
     // Found blocks cell
     const foundBlocksCell = document.createElement('td');
     foundBlocksCell.style.padding = '8px';
-    foundBlocksCell.style.border = '1px solid rgba(255, 255, 255, 0.15)';
+    foundBlocksCell.style.border = '1px solid var(--border-subtle)';
     foundBlocksCell.style.textAlign = 'center';
-    foundBlocksCell.style.color = '#4FC3F7';
+    foundBlocksCell.style.color = 'var(--accent)';
+    foundBlocksCell.style.fontFamily = 'var(--font-mono)';
     foundBlocksCell.style.fontWeight = 'bold';
     foundBlocksCell.textContent = '-';
     foundBlocksCell.setAttribute('data-address', entry.address || '');
@@ -3536,13 +3565,13 @@ function addBlockRewardTableRow(tbody, entry) {
     // Actions cell
     const actionsCell = document.createElement('td');
     actionsCell.style.padding = '8px';
-    actionsCell.style.border = '1px solid rgba(255, 255, 255, 0.15)';
+    actionsCell.style.border = '1px solid var(--border-subtle)';
     actionsCell.style.textAlign = 'center';
     
     const removeButton = document.createElement('button');
     removeButton.type = 'button';
     removeButton.className = 'block-reward-remove-icon';
-    removeButton.innerHTML = '<img src="/static/icons/delete.svg" alt="Delete" style="width: 16px; height: 16px; filter: brightness(0) invert(1);" />';
+    removeButton.innerHTML = '<img src="/static/icons/delete.svg" alt="Delete" class="table-delete-icon" />';
     removeButton.title = window.translations?.block_reward_table_remove || 'Remove';
     removeButton.style.background = 'none';
     removeButton.style.border = 'none';
@@ -3607,7 +3636,7 @@ async function fetchFoundBlocksCount(address, cell) {
         if (response.ok) {
             const data = await response.json();
             cell.textContent = data.found_blocks || '0';
-            cell.style.color = data.found_blocks > 0 ? '#4FC3F7' : '#4FC3F7';
+            cell.style.color = 'var(--accent)';
         } else {
             cell.textContent = 'Error';
             cell.style.color = '#ff6b6b';
@@ -3635,7 +3664,7 @@ async function fetchBitaxeBestDiff(ip, cell) {
             const data = await response.json();
             if (data.online) {
                 cell.textContent = formatBitaxeDifficulty(data.best_diff);
-                cell.style.color = '#4FC3F7';
+                cell.style.color = 'var(--accent)';
             } else {
                 cell.textContent = 'Offline';
                 cell.style.color = '#ff6b6b';
@@ -4043,7 +4072,7 @@ function createDonationHistoryInterface() {
     const totalRow = document.createElement('div');
     totalRow.id = 'donation-total-row';
     totalRow.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding: 6px 10px; border: 1px solid var(--border-color); border-top: none; border-radius: 0 0 6px 6px; font-size:13px; background: var(--bg-card);';
-    totalRow.innerHTML = `<span style="color:var(--text-muted);">${t.donation_total || 'Total received'}</span><span id="donation-total-sats" style="font-weight:bold;">—</span>`;
+    totalRow.innerHTML = `<span style="color:var(--text-muted);">${t.donation_total || 'Total received'}</span><span id="donation-total-sats" style="font-weight:bold; color:var(--accent); font-family:var(--font-mono);">—</span>`;
     container.appendChild(totalRow);
 
     // Load donations from API
@@ -4062,7 +4091,7 @@ function createDonationHistoryInterface() {
                 const msg = d.message ? escapeHtml(d.message) : '<em style="color: var(--text-muted);">—</em>';
                 return `<tr style="border-bottom:1px solid var(--border-color);">
                     <td style="padding:5px 8px; white-space:nowrap;">${ts}</td>
-                    <td style="padding:5px 8px; text-align:right; font-weight:bold;">${sats}</td>
+                    <td style="padding:5px 8px; text-align:right; font-weight:bold; color:var(--accent); font-family:var(--font-mono);">${sats}</td>
                     <td style="padding:5px 8px;">${msg}</td>
                 </tr>`;
             }).join('');
@@ -5136,7 +5165,7 @@ async function updateWalletTableWithEntries(tbody, walletEntries) {
             if (balanceDisplay) {
                 const balance = entry.cached_balance || 0.0;
                 balanceDisplay.textContent = `${balance.toFixed(8)}`;
-                balanceDisplay.style.color = balance > 0 ? '#4FC3F7' : '#666'; 
+                balanceDisplay.style.color = 'var(--accent)'; 
                 // Add styling to indicate cached data
                 if (balance > 0) {
                     balanceDisplay.style.opacity = '0.8';
@@ -5423,7 +5452,7 @@ function updateWalletBalancesFromWebSocket(balanceData) {
                     
                     if (newBalance !== null) {
                         balanceDisplay.textContent = `${newBalance.toFixed(8)}`;
-                        balanceDisplay.style.color = '#4FC3F7';
+                        balanceDisplay.style.color = 'var(--accent)';
                         balanceDisplay.style.opacity = '1';
                         balanceDisplay.title = 'Real-time balance data';
                         
@@ -5726,15 +5755,15 @@ function showBlockToast(blockData) {
         closeBtn.setAttribute('aria-label', 'Close notification');
         closeBtn.style.cssText = `
             position: absolute;
-            top: 4px;
+            top: 8px;
             right: 8px;
             background: ${closeBtnBg};
             border: none;
             color: ${closeBtnColor};
-            font-size: 24px;
+            font-size: 18px;
             cursor: pointer;
-            width: 44px;
-            height: 44px;
+            width: 28px;
+            height: 28px;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -5742,6 +5771,7 @@ function showBlockToast(blockData) {
             transition: background-color 0.2s;
             font-weight: bold;
             z-index: 1;
+            line-height: 1;
         `;
 
         // Close toast function

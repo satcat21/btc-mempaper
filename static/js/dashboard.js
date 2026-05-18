@@ -304,15 +304,15 @@ function showBlockToast(blockData) {
         closeBtn.setAttribute('aria-label', 'Close notification');
         closeBtn.style.cssText = `
             position: absolute;
-            top: 4px;
+            top: 8px;
             right: 8px;
             background: ${closeBtnBg};
             border: none;
             color: ${closeBtnColor};
-            font-size: 24px;
+            font-size: 18px;
             cursor: pointer;
-            width: 44px;
-            height: 44px;
+            width: 28px;
+            height: 28px;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -320,6 +320,7 @@ function showBlockToast(blockData) {
             transition: background-color 0.2s;
             font-weight: bold;
             z-index: 1;
+            line-height: 1;
         `;
 
         closeBtn.addEventListener('mouseenter', () => {

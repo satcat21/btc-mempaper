@@ -38,7 +38,7 @@
     --shadow-card: 0 1px 3px rgba(0,0,0,0.08), 0 0 0 1px var(--border-color);
     --shadow-elevated: 0 8px 30px rgba(0,0,0,0.12);
     --transition: 0.2s ease;
-    --nav-bg: rgba(255, 255, 255, 0.92);
+    --nav-bg: rgba(255, 255, 255, 0.75);
     --nav-btn-bg: #ffffff;
     --nav-btn-border: #e0e0e4;
     --nav-btn-shadow: 0 2px 8px rgba(0,0,0,0.06);
@@ -67,7 +67,7 @@ body.dark-mode {
     --info: #4da6ff;
     --shadow-card: 0 1px 3px rgba(0,0,0,0.3), 0 0 0 1px var(--border-color);
     --shadow-elevated: 0 8px 30px rgba(0,0,0,0.4);
-    --nav-bg: rgba(19, 19, 22, 0.92);
+    --nav-bg: rgba(19, 19, 22, 0.75);
     --nav-btn-bg: #1a1a1f;
     --nav-btn-border: #2a2a32;
     --nav-btn-shadow: 0 2px 8px rgba(0,0,0,0.3);

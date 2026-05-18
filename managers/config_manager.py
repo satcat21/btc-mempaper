@@ -862,14 +862,16 @@ class ConfigManager:
                 "label": t.get("color_btc_price_light", "BTC Price (Light Mode)"),
                 "description": t.get("color_btc_price_light_desc", "Color for BTC price text in light mode"),
                 "default": "#17805B",
-                "category": "price_stats"
+                "category": "price_stats",
+                "order": 1000
             },
             "color_btc_price_dark": {
                 "type": "color",
                 "label": t.get("color_btc_price_dark", "BTC Price (Dark Mode)"),
                 "description": t.get("color_btc_price_dark_desc", "Color for BTC price text in dark mode"),
                 "default": "#00c896",
-                "category": "price_stats"
+                "category": "price_stats",
+                "order": 1001
             },
             # --- Countdown block ---
             "show_countdown_block": {
@@ -884,14 +886,16 @@ class ConfigManager:
                 "label": t.get("color_countdown_light", "Countdown (Light Mode)"),
                 "description": t.get("color_countdown_light_desc", "Color for countdown values in light mode"),
                 "default": "#C55A00",
-                "category": "countdown"
+                "category": "countdown",
+                "order": 1000
             },
             "color_countdown_dark": {
                 "type": "color",
                 "label": t.get("color_countdown_dark", "Countdown (Dark Mode)"),
                 "description": t.get("color_countdown_dark_desc", "Color for countdown values in dark mode"),
                 "default": "#FF9E40",
-                "category": "countdown"
+                "category": "countdown",
+                "order": 1001
             },
             # --- Halving block ---
             "show_halving_block": {
@@ -906,14 +910,16 @@ class ConfigManager:
                 "label": t.get("color_halving_light", "Halving (Light Mode)"),
                 "description": t.get("color_halving_light_desc", "Color for halving countdown values in light mode"),
                 "default": "#1565C0",
-                "category": "halving"
+                "category": "halving",
+                "order": 1000
             },
             "color_halving_dark": {
                 "type": "color",
                 "label": t.get("color_halving_dark", "Halving (Dark Mode)"),
                 "description": t.get("color_halving_dark_desc", "Color for halving countdown values in dark mode"),
                 "default": "#4FC3F7",
-                "category": "halving"
+                "category": "halving",
+                "order": 1001
             },
             # --- Network block ---
             "show_network_block": {
@@ -928,14 +934,16 @@ class ConfigManager:
                 "label": t.get("color_network_light", "Network Stats (Light Mode)"),
                 "description": t.get("color_network_light_desc", "Color for network stats values in light mode"),
                 "default": "#6A1B9A",
-                "category": "network_stats"
+                "category": "network_stats",
+                "order": 1000
             },
             "color_network_dark": {
                 "type": "color",
                 "label": t.get("color_network_dark", "Network Stats (Dark Mode)"),
                 "description": t.get("color_network_dark_desc", "Color for network stats values in dark mode"),
                 "default": "#CE93D8",
-                "category": "network_stats"
+                "category": "network_stats",
+                "order": 1001
             },
             "show_bitaxe_block": {
                 "type": "boolean",
@@ -974,14 +982,16 @@ class ConfigManager:
                 "label": t.get("color_bitaxe_stats_light", "Bitaxe Stats (Light Mode)"),
                 "description": t.get("color_bitaxe_stats_light_desc", "Color for Bitaxe stats text in light mode"),
                 "default": "#B89C1D",
-                "category": "bitaxe_stats"
+                "category": "bitaxe_stats",
+                "order": 1000
             },
             "color_bitaxe_stats_dark": {
                 "type": "color",
                 "label": t.get("color_bitaxe_stats_dark", "Bitaxe Stats (Dark Mode)"),
                 "description": t.get("color_bitaxe_stats_dark_desc", "Color for Bitaxe stats text in dark mode"),
                 "default": "#ffe566",
-                "category": "bitaxe_stats"
+                "category": "bitaxe_stats",
+                "order": 1001
             },
             "show_wallet_balances_block": {
                 "type": "boolean",
@@ -994,7 +1004,8 @@ class ConfigManager:
                 "type": "wallet_table",
                 "label": t.get("wallet_balance_addresses_table", "Wallet Monitoring Table"),
                 "description": t.get("wallet_balance_addresses_table_desc", "Manage your wallet addresses, XPUBs, and ZPUBs with comments and balance monitoring."),
-                "category": "wallet_monitoring"
+                "category": "wallet_monitoring",
+                "order": 3
             },
             "wallet_balance_unit": {
                 "type": "select",
@@ -1005,7 +1016,8 @@ class ConfigManager:
                     {"value": "btc", "label": "Bitcoin (BTC)"},
                     {"value": "sats", "label": "Satoshis (sats)"}
                 ],
-                "category": "wallet_monitoring"
+                "category": "wallet_monitoring",
+                "order": 2
             },
             "wallet_balance_currency": {
                 "type": "select",
@@ -1021,21 +1033,24 @@ class ConfigManager:
                     {"value": "AUD", "label": "Australian Dollar (AUD)", "symbol": "A$"},
                     {"value": "JPY", "label": "Japanese Yen (JPY)", "symbol": "¥"}
                 ],
-                "category": "wallet_monitoring"
+                "category": "wallet_monitoring",
+                "order": 1
             },
             "color_wallets_light": {
                 "type": "color",
                 "label": t.get("color_wallets_light", "Wallet Stats (Light Mode)"),
                 "description": t.get("color_wallets_light_desc", "Color for wallet balances text in light mode"),
                 "default": "#1565C0",
-                "category": "wallet_monitoring"
+                "category": "wallet_monitoring",
+                "order": 1000
             },
             "color_wallets_dark": {
                 "type": "color",
                 "label": t.get("color_wallets_dark", "Wallet Stats (Dark Mode)"),
                 "description": t.get("color_wallets_dark_desc", "Color for wallet balances text in dark mode"),
                 "default": "#09a3ba",
-                "category": "wallet_monitoring"
+                "category": "wallet_monitoring",
+                "order": 1001
             },
             "language": {
                 "type": "select",
@@ -1047,7 +1062,8 @@ class ConfigManager:
                     {"value": "fr", "label": t.get("french", "Français"), "flag": "<img src='/static/icons/fr.svg' style='width:20px;height:14px;border-radius:2px;vertical-align:middle;'>"},
                     {"value": "it", "label": t.get("italian", "Italiano"), "flag": "<img src='/static/icons/it.svg' style='width:20px;height:14px;border-radius:2px;vertical-align:middle;'>"}
                 ],
-                "category": "general"
+                "category": "general",
+                "order": 1
             },
             "web_orientation": {
                 "type": "toggle",
@@ -1058,7 +1074,9 @@ class ConfigManager:
                     {"value": "horizontal", "label": t.get("horizontal", "Landscape"), "icon": "/static/icons/horizontal.svg"}
                 ],
                 "default": "vertical",
-                "category": "general"
+                "category": "general",
+                "order": 6,
+                "advanced": True
             },
             "eink_orientation": {
                 "type": "toggle",
@@ -1085,7 +1103,8 @@ class ConfigManager:
                 "max": 65535,
                 "description": t.get("mempool_rest_port_desc", "Port for mempool REST API"),
                 "category": "mempool",
-                "advanced": True
+                "advanced": True,
+                "order": 1
             },
             "mempool_ws_port": {
                 "type": "number",
@@ -1094,7 +1113,8 @@ class ConfigManager:
                 "max": 65535,
                 "description": t.get("mempool_ws_port_desc", "Port for real-time mempool updates"),
                 "category": "mempool",
-                "advanced": True
+                "advanced": True,
+                "order": 2
             },
             "fee_parameter": {
                 "type": "select",
@@ -1116,7 +1136,8 @@ class ConfigManager:
                 "description": t.get("mempool_use_https_desc", "Use secure HTTPS for REST API and WSS for WebSocket connections"),
                 "default": False,
                 "category": "mempool",
-                "advanced": True
+                "advanced": True,
+                "order": 4
             },
             "mempool_verify_ssl": {
                 "type": "boolean",
@@ -1124,7 +1145,8 @@ class ConfigManager:
                 "description": t.get("mempool_verify_ssl_desc", "Verify SSL certificates when using HTTPS (disable for self-signed certificates)"),
                 "default": True,
                 "category": "mempool",
-                "advanced": True
+                "advanced": True,
+                "order": 5
             },
             "mempool_ws_path": {
                 "type": "text",
@@ -1133,7 +1155,8 @@ class ConfigManager:
                 "description": t.get("mempool_ws_path_desc", "WebSocket endpoint path for real-time updates"),
                 "default": "/api/v1/ws",
                 "category": "mempool",
-                "advanced": True
+                "advanced": True,
+                "order": 3
             },
             "mempool_username": {
                 "type": "text",
@@ -1141,7 +1164,8 @@ class ConfigManager:
                 "placeholder": "mempool",
                 "description": t.get("mempool_username_desc", "Optional username for Basic authentication (leave empty if not required)"),
                 "category": "mempool",
-                "advanced": True
+                "advanced": True,
+                "order": 6
             },
             "mempool_password": {
                 "type": "password",
@@ -1150,7 +1174,8 @@ class ConfigManager:
                 "description": t.get("mempool_password_desc", "Optional password for Basic authentication (leave empty if not required)"),
                 "category": "mempool",
                 "secure": True,
-                "advanced": True
+                "advanced": True,
+                "order": 7
             },
             "e-ink-display-connected": {
                 "type": "boolean",
@@ -1163,12 +1188,15 @@ class ConfigManager:
                 "label": t.get("prioritize_large_scaled_meme", "Prioritize Large Scaled Memes"),
                 "description": t.get("prioritize_large_scaled_meme_desc", "When enabled, maximize meme display space by hiding stats if necessary."),
                 "default": False,
-                "category": "general"
+                "category": "general",
+                "order": 4
             },
             "holiday_color_group": {
                 "type": "holiday_color_group",
                 "label": t.get("holiday_color_group_label", "Holiday Text Gradient Colors"),
-                "category": "general"
+                "category": "general",
+                "order": 5,
+                "advanced": True
             },
             "color_holiday_light": {
                 "type": "color",
@@ -1271,14 +1299,16 @@ class ConfigManager:
                 "label": t.get("public_dashboard", "Public Dashboard"),
                 "description": t.get("public_dashboard_desc", "Allow unauthenticated users to view the dashboard. Admin login is still required to access settings."),
                 "default": False,
-                "category": "general"
+                "category": "general",
+                "order": 2
             },
             "color_mode_dark": {
                 "type": "boolean",
                 "label":  t.get("color_mode_dark", "Dark Mode"),
                 "description":  t.get("color_mode_dark_desc", "Enable dark mode for the webinterface."),
                 "default": True,
-                "category": "general"
+                "category": "general",
+                "order": 3
             },
             "meme_management": {
                 "type": "meme_management",
@@ -1337,14 +1367,16 @@ class ConfigManager:
                 "label": t.get("color_donation_light", "Donation (Light Mode)"),
                 "description": t.get("color_donation_light_desc", "Color for donation amount and message text in light mode"),
                 "default": "#F7931A",
-                "category": "donation"
+                "category": "donation",
+                "order": 1000
             },
             "color_donation_dark": {
                 "type": "color",
                 "label": t.get("color_donation_dark", "Donation (Dark Mode)"),
                 "description": t.get("color_donation_dark_desc", "Color for donation amount and message text in dark mode"),
                 "default": "#F7931A",
-                "category": "donation"
+                "category": "donation",
+                "order": 1001
             },
             "donation_history": {
                 "type": "donation_history",
