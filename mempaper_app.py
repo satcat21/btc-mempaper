@@ -3268,7 +3268,8 @@ class MempaperApp:
             current_translations = translations.get(lang, translations["en"])
             
             return render_template('login.html', translations=current_translations,
-                                 dark_mode=self.config.get('color_mode_dark', True))
+                                 dark_mode=self.config.get('color_mode_dark', True),
+                                 public_dashboard=self.config.get('public_dashboard', False))
         
         @self.app.route('/api/login', methods=['POST', 'OPTIONS'])
         @require_rate_limit(self.auth_manager)
