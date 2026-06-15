@@ -581,8 +581,7 @@ After connecting to the hotspot, open `http://10.42.0.1:5000/setup` in your brow
 
 Once the device connects to the home WiFi, the e-ink display shows a success screen with instructions on how to access the dashboard from the home network.
 
-<!-- TODO: add screenshot -->
-<!-- <p align="center"><img src="images/readme/onboarding_4_connected.png" alt="WiFi connected e-ink screen" width="600"/></p> -->
+<p align="center"><img src="images/readme/onboarding_4_connected.png" alt="WiFi connected e-ink screen" width="600"/></p>
 
 After 60 seconds, the display switches to normal operation mode and shows the first dashboard image.
 
