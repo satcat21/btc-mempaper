@@ -1,0 +1,31 @@
+/*
+ * polkit rule – mempaper Wi-Fi onboarding
+ *
+ * Grants members of the 'netdev' group the right to:
+ *   - create / modify system-level NetworkManager connections (hotspot)
+ *   - control network connections (connect / disconnect)
+ *   - share Wi-Fi as a protected (WPA) hotspot
+ *
+ * Install:
+ *   sudo cp /home/pi/btc-mempaper/scripts/90-mempaper-wifi.rules \
+ *           /etc/polkit-1/rules.d/90-mempaper-wifi.rules
+ *   sudo systemctl restart polkit
+ *
+ * The 'pi' user is typically already in the 'netdev' group on Raspberry Pi OS.
+ * Verify with:  groups pi
+ * Add if missing:  sudo usermod -aG netdev pi   (then logout/in)
+ */
+
+polkit.addRule(function(action, subject) {
+    var ALLOWED = [
+        "org.freedesktop.NetworkManager.settings.modify.system",
+        "org.freedesktop.NetworkManager.network-control",
+        "org.freedesktop.NetworkManager.wifi.share.protected",
+        "org.freedesktop.NetworkManager.wifi.share.open",
+        "org.freedesktop.NetworkManager.enable-disable-wifi"
+    ];
+
+    if (ALLOWED.indexOf(action.id) >= 0 && subject.isInGroup("netdev")) {
+        return polkit.Result.YES;
+    }
+});

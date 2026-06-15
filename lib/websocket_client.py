@@ -143,8 +143,8 @@ class MempoolWebSocket:
             self.last_error_type = 'dns'
             # Only log the first DNS error with explanation
             if self.dns_error_count == 1:
-                print(f"⚠️ DNS resolution failed: {error}")
-                print(f"   Suppressing subsequent connection close and reconnect messages...")
+                print(f"⚠️ WebSocket error: {error}")
+                print(f"   Network not ready yet — will retry with longer backoff")
             # Silently count other DNS errors
         else:
             # Reset DNS counter for non-DNS errors
@@ -196,6 +196,13 @@ class MempoolWebSocket:
             if self.outage_mode:
                 delay = min(300, 60 + (self.reconnect_attempts - 5) * 30)  # 1-5 min delays during outage
                 print(f"⚙️ Outage mode: Attempting reconnection {self.reconnect_attempts + 1}/{self.max_reconnect_attempts} in {delay}s...")
+            elif self.last_error_type == 'dns':
+                # DNS failure = network not ready yet (e.g. DHCP still settling after WiFi connect).
+                # Use a fixed 30s floor so we don't hammer DNS during the settling window.
+                base_delay = self.reconnect_delays[min(self.reconnect_attempts, len(self.reconnect_delays) - 1)]
+                delay = max(30, base_delay)
+                if self.dns_error_count == 1:
+                    print(f"⚙️ Will attempt to reconnect in {delay}s (waiting for network/DNS)...")
             else:
                 delay = self.reconnect_delays[min(self.reconnect_attempts, len(self.reconnect_delays) - 1)]
                 # Only log reconnection attempts if not in DNS error mode

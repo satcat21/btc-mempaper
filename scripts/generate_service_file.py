@@ -80,7 +80,10 @@ Environment="CACHE_DURATION=300"
 Environment="REQUEST_TIMEOUT=30"
 
 # Security settings
-NoNewPrivileges=true
+# NoNewPrivileges is intentionally omitted: the service needs to call
+# 'sudo nmcli' to manage NetworkManager connections (WPA2 hotspot onboarding).
+# The sudo rule is narrowly scoped to /usr/bin/nmcli only (see
+# /etc/sudoers.d/mempaper-wifi installed by install_wifi_permissions.sh).
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=false

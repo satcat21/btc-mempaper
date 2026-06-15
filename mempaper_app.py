@@ -20,6 +20,9 @@ import traceback
 import urllib3
 import os
 import logging
+import subprocess
+import hashlib
+import shutil
 import requests
 from datetime import datetime
 from werkzeug.utils import secure_filename
@@ -64,6 +67,27 @@ class MempaperApp:
         # Ensure required directories exist
         os.makedirs("config", exist_ok=True)
         os.makedirs("cache", exist_ok=True)
+
+        # Setup-mode flag used by delivery onboarding flow
+        self.setup_mode_flag_path = os.path.join("cache", "setup_mode.json")
+        self._startup_timestamp = time.time()
+
+        # Wi-Fi recovery state (runtime fallback into setup mode after sustained outage)
+        self._wifi_disconnect_since = None
+        self._wifi_last_reconnect_try = 0
+        self._wifi_reconnect_attempts = 0
+        self._wifi_last_setup_probe_try = 0
+        self._wifi_recovery_thread_started = False
+        # Set to True after user submits credentials so recovery monitor probes immediately
+        self._wifi_connect_pending = False
+        # Set to True once the hotspot onboarding screen has been shown; prevents re-renders
+        # every time the recovery monitor restores the hotspot after a failed probe.
+        self._onboarding_hotspot_screen_shown = False
+        # True while the connected onboarding screen is displayed on e-ink (suppresses other e-ink updates)
+        self._onboarding_connected_active = False
+        # Timestamp of the last time iw reported a station associated to our AP.
+        # Used to suppress probes for a grace window after the phone screen goes off.
+        self._last_ap_station_seen_ts = 0.0
         
         # Initialize configuration manager
         self.config_manager = ConfigManager(config_path)
@@ -78,29 +102,6 @@ class MempaperApp:
         
         # Initialize Flask app and SocketIO
         self._init_app_components()
-        
-        # Note: Callback registration moved to end of __init__ to avoid issues during initialization
-
-        # --- CHECK BLOCK HEIGHT ON STARTUP BUT DON'T FORCE REGENERATION ---
-        # Let _generate_initial_image handle this logic properly
-        try:
-            block_info = self.mempool_api.get_current_block_info()
-            # Safely compare block heights (converting to string to avoid type mismatch)
-            current_bh = str(block_info.get('block_height', ''))
-            cached_bh = str(self.current_block_height) if hasattr(self, 'current_block_height') and self.current_block_height is not None else None
-            
-            if (cached_bh and current_bh and cached_bh != current_bh):
-                print(f"⚙️ [STARTUP] Block changed since last run: {cached_bh} → {current_bh}")
-                # Update to current block so config changes use correct block height
-                self.current_block_height = block_info.get('block_height')
-                self.current_block_hash = block_info.get('block_hash')
-                self.image_is_current = False  # Mark as outdated for _generate_initial_image to handle
-            elif cached_bh and current_bh and cached_bh == current_bh:
-                print(f"👁️ [STARTUP] Block unchanged: {current_bh} - cache is valid")
-                self.image_is_current = True  # Mark as current - no regeneration needed
-        except Exception as e:
-            print(f"⚠️ [STARTUP] Failed to check current block: {e}")
-            self.image_is_current = False  # Mark as outdated if we can't verify
     
     def _init_flask_app(self):
         """Initialize Flask application and configure it."""
@@ -268,7 +269,8 @@ class MempaperApp:
         # Block height at which the most-recent donation was received (used by "auto" display mode).
         self._latest_donation_block_height = None
         self._load_donations()
-        self._start_webhook_site_listener()
+        # Webhook listener moved to _run_background_startup() to reduce CPU
+        # contention on single-core Pi Zero during boot.
 
         # Block tracker for e-ink display race condition prevention
         self.block_tracker = {}
@@ -311,9 +313,9 @@ class MempaperApp:
         # Load persistent cache state from file
         self._load_cache_metadata()
         
-        # Start background pre-cache updater
-        self._start_precache_updater()
-        
+        # Pre-cache updater moved to _run_background_startup() to reduce CPU
+        # contention on single-core Pi Zero during boot.
+
         # Note: Configuration change callbacks registered at end of __init__
         
         # Setup Flask routes
@@ -333,6 +335,850 @@ class MempaperApp:
             self.config_manager._reload_config_from_file()
             self.config_manager._notify_change_callbacks(self.config_manager.config)
         print("✅ Mempaper application initialized successfully")
+
+    def _has_saved_wifi_connections(self):
+        """Return True if NetworkManager has at least one saved Wi-Fi connection."""
+        result = self._nmcli_read(['-t', '-f', 'TYPE', 'connection', 'show'])
+        if result is None or result.returncode != 0:
+            return False
+        return any(line.strip() == 'wifi' for line in result.stdout.splitlines())
+
+    def _startup_wifi_check(self):
+        """Called once at startup.
+                - If already connected: nothing to do.
+                - If disconnected and no saved networks: start hotspot immediately.
+                - If disconnected and saved networks exist: give NetworkManager a short
+                    startup grace window to connect, then start hotspot if still offline.
+
+        Includes retries with back-off because NetworkManager may not be fully
+        ready right after boot on the Pi Zero W.
+        """
+        if os.name == 'nt':
+            return
+        if shutil.which('nmcli') is None:
+            return
+
+        # Wait for NetworkManager to become operational.  On the Pi Zero W it
+        # can take 10-30s after systemd starts the service before nmcli
+        # commands actually succeed.
+        interface = None
+        for wait in range(12):  # up to ~60s (0+1+2+...+10 ≈ 55s with sleeps)
+            interface = self._detect_wifi_interface()
+            if interface:
+                # Verify NM is actually responding (not just that /sys/class/net exists)
+                probe = self._nmcli_read(['-t', '-f', 'RUNNING', 'general', 'status'])
+                if probe is not None and probe.returncode == 0:
+                    break
+            delay = min(wait + 1, 5)
+            print(f'⏳ Waiting for NetworkManager to be ready (attempt {wait + 1}/12, retry in {delay}s)...')
+            time.sleep(delay)
+        else:
+            print('⚠️ NetworkManager not ready after retries — will rely on recovery monitor')
+            return
+
+        # Remove any stale setup-hotspot profiles before checking connectivity —
+        # an old autoconnect profile could mask a real outage or broadcast the
+        # wrong SSID before the app had a chance to recreate it.
+        self._cleanup_legacy_setup_hotspots()
+        status = self._current_wifi_status(interface)
+        if status.get('connected'):
+            print('📡 Wi-Fi connected at startup — skipping setup hotspot')
+            return
+
+        has_saved = self._has_saved_wifi_connections()
+        if not has_saved:
+            # No saved Wi-Fi at all: factory / freshly-flashed device.
+            print('📶 No saved Wi-Fi networks — starting setup hotspot for first-time provisioning')
+            if not self._bring_up_setup_hotspot_with_retry(interface):
+                self._write_setup_mode_flag(True, ssid=self._setup_ssid_from_mac(interface), interface=interface)
+                print('⚠️ Hotspot failed at startup — recovery monitor will retry')
+            return
+
+        # Saved Wi-Fi exists but we are currently offline.
+        startup_wait = int(self.config.get('wifi_startup_connect_wait_seconds', 45))
+        startup_wait = max(0, startup_wait)
+        poll_seconds = 5
+        print(
+            '📡 Saved Wi-Fi networks exist but not connected at startup — '
+            f'waiting up to {startup_wait}s before enabling setup hotspot'
+        )
+
+        deadline = time.time() + startup_wait
+        last_connect_try = 0.0
+        while time.time() < deadline:
+            now = time.time()
+            if now - last_connect_try >= 10:
+                last_connect_try = now
+                self._nmcli(['device', 'connect', interface], timeout=20)
+
+            probe = self._current_wifi_status(interface)
+            if probe.get('connected'):
+                print('✅ Wi-Fi connected during startup grace window')
+                return
+            time.sleep(poll_seconds)
+
+        print('📶 Startup grace expired without Wi-Fi — enabling setup hotspot')
+        if not self._bring_up_setup_hotspot_with_retry(interface):
+            self._write_setup_mode_flag(True, ssid=self._setup_ssid_from_mac(interface), interface=interface)
+            print('⚠️ Hotspot failed at startup — recovery monitor will retry')
+
+    def _bring_up_setup_hotspot_with_retry(self, interface, max_attempts=4):
+        """Try to bring up the setup hotspot with retries and back-off.
+
+        NetworkManager can reject AP-mode activation right after boot if the
+        Wi-Fi radio or driver isn't fully initialised yet.  Retrying after a
+        short delay makes the first-boot experience much more reliable.
+        """
+        for attempt in range(1, max_attempts + 1):
+            if self._bring_up_setup_hotspot(interface):
+                return True
+            if attempt < max_attempts:
+                delay = attempt * 5  # 5s, 10s, 15s
+                print(f'⚠️ Hotspot attempt {attempt}/{max_attempts} failed — retrying in {delay}s')
+                time.sleep(delay)
+        return False
+
+    def _is_setup_mode_enabled(self):
+        if not os.path.exists(self.setup_mode_flag_path):
+            return False
+        try:
+            with open(self.setup_mode_flag_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            return bool(data.get('enabled', False))
+        except Exception:
+            return False
+
+    def _setup_mode_payload(self):
+        payload = {
+            'enabled': False,
+            'ssid': 'mempaper-0000',
+            'interface': 'wlan0',
+        }
+        if not os.path.exists(self.setup_mode_flag_path):
+            return payload
+        try:
+            with open(self.setup_mode_flag_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                payload.update(data)
+        except Exception:
+            pass
+        return payload
+
+    def _perform_user_data_reset(self):
+        """Clear admin credentials and all sensitive user data.
+
+        Called from the setup-page reset button and from the multi-power-cycle
+        factory reset path.  Reuses the same logic as delivery_state.py but
+        runs inside the live app process.
+        """
+        # 1. Clear admin users (same keys as delivery_state.clear_admin_users)
+        keys_to_remove = [
+            'admin_users', 'admin_password_hash', 'admin_username',
+            # Wallet / monitoring
+            'wallet_balance_addresses_with_comments',
+            'block_reward_addresses_table',
+            # Bitaxe
+            'bitaxe_miner_table',
+            # Donation webhook
+            'webhook_relay_ws_url',
+            # Mempool auth
+            'mempool_username',
+            'mempool_password',
+        ]
+
+        full_cfg = self.config_manager.get_current_config()
+        removed = [k for k in keys_to_remove if k in full_cfg]
+
+        # Reset list/table fields to empty instead of deleting (keeps schema intact)
+        list_fields = {
+            'wallet_balance_addresses_with_comments': [],
+            'block_reward_addresses_table': [],
+            'bitaxe_miner_table': [],
+        }
+        for k in keys_to_remove:
+            if k in list_fields:
+                full_cfg[k] = list_fields[k]
+            else:
+                full_cfg.pop(k, None)
+
+        # Also reset the show-* toggles so cleared blocks don't show empty
+        full_cfg['show_wallet_balances_block'] = False
+        full_cfg['show_bitaxe_block'] = False
+        full_cfg['show_donation_block'] = False
+
+        # Persist via secure config manager (handles encrypted fields)
+        if self.config_manager.secure_manager:
+            self.config_manager.secure_manager.save_secure_config(full_cfg)
+        else:
+            cfg_path = os.path.join('config', 'config.json')
+            with open(cfg_path, 'w', encoding='utf-8') as f:
+                json.dump(full_cfg, f, indent=2)
+
+        # Update in-memory config
+        for k in keys_to_remove:
+            if k in list_fields:
+                self.config[k] = list_fields[k]
+                self.config_manager.config[k] = list_fields[k]
+            else:
+                self.config.pop(k, None)
+                self.config_manager.config.pop(k, None)
+        self.config['show_wallet_balances_block'] = False
+        self.config['show_bitaxe_block'] = False
+        self.config['show_donation_block'] = False
+
+        # 2. Clear donation cache files
+        for path in [self._donations_file,
+                     os.path.join('cache', 'donations.json')]:
+            try:
+                if os.path.exists(path):
+                    os.remove(path)
+            except OSError:
+                pass
+        self._latest_donation = None
+        self._highest_donation = None
+        self._donation_history = []
+
+        # 3. Clear wallet / observer / secure caches
+        for cache_file in ['cache/wallet_balances.json',
+                           'cache/observer_cache.json',
+                           'cache/bitaxe_cache.json',
+                           'cache/async_wallet_address_cache.secure.json',
+                           'cache/cache.secure.json',
+                           'cache/mobile_tokens.secure.json',
+                           'cache/mobile_tokens.json']:
+            try:
+                if os.path.exists(cache_file):
+                    os.remove(cache_file)
+            except OSError:
+                pass
+
+        if removed:
+            print(f"🧹 Cleared sensitive data: {', '.join(removed)}")
+        else:
+            print("ℹ️ No sensitive data found to clear")
+
+    def _write_setup_mode_flag(self, enabled, ssid=None, interface=None):
+        try:
+            os.makedirs(os.path.dirname(self.setup_mode_flag_path), exist_ok=True)
+        except Exception:
+            pass
+
+        if not enabled:
+            try:
+                if os.path.exists(self.setup_mode_flag_path):
+                    os.remove(self.setup_mode_flag_path)
+            except OSError:
+                pass
+            return
+
+        payload = {
+            'enabled': True,
+            'ssid': ssid,
+            'interface': interface,
+            'timestamp': int(time.time()),
+        }
+        try:
+            with open(self.setup_mode_flag_path, 'w', encoding='utf-8') as f:
+                json.dump(payload, f, indent=2)
+        except OSError as e:
+            print(f"⚠️ Could not write setup mode flag: {e}")
+
+    def _detect_wifi_interface(self):
+        result = self._nmcli_read(['-t', '-f', 'DEVICE,TYPE,STATE', 'device', 'status'])
+        if result is not None and result.returncode == 0:
+            for line in result.stdout.splitlines():
+                parts = line.split(':')
+                if len(parts) < 2:
+                    continue
+                device, dev_type = parts[0], parts[1]
+                if device and dev_type == 'wifi':
+                    return device
+
+        preferred = '/sys/class/net/wlan0'
+        if os.path.exists(preferred):
+            return 'wlan0'
+
+        net_root = '/sys/class/net'
+        if not os.path.isdir(net_root):
+            return 'wlan0'
+
+        for iface in sorted(os.listdir(net_root)):
+            if os.path.isdir(os.path.join(net_root, iface, 'wireless')):
+                return iface
+        return 'wlan0'
+
+    def _has_ap_station(self, interface):
+        """Return True if at least one client device is associated with our AP.
+
+        Uses 'iw dev <iface> station dump' which lists connected stations.
+        Falls back to False (allow probe) if iw is unavailable.
+        """
+        if shutil.which('iw') is None:
+            return False
+        try:
+            result = subprocess.run(
+                ['iw', 'dev', interface, 'station', 'dump'],
+                capture_output=True, text=True, timeout=5,
+            )
+            # Any output means at least one station is associated
+            return bool(result.returncode == 0 and result.stdout.strip())
+        except Exception:
+            return False
+
+    def _nmcli(self, args, timeout=25):
+        """Run nmcli with sudo for write operations (connection add/delete/up/down, radio)."""
+        if shutil.which('nmcli') is None:
+            return None
+        # Use 'sudo nmcli' on Linux so the service user (non-root) can manage
+        # NM connections.  The passwordless sudoers rule is installed by
+        # scripts/install_wifi_permissions.sh.
+        cmd = (['sudo', 'nmcli'] if os.name != 'nt' else ['nmcli']) + args
+        try:
+            return subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+            )
+        except Exception:
+            return None
+
+    def _nmcli_read(self, args, timeout=10):
+        """Run nmcli without sudo for read-only queries (device status, connection list).
+
+        Avoids PAM session logging that occurs with every sudo invocation.
+        Plain nmcli is sufficient for status reads — no elevated privileges needed.
+        """
+        if shutil.which('nmcli') is None:
+            return None
+        try:
+            return subprocess.run(
+                ['nmcli'] + args,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+            )
+        except Exception:
+            return None
+
+    def _is_setup_hotspot_connection(self, connection_name):
+        """Return True when the active connection is a setup hotspot profile."""
+        conn = (connection_name or '').strip()
+        if not conn:
+            return False
+        return conn == 'mempaper-setup' or conn.startswith('mempaper-setup_')
+
+    def _cleanup_legacy_setup_hotspots(self, ssid=None):
+        """Remove any setup-hotspot NM profiles (current or legacy naming, or matching SSID)."""
+        result = self._nmcli_read(['-t', '-f', 'NAME,UUID,TYPE', 'connection', 'show'])
+        if result is None or result.returncode != 0:
+            return
+
+        to_delete = []  # list of (name, uuid) tuples
+        for line in result.stdout.splitlines():
+            # Format: NAME:UUID:TYPE  — split on first 2 colons only so a
+            # connection name containing ':' doesn't break the parse.
+            parts = line.split(':', 2)
+            if len(parts) < 3:
+                continue
+            name      = parts[0].strip()
+            uuid      = parts[1].strip()
+            conn_type = parts[2].strip()
+            if conn_type != 'wifi':
+                continue
+
+            is_setup = (
+                name == 'mempaper-setup'
+                or name.startswith('mempaper-setup_')
+                or name.startswith('mempaper-setup-')
+                or name.startswith('mempaper-setup ')   # NM duplicate suffix "mempaper-setup 2" etc.
+            )
+
+            # Also match by SSID for profiles with unexpected names
+            if not is_setup and ssid:
+                detail = self._nmcli_read(['connection', 'show', uuid])
+                if detail and detail.returncode == 0:
+                    for prop in detail.stdout.splitlines():
+                        if '802-11-wireless.ssid' in prop and ':' in prop:
+                            if prop.split(':', 1)[1].strip() == ssid:
+                                is_setup = True
+                            break
+
+            if is_setup:
+                to_delete.append((name, uuid))
+
+        for name, uuid in to_delete:
+            # Delete by UUID — unambiguous even when multiple profiles share a name.
+            self._nmcli(['connection', 'down', uuid])
+            self._nmcli(['connection', 'delete', uuid])
+
+    def _current_wifi_status(self, interface):
+        result = self._nmcli_read(['-t', '-f', 'DEVICE,TYPE,STATE,CONNECTION', 'device', 'status'])
+        if result is None or result.returncode != 0:
+            return {'connected': False, 'connection': ''}
+
+        for line in result.stdout.splitlines():
+            parts = line.split(':')
+            if len(parts) < 4:
+                continue
+            dev, dev_type, state, connection = parts[0], parts[1], parts[2], parts[3]
+            if dev == interface and dev_type == 'wifi':
+                connected = state.startswith('connected') and not self._is_setup_hotspot_connection(connection)
+                return {'connected': connected, 'connection': connection}
+
+        return {'connected': False, 'connection': ''}
+
+    def _mac_digest(self, interface):
+        """Return the hex SHA-256 digest of the interface MAC address."""
+        mac_path = f'/sys/class/net/{interface}/address'
+        mac_address = '00:00:00:00:00:00'
+        try:
+            with open(mac_path, 'r', encoding='utf-8') as f:
+                mac_address = f.read().strip().lower()
+        except OSError:
+            pass
+        return hashlib.sha256(mac_address.replace(':', '').encode('utf-8')).hexdigest()
+
+    def _setup_ssid_from_mac(self, interface):
+        digest = self._mac_digest(interface)
+        suffix = f"{int(digest[:8], 16) % 10000:04d}"
+        return f"mempaper-{suffix}"
+
+    def _setup_password_from_mac(self, interface):
+        """Derive a deterministic 8-char hex WPA2 password from the MAC address.
+
+        Uses bytes 8-16 of the SHA-256 digest so the password is independent
+        of the SSID suffix (bytes 0-8) and not guessable from the visible SSID.
+        """
+        digest = self._mac_digest(interface)
+        return digest[8:16]   # 8 lowercase hex chars, always valid WPA2
+
+    def _bring_up_setup_hotspot(self, interface):
+        ssid     = self._setup_ssid_from_mac(interface)
+        password = self._setup_password_from_mac(interface)
+        print(f'📶 Setup hotspot: WPA2 AP "{ssid}" (password derived from device MAC)')
+
+        # Aggressively remove every profile that could collide before adding a new one.
+        self._cleanup_legacy_setup_hotspots(ssid=ssid)
+        self._nmcli(['radio', 'wifi', 'on'])
+        # Disconnect the interface from any active client connection so NM is
+        # not fighting over wlan0 when we try to switch it to AP mode.
+        self._nmcli(['device', 'disconnect', interface])
+
+        # Create the base AP profile.  autoconnect=no prevents NM from activating
+        # the incomplete profile between add and the security modify below.
+        add = self._nmcli([
+            'connection', 'add',
+            'type', 'wifi',
+            'ifname', interface,
+            'con-name', 'mempaper-setup',
+            'autoconnect', 'no',
+            'ssid', ssid,
+            '802-11-wireless.mode', 'ap',
+            '802-11-wireless.band', 'bg',
+            'ipv4.method', 'shared',
+            'ipv6.method', 'ignore',
+            'connection.autoconnect-priority', '-999',
+        ])
+        if add is None or add.returncode != 0:
+            err = (add.stderr.strip() if add and add.stderr else '') or (add.stdout.strip() if add else 'no result')
+            print(f'❌ Wi-Fi recovery: failed to create hotspot profile — {err}')
+            return False
+
+        # Apply WPA2-PSK security in a separate modify step.  Some NM versions
+        # silently drop wifi-sec.* parameters when passed to connection add for
+        # AP-mode connections; doing it via modify guarantees they are stored.
+        sec = self._nmcli([
+            'connection', 'modify', 'mempaper-setup',
+            'wifi-sec.key-mgmt', 'wpa-psk',
+            'wifi-sec.psk',      password,
+            'wifi-sec.proto',    'rsn',   # WPA2 only (not WPA1)
+            'wifi-sec.pairwise', 'ccmp',  # AES
+            'wifi-sec.group',    'ccmp',  # AES
+        ])
+        if sec is None or sec.returncode != 0:
+            err = (sec.stderr.strip() if sec and sec.stderr else '') or (sec.stdout.strip() if sec else 'no result')
+            print(f'⚠️ Wi-Fi recovery: security modify warning — {err}')
+            # Non-fatal: continue and try to bring up; NM may still apply WPA2
+
+        up = self._nmcli(['connection', 'up', 'mempaper-setup'])
+        if up is None or up.returncode != 0:
+            err = (up.stderr.strip() if up and up.stderr else '') or (up.stdout.strip() if up else 'no result')
+            print(f'❌ Wi-Fi recovery: failed to enable setup hotspot — {err}')
+            return False
+
+        # Redirect port 80/443 → Flask port so captive-portal probes
+        # (which hit port 80) actually reach our /generate_204 handler.
+        self._add_captive_portal_redirect(interface)
+
+        self._write_setup_mode_flag(True, ssid=ssid, interface=interface)
+        print(f"📶 Wi-Fi recovery: setup hotspot enabled ({ssid})")
+        if self.e_ink_enabled and not self._onboarding_hotspot_screen_shown:
+            self._onboarding_hotspot_screen_shown = True
+            threading.Thread(
+                target=self._display_onboarding_hotspot_screen,
+                args=(ssid, password, interface),
+                daemon=True,
+            ).start()
+        return True
+
+    def _bring_down_setup_hotspot(self):
+        self._onboarding_hotspot_screen_shown = False
+        self._remove_captive_portal_redirect()
+        self._cleanup_legacy_setup_hotspots()
+        self._nmcli(['connection', 'down', 'mempaper-setup'])
+        self._nmcli(['connection', 'delete', 'mempaper-setup'])
+        self._write_setup_mode_flag(False)
+
+    def _add_captive_portal_redirect(self, interface):
+        """Add iptables PREROUTING rules to redirect port 80/443 → Flask port.
+
+        Android (and some iOS) captive-portal probes hit port 80.  Without this
+        redirect they get "connection refused" and the OS drops the network.
+        """
+        port = self._get_web_port()
+        for src_port in (80, 443):
+            try:
+                subprocess.run(
+                    ['sudo', 'iptables', '-t', 'nat', '-A', 'PREROUTING',
+                     '-i', interface, '-p', 'tcp', '--dport', str(src_port),
+                     '-j', 'REDIRECT', '--to-port', str(port)],
+                    capture_output=True, timeout=10,
+                )
+            except Exception:
+                pass
+        print(f"🔀 Captive-portal redirect: ports 80/443 → {port}")
+
+    def _remove_captive_portal_redirect(self):
+        """Remove all mempaper captive-portal iptables PREROUTING rules."""
+        port = self._get_web_port()
+        for src_port in (80, 443):
+            # Delete until no matching rule remains (handles duplicates)
+            for _ in range(5):
+                try:
+                    result = subprocess.run(
+                        ['sudo', 'iptables', '-t', 'nat', '-D', 'PREROUTING',
+                         '-p', 'tcp', '--dport', str(src_port),
+                         '-j', 'REDIRECT', '--to-port', str(port)],
+                        capture_output=True, timeout=10,
+                    )
+                    if result.returncode != 0:
+                        break
+                except Exception:
+                    break
+
+    def _get_web_port(self):
+        """Return the configured HTTP port (default 5000)."""
+        return int(self.config.get('web_port', 5000))
+
+    def _get_hotspot_ip(self, interface):
+        """Detect the actual IP assigned to the hotspot AP interface.
+
+        Tries (in order):
+          1. nmcli connection show  — most reliable, uses the NM profile
+          2. ip addr show <iface>   — works even without nmcli
+          3. Fallback to 10.42.0.1 (NetworkManager shared default)
+        """
+        import re
+
+        # 1. Ask NetworkManager for the address it handed to the profile.
+        result = self._nmcli_read(['-t', '-f', 'IP4.ADDRESS', 'connection', 'show', 'mempaper-setup'])
+        if result and result.returncode == 0:
+            for line in result.stdout.splitlines():
+                # format: IP4.ADDRESS[1]:10.42.0.1/24
+                if 'IP4.ADDRESS' in line:
+                    addr = line.split(':', 1)[-1].strip().split('/')[0]
+                    if addr:
+                        return addr
+
+        # 2. Parse the kernel interface address.
+        try:
+            res = subprocess.run(
+                ['ip', '-4', 'addr', 'show', interface],
+                capture_output=True, text=True, timeout=5,
+            )
+            if res.returncode == 0:
+                m = re.search(r'inet (\d+\.\d+\.\d+\.\d+)/', res.stdout)
+                if m:
+                    addr = m.group(1)
+                    return addr
+        except Exception:
+            pass
+
+        # 3. NetworkManager shared default.
+        return '10.42.0.1'
+
+    def _display_onboarding_hotspot_screen(self, ssid, password, interface):
+        """Render the two-QR hotspot screen and push it to the e-ink display.
+
+        Tries to stamp QR codes onto the existing delivery-state image so the
+        onboarding screen shows the same meme/date as the delivery image.
+        Falls back to the standalone onboarding screen if the delivery image
+        is not available.
+        """
+        # Give NM a couple of seconds to finish assigning the AP address.
+        time.sleep(2)
+        port       = self._get_web_port()
+        hotspot_ip = self._get_hotspot_ip(interface)
+        portal_url = f'http://{hotspot_ip}:{port}/setup'
+        try:
+            delivery_eink = os.path.join('cache', 'delivery_eink.png')
+            if os.path.exists(delivery_eink):
+                from PIL import Image as _Image
+                from lib.onboarding_renderer import stamp_qr_codes_on_image
+                base_img = _Image.open(delivery_eink).convert('RGB')
+                _, path = stamp_qr_codes_on_image(
+                    base_img, ssid, password, portal_url, self.config,
+                    eink=True)
+            else:
+                from lib.onboarding_renderer import render_hotspot_screen
+                _, path = render_hotspot_screen(ssid, password, portal_url, self.config)
+            if path:
+                print(f'📺 Displaying hotspot onboarding screen on e-ink ({portal_url})')
+                self._display_on_epaper_async(path, None, None)
+        except Exception as e:
+            print(f'⚠️ Could not render hotspot onboarding screen: {e}')
+
+    def _display_onboarding_connected_screen(self):
+        """Render the post-connection QR screen, display it, then restore normal
+        operation after 60 seconds."""
+        import socket as _socket
+
+        # Suppress other e-ink updates while the connected screen is showing
+        self._onboarding_connected_active = True
+
+        # Give the OS a moment to assign an IP after the connection settles.
+        time.sleep(3)
+
+        ip = None
+        for _ in range(5):
+            try:
+                s = _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM)
+                s.settimeout(2)
+                s.connect(('8.8.8.8', 80))
+                ip = s.getsockname()[0]
+                s.close()
+                break
+            except Exception:
+                time.sleep(2)
+
+        port       = self._get_web_port()
+        access_url = f'http://{ip}:{port}' if ip else f'http://<pi-ip>:{port}'
+
+        try:
+            from lib.onboarding_renderer import render_connected_screen
+            # Render e-ink version for the display
+            eink_img, path = render_connected_screen(access_url, self.config, timeout_seconds=60,
+                                                     translations=self.translations)
+            if path:
+                print(f'📺 Displaying connected onboarding screen on e-ink ({access_url})')
+                self._display_on_epaper_async(path, None, None)
+
+            # Render web version (same screen) and serve it as the dashboard image
+            # so the browser shows the connected screen instead of a stale/broken template.
+            try:
+                web_img, _ = render_connected_screen(access_url, self.config, timeout_seconds=60,
+                                                     eink=False, translations=self.translations)
+                if web_img:
+                    web_img.save(self.current_image_path)
+                    self._cache_web_image(web_img)
+                    print('📺 Connected screen also set as web dashboard image')
+            except Exception:
+                pass  # non-fatal — web image is cosmetic
+        except Exception as e:
+            print(f'⚠️ Could not render connected onboarding screen: {e}')
+            return
+
+        # Wait for the e-ink display to finish rendering (~40s) before starting
+        # the 60-second countdown.  The display worker thread holds this lock
+        # for the entire refresh duration; acquiring it here blocks until done.
+        with self._display_worker_lock:
+            pass  # lock released = display finished
+        print('📺 Connected screen displayed on e-ink — starting 60s countdown')
+        time.sleep(60)
+        # After onboarding, always force a fresh image generation.
+        # The cached image is likely stale (old block height, old language)
+        # because it was rendered before the WiFi setup / language change.
+        self._onboarding_connected_active = False
+        try:
+            print('⚙️ Onboarding complete — forcing fresh dashboard image generation')
+            self.image_is_current = False
+            self.last_eink_block_height = None
+            self.last_eink_block_hash = None
+            self._background_image_generation(force_eink=True)
+        except Exception as e:
+            print(f'⚠️ Could not generate fresh image after onboarding: {e}')
+
+    def _start_wifi_recovery_monitor(self):
+        if self._wifi_recovery_thread_started:
+            return
+
+        if os.name == 'nt':
+            return
+
+        enabled = bool(self.config.get('wifi_recovery_enabled', True))
+        if not enabled:
+            print('⚙️ Wi-Fi recovery monitor disabled in config')
+            return
+
+        if shutil.which('nmcli') is None:
+            print('⚙️ Wi-Fi recovery monitor disabled (nmcli not available)')
+            return
+
+        self._wifi_recovery_thread_started = True
+
+        def _loop():
+            interface = self._detect_wifi_interface()
+            poll_seconds = int(self.config.get('wifi_recovery_poll_seconds', 30))
+            reconnect_interval_seconds = int(self.config.get('wifi_reconnect_interval_seconds', 60))
+            setup_probe_interval_seconds = int(self.config.get('wifi_setup_probe_interval_seconds', 180))
+            min_attempts = int(self.config.get('wifi_recovery_min_attempts', 10))
+            outage_seconds = int(self.config.get('wifi_recovery_outage_seconds', 1800))
+            startup_grace_seconds = int(self.config.get('wifi_recovery_startup_grace_seconds', 90))
+
+            print(
+                f"📡 Wi-Fi recovery monitor started on {interface} "
+                f"(threshold: {outage_seconds}s + {min_attempts} attempts)"
+            )
+
+            while True:
+                try:
+                    now = time.time()
+                    status = self._current_wifi_status(interface)
+                    connected = bool(status.get('connected'))
+                    active_connection = status.get('connection', '')
+
+                    if connected:
+                        self._wifi_disconnect_since = None
+                        self._wifi_reconnect_attempts = 0
+                        self._wifi_last_setup_probe_try = 0
+
+                        if self._is_setup_mode_enabled():
+                            print(f"✅ Wi-Fi recovered on {active_connection}; disabling setup hotspot")
+                            self._bring_down_setup_hotspot()
+                            # Wait for DHCP/DNS to settle before normal network operations resume.
+                            print('⏳ Waiting 15s for DHCP/DNS to settle…')
+                            time.sleep(15)
+
+                        # When connected, poll slowly — no action needed until a drop occurs.
+                        time.sleep(max(60, poll_seconds * 4))
+                        continue
+
+                    # Disconnected from normal Wi-Fi.
+                    if self._wifi_disconnect_since is None:
+                        self._wifi_disconnect_since = now
+                        self._wifi_reconnect_attempts = 0
+                        self._wifi_last_reconnect_try = 0
+                        self._wifi_last_setup_probe_try = 0
+                        print('⚠️ Wi-Fi disconnected, starting recovery attempts')
+
+                    disconnected_for = now - self._wifi_disconnect_since
+
+                    if self._is_setup_mode_enabled():
+                        # If the setup flag is set but the hotspot is not actually broadcasting
+                        # (e.g. NM rejected it at boot), bring it up unconditionally.
+                        hotspot_actually_up = self._is_setup_hotspot_connection(active_connection)
+                        if not hotspot_actually_up:
+                            print('📶 Setup mode flagged but hotspot not active — bringing up')
+                            self._bring_up_setup_hotspot(interface)
+                            time.sleep(max(5, poll_seconds))
+                            continue
+
+                        # Immediate probe if user just submitted credentials via setup page.
+                        pending = self._wifi_connect_pending
+                        if pending:
+                            self._wifi_connect_pending = False
+                            self._wifi_last_setup_probe_try = 0  # force probe now
+
+                        # Only do timed probes when no client is connected to the AP.
+                        # Tearing down the hotspot while a phone is using it causes the
+                        # phone to detect "no internet" and drop the connection.
+                        has_ap_client = self._has_ap_station(interface)
+                        if has_ap_client:
+                            self._last_ap_station_seen_ts = now
+
+                        # Grace window: treat the AP as occupied for N seconds after the
+                        # phone was last seen — phones disassociate briefly when the screen
+                        # goes off, which would otherwise trigger an immediate probe.
+                        ap_client_grace = int(self.config.get('wifi_ap_client_grace_seconds', 120))
+                        recently_had_client = (now - self._last_ap_station_seen_ts) < ap_client_grace
+
+                        # Skip timed probes entirely when no saved client networks exist.
+                        # There is nothing to connect to, so probing only disrupts the hotspot.
+                        has_saved_networks = self._has_saved_wifi_connections()
+
+                        if pending or (
+                            has_saved_networks
+                            and not has_ap_client
+                            and not recently_had_client
+                            and now - self._wifi_last_setup_probe_try >= setup_probe_interval_seconds
+                        ):
+                            self._wifi_last_setup_probe_try = now
+                            self._nmcli(['connection', 'down', 'mempaper-setup'])
+                            # Give NM a moment to free the radio before trying to connect
+                            time.sleep(2)
+                            reconnect = self._nmcli(['device', 'connect', interface], timeout=40)
+                            if reconnect is not None and reconnect.returncode == 0:
+                                # NM accepted the command — give it up to 15s to fully connect
+                                for _ in range(5):
+                                    time.sleep(3)
+                                    probe_status = self._current_wifi_status(interface)
+                                    if probe_status.get('connected'):
+                                        print('✅ Wi-Fi recovered during setup mode probe; disabling setup hotspot')
+                                        self._bring_down_setup_hotspot()
+                                        # Wait for DHCP/DNS to fully settle before the app
+                                        # starts using the network (WebSocket, API calls).
+                                        print('⏳ Waiting 15s for DHCP/DNS to settle…')
+                                        time.sleep(15)
+                                        time.sleep(max(5, poll_seconds))
+                                        break
+                                else:
+                                    self._bring_up_setup_hotspot(interface)
+                                    self._wifi_last_setup_probe_try = now - setup_probe_interval_seconds + 30
+                                continue
+                            else:
+                                # Back off shorter than full interval so we retry sooner
+                                self._bring_up_setup_hotspot(interface)
+                                self._wifi_last_setup_probe_try = now - setup_probe_interval_seconds + 20
+
+                        time.sleep(max(5, poll_seconds))
+                        continue
+
+                    # Keep trying normal reconnection before entering setup mode.
+                    if now - self._wifi_last_reconnect_try >= reconnect_interval_seconds:
+                        self._wifi_last_reconnect_try = now
+                        reconnect = self._nmcli(['device', 'connect', interface], timeout=20)
+                        self._wifi_reconnect_attempts += 1
+                        if reconnect is not None and reconnect.returncode == 0:
+                            pass  # NM accepted reconnect; wait for next poll to confirm
+
+                    # If there are no saved client networks there is nothing to reconnect to
+                    # — start the setup hotspot as soon as the startup grace window has
+                    # passed (no need to wait for the full outage threshold).
+                    no_saved = not self._has_saved_wifi_connections()
+
+                    # Conservative trigger: only after startup grace + sustained outage + repeated attempts.
+                    if (
+                        (now - self._startup_timestamp) >= startup_grace_seconds
+                        and (
+                            no_saved
+                            or (
+                                disconnected_for >= outage_seconds
+                                and self._wifi_reconnect_attempts >= min_attempts
+                            )
+                        )
+                    ):
+                        reason = 'no saved networks' if no_saved else f'offline {int(disconnected_for)}s, attempts {self._wifi_reconnect_attempts}'
+                        print(f'📶 Wi-Fi recovery threshold reached; switching to setup hotspot ({reason})')
+                        self._bring_up_setup_hotspot(interface)
+
+                    time.sleep(max(5, poll_seconds))
+                except Exception as e:
+                    print(f"⚠️ Wi-Fi recovery monitor error: {e}")
+                    time.sleep(30)
+
+        threading.Thread(target=_loop, name='wifi-recovery-monitor', daemon=True).start()
 
     def _get_prerender_mode_signature(self):
         """Return the pre-render compatibility signature for layout-sensitive settings."""
@@ -1011,29 +1857,200 @@ class MempaperApp:
             except Exception as e:
                 print(f"⚠️ Bitaxe API warm-up failed: {e}")
 
+    # ── Multi-power-cycle factory reset detection ─────────────────────────────
+    BOOT_TIMESTAMPS_PATH = os.path.join('cache', 'boot_timestamps.json')
+    POWER_CYCLE_RESET_THRESHOLD = 3   # number of boots within the window
+    POWER_CYCLE_RESET_WINDOW = 900    # seconds (15 minutes — 3 cycles × ~3.5 min + 4th boot)
+
+    def _check_power_cycle_reset(self):
+        """Detect rapid power-cycling (3 boots in 10 min) and trigger factory reset.
+
+        On each startup the current timestamp is appended to a small JSON file.
+        If the file already contains enough recent timestamps, a full factory
+        reset is triggered: admin + sensitive data cleared, saved WiFi profiles
+        deleted, and the delivery-state e-ink image rendered.
+
+        Returns True if a reset was triggered (caller should skip normal startup).
+        """
+        now = time.time()
+        timestamps = []
+
+        # Log system uptime so we know exactly how long from power-on to this point
+        try:
+            with open('/proc/uptime', 'r') as f:
+                uptime_seconds = float(f.read().split()[0])
+            print(f'⏱️ System uptime at boot timestamp write: {uptime_seconds:.1f}s '
+                  f'— safe to power off after this point')
+        except (OSError, ValueError, IndexError):
+            pass  # Not on Linux (dev machine)
+
+        # Load existing boot timestamps
+        try:
+            if os.path.exists(self.BOOT_TIMESTAMPS_PATH):
+                with open(self.BOOT_TIMESTAMPS_PATH, 'r', encoding='utf-8') as f:
+                    timestamps = json.load(f)
+                if not isinstance(timestamps, list):
+                    timestamps = []
+        except (json.JSONDecodeError, OSError):
+            timestamps = []
+
+        # Keep only timestamps within the detection window
+        timestamps = [ts for ts in timestamps if (now - ts) < self.POWER_CYCLE_RESET_WINDOW]
+        timestamps.append(now)
+
+        # Persist updated timestamps and force filesystem sync so the data
+        # survives the next hard power-off without corrupting the SD card.
+        try:
+            os.makedirs(os.path.dirname(self.BOOT_TIMESTAMPS_PATH), exist_ok=True)
+            with open(self.BOOT_TIMESTAMPS_PATH, 'w', encoding='utf-8') as f:
+                json.dump(timestamps, f)
+                f.flush()
+                os.fsync(f.fileno())
+            os.sync()  # flush all pending filesystem writes to SD card
+        except OSError:
+            pass
+
+        print(f'🔄 Power-cycle reset check: {len(timestamps)}/{self.POWER_CYCLE_RESET_THRESHOLD} '
+              f'boots in {self.POWER_CYCLE_RESET_WINDOW}s window')
+
+        if len(timestamps) >= self.POWER_CYCLE_RESET_THRESHOLD:
+            print(f'🔄 Power-cycle reset detected! ({len(timestamps)} boots in {self.POWER_CYCLE_RESET_WINDOW}s window)')
+            print('🔄 Triggering factory reset...')
+
+            # Clear the timestamps file so the next boot is clean
+            try:
+                os.remove(self.BOOT_TIMESTAMPS_PATH)
+            except OSError:
+                pass
+
+            # Caller runs _execute_factory_reset() synchronously so WiFi
+            # profiles are deleted before the WiFi check thread starts.
+            return True
+
+        return False
+
+    def _execute_factory_reset(self):
+        """Full factory reset: clear data, delete WiFi, render delivery image.
+
+        Runs in a background thread because the delivery-state image render
+        and e-ink display update take ~40-60 seconds.
+        """
+        try:
+            # 1. Clear admin + sensitive user data
+            print('🧹 Factory reset: clearing user data...')
+            self._perform_user_data_reset()
+
+            # 2. Clear saved WiFi profiles using the app's own nmcli wrapper
+            #    (delivery_state's nmcli_cmd has different sudo handling that
+            #    may silently fail inside the running service)
+            print('🧹 Factory reset: clearing saved WiFi profiles...')
+            self._factory_reset_clear_wifi()
+
+            # 3. Render the delivery-state image and push via the app's display worker
+            print('🎨 Factory reset: rendering delivery state image...')
+            try:
+                import scripts.delivery_state as ds
+                config = self.config_manager.get_current_config()
+                image_path = ds.render_delivery_image(config)
+                # Use the app's own display worker (not ds.show_on_eink) to avoid
+                # GPIO conflicts with the already-running display subprocess.
+                if self.e_ink_enabled:
+                    print('🖥️ Factory reset: pushing delivery image to e-ink...')
+                    self._display_on_epaper_async(image_path, None, None)
+            except Exception as e:
+                print(f'⚠️ Could not render delivery image: {e}')
+
+            print('✅ Factory reset complete. Device is in delivery state.')
+
+        except Exception as e:
+            print(f'❌ Factory reset failed: {e}')
+            import traceback
+            traceback.print_exc()
+
+    def _factory_reset_clear_wifi(self):
+        """Delete all saved client WiFi profiles.
+
+        Uses 'sudo nmcli' for both listing and deleting because system-owned
+        WiFi connections (created via 'sudo nmcli device wifi connect') are
+        not visible to unprivileged nmcli queries.
+        """
+        try:
+            # Must use sudo to see system-owned connections
+            result = self._nmcli(['-t', '-f', 'NAME,TYPE', 'connection', 'show'])
+            if result is None:
+                print('⚠️ WiFi cleanup: nmcli command failed to execute')
+                return
+            if result.returncode != 0:
+                print(f'⚠️ WiFi cleanup: nmcli list failed: {(result.stderr or result.stdout or "").strip()}')
+                return
+
+            print(f'🔍 WiFi cleanup: nmcli output: {result.stdout.strip()!r}')
+
+            deleted = []
+            failed = []
+            for line in result.stdout.splitlines():
+                parts = line.strip().split(':', 1)
+                if len(parts) < 2:
+                    continue
+                name, conn_type = parts[0], parts[1]
+                if conn_type not in ('wifi', '802-11-wireless'):
+                    continue
+                if name.startswith('mempaper-setup'):
+                    continue
+                print(f'🧹 Deleting WiFi profile: {name}')
+                r = self._nmcli(['connection', 'delete', name])
+                if r is not None and r.returncode == 0:
+                    deleted.append(name)
+                else:
+                    err = (r.stderr or r.stdout or '').strip() if r else 'no result'
+                    failed.append(f'{name}: {err}')
+                    print(f'⚠️ Failed to delete WiFi profile {name}: {err}')
+
+            if deleted:
+                print(f'🧹 Deleted {len(deleted)} WiFi profile(s): {", ".join(deleted)}')
+            elif not failed:
+                print('ℹ️ No saved WiFi profiles to delete')
+        except Exception as e:
+            print(f'⚠️ WiFi cleanup failed: {e}')
+            import traceback
+            traceback.print_exc()
+
     def _setup_instant_startup(self):
         """
         Setup instant startup mode:
-        1. Load cached/default image immediately 
-        2. Start heavy operations in background
-        3. Update interface when ready
+        1. Check for power-cycle factory reset
+        2. Load cached/default image immediately
+        3. Start heavy operations in background
+        4. Update interface when ready
         """
-        
+
+        # Check for multi-power-cycle reset FIRST (before anything else).
+        # If triggered, run synchronously so WiFi profiles are deleted BEFORE
+        # the WiFi check thread tries to connect to them.
+        factory_reset_triggered = False
+        if os.name != 'nt':  # Only on Linux/Pi, not Windows dev
+            if self._check_power_cycle_reset():
+                factory_reset_triggered = True
+                self._execute_factory_reset()
+
         # Check if we have a cached image to show immediately
-        has_cached_image = (os.path.exists(self.current_image_path) and 
+        has_cached_image = (os.path.exists(self.current_image_path) and
                            os.path.exists(self.current_eink_image_path))
-        
-        if has_cached_image:
+
+        if has_cached_image and not factory_reset_triggered:
             cache_age = (time.time() - os.path.getmtime(self.current_image_path)) / 60
             print(f"💾 Found cached image (age: {cache_age:.1f} minutes)")
             # Image metadata already loaded in _load_cache_metadata()
         else:
             print("💾 No cached image found - will create placeholder")
             self._create_placeholder_image()
-        
-        # Start background processing after a short delay to let the web server start
-        background_delay = self.config.get("background_processing_delay", 2)
-        
+
+        # Start Wi-Fi check immediately in a separate thread so the hotspot
+        # comes up as fast as possible (critical for first-boot / delivery reset).
+        threading.Thread(target=self._startup_wifi_check, daemon=True).start()
+
+        # Start remaining background processing after a minimal delay
+        background_delay = self.config.get("background_processing_delay", 0.5)
         threading.Timer(background_delay, self._run_background_startup).start()
         print("🌐 Website is now ready!")
 
@@ -1070,19 +2087,12 @@ class MempaperApp:
                 small_font = ImageFont.load_default()
                 unicode_fonts = False
 
-            # Draw Bitcoin symbol at the top (default font is latin-1 only, can't render ₿)
-            btc_symbol = "₿" if unicode_fonts else "BTC"
-            bbox = draw.textbbox((0, 0), btc_symbol, font=font)
-            symbol_width = bbox[2] - bbox[0]
-            symbol_x = (width - symbol_width) // 2
-            draw.text((symbol_x, 80), btc_symbol, fill='#f7931a', font=font)
-            
             # Draw main title
-            title = "Mempaper Dashboard"
+            title = "mempaper"
             bbox = draw.textbbox((0, 0), title, font=medium_font)
             title_width = bbox[2] - bbox[0]
             title_x = (width - title_width) // 2
-            title_y = 160
+            title_y = 120
             draw.text((title_x, title_y), title, fill=text_color, font=medium_font)
             
             # Draw loading message
@@ -1094,8 +2104,8 @@ class MempaperApp:
             gray_text = (160, 160, 160) if is_dark_mode else (128, 128, 128)
             draw.text((loading_x, loading_y), loading_msg, fill=gray_text, font=small_font)
             
-            # Draw progress indicator
-            progress_msg = "● ● ● ●"
+            # Draw progress dots (ASCII-safe)
+            progress_msg = ". . . ."
             bbox = draw.textbbox((0, 0), progress_msg, font=small_font)
             progress_width = bbox[2] - bbox[0]
             progress_x = (width - progress_width) // 2
@@ -1130,7 +2140,34 @@ class MempaperApp:
         """Run heavy startup operations in background."""
         try:
             print("⚙️ Starting background initialization...")
-            
+
+            # Wi-Fi check already started in _setup_instant_startup() thread.
+            # Start Wi-Fi recovery monitor early so network failures can self-heal.
+            self._start_wifi_recovery_monitor()
+
+            # Start deferred init tasks that were moved out of __init__ to
+            # reduce boot time (network calls, CPU-heavy threads).
+            self._start_webhook_site_listener()
+            self._start_precache_updater()
+
+            # Check block height now (moved from __init__ to avoid 10s+ timeout when offline)
+            try:
+                block_info = self.mempool_api.get_current_block_info()
+                current_bh = str(block_info.get('block_height', ''))
+                cached_bh = str(self.current_block_height) if self.current_block_height is not None else None
+
+                if cached_bh and current_bh and cached_bh != current_bh:
+                    print(f"⚙️ [STARTUP] Block changed since last run: {cached_bh} -> {current_bh}")
+                    self.current_block_height = block_info.get('block_height')
+                    self.current_block_hash = block_info.get('block_hash')
+                    self.image_is_current = False
+                elif cached_bh and current_bh and cached_bh == current_bh:
+                    print(f"[STARTUP] Block unchanged: {current_bh} - cache is valid")
+                    self.image_is_current = True
+            except Exception as e:
+                print(f"[STARTUP] Failed to check current block: {e}")
+                self.image_is_current = False
+
             # Sync cache to current blockchain height (important for recovery after downtime)
             if self.block_monitor:
                 try:
@@ -2812,7 +3849,11 @@ class MempaperApp:
         self._deferred_save_cache_metadata()
         
         # Start e-ink display update in background
-        if self.e_ink_enabled and not skip_epaper:
+        # Skip if the onboarding connected screen is still showing — the fresh
+        # generation after the 60s timer will push the correct image.
+        if self._onboarding_connected_active:
+            print('⏭️ Skipping e-ink update — onboarding connected screen is active')
+        elif self.e_ink_enabled and not skip_epaper:
             current_eink_height = getattr(self, 'last_eink_block_height', 0) or 0
             if int(block_height or 0) != int(current_eink_height) or force_eink:
                 threading.Thread(
@@ -3081,6 +4122,248 @@ class MempaperApp:
     
     def _setup_routes(self):
         """Setup Flask routes."""
+
+        def setup_mode_enabled():
+            return self._is_setup_mode_enabled()
+
+        def setup_mode_payload():
+            return self._setup_mode_payload()
+
+        def detect_wifi_interface():
+            return self._detect_wifi_interface()
+
+        def run_nmcli(args):
+            """Run nmcli with sudo for setup operations.
+
+            In AP (hotspot) mode, plain nmcli often returns empty scan results
+            because the unprivileged user cannot read driver scan data.  Using
+            sudo mirrors the approach in ``_nmcli()`` and delivery_state.py.
+            """
+            cmd = (['sudo', 'nmcli'] if os.name != 'nt' else ['nmcli']) + args
+            try:
+                return subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=25,
+                )
+            except Exception:
+                return None
+
+        def scan_wifi_networks(interface):
+            import time as _time
+            import shutil as _shutil
+
+            # In AP mode nmcli rescan is blocked by NM; use 'iw' for a fresh
+            # passive scan instead, then fall back to the cached NM results.
+            if _shutil.which('iw'):
+                subprocess.run(
+                    ['sudo', 'iw', 'dev', interface, 'scan', 'passive'],
+                    capture_output=True, timeout=15,
+                )
+                _time.sleep(2)   # give NM a moment to pick up new scan results
+            else:
+                run_nmcli(['device', 'wifi', 'rescan', 'ifname', interface])
+                _time.sleep(2)
+
+            result = run_nmcli([
+                '-t',
+                '-f',
+                'IN-USE,SSID,SIGNAL,SECURITY',
+                'device',
+                'wifi',
+                'list',
+                'ifname',
+                interface,
+            ])
+            if result is None or result.returncode != 0:
+                return []
+
+            # Get our own hotspot SSID so we can exclude it from the list
+            own_ssid = self._setup_ssid_from_mac(interface) if self._is_setup_mode_enabled() else None
+
+            networks = []
+            seen = set()
+            for line in result.stdout.splitlines():
+                parts = line.split(':')
+                if len(parts) < 4:
+                    continue
+                in_use = parts[0].strip()
+                ssid = parts[1].strip()
+                signal = parts[2].strip()
+                security = parts[3].strip()
+                if not ssid or ssid in seen:
+                    continue
+                # Never show our own hotspot in the client-network list
+                if own_ssid and ssid == own_ssid:
+                    continue
+                seen.add(ssid)
+                try:
+                    signal_int = int(signal)
+                except ValueError:
+                    signal_int = 0
+                networks.append({
+                    'ssid': ssid,
+                    'signal': signal_int,
+                    'security': security,
+                    'in_use': in_use == '*',
+                    'open': security in ('', '--'),
+                })
+
+            networks.sort(key=lambda n: n.get('signal', 0), reverse=True)
+            return networks
+
+        def current_wifi_status(interface):
+            result = run_nmcli(['-t', '-f', 'DEVICE,TYPE,STATE,CONNECTION', 'device', 'status'])
+            if result is None or result.returncode != 0:
+                return {'connected': False, 'connection': ''}
+
+            for line in result.stdout.splitlines():
+                parts = line.split(':')
+                if len(parts) < 4:
+                    continue
+                dev, dev_type, state, connection = parts[0], parts[1], parts[2], parts[3]
+                if dev == interface and dev_type == 'wifi':
+                    connected = state.startswith('connected') and not self._is_setup_hotspot_connection(connection)
+                    return {
+                        'connected': connected,
+                        'connection': connection,
+                    }
+
+            return {'connected': False, 'connection': ''}
+
+        # Tracks async Wi-Fi connect state so JS can poll after response is sent.
+        _wifi_connect_state = {'status': 'idle', 'message': '', 'connection': ''}
+
+        def apply_wifi_credentials_background(interface, ssid, password, hidden):
+            """Runs in a background thread AFTER the HTTP response has been sent."""
+            _wifi_connect_state['status'] = 'connecting'
+            _wifi_connect_state['message'] = f'Connecting to {ssid}...'
+
+            # Short delay so the HTTP response definitely leaves the socket first.
+            time.sleep(1)
+
+            # Fully tear down the hotspot: remove iptables redirects, delete ALL
+            # stale mempaper-setup profiles (there can be many duplicates), and
+            # free wlan0 for client mode.
+            print(f'📶 Tearing down setup hotspot to connect to {ssid}...')
+            self._remove_captive_portal_redirect()
+            self._cleanup_legacy_setup_hotspots()
+            # Ensure the interface is fully disconnected from AP mode
+            self._nmcli(['device', 'disconnect', interface])
+
+            # The radio needs time to transition from AP back to managed/station
+            # mode.  On RPi Zero W this can take several seconds.
+            print('⏳ Waiting for radio to transition from AP to client mode...')
+            time.sleep(5)
+
+            # Force a fresh scan so NM discovers nearby networks after the
+            # radio has been in AP mode (no scan results exist yet).
+            self._nmcli(['device', 'wifi', 'rescan', 'ifname', interface])
+            time.sleep(3)
+
+            # 'nmcli device wifi connect' creates a new NM profile which requires
+            # settings.modify.system — must use sudo nmcli, not plain nmcli.
+            connect_cmd = ['device', 'wifi', 'connect', ssid, 'ifname', interface]
+            if password:
+                connect_cmd += ['password', password]
+            if hidden:
+                connect_cmd += ['hidden', 'yes']
+
+            # Try up to 3 times — the first attempt often fails because the
+            # radio hasn't fully settled after AP teardown.
+            max_attempts = 3
+            connect_result = None
+            for attempt in range(1, max_attempts + 1):
+                print(f'📡 WiFi connect attempt {attempt}/{max_attempts} to {ssid}...')
+                connect_result = self._nmcli(connect_cmd, timeout=45)
+                if connect_result is not None and connect_result.returncode == 0:
+                    print(f'✅ nmcli connect command succeeded on attempt {attempt}')
+                    break
+                error_hint = ''
+                if connect_result is not None:
+                    error_hint = (connect_result.stderr or connect_result.stdout or '').strip()
+                print(f'⚠️ WiFi connect attempt {attempt} failed: {error_hint}')
+                if attempt < max_attempts:
+                    # Rescan and retry after a short delay
+                    time.sleep(5)
+                    self._nmcli(['device', 'wifi', 'rescan', 'ifname', interface])
+                    time.sleep(3)
+
+            if connect_result is None or connect_result.returncode != 0:
+                error_msg = 'Failed to connect to Wi-Fi network'
+                if connect_result is not None and connect_result.stderr:
+                    error_msg = connect_result.stderr.strip() or error_msg
+                elif connect_result is not None and connect_result.stdout:
+                    error_msg = connect_result.stdout.strip() or error_msg
+                print(f'❌ WiFi connect failed after {max_attempts} attempts: {error_msg}')
+                _wifi_connect_state['status'] = 'failed'
+                _wifi_connect_state['message'] = error_msg
+                # Restore hotspot so user can try again.
+                self._bring_up_setup_hotspot(interface)
+                return
+
+            # Give NetworkManager a moment to fully establish the connection
+            # (DHCP lease, DNS, etc.).
+            print('⏳ Waiting for DHCP/DNS to settle...')
+            time.sleep(8)
+
+            # Poll for connection status (NM may still be negotiating)
+            connected = False
+            final_status = {}
+            for poll in range(6):
+                final_status = current_wifi_status(interface)
+                if final_status.get('connected'):
+                    connected = True
+                    break
+                time.sleep(3)
+
+            if connected:
+                try:
+                    if os.path.exists(self.setup_mode_flag_path):
+                        os.remove(self.setup_mode_flag_path)
+                except OSError:
+                    pass
+                _wifi_connect_state['status'] = 'connected'
+                _wifi_connect_state['connection'] = final_status.get('connection', ssid)
+                _wifi_connect_state['message'] = f'Connected to {final_status.get("connection", ssid)}'
+                print(f'✅ Setup Wi-Fi connected to {final_status.get("connection", ssid)}')
+                # Clean up all leftover mempaper-setup profiles
+                self._cleanup_legacy_setup_hotspots()
+                self._nmcli(['connection', 'delete', 'mempaper-setup'])
+                if self.e_ink_enabled:
+                    threading.Thread(
+                        target=self._display_onboarding_connected_screen,
+                        daemon=True,
+                    ).start()
+            else:
+                # nmcli reported success but device status doesn't show connected.
+                # The profile IS saved — try activating it by name as a last resort.
+                print(f'⚠️ nmcli succeeded but device not connected yet — trying connection up by name...')
+                self._nmcli(['connection', 'up', ssid, 'ifname', interface], timeout=30)
+                time.sleep(10)
+                final_status = current_wifi_status(interface)
+                if final_status.get('connected'):
+                    try:
+                        if os.path.exists(self.setup_mode_flag_path):
+                            os.remove(self.setup_mode_flag_path)
+                    except OSError:
+                        pass
+                    _wifi_connect_state['status'] = 'connected'
+                    _wifi_connect_state['connection'] = final_status.get('connection', ssid)
+                    _wifi_connect_state['message'] = f'Connected to {final_status.get("connection", ssid)}'
+                    print(f'✅ Setup Wi-Fi connected via fallback: {final_status.get("connection", ssid)}')
+                    self._cleanup_legacy_setup_hotspots()
+                    self._nmcli(['connection', 'delete', 'mempaper-setup'])
+                    if self.e_ink_enabled:
+                        threading.Thread(
+                            target=self._display_onboarding_connected_screen,
+                            daemon=True,
+                        ).start()
+                else:
+                    _wifi_connect_state['status'] = 'failed'
+                    _wifi_connect_state['message'] = 'Connection attempt did not complete — check credentials'
+                    self._bring_up_setup_hotspot(interface)
         
         # Add CORS headers to all responses (MUST BE FIRST)
         @self.app.after_request
@@ -3146,7 +4429,249 @@ class MempaperApp:
             # response.headers['Cache-Control'] = 'public, max-age=86400, immutable'  # 24 hours
             
             return response
-        
+
+        @self.app.route('/setup')
+        def setup_wifi_page():
+            """Public Wi-Fi onboarding page (only available in setup mode)."""
+            if not setup_mode_enabled():
+                return redirect(url_for('dashboard'))
+
+            setup_data = setup_mode_payload()
+            # Collect setup_* keys from all languages for client-side i18n
+            setup_i18n = {}
+            for lang_code, lang_dict in translations.items():
+                setup_i18n[lang_code] = {k: v for k, v in lang_dict.items()
+                                         if k.startswith('setup_') or k == 'onboarding_select_language'}
+            return render_template(
+                'setup_wifi.html',
+                ssid=setup_data.get('ssid', 'mempaper-0000'),
+                dark_mode=self.config.get('color_mode_dark', True),
+                setup_i18n_json=json.dumps(setup_i18n, ensure_ascii=False),
+            )
+
+        # Captive-portal detection endpoints used by Android / iOS / Windows.
+        @self.app.route('/generate_204')
+        @self.app.route('/hotspot-detect.html')
+        @self.app.route('/ncsi.txt')
+        @self.app.route('/connecttest.txt')
+        @self.app.route('/library/test/success.html')  # iOS
+        @self.app.route('/success.txt')                # macOS Sonoma
+        @self.app.route('/canonical.html')             # Windows 11
+        def captive_portal_redirect():
+            if setup_mode_enabled():
+                # Auto-open mode: force captive-portal redirects so devices
+                # launch the setup page immediately after joining the hotspot.
+                auto_open_portal = bool(
+                    self.config.get('wifi_setup_auto_open_portal', True)
+                )
+
+                # Some mobile OSes aggressively drop Wi-Fi networks that fail
+                # internet checks. In stable mode, answer probe endpoints
+                # with expected success content so clients stay connected.
+                prefer_stable_connection = bool(
+                    self.config.get('wifi_setup_prefer_stable_connection', True)
+                )
+
+                user_agent = (request.headers.get('User-Agent') or '').lower()
+                is_android_client = 'android' in user_agent
+
+                # Android clients can be more aggressive about dropping
+                # captive/no-internet networks. If stability mode is enabled,
+                # prefer stable probe responses for Android instead of redirects.
+                if auto_open_portal and not (prefer_stable_connection and is_android_client):
+                    return redirect(url_for('setup_wifi_page'), code=302)
+
+                if prefer_stable_connection:
+                    path = request.path
+                    if path == '/generate_204':
+                        return '', 204
+                    if path in ('/hotspot-detect.html', '/library/test/success.html'):
+                        return '<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>', 200
+                    if path == '/ncsi.txt':
+                        return 'Microsoft NCSI', 200
+                    if path == '/connecttest.txt':
+                        return 'Microsoft Connect Test', 200
+                    if path == '/success.txt':
+                        return 'success', 200
+                    if path == '/canonical.html':
+                        return '<html><body>Success</body></html>', 200
+
+                return redirect(url_for('setup_wifi_page'), code=302)
+            return '', 204
+
+        # Catch-all: any request to an unknown host while in setup mode
+        # triggers the captive portal popup on Android / iOS / Windows.
+        #
+        # IMPORTANT: captive-portal probe paths (e.g. /generate_204) must be
+        # allowed through so the dedicated route handler can return the correct
+        # status code.  If we redirect them here, Android sees a 302 instead of
+        # 204, marks the network as "no internet", and disconnects.
+        _CAPTIVE_PROBE_PATHS = {
+            '/generate_204',
+            '/hotspot-detect.html',
+            '/ncsi.txt',
+            '/connecttest.txt',
+            '/library/test/success.html',
+            '/success.txt',
+            '/canonical.html',
+        }
+
+        @self.app.before_request
+        def captive_portal_catch_all():
+            if not setup_mode_enabled():
+                return None
+            # Let captive-portal probe paths reach their dedicated handler
+            if request.path in _CAPTIVE_PROBE_PATHS:
+                return None
+            host = request.host.split(':')[0]
+            # Pass through requests already destined for the Pi
+            local_hosts = {'192.168.12.1', '10.42.0.1', 'localhost', '127.0.0.1'}
+            if host in local_hosts:
+                return None
+            # Anything else: redirect to setup page
+            return redirect(url_for('setup_wifi_page'), code=302)
+
+        @self.app.route('/api/setup/wifi/scan', methods=['GET'])
+        def setup_wifi_scan():
+            if not setup_mode_enabled():
+                return jsonify({'success': False, 'message': 'Setup mode is not active'}), 403
+
+            interface = detect_wifi_interface()
+            networks = scan_wifi_networks(interface)
+            status = current_wifi_status(interface)
+
+            return jsonify({
+                'success': True,
+                'interface': interface,
+                'networks': networks,
+                'status': status,
+            })
+
+        @self.app.route('/api/setup/wifi/connect', methods=['POST'])
+        def setup_wifi_connect():
+            if not setup_mode_enabled():
+                return jsonify({'success': False, 'message': 'Setup mode is not active'}), 403
+
+            data = request.json or {}
+            ssid = (data.get('ssid') or '').strip()
+            password = data.get('password', '')
+            hidden = bool(data.get('hidden', False))
+            language = (data.get('language') or '').strip()
+
+            if not ssid:
+                return jsonify({'success': False, 'message': 'SSID is required'}), 400
+            if password and len(password) < 8:
+                return jsonify({'success': False, 'message': 'Wi-Fi password must be at least 8 characters'}), 400
+
+            # Persist selected language to config so the whole app uses it.
+            if language and language in ('en', 'de', 'es', 'fr', 'it'):
+                self.config_manager.set('language', language)
+                self.config_manager.save_config()
+                self.config['language'] = language
+                self.translations = translations.get(language, translations['en'])
+                # Recreate image renderer so dashboard images use the new language
+                self.image_renderer = ImageRenderer(self.config, self.translations)
+
+            interface = detect_wifi_interface()
+
+            # Reset state and fire background thread BEFORE touching the radio.
+            # This ensures the HTTP response is sent while hotspot is still up.
+            _wifi_connect_state['status'] = 'connecting'
+            _wifi_connect_state['message'] = f'Connecting to {ssid}...'
+            _wifi_connect_state['connection'] = ''
+            self._wifi_connect_pending = True  # signal recovery monitor to probe immediately on failure
+            threading.Thread(
+                target=apply_wifi_credentials_background,
+                args=(interface, ssid, password, hidden),
+                daemon=True,
+            ).start()
+
+            return jsonify({
+                'success': True,
+                'connecting': True,
+                'message': f'Connecting to {ssid}... please wait',
+            })
+
+        @self.app.route('/api/setup/wifi/connect_status', methods=['GET'])
+        def setup_wifi_connect_status():
+            """Poll this after posting to /connect to find out the result."""
+            return jsonify({
+                'success': True,
+                'status': _wifi_connect_state['status'],
+                'message': _wifi_connect_state['message'],
+                'connection': _wifi_connect_state['connection'],
+            })
+
+        @self.app.route('/api/setup/status', methods=['GET'])
+        def setup_wifi_status():
+            interface = detect_wifi_interface()
+            return jsonify({
+                'success': True,
+                'setup_mode': setup_mode_enabled(),
+                'interface': interface,
+                'wifi': current_wifi_status(interface),
+            })
+
+        @self.app.route('/api/setup/admin_needed', methods=['GET'])
+        def setup_admin_needed():
+            """Return whether first-time admin creation is still required.
+            Safe to call at any time — never exposes credentials."""
+            needed = not self.auth_manager.password_manager.is_password_set()
+            return jsonify({'success': True, 'admin_needed': needed})
+
+        @self.app.route('/api/setup/create_admin', methods=['POST'])
+        def setup_create_admin():
+            """Create the first admin user.  Only allowed when no user exists yet,
+            so this endpoint cannot be used to hijack an already-configured device."""
+            if not setup_mode_enabled():
+                return jsonify({'success': False, 'message': 'Setup mode is not active'}), 403
+
+            # Hard guard: refuse if any user already exists.
+            if self.auth_manager.password_manager.is_password_set():
+                return jsonify({
+                    'success': False,
+                    'message': 'Admin user already configured — use the settings page to manage users.',
+                }), 403
+
+            data = request.json or {}
+            username = (data.get('username') or '').strip()
+            password = data.get('password', '')
+            confirm  = data.get('confirm_password', '')
+
+            if not username:
+                return jsonify({'success': False, 'message': 'Username is required'}), 400
+            if len(username) < 3:
+                return jsonify({'success': False, 'message': 'Username must be at least 3 characters'}), 400
+            if len(password) < 8:
+                return jsonify({'success': False, 'message': 'Password must be at least 8 characters'}), 400
+            if password != confirm:
+                return jsonify({'success': False, 'message': 'Passwords do not match'}), 400
+
+            ok = self.auth_manager.password_manager.create_user(username, password)
+            if not ok:
+                return jsonify({'success': False, 'message': 'Failed to save user — check logs'}), 500
+
+            print(f"✅ Setup: first admin user '{username}' created via onboarding portal")
+            return jsonify({'success': True, 'message': f"User '{username}' created successfully"})
+
+        @self.app.route('/api/setup/reset_device', methods=['POST'])
+        def setup_reset_device():
+            """Reset admin credentials and sensitive user data.
+
+            Only allowed while the device is in setup/hotspot mode so that a
+            user who forgot their admin password can recover without SSH access.
+            """
+            if not setup_mode_enabled():
+                return jsonify({'success': False, 'message': 'Setup mode is not active'}), 403
+
+            try:
+                self._perform_user_data_reset()
+                print("✅ Setup: device reset via onboarding portal")
+                return jsonify({'success': True, 'message': 'Device reset successful'})
+            except Exception as e:
+                print(f"❌ Setup reset failed: {e}")
+                return jsonify({'success': False, 'message': str(e)}), 500
+
         @self.app.route('/image')
         @allow_public_or_auth(self.auth_manager, self.config_manager)
         def image():
@@ -3219,6 +4744,9 @@ class MempaperApp:
         @allow_public_or_auth(self.auth_manager, self.config_manager)
         def dashboard():
             """Serve the main dashboard web page."""
+            if setup_mode_enabled() and not self.auth_manager.is_authenticated():
+                return redirect(url_for('setup_wifi_page'))
+
             display_status = "enabled" if self.e_ink_enabled else "disabled"
             display_icon = "🖥️" if self.e_ink_enabled else "🚫"
             

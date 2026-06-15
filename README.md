@@ -16,6 +16,7 @@
   <a href="#gallery">Gallery</a> &nbsp;&bull;&nbsp;
   <a href="#technical-stuff">Technical Stuff</a> &nbsp;&bull;&nbsp;
   <a href="#quick-start">Quick Start</a> &nbsp;&bull;&nbsp;
+  <a href="#onboarding--first-time-setup">Onboarding</a> &nbsp;&bull;&nbsp;
   <a href="#configuration">Configuration</a> &nbsp;&bull;&nbsp;
   <a href="#documentation">Documentation</a>
 </p>
@@ -347,6 +348,30 @@ pip install -r requirements.txt
    sudo systemctl disable mempaper.service       # Disable auto-start
    ```
 
+5. **Enable Integrated Wi-Fi Onboarding Hotspot (for shipped devices)**
+
+  This installs the required permissions for NetworkManager operations used by `mempaper.service`.
+
+  ```bash
+  sudo bash scripts/install_wifi_permissions.sh
+  ```
+
+  > If you updated scripts in this repository later, run the command again to refresh installed rules.
+
+  **Verify installation:**
+
+  ```bash
+  sudo systemctl status mempaper.service
+  sudo journalctl -u mempaper.service -f
+  ```
+
+  **Expected behavior after delivery prep:**
+  - `mempaper.service` runs on boot
+  - On power-on, app first attempts normal Wi-Fi connection
+  - If no Wi-Fi is available after startup grace, app starts setup hotspot automatically
+  - User connects to `mempaper-XXXX`, opens `http://192.168.12.1:5000`, enters Wi-Fi credentials
+  - On successful connection, setup hotspot is disabled and normal operation resumes automatically
+
 <br/>
 
 ---
@@ -491,6 +516,109 @@ python scripts/setup_user.py --delete alice # Delete a user
 > The script can be run while the service is running -- the application picks up the config change automatically. For password resets it is safer to stop the service first: `sudo systemctl stop mempaper`.
 
 **Existing installations** are migrated automatically on first startup: the single `admin_username` / `admin_password_hash` fields in the config are moved into the `admin_users` dict -- no manual action required.
+
+<br/>
+
+---
+
+<br/>
+
+## DELIVERY MODE (SHIPMENT)
+
+Prepare a reset device for shipment:
+
+```bash
+python scripts/delivery_state.py
+```
+
+What this does:
+- renders a clean delivery image on e-ink
+- leaves startup behavior in integrated mode (`mempaper.service` only)
+- clears setup-mode state so the next boot starts clean
+
+At next boot, `mempaper.service` automatically enables setup hotspot if Wi-Fi cannot connect.
+
+<br/>
+
+---
+
+<br/>
+
+## ONBOARDING / FIRST-TIME SETUP
+
+When a customer powers on a freshly prepared device for the first time, the following onboarding flow guides them through WiFi configuration and admin account creation -- no SSH or technical knowledge required.
+
+### Step 1 -- Delivery State (E-Ink)
+
+The device ships with the delivery-state image on the e-ink display.
+
+<p align="center"><img src="images/readme/onboarding_1_delivery_state.png" alt="Delivery state e-ink screen" width="600"/></p>
+
+### Step 2 -- Setup Hotspot (E-Ink)
+
+On first boot, the device detects that no WiFi is configured and automatically starts a WPA2 setup hotspot. **This takes between 90 seconds and 2 minutes 21 seconds** -- the Pi needs to boot, initialize the WiFi radio, and switch to AP mode. Once ready, the e-ink display refreshes and shows the hotspot SSID, password, and a QR code to connect.
+
+- **SSID:** `mempaper-XXXX` (4-digit suffix derived from the device MAC)
+- **Security:** WPA2 (password = 8 hex chars derived from device MAC)
+- Scan the QR code with your phone to connect automatically
+
+> **Tip:** Wait until the e-ink display updates from the delivery-state image to the hotspot screen before trying to connect. If the display does not refresh after 2 minutes, the hotspot may have failed to start -- simply power-cycle the device and try again.
+
+<p align="center"><img src="images/readme/onboarding_2_hotspot.png" alt="Hotspot onboarding e-ink screen" width="600"/></p>
+
+### Step 3 -- WiFi Setup Web Page
+
+After connecting to the hotspot, open `http://10.42.0.1:5000/setup` in your browser (this URL is also available as a QR code on the right side of the e-ink screen). The setup page allows the user to:
+
+1. **Select a language** (English, German, Spanish, French, Italian)
+2. **Choose your home WiFi** from a scanned list (or enter a hidden SSID)
+3. **Enter the WiFi password**
+4. **Create an admin account** (username + password for the dashboard)
+
+<p align="center"><img src="images/readme/onboarding_3_wifi_setup.png" alt="WiFi setup web page" width="400"/></p>
+
+### Step 4 -- Connection Success (E-Ink)
+
+Once the device connects to the home WiFi, the e-ink display shows a success screen with instructions on how to access the dashboard from the home network.
+
+<!-- TODO: add screenshot -->
+<!-- <p align="center"><img src="images/readme/onboarding_4_connected.png" alt="WiFi connected e-ink screen" width="600"/></p> -->
+
+After 60 seconds, the display switches to normal operation mode and shows the first dashboard image.
+
+### Device Reset
+
+If the user forgets their admin password or needs to start fresh, there are two reset options:
+
+#### Option A -- Reset Button (Setup Page)
+
+If the device is in hotspot/setup mode (e.g. stored WiFi unavailable), the setup web page shows a **"Reset Device"** button at the bottom. This clears:
+
+- All admin accounts
+- Wallet addresses and monitoring data
+- Bitaxe miner configuration
+- Donation history and webhook URLs
+- Mempool authentication
+- Mobile app tokens
+
+The device remains in setup mode so the user can reconfigure WiFi and create a new admin account.
+
+#### Option B -- Power-Cycle Factory Reset
+
+For a full factory reset (including WiFi profiles and e-ink display), the user can power-cycle the device rapidly:
+
+1. **Power on** the device, wait **2 minutes**, then **power off**
+2. **Repeat** two more times (3 power cycles total)
+3. **Power on** a 4th time -- the device now detects the pattern and resets
+
+The device detects 3 recent boot timestamps within a 15-minute window and automatically:
+
+- Clears all user data (same as Option A)
+- Deletes all saved WiFi profiles
+- Renders and displays the delivery-state e-ink image
+- Starts the setup hotspot for fresh onboarding
+
+> **Important:** Wait the full 2 minutes before powering off each time. The device needs enough time to boot, record the timestamp, and flush all writes to the SD card. Cutting power too early risks corrupting the filesystem.
 
 <br/>
 

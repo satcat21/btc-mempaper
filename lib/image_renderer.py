@@ -3248,8 +3248,11 @@ class ImageRenderer:
             # Merge date + holiday title into a single line with holiday gradient
             holiday_title = holiday_info.get("title", "")
             combined_text = f"{date_text}  {holiday_title}" if holiday_title else date_text
-            # Find a font size that fits the combined text in one line
-            combined_font_size = self.get_optimal_date_font_size(combined_text)
+            # Find a font size that fits the combined text in one line.
+            # Allow a lower minimum than the plain date so long holiday titles
+            # (e.g. "3. Januar 2009  Bitcoins Geburtstag") don't get clipped.
+            combined_font_size = self.get_optimal_date_font_size(
+                combined_text, min_font_size=16)
             font_date_combined = self._get_font(self.font_bold, combined_font_size)
             bbox = font_date_combined.getbbox(combined_text)
             text_width = bbox[2] - bbox[0]

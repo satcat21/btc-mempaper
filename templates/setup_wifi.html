@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>mempaper - WiFi Setup</title>
+    <link rel="icon" type="image/png" href="static/favicon.png">
+    <link rel="stylesheet" href="static/css/theme.css">
+    <link rel="stylesheet" href="static/css/login.css">
+    <link rel="stylesheet" href="static/css/setup.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body{% if dark_mode %} class="dark-mode"{% endif %}>
+    <div class="login-container setup-container">
+        <div class="login-header">
+            <h1>mem<span class="brand-accent">paper</span></h1>
+            <p class="setup-subtitle" data-i18n="setup_subtitle">WiFi onboarding</p>
+        </div>
+
+        <div id="setup-message" class="error-message" style="display:none;"></div>
+
+        <div class="form-group">
+            <label class="form-label" for="language-select" data-i18n="onboarding_select_language">Language</label>
+            <select id="language-select" class="form-select">
+                <option value="en">English</option>
+                <option value="de">Deutsch</option>
+                <option value="es">Espa&#241;ol</option>
+                <option value="fr">Fran&#231;ais</option>
+                <option value="it">Italiano</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label" for="ssid-select" data-i18n="setup_select_wifi">Select your home WiFi</label>
+            <select id="ssid-select" class="form-select"></select>
+            <div id="scan-status" class="form-description">
+                <span class="scan-spinner"></span> <span data-i18n="setup_scanning">Scanning nearby networks...</span>
+            </div>
+            <label class="setup-checkbox-row" for="hidden-network-toggle">
+                <input type="checkbox" id="hidden-network-toggle">
+                <span data-i18n="setup_hidden_label">My network is hidden (not listed)</span>
+            </label>
+        </div>
+
+        <div class="form-group" id="hidden-ssid-group" style="display:none;">
+            <label class="form-label" for="hidden-ssid" data-i18n="setup_hidden_ssid">Hidden WiFi SSID</label>
+            <input type="text" id="hidden-ssid" class="form-input" data-i18n-placeholder="setup_hidden_placeholder" placeholder="Enter hidden network name">
+            <div class="form-description" data-i18n="setup_hidden_desc">Enter the exact SSID, including uppercase/lowercase characters.</div>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label" for="wifi-password" data-i18n="setup_password">WiFi Password</label>
+            <input type="password" id="wifi-password" class="form-input" data-i18n-placeholder="setup_password_placeholder" placeholder="Enter WiFi password">
+            <div class="form-description" data-i18n="setup_password_desc">Leave empty only for open networks.</div>
+        </div>
+
+        <!-- Admin account section — shown only when no user is configured yet -->
+        <div id="admin-setup-section" style="display:none;">
+            <div class="setup-section-divider">
+                <span data-i18n="setup_admin_title">Admin Account Setup</span>
+            </div>
+            <p class="form-description" style="margin-bottom:14px;" data-i18n="setup_admin_desc">
+                No admin account exists yet. Create one now to secure your dashboard.
+                This step is only available during first-time setup.
+            </p>
+
+            <div class="form-group">
+                <label class="form-label" for="admin-username" data-i18n="setup_admin_username">Username</label>
+                <input type="text" id="admin-username" class="form-input"
+                       data-i18n-placeholder="setup_admin_username_placeholder" placeholder="e.g. admin" autocomplete="username">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="admin-password" data-i18n="setup_admin_password">Password</label>
+                <input type="password" id="admin-password" class="form-input"
+                       data-i18n-placeholder="setup_admin_password_placeholder" placeholder="Min. 8 characters" autocomplete="new-password">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="admin-confirm" data-i18n="setup_admin_confirm">Confirm Password</label>
+                <input type="password" id="admin-confirm" class="form-input"
+                       data-i18n-placeholder="setup_admin_confirm_placeholder" placeholder="Repeat password" autocomplete="new-password">
+                <div id="admin-confirm-hint" class="form-description" style="display:none; color:var(--danger); font-weight:600;"></div>
+                <div class="form-description" data-i18n="setup_admin_confirm_desc">You can change this later in Settings.</div>
+            </div>
+        </div>
+
+        <button id="connect-button" class="login-button" type="button" data-i18n="setup_connect_button">Connect and Finish Setup</button>
+        <button id="refresh-button" class="secondary-button" type="button" data-i18n="setup_refresh_button">Refresh Network List</button>
+
+        <div id="success-box" style="display:none; margin-top:1.5rem; padding:1rem 1.2rem; border-radius:8px; background:rgba(56,161,105,0.12); border-left:4px solid var(--success); color:var(--text-primary);">
+            <div style="font-size:1.3rem; margin-bottom:0.5rem;" data-i18n-html="setup_success_title">&#x2705; Connected!</div>
+            <div id="success-network" style="font-weight:600; margin-bottom:0.8rem;"></div>
+            <div style="margin-bottom:0.6rem;" data-i18n="setup_success_instructions">The device is now on your home network. To open the dashboard:</div>
+            <ol style="margin:0 0 0.8rem 1.2rem; padding:0; line-height:1.8;">
+                <li data-i18n-html="setup_success_step1">Reconnect <strong>your phone/laptop</strong> to your home Wi-Fi.</li>
+                <li data-i18n-html="setup_success_step2">Find the Pi's IP address — check your router's device list, or run <code>ping mempaperHome</code> in a terminal.</li>
+                <li data-i18n-html="setup_success_step3">Open <code>http://&lt;pi-ip&gt;:5000</code> in your browser.</li>
+            </ol>
+            <div style="font-size:0.85rem; opacity:0.75;" data-i18n-html="setup_success_hostname">The device hostname is usually <strong>mempaperHome</strong> on your network.</div>
+        </div>
+
+        <div id="reset-section" style="margin-top:2rem; padding-top:1.2rem; border-top:1px solid var(--border-color);">
+            <div class="setup-section-divider">
+                <span data-i18n="setup_reset_title">Device Reset</span>
+            </div>
+            <p class="form-description" style="margin-bottom:14px;" data-i18n="setup_reset_desc">
+                Forgot your admin password? Reset the device to clear all credentials and sensitive data (wallet addresses, Bitaxe miners, donations). The device will restart in setup mode.
+            </p>
+            <button id="reset-button" class="danger-button" type="button" data-i18n="setup_reset_button">Reset Device</button>
+        </div>
+
+        <div class="community-message" data-i18n="setup_footer">
+            Device will switch to normal operation once connection succeeds.
+        </div>
+    </div>
+
+    <script>
+        var SETUP_I18N = {{ setup_i18n_json|safe }};
+    </script>
+    <script src="static/js/setup_wifi.js"></script>
+</body>
+</html>
