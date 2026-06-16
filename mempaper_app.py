@@ -1875,7 +1875,11 @@ class MempaperApp:
         now = time.time()
         timestamps = []
 
-        # Log system uptime so we know exactly how long from power-on to this point
+        # Log system uptime so we know exactly how long from power-on to this point.
+        # Only count as a power-cycle boot if uptime is low (< 5 min).
+        # A service restart (systemctl restart) won't reset system uptime,
+        # so it will be ignored and not count towards the reset threshold.
+        uptime_seconds = None
         try:
             with open('/proc/uptime', 'r') as f:
                 uptime_seconds = float(f.read().split()[0])
@@ -1883,6 +1887,12 @@ class MempaperApp:
                   f'— safe to power off after this point')
         except (OSError, ValueError, IndexError):
             pass  # Not on Linux (dev machine)
+
+        max_boot_uptime = 300  # 5 minutes — cold boot on Pi Zero takes ~80-120s
+        if uptime_seconds is not None and uptime_seconds > max_boot_uptime:
+            print(f'🔄 Power-cycle reset check: skipped (uptime {uptime_seconds:.0f}s > {max_boot_uptime}s — '
+                  f'this is a service restart, not a cold boot)')
+            return False
 
         # Load existing boot timestamps
         try:

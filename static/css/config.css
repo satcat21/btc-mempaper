@@ -1580,3 +1580,142 @@ body.dark-mode .upload-icon {
         text-align: center;
     }
 }
+
+/* ── Easter Egg: Sneaky Pepe Mole ──────────────────────────── */
+.pepe-mole {
+    position: fixed;
+    width: 120px;
+    height: 120px;
+    z-index: 10;
+    pointer-events: none;
+    display: none;
+}
+
+.pepe-mole img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+/* Bottom: slides up */
+.pepe-mole.peek-bottom {
+    animation: pepe-from-bottom 4s ease-in-out forwards;
+}
+@keyframes pepe-from-bottom {
+    0%   { transform: translateY(100%); }
+    25%  { transform: translateY(0); }
+    75%  { transform: translateY(0); }
+    100% { transform: translateY(100%); }
+}
+
+/* Top: slides down, image flipped upside-down */
+.pepe-mole.peek-top img,
+.pepe-mole.whacked.edge-top img,
+.pepe-mole.flee-top img { transform: rotate(180deg); }
+.pepe-mole.peek-top {
+    animation: pepe-from-top 4s ease-in-out forwards;
+}
+@keyframes pepe-from-top {
+    0%   { transform: translateY(-100%); }
+    25%  { transform: translateY(0); }
+    75%  { transform: translateY(0); }
+    100% { transform: translateY(-100%); }
+}
+
+/* Left: slides in from left, image rotated 90° CW */
+.pepe-mole.peek-left img,
+.pepe-mole.whacked.edge-left img,
+.pepe-mole.flee-left img { transform: rotate(90deg); }
+.pepe-mole.peek-left {
+    animation: pepe-from-left 4s ease-in-out forwards;
+}
+@keyframes pepe-from-left {
+    0%   { transform: translateX(-100%); }
+    25%  { transform: translateX(0); }
+    75%  { transform: translateX(0); }
+    100% { transform: translateX(-100%); }
+}
+
+/* Right: slides in from right, image rotated 90° CCW */
+.pepe-mole.peek-right img,
+.pepe-mole.whacked.edge-right img,
+.pepe-mole.flee-right img { transform: rotate(-90deg); }
+.pepe-mole.peek-right {
+    animation: pepe-from-right 4s ease-in-out forwards;
+}
+@keyframes pepe-from-right {
+    0%   { transform: translateX(100%); }
+    25%  { transform: translateX(0); }
+    75%  { transform: translateX(0); }
+    100% { transform: translateX(100%); }
+}
+
+/* Whacked: freeze + wobble */
+.pepe-mole.whacked {
+    animation-play-state: paused !important;
+    pointer-events: none;
+}
+.pepe-mole.whacked img {
+    animation: pepe-wobble 0.15s ease-in-out 4;
+}
+@keyframes pepe-wobble {
+    0%, 100% { filter: none; }
+    25%      { filter: brightness(2) saturate(2); }
+    50%      { filter: brightness(0.7); }
+}
+
+/* Speech bubble */
+.pepe-speech {
+    position: fixed;
+    white-space: normal;
+    max-width: 220px;
+    text-align: center;
+    background: var(--accent);
+    color: #fff;
+    font-size: 0.85rem;
+    font-weight: 700;
+    padding: 6px 12px;
+    border-radius: 10px;
+    pointer-events: none;
+    opacity: 0;
+    z-index: 9999;
+    animation: speech-pop 3.5s ease-out forwards;
+    font-family: var(--font-mono);
+    letter-spacing: 0.02em;
+}
+@keyframes speech-pop {
+    0%   { opacity: 0; transform: translateY(0) scale(0.5); }
+    8%   { opacity: 1; transform: translateY(-8px) scale(1); }
+    85%  { opacity: 1; transform: translateY(-8px) scale(1); }
+    100% { opacity: 0; transform: translateY(-20px) scale(0.8); }
+}
+
+/* Confetti particle */
+.pepe-confetti {
+    position: fixed;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 12;
+    animation: confetti-pop 0.9s ease-out forwards;
+}
+@keyframes confetti-pop {
+    0%   { opacity: 1; transform: translate(0, 0) scale(1); }
+    100% { opacity: 0; transform: translate(var(--cx), var(--cy)) scale(0.3); }
+}
+
+/* Flee animations (fast escape after whack) */
+.pepe-mole.flee-bottom { animation: pepe-flee-bottom 0.4s ease-in forwards !important; }
+.pepe-mole.flee-top    { animation: pepe-flee-top    0.4s ease-in forwards !important; }
+.pepe-mole.flee-left   { animation: pepe-flee-left   0.4s ease-in forwards !important; }
+.pepe-mole.flee-right  { animation: pepe-flee-right  0.4s ease-in forwards !important; }
+@keyframes pepe-flee-bottom { to { transform: translateY(150%); } }
+@keyframes pepe-flee-top    { to { transform: translateY(-150%); } }
+@keyframes pepe-flee-left   { to { transform: translateX(-150%); } }
+@keyframes pepe-flee-right  { to { transform: translateX(150%); } }
+
+/* Only show on wide screens where gutters are visible */
+@media (max-width: 1199px) {
+    .pepe-mole { display: none !important; }
+}

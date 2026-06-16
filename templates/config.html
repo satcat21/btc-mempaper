@@ -210,6 +210,11 @@
 
     <div id="notification" class="notification"></div>
 
+    <!-- Easter egg: sneaky pepe mole -->
+    <div id="pepe-mole" class="pepe-mole">
+        <img src="static/images/pepe_clown.png" alt="" draggable="false">
+    </div>
+
     <script>
         // Make translations available to JavaScript
         window.translations = {{ translations | tojson }};
@@ -217,6 +222,178 @@
     <script src="static/js/confirm-modal.js"></script>
     <script src="static/js/session-manager.js"></script>
     <script src="static/js/config.js"></script>
+    <script>
+    (function() {
+        var mole = document.getElementById('pepe-mole');
+        if (!mole) return;
+        var edges = ['bottom', 'top', 'left', 'right'];
+        var SIZE = 120;
+        var CONTENT_W = 900;
+        var currentEdge = null;
+        var whacked = false;
+
+        var phrases = [
+            'HODL!', 'Stay humble, stack sats.', 'Not your keys, not your coins.',
+            '21 million. Forever.', 'Buy the dip!', 'In it for the tech.',
+            'Few understand this.', 'Number go up.', 'Tick tock, next block.',
+            'Fiat is the real shitcoin.', 'Be your own bank.', 'Proof of work.',
+            'The halvening is coming.', 'Run your own node.', '1 BTC = 1 BTC',
+            'Have fun staying poor.', 'Laser eyes activated.', 'Vires in numeris.',
+            'We are all Satoshi.', 'Fix the money, fix the world.',
+            'No amount of violence can solve a math problem.',
+            'Hyperbitcoinization loading...', 'Shitcoins are NGMi.',
+            'Bitcoin fixes this.', 'Timechain, not blockchain.',
+        ];
+
+        function randomPhrase() {
+            return phrases[Math.floor(Math.random() * phrases.length)];
+        }
+
+        function spawnConfetti(x, y) {
+            var colors = ['#F7931A', '#fff', '#ff6b35', '#ffd700', '#ff4444', '#44ff44'];
+            for (var i = 0; i < 15; i++) {
+                var dot = document.createElement('div');
+                dot.className = 'pepe-confetti';
+                dot.style.left = x + 'px';
+                dot.style.top = y + 'px';
+                dot.style.background = colors[Math.floor(Math.random() * colors.length)];
+                var angle = Math.random() * Math.PI * 2;
+                var dist = 40 + Math.random() * 80;
+                dot.style.setProperty('--cx', Math.cos(angle) * dist + 'px');
+                dot.style.setProperty('--cy', Math.sin(angle) * dist + 'px');
+                dot.style.width = (5 + Math.random() * 6) + 'px';
+                dot.style.height = dot.style.width;
+                document.body.appendChild(dot);
+                dot.addEventListener('animationend', function() { this.remove(); });
+            }
+        }
+
+        function showSpeech(text) {
+            var bubble = document.createElement('div');
+            bubble.className = 'pepe-speech';
+            bubble.textContent = text;
+            document.body.appendChild(bubble);
+            // Measure bubble size then position near mole, clamped to viewport
+            var moleRect = mole.getBoundingClientRect();
+            var bw = bubble.offsetWidth;
+            var bh = bubble.offsetHeight;
+            var cx = moleRect.left + moleRect.width / 2;
+            var cy = moleRect.top + moleRect.height / 2;
+            var pad = 8;
+            var bx, by;
+            // Position bubble: always upright, on the side with most space
+            if (currentEdge === 'left' || currentEdge === 'right') {
+                // Place above or below pepe depending on available space
+                bx = cx - bw / 2;
+                if (cy < window.innerHeight / 2) {
+                    by = moleRect.bottom + 4;   // more space below → place below
+                } else {
+                    by = moleRect.top - bh - 4; // more space above → place above
+                }
+            } else if (currentEdge === 'top') {
+                bx = cx - bw / 2;
+                by = moleRect.bottom + 4;
+            } else {
+                bx = cx - bw / 2;
+                by = moleRect.top - bh - 4;
+            }
+            // Clamp to viewport
+            bx = Math.max(pad, Math.min(bx, window.innerWidth - bw - pad));
+            by = Math.max(pad, Math.min(by, window.innerHeight - bh - pad));
+            bubble.style.left = bx + 'px';
+            bubble.style.top = by + 'px';
+            bubble.addEventListener('animationend', function() { bubble.remove(); });
+        }
+
+
+        function whackMole(e) {
+            if (whacked || !currentEdge) return;
+            whacked = true;
+            mole.style.pointerEvents = 'none';
+            // Keep edge class so image rotation persists through whacked + flee
+            mole.classList.add('whacked', 'edge-' + currentEdge);
+            spawnConfetti(e.clientX, e.clientY);
+            showSpeech(randomPhrase());
+            // After speech is readable, flee
+            var edge = currentEdge;
+            setTimeout(function() {
+                mole.classList.remove('whacked');
+                mole.classList.remove('peek-' + edge);
+                mole.classList.add('flee-' + edge);
+                mole.addEventListener('animationend', function handler() {
+                    mole.classList.remove('flee-' + edge, 'edge-' + edge);
+                    mole.style.display = 'none';
+                    mole.removeEventListener('animationend', handler);
+                    currentEdge = null;
+                });
+            }, 3000);
+        }
+
+        mole.addEventListener('click', whackMole);
+
+        function randomEdge() {
+            var vw = window.innerWidth;
+            var vh = window.innerHeight;
+            var gutterL = Math.max(0, (vw - CONTENT_W) / 2);
+            var gutterR = gutterL;
+            var edge = edges[Math.floor(Math.random() * edges.length)];
+            mole.style.top = mole.style.bottom = mole.style.left = mole.style.right = 'auto';
+
+            if (edge === 'bottom') {
+                mole.style.bottom = '0px';
+                if (Math.random() < 0.5 && gutterL > SIZE) {
+                    mole.style.left = Math.floor(Math.random() * (gutterL - SIZE)) + 'px';
+                } else if (gutterR > SIZE) {
+                    mole.style.right = Math.floor(Math.random() * (gutterR - SIZE)) + 'px';
+                } else {
+                    mole.style.left = Math.floor(Math.random() * (vw - SIZE)) + 'px';
+                }
+            } else if (edge === 'top') {
+                mole.style.top = '0px';
+                if (Math.random() < 0.5 && gutterL > SIZE) {
+                    mole.style.left = Math.floor(Math.random() * (gutterL - SIZE)) + 'px';
+                } else if (gutterR > SIZE) {
+                    mole.style.right = Math.floor(Math.random() * (gutterR - SIZE)) + 'px';
+                } else {
+                    mole.style.left = Math.floor(Math.random() * (vw - SIZE)) + 'px';
+                }
+            } else if (edge === 'left') {
+                mole.style.left = '0px';
+                mole.style.top = Math.floor(SIZE + Math.random() * (vh - SIZE * 2)) + 'px';
+            } else {
+                mole.style.right = '0px';
+                mole.style.top = Math.floor(SIZE + Math.random() * (vh - SIZE * 2)) + 'px';
+            }
+            return edge;
+        }
+
+        function peek() {
+            if (window.innerWidth < 1200) return;
+            whacked = false;
+            mole.classList.remove('peek-bottom', 'peek-top', 'peek-left', 'peek-right',
+                                  'flee-bottom', 'flee-top', 'flee-left', 'flee-right',
+                                  'edge-bottom', 'edge-top', 'edge-left', 'edge-right', 'whacked');
+            currentEdge = randomEdge();
+            mole.style.display = 'block';
+            mole.style.pointerEvents = 'auto';
+            mole.style.cursor = 'pointer';
+            void mole.offsetWidth;
+            mole.classList.add('peek-' + currentEdge);
+            mole.addEventListener('animationend', function handler(e) {
+                if (e.target !== mole) return;
+                mole.classList.remove('peek-' + currentEdge);
+                mole.style.display = 'none';
+                mole.style.pointerEvents = 'none';
+                currentEdge = null;
+                mole.removeEventListener('animationend', handler);
+            });
+        }
+        setTimeout(function() {
+            peek();
+            setInterval(peek, 60000);
+        }, 60000);
+    })();
+    </script>
 </body>
 
 </html>
