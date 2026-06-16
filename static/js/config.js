@@ -48,6 +48,113 @@ function closeMemeModal() {
                 console.log('🔔 [CONFIG] Block notification:', data);
             });
 
+            // Live wallet balance updates from backend
+            socket.on('wallet_balance_updated', function(data) {
+                console.log('💰 [CONFIG] Wallet balance updated via WebSocket');
+                const tbody = document.querySelector('.wallet-table tbody');
+                if (!tbody) return;
+                const allEntries = [].concat(data.addresses || [], data.xpubs || []);
+                const prevAddrs = data.prev_addresses || [];
+                const prevXpubs = data.prev_xpubs || [];
+                const allPrev = [].concat(prevAddrs, prevXpubs);
+                const isInit = data.after_config_save || false;
+
+                // Update table cells
+                if (data.addresses) {
+                    const rows = tbody.querySelectorAll('tr');
+                    data.addresses.forEach((addrInfo, i) => {
+                        if (i >= rows.length) return;
+                        const display = rows[i].querySelector('.wallet-balance-display');
+                        if (display) {
+                            const bal = addrInfo.balance_btc || addrInfo.balance || addrInfo.cached_balance || 0;
+                            display.textContent = bal.toFixed(8);
+                            display.style.color = 'var(--accent)';
+                            display.style.opacity = '1';
+                            display.title = 'Live balance data';
+                        }
+                    });
+                }
+
+                // Toast notifications per entry
+                allEntries.forEach(entry => {
+                    const label = entry.comment || entry.xpub_short || 'Wallet';
+                    const bal = entry.balance_btc || 0;
+                    const addr = entry.address || entry.xpub || '';
+                    // Find previous balance
+                    const prev = allPrev.find(p => (p.address || p.xpub) === addr);
+                    const prevBal = prev ? (prev.balance_btc || 0) : -1;
+
+                    if (prevBal < 0 || isInit) {
+                        // Newly initialized
+                        if (bal > 0) showLiveToast('💰', `Wallet '${label}' initialized: ${bal.toFixed(8)} BTC`);
+                    } else if (bal !== prevBal) {
+                        showLiveToast('💰', `Wallet '${label}' balance: ${prevBal.toFixed(8)} → ${bal.toFixed(8)} BTC`);
+                    }
+                });
+            });
+
+            // Live bitaxe stats updates from backend
+            socket.on('bitaxe_stats_updated', function(data) {
+                console.log('⛏️ [CONFIG] Bitaxe stats updated via WebSocket');
+                if (!data || !data.miners) return;
+                const rows = document.querySelectorAll('.bitaxe-table-container tbody tr');
+                rows.forEach(row => {
+                    const ipInput = row.querySelector('.bitaxe-address-input');
+                    const diffDisplay = row.querySelector('.bitaxe-best-diff-display');
+                    if (!ipInput || !diffDisplay) return;
+                    const ip = ipInput.value.trim();
+                    const minerData = data.miners[ip];
+                    if (!minerData) return;
+                    if (minerData.online) {
+                        diffDisplay.textContent = formatBitaxeDifficulty(minerData.best_diff);
+                        diffDisplay.style.color = 'var(--accent)';
+                    } else {
+                        diffDisplay.textContent = 'Offline';
+                        diffDisplay.style.color = '#ff6b6b';
+                    }
+                    // Toast for best diff changes
+                    const label = minerData.label || ip;
+                    if (minerData.best_diff > 0 && minerData.best_diff !== minerData.prev_best_diff) {
+                        showLiveToast('⛏️', `New best diff for ${label}: ${formatBitaxeDifficulty(minerData.best_diff)}`);
+                    }
+                    if (minerData.online !== minerData.prev_online) {
+                        if (minerData.online) {
+                            showLiveToast('🟢', `${label} is back online`);
+                        } else {
+                            showLiveToast('🔴', `${label} went offline`);
+                        }
+                    }
+                });
+            });
+
+            // Live found-blocks updates from backend
+            socket.on('found_blocks_updated', function(data) {
+                console.log('🏆 [CONFIG] Found blocks updated via WebSocket');
+                if (!data || !data.blocks) return;
+                const rows = document.querySelectorAll('.block-reward-table-container tbody tr');
+                rows.forEach(row => {
+                    const addrInput = row.querySelector('.block-reward-address-input');
+                    if (!addrInput) return;
+                    const address = addrInput.value.trim();
+                    const blockData = data.blocks[address];
+                    if (!blockData) return;
+                    let cell = row.querySelector('td[data-address]');
+                    if (!cell) {
+                        const cells = row.querySelectorAll('td');
+                        if (cells.length >= 3) cell = cells[2];
+                    }
+                    if (cell) {
+                        cell.textContent = blockData.count || '0';
+                        cell.style.color = 'var(--accent)';
+                    }
+                    // Toast for new blocks found
+                    if (blockData.count > blockData.prev_count) {
+                        const diff = blockData.count - blockData.prev_count;
+                        showLiveToast('🏆', `${blockData.label}: ${diff} new block${diff > 1 ? 's' : ''} found! (total: ${blockData.count})`);
+                    }
+                })
+            });
+
             socket.on('donation_received', function(donation) {
                 console.log('⚡ Donation received:', donation);
                 // Prepend new row to table if it is currently visible
@@ -4132,6 +4239,27 @@ function showDonationToast(donation) {
     setTimeout(() => {
         toast.classList.remove('donation-toast--visible');
         toast.addEventListener('transitionend', () => toast.remove(), { once: true });
+    }, 5000);
+}
+
+// Generic live-update toast (stacks from bottom-right, auto-dismiss)
+let _liveToastOffset = 0;
+function showLiveToast(icon, message) {
+    const toast = document.createElement('div');
+    toast.className = 'donation-toast';
+    toast.innerHTML = `<span class="donation-toast-icon">${icon}</span><span>${escapeHtml(message)}</span>`;
+    // Stack multiple toasts
+    const gap = _liveToastOffset * 50;
+    toast.style.bottom = (24 + gap) + 'px';
+    _liveToastOffset++;
+    document.body.appendChild(toast);
+    requestAnimationFrame(() => toast.classList.add('donation-toast--visible'));
+    setTimeout(() => {
+        toast.classList.remove('donation-toast--visible');
+        toast.addEventListener('transitionend', () => {
+            toast.remove();
+            _liveToastOffset = Math.max(0, _liveToastOffset - 1);
+        }, { once: true });
     }, 5000);
 }
 

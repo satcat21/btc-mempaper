@@ -26,13 +26,32 @@
     border-bottom: 1px solid var(--border-color);
 }
 
-.header h1 {
-    font-size: 1.5rem;
+.header-title-row {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin-bottom: 4px;
+}
+
+.brand-title {
+    font-family: var(--font-mono);
+    font-size: 2.4rem;
     font-weight: 700;
     color: var(--text-primary);
     letter-spacing: -0.02em;
+}
+
+.brand-title .brand-accent {
+    color: var(--accent);
+}
+
+.header h1 {
+    font-size: 1.3rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    letter-spacing: -0.02em;
     text-shadow: none;
-    margin-bottom: 4px;
+    margin: 0;
 }
 
 .header p {

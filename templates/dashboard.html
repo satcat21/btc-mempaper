@@ -79,6 +79,12 @@
             cancel: "{{ translations.cancel }}"
         };
         window.orientation = "{{ orientation }}";
+        window.isAuthenticated = {{ 'true' if is_authenticated else 'false' }};
+        window.featureFlags = {
+            wallet: {{ 'true' if show_wallet else 'false' }},
+            bitaxe: {{ 'true' if show_bitaxe else 'false' }},
+            donations: {{ 'true' if show_donations else 'false' }}
+        };
         
         // Logout function
         async function logout() {

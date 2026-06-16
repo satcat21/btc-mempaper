@@ -27,7 +27,7 @@ import requests
 from datetime import datetime
 from werkzeug.utils import secure_filename
 from flask import Flask, send_file, render_template, request, jsonify, session, redirect, url_for
-from flask_socketio import SocketIO
+from flask_socketio import SocketIO, join_room, leave_room
 
 # Import custom modules
 from lib.mempool_api import MempoolAPI
@@ -1378,7 +1378,7 @@ class MempaperApp:
         print(f"⚡ Donation received: {amount_sats} sats — \"{message}\" (block height: {self._latest_donation_block_height})")
 
         if self.socketio:
-            self.socketio.emit('donation_received', donation)
+            self.socketio.emit('donation_received', donation, room='authenticated')
 
         # Refresh the display if the donation block is enabled
         if self.config.get("show_donation_block", False):
@@ -2964,6 +2964,7 @@ class MempaperApp:
                             print(f"⛏️ Pre-cache updated: Bitaxe {blocks} blocks, diff {difficulty}")
                             self._precache['last_bitaxe_blocks'] = blocks
                             data_changed = True
+                            self._emit_config_page_updates()
                 except Exception as e:
                     print(f"⚠️ Failed to pre-cache Bitaxe: {e}")
             
@@ -3413,6 +3414,72 @@ class MempaperApp:
         except Exception as e:
             print(f"❌ Error in opsec e-ink refresh: {e}")
 
+    # Track previous emission values for change detection
+    _last_emitted_bitaxe = {}   # {ip: {'best_diff': ..., 'online': ...}}
+    _last_emitted_blocks = {}   # {address: count}
+
+    def _emit_config_page_updates(self):
+        """Push live updates to the config page via Socket.IO (bitaxe stats & found blocks)."""
+        if not hasattr(self, 'socketio') or not self.socketio:
+            return
+        try:
+            config = self.config_manager.get_current_config()
+
+            # Bitaxe stats for all configured miners (with labels)
+            miner_table = config.get('bitaxe_miner_table', [])
+            if miner_table:
+                from lib.bitaxe_api import BitaxeAPI
+                bitaxe_api = getattr(self.image_renderer, 'bitaxe_api', None) or BitaxeAPI()
+                miners = {}
+                for entry in miner_table:
+                    ip = entry.get('address', '').strip() if isinstance(entry, dict) else ''
+                    if not ip:
+                        continue
+                    label = entry.get('comment', '').strip() if isinstance(entry, dict) else ''
+                    try:
+                        info = bitaxe_api.get_miner_info(ip)
+                        prev = self._last_emitted_bitaxe.get(ip, {})
+                        miners[ip] = {
+                            'best_diff': info.get('best_diff', 0),
+                            'online': info.get('online', False),
+                            'label': label or ip,
+                            'prev_best_diff': prev.get('best_diff', 0),
+                            'prev_online': prev.get('online', False),
+                        }
+                        self._last_emitted_bitaxe[ip] = {
+                            'best_diff': info.get('best_diff', 0),
+                            'online': info.get('online', False),
+                        }
+                    except Exception:
+                        miners[ip] = {'best_diff': 0, 'online': False, 'label': label or ip, 'prev_best_diff': 0, 'prev_online': False}
+                if miners:
+                    self.socketio.emit('bitaxe_stats_updated', {'miners': miners}, room='authenticated')
+
+            # Found blocks for all configured addresses (with labels)
+            block_reward_table = config.get('block_reward_addresses_table', [])
+            if block_reward_table and hasattr(self, 'block_monitor') and self.block_monitor:
+                blocks = {}
+                for entry in block_reward_table:
+                    address = entry.get('address', '').strip() if isinstance(entry, dict) else ''
+                    if not address:
+                        continue
+                    label = entry.get('comment', '').strip() if isinstance(entry, dict) else ''
+                    try:
+                        count = self.block_monitor.get_coinbase_count(address) if hasattr(self.block_monitor, 'get_coinbase_count') else 0
+                        prev_count = self._last_emitted_blocks.get(address, 0)
+                        blocks[address] = {
+                            'count': count,
+                            'prev_count': prev_count,
+                            'label': label or address[:12] + '...',
+                        }
+                        self._last_emitted_blocks[address] = count
+                    except Exception:
+                        blocks[address] = {'count': 0, 'prev_count': 0, 'label': label or address[:12] + '...'}
+                if blocks:
+                    self.socketio.emit('found_blocks_updated', {'blocks': blocks}, room='authenticated')
+        except Exception as e:
+            print(f"⚠️ Error emitting config page updates: {e}")
+
     def async_wallet_refresh(self, block_height, block_hash, startup_mode=False):
         """Fetch fresh wallet data and regenerate image if balance changed."""
         print(f"🚀 [WALLET] Starting wallet refresh for block {block_height}...")
@@ -3474,9 +3541,16 @@ class MempaperApp:
                 reason_str = ", ".join(regeneration_reason)
                 print(f"🔄 [REFRESH] Regenerating image: {reason_str}")
                 
-                # Emit WebSocket event for balance update
-                if wallet_changed and hasattr(self, 'socketio') and self.socketio:
-                    self.socketio.emit('wallet_balance_updated', fresh_wallet_data)
+                # Emit WebSocket events for config page live updates
+                if hasattr(self, 'socketio') and self.socketio:
+                    # Include previous balances for change-detection toasts
+                    emit_data = dict(fresh_wallet_data)
+                    emit_data['prev_total_btc'] = cached_btc
+                    if isinstance(cached_wallet_data, dict):
+                        emit_data['prev_addresses'] = cached_wallet_data.get('addresses', [])
+                        emit_data['prev_xpubs'] = cached_wallet_data.get('xpubs', [])
+                    self.socketio.emit('wallet_balance_updated', emit_data, room='authenticated')
+                    self._emit_config_page_updates()
                 
                 # Get pre-cached data for fast rendering
                 precached_price, precached_bitaxe, precached_fee, precached_block_height, precached_network = self._get_precached_data()
@@ -4772,7 +4846,7 @@ class MempaperApp:
             # Check if user is authenticated (for showing/hiding logout button)
             is_authenticated = self.auth_manager.is_authenticated()
             
-            return render_template('dashboard.html', 
+            return render_template('dashboard.html',
                                  translations=current_translations,
                                  display_icon=display_icon,
                                  e_ink_enabled=self.e_ink_enabled,
@@ -4780,6 +4854,9 @@ class MempaperApp:
                                  orientation=orientation,
                                  block_height=block_height,
                                  is_authenticated=is_authenticated,
+                                 show_wallet=self.config.get('show_wallet_balances_block', False),
+                                 show_bitaxe=self.config.get('show_bitaxe_block', False),
+                                 show_donations=self.config.get('show_donation_block', False),
                                  dark_mode=self.config.get('color_mode_dark', True))
         
         @self.app.route('/config')
@@ -5434,6 +5511,23 @@ class MempaperApp:
                     # Reinitialize components if needed
                     self._reinitialize_after_config_change(old_config)
 
+                    # Push updated dynamic data (bitaxe, found blocks) to config page immediately
+                    self._emit_config_page_updates()
+
+                    # Fetch fresh wallet balances in background and push when ready
+                    def _bg_wallet_refresh_after_save():
+                        try:
+                            fresh = self.image_renderer.wallet_api.fetch_wallet_balances(startup_mode=True)
+                            if fresh and not fresh.get('error'):
+                                self.image_renderer.wallet_api.update_cache(fresh)
+                                if hasattr(self, 'socketio') and self.socketio:
+                                    emit_data = dict(fresh)
+                                    emit_data['after_config_save'] = True
+                                    self.socketio.emit('wallet_balance_updated', emit_data, room='authenticated')
+                        except Exception as e:
+                            print(f"⚠️ Background wallet refresh after config save failed: {e}")
+                    threading.Thread(target=_bg_wallet_refresh_after_save, daemon=True).start()
+
                     return jsonify({
                         'success': True,
                         'message': 'Configuration saved successfully',
@@ -6066,7 +6160,7 @@ class MempaperApp:
                     # Emit WebSocket event with updated cache after manual refresh
                     cached_wallet_data = self.image_renderer.wallet_api.get_cached_wallet_balances()
                     if hasattr(self, 'socketio') and self.socketio and cached_wallet_data:
-                        self.socketio.emit('wallet_balance_updated', cached_wallet_data)
+                        self.socketio.emit('wallet_balance_updated', cached_wallet_data, room='authenticated')
                         print("📡 [MANUAL] Balance update broadcasted via WebSocket")
                     
                     return jsonify({
@@ -6226,8 +6320,9 @@ class MempaperApp:
         if self.socketio:
             @self.socketio.on('connect')
             def handle_connect():
-                """Handle client connection."""
-                pass
+                """Handle client connection. Join 'authenticated' room if logged in."""
+                if self.auth_manager.is_authenticated():
+                    join_room('authenticated')
             
             @self.socketio.on('disconnect')
             def handle_disconnect(*args):

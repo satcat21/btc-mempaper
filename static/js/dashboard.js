@@ -137,18 +137,75 @@ function setupSocketHandlers() {
         tempImg.src = data.image;
     });
 
-    // Lightning donation received
+    // Lightning donation received (authenticated + feature enabled only)
     socket.on('donation_received', (data) => {
         const sats = data.amount_sats ? data.amount_sats.toLocaleString() : '?';
         const satLabel = data.amount_sats === 1 ? 'sat' : 'sats';
         const msg = data.message ? ` — "${data.message}"` : '';
         console.log(`⚡ Donation received: ${sats} ${satLabel}${msg}`);
 
-        // Show notification banner on the dashboard
-        showNotification(`⚡ Donation: ${sats} ${satLabel}${msg}`, 'success');
+        if (window.isAuthenticated && window.featureFlags && window.featureFlags.donations) {
+            showDashboardToast('⚡', `Donation: ${sats} ${satLabel}${msg}`);
+        }
 
         // Request fresh dashboard image to show updated donation block
         socket.emit('request_latest_image');
+    });
+
+    // Wallet balance updates (authenticated + wallet enabled only)
+    socket.on('wallet_balance_updated', (data) => {
+        if (!window.isAuthenticated || !window.featureFlags || !window.featureFlags.wallet) return;
+        const allEntries = [].concat(data.addresses || [], data.xpubs || []);
+        const allPrev = [].concat(data.prev_addresses || [], data.prev_xpubs || []);
+        const isInit = data.after_config_save || false;
+
+        allEntries.forEach(entry => {
+            const label = entry.comment || entry.xpub_short || 'Wallet';
+            const bal = entry.balance_btc || 0;
+            const addr = entry.address || entry.xpub || '';
+            const prev = allPrev.find(p => (p.address || p.xpub) === addr);
+            const prevBal = prev ? (prev.balance_btc || 0) : -1;
+
+            if (prevBal < 0 || isInit) {
+                if (bal > 0) showDashboardToast('💰', `Wallet '${label}' initialized: ${bal.toFixed(8)} BTC`);
+            } else if (bal !== prevBal) {
+                showDashboardToast('💰', `Wallet '${label}' balance: ${prevBal.toFixed(8)} → ${bal.toFixed(8)} BTC`);
+            }
+        });
+
+        // Request fresh image
+        socket.emit('request_latest_image');
+    });
+
+    // Bitaxe stats updates (authenticated + bitaxe enabled only)
+    socket.on('bitaxe_stats_updated', (data) => {
+        if (!window.isAuthenticated || !window.featureFlags || !window.featureFlags.bitaxe) return;
+        if (!data || !data.miners) return;
+        for (const [ip, minerData] of Object.entries(data.miners)) {
+            const label = minerData.label || ip;
+            if (minerData.best_diff > 0 && minerData.best_diff !== minerData.prev_best_diff) {
+                showDashboardToast('⛏️', `New best diff for ${label}: ${_formatDiff(minerData.best_diff)}`);
+            }
+            if (minerData.online !== minerData.prev_online) {
+                if (minerData.online) {
+                    showDashboardToast('🟢', `${label} is back online`);
+                } else {
+                    showDashboardToast('🔴', `${label} went offline`);
+                }
+            }
+        }
+    });
+
+    // Found blocks updates (authenticated + bitaxe enabled only)
+    socket.on('found_blocks_updated', (data) => {
+        if (!window.isAuthenticated || !window.featureFlags || !window.featureFlags.bitaxe) return;
+        if (!data || !data.blocks) return;
+        for (const [addr, blockData] of Object.entries(data.blocks)) {
+            if (blockData.count > blockData.prev_count) {
+                const diff = blockData.count - blockData.prev_count;
+                showDashboardToast('🏆', `${blockData.label}: ${diff} new block${diff > 1 ? 's' : ''} found! (total: ${blockData.count})`);
+            }
+        }
     });
 
     // ... other socket event handlers ...
@@ -675,3 +732,57 @@ window.enableBlockNotifications = function() {
 window.disableBlockNotifications = function() {
     unsubscribeFromBlockNotifications();
 };
+
+// Format difficulty value for display
+function _formatDiff(value) {
+    if (!value || value === 0) return '-';
+    if (value >= 1e12) return `${(value / 1e12).toFixed(2)}T`;
+    if (value >= 1e9) return `${(value / 1e9).toFixed(2)}G`;
+    if (value >= 1e6) return `${(value / 1e6).toFixed(2)}M`;
+    if (value >= 1e3) return `${(value / 1e3).toFixed(2)}k`;
+    return `${Math.round(value)}`;
+}
+
+// Dashboard live-update toast (stacks from bottom-right, auto-dismiss)
+let _dashToastOffset = 0;
+function showDashboardToast(icon, message) {
+    const isDark = document.body.classList.contains('dark-mode');
+    const toast = document.createElement('div');
+    toast.style.cssText = `
+        position: fixed;
+        bottom: ${24 + _dashToastOffset * 50}px;
+        right: 24px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        background: ${isDark ? 'rgba(30,30,36,0.95)' : 'rgba(255,255,255,0.97)'};
+        color: ${isDark ? '#e8e8ec' : '#1a1a2e'};
+        padding: 12px 18px;
+        border-radius: 8px;
+        border-left: 4px solid #F7931A;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        font-size: 0.82rem;
+        max-width: 380px;
+        z-index: 9999;
+        opacity: 0;
+        transform: translateY(12px);
+        transition: opacity 0.25s ease, transform 0.25s ease;
+        pointer-events: none;
+        font-family: 'Roboto', Arial, sans-serif;
+    `;
+    toast.innerHTML = `<span style="font-size:20px;flex-shrink:0;">${icon}</span><span>${message}</span>`;
+    _dashToastOffset++;
+    document.body.appendChild(toast);
+    requestAnimationFrame(() => {
+        toast.style.opacity = '1';
+        toast.style.transform = 'translateY(0)';
+    });
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(12px)';
+        toast.addEventListener('transitionend', () => {
+            toast.remove();
+            _dashToastOffset = Math.max(0, _dashToastOffset - 1);
+        }, { once: true });
+    }, 5000);
+}

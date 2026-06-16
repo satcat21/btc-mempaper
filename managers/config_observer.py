@@ -267,7 +267,7 @@ class AsyncAddressCacheManager:
         
         # Save cache immediately for simple caching
         self._save_cache()
-        print(f"💾 Async cached {len(addresses)} addresses for key {cache_key[:20]}...")
+        print(f"💾 Cached {len(addresses)} addresses for {cache_key[:20]}...")
     
     def get_addresses_with_indices(self, cache_key: str) -> Optional[List[Tuple[str, int]]]:
         """

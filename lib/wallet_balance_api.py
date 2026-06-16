@@ -76,6 +76,10 @@ from lib.mempool_api import MempoolAPI
 
 
 class WalletBalanceAPI:
+    # Class-level lock and tracking for gap limit detection (shared across all instances)
+    _gap_limit_lock = threading.Lock()
+    _active_gap_limit_detection = set()
+
     def get_batch_address_usage_info(self, addresses: List[str], batch_size: int = None) -> List[Dict]:
         """
         Fetch usage info for a batch of addresses.
@@ -153,11 +157,6 @@ class WalletBalanceAPI:
         # Add block-height tracking to prevent scanning same block multiple times
         self._last_scanned_block = None
         
-        # Add lock to prevent concurrent gap limit detection 
-        self._gap_limit_lock = threading.Lock()
-        
-        # Track active gap limit detection to prevent redundant work
-        self._active_gap_limit_detection = set()
         
         # Balance caching with timestamps
         self._balance_cache = {}
@@ -841,15 +840,18 @@ class WalletBalanceAPI:
             if self.enable_gap_limit:
                 # Check for cached gap limit results first to avoid re-running expensive detection
                 if self.use_async_cache:
-                    # Try multiple cache keys for different possible final counts
-                    for test_count in [20, 40, 60, 80, 100, 120, 140, 160, 180, 200]:
-                        cache_key = f"{xpub}:gap_limit:{test_count}"
-                        cached_addresses = self.async_cache_manager.get_addresses(cache_key)
-                        if cached_addresses:
-                            return set(cached_addresses)
-                
-                print(f"👁️ [FRESH] No cached gap limit results found - running detection")
-                print(f"🚀 [FRESH] Starting gap limit detection for {xpub[:20]}...")
+                    # Try in-memory cache first, then reload from disk in case another instance saved it
+                    for attempt in range(2):
+                        for test_count in [20, 40, 60, 80, 100, 120, 140, 160, 180, 200]:
+                            cache_key = f"{xpub}:gap_limit:{test_count}"
+                            cached_addresses = self.async_cache_manager.get_addresses(cache_key)
+                            if cached_addresses:
+                                return set(cached_addresses)
+                        # First attempt missed — reload cache from disk (another instance may have saved)
+                        if attempt == 0 and hasattr(self.async_cache_manager, 'secure_cache_manager'):
+                            self.async_cache_manager.cache = self.async_cache_manager.secure_cache_manager.load_cache()
+
+                print(f"👁️ No cached gap limit — running detection for {xpub[:20]}...")
                 addresses_with_indices, final_count = self.derive_addresses_with_gap_limit(xpub)
                 
                 # Cache the result with gap limit suffix to avoid conflicts
@@ -878,16 +880,16 @@ class WalletBalanceAPI:
         
         # If gap limit detection is enabled, check for cached gap limit results first
         if self.enable_gap_limit:
-            # Try multiple cache keys for different possible final counts
-            for test_count in [20, 40, 60, 80, 100, 120, 140, 160, 180, 200]:
-                cache_key = f"{xpub}:gap_limit:{test_count}"
-                cached_addresses = self.async_cache_manager.get_addresses(cache_key)
-                if cached_addresses:
-                    print(f"🚀 Async cache HIT for {xpub[:20]}... (gap limit: {test_count} addresses)")
-                    return set(cached_addresses)
-            
+            for attempt in range(2):
+                for test_count in [20, 40, 60, 80, 100, 120, 140, 160, 180, 200]:
+                    cache_key = f"{xpub}:gap_limit:{test_count}"
+                    cached_addresses = self.async_cache_manager.get_addresses(cache_key)
+                    if cached_addresses:
+                        return set(cached_addresses)
+                if attempt == 0 and hasattr(self.async_cache_manager, 'secure_cache_manager'):
+                    self.async_cache_manager.cache = self.async_cache_manager.secure_cache_manager.load_cache()
+
             # No cached gap limit results - run gap limit detection
-            print(f"💻 Async cache MISS for {xpub[:20]}... - running gap limit detection...")
             start_time = time.time()
             
             try:
@@ -900,7 +902,7 @@ class WalletBalanceAPI:
                 # Store in async cache with gap limit key
                 cache_key = f"{xpub}:gap_limit:{final_count}"
                 self.async_cache_manager.cache_addresses(cache_key, address_list)
-                print(f"💾 Async cached {len(address_list)} addresses with gap limit (derived in {derivation_time:.3f}s)")
+                print(f"💾 Cached {len(address_list)} addresses (gap limit, {derivation_time:.1f}s)")
                 
                 return set(address_list)
                 
@@ -1170,22 +1172,17 @@ class WalletBalanceAPI:
         
         if PRIVACY_UTILS_AVAILABLE:
             masked_xpub = BitcoinPrivacyMasker.mask_xpub(xpub)
-            print(f"👁️ Enhanced gap limit detection for {masked_xpub} (initial: {initial_count})")
+            print(f"👁️ Gap limit detection for {masked_xpub} (gap: {self.gap_limit})")
         else:
-            print(f"👁️ Enhanced gap limit detection for {xpub[:20]}... (initial: {initial_count})")
-        
-        # Phase 1: Bootstrap - find at least one address with positive balance
-        bootstrap_complete = False
-        addresses_with_indices = []
-        
+            print(f"👁️ Gap limit detection for {xpub[:20]}... (gap: {self.gap_limit})")
+
         # Store all address information across iterations
+        bootstrap_complete = False
         all_addresses_info = {}  # address -> (index, usage_info)
         addresses_with_indices = []  # Accumulated addresses across iterations
         last_derived_count = 0  # Track how many addresses we've already derived
-        
+
         if self.enable_bootstrap_search:
-            print(f"🚀 Phase 1: Bootstrap search - continue until gap limit satisfied")
-            print(f"   📋 Will expand until {self.gap_limit} consecutive unused addresses found")
             
             while not bootstrap_complete:
                 # Only derive NEW addresses that we haven't derived yet
@@ -1236,14 +1233,14 @@ class WalletBalanceAPI:
                 total_balance_found = 0
                 
                 if new_addresses:
-                    print(f"   📋 Checking NEW addresses {new_addresses[0][1]} to {new_addresses[-1][1]}:")
-                    
+                    print(f"   📋 Addresses {new_addresses[0][1]}-{new_addresses[-1][1]}:")
+
                     for address, index in new_addresses:
                         _, usage_info = all_addresses_info[address]
-                        
+
                         balance = usage_info['current_balance']
                         ever_used = usage_info.get('was_ever_used', False) or usage_info.get('total_received', 0) > 0
-                        
+
                         if balance > 0:
                             if PRIVACY_UTILS_AVAILABLE:
                                 masked_address = BitcoinPrivacyMasker.mask_address(address)
@@ -1286,45 +1283,23 @@ class WalletBalanceAPI:
                             if ever_used:
                                 used_in_last_batch += 1
                     
-                    print(f"   💾 Gap analysis: {used_in_last_batch}/{self.gap_limit} of last {self.gap_limit} addresses were ever used")
-                    
-                    # Debug: Show which addresses in the last batch were considered used
-                    if used_in_last_batch > 0:
-                        print(f"   👁️ Used addresses in last batch:")
-                        for address, index in last_addresses:
-                            if address in all_addresses_info:
-                                _, usage_info = all_addresses_info[address]
-                                ever_used = usage_info.get('was_ever_used', False) or usage_info.get('total_received', 0) > 0
-                                if ever_used:
-                                    total_received = usage_info.get('total_received', 0)
-                                    current_balance = usage_info.get('current_balance', 0)
-                                    if PRIVACY_UTILS_AVAILABLE:
-                                        masked_address = BitcoinPrivacyMasker.mask_address(address)
-                                        print(f"       Index {index}: {masked_address} (received: {total_received:.8f}, balance: {current_balance:.8f})")
-                                    else:
-                                        print(f"       Index {index}: {address[:20]}... (received: {total_received:.8f}, balance: {current_balance:.8f})")
-                    print(f"   💾 Total summary: {positive_balance_count} active, {ever_used_count} used in past, {positive_balance_count + ever_used_count} total used")
+                    print(f"   💾 Gap check: {used_in_last_batch}/{self.gap_limit} used in last {self.gap_limit} | Total: {positive_balance_count} active, {ever_used_count} past, {len(all_addresses_info)} scanned")
                     
                     total_used_addresses = positive_balance_count + ever_used_count
                     
                     if used_in_last_batch == 0:
                         # Gap limit satisfied, but check if we've found ANY used addresses during bootstrap
                         if total_used_addresses > 0:
-                            # We found used addresses and now have a gap - bootstrap complete
-                            print(f"   ✅ Bootstrap complete - gap limit satisfied ({self.gap_limit} consecutive unused addresses)")
-                            print(f"   ✅ Found {total_used_addresses} total used addresses before gap")
+                            print(f"   ✅ Gap limit satisfied — {total_used_addresses} used addresses found, {self.gap_limit} consecutive unused")
                             bootstrap_complete = True
                         else:
                             # No used addresses found yet - continue bootstrap search up to max limit
                             if current_count >= self.bootstrap_max_addresses:
-                                print(f"   ⚠️ Bootstrap search complete - reached maximum {self.bootstrap_max_addresses} addresses")
-                                print(f"   ⚠️ No used addresses found in entire range - wallet appears unused")
+                                print(f"   ⚠️ Bootstrap complete — no used addresses found (scanned {self.bootstrap_max_addresses})")
                                 bootstrap_complete = True
                             else:
-                                print(f"   ⚙️ No used addresses found yet, continuing bootstrap search → expanding by {self.bootstrap_increment}")
                                 current_count += self.bootstrap_increment
                     else:
-                        print(f"   ⚙️ Found {used_in_last_batch} used addresses in last batch → expanding by {self.bootstrap_increment}")
                         current_count += self.bootstrap_increment
                         
                         # Safety limit for bootstrap
@@ -1414,16 +1389,7 @@ class WalletBalanceAPI:
         positive_balance_addresses = sum(1 for _, (_, info) in all_addresses_info.items() if info.get('current_balance', 0) > 0)
         used_addresses = sum(1 for _, (_, info) in all_addresses_info.items() if info.get('was_ever_used', False) or info.get('total_received', 0) > 0)
         
-        if current_count != initial_count:
-            expansion_reason = "bootstrap + gap limit" if self.enable_bootstrap_search else "gap limit"
-            print(f"📝 Enhanced gap limit expanded derivation: {initial_count} → {current_count} ({expansion_reason})")
-        else:
-            print(f"📝 Enhanced gap limit result: {current_count} addresses (no expansion needed)")
-        
-        print(f"💾 Final summary: {total_addresses} total addresses, {positive_balance_addresses} with balance, {used_addresses} ever used")
-        
-        if used_addresses > 0 and positive_balance_addresses == 0:
-            print(f"⚠️ NOTE: Found {used_addresses} used addresses but all have zero balance - this is normal if funds were moved")
+        print(f"💾 Gap limit result: {total_addresses} addresses scanned, {positive_balance_addresses} with balance, {used_addresses} ever used")
         
         return final_addresses, current_count
     
