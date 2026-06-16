@@ -86,9 +86,9 @@ function closeMemeModal() {
 
                     if (prevBal < 0 || isInit) {
                         // Newly initialized
-                        if (bal > 0) showLiveToast('💰', `Wallet '${label}' initialized: ${bal.toFixed(8)} BTC`);
+                        if (bal > 0) showLiveToast(window.translations?.toast_wallet_title || 'Wallet', `'${label}' initialized: ${bal.toFixed(8)} BTC`, 'color_wallets');
                     } else if (bal !== prevBal) {
-                        showLiveToast('💰', `Wallet '${label}' balance: ${prevBal.toFixed(8)} → ${bal.toFixed(8)} BTC`);
+                        showLiveToast(window.translations?.toast_wallet_title || 'Wallet', `'${label}' balance: ${prevBal.toFixed(8)} → ${bal.toFixed(8)} BTC`, 'color_wallets');
                     }
                 });
             });
@@ -115,15 +115,9 @@ function closeMemeModal() {
                     // Toast for best diff changes
                     const label = minerData.label || ip;
                     if (minerData.best_diff > 0 && minerData.best_diff !== minerData.prev_best_diff) {
-                        showLiveToast('⛏️', `New best diff for ${label}: ${formatBitaxeDifficulty(minerData.best_diff)}`);
+                        showLiveToast(window.translations?.toast_bitaxe_title || 'Bitaxe', `New best diff for ${label}: ${formatBitaxeDifficulty(minerData.best_diff)}`, 'color_bitaxe_stats');
                     }
-                    if (minerData.online !== minerData.prev_online) {
-                        if (minerData.online) {
-                            showLiveToast('🟢', `${label} is back online`);
-                        } else {
-                            showLiveToast('🔴', `${label} went offline`);
-                        }
-                    }
+
                 });
             });
 
@@ -150,7 +144,7 @@ function closeMemeModal() {
                     // Toast for new blocks found
                     if (blockData.count > blockData.prev_count) {
                         const diff = blockData.count - blockData.prev_count;
-                        showLiveToast('🏆', `${blockData.label}: ${diff} new block${diff > 1 ? 's' : ''} found! (total: ${blockData.count})`);
+                        showLiveToast(window.translations?.toast_block_found_title || 'Block Found', `${blockData.label}: ${diff} new block${diff > 1 ? 's' : ''} found! (total: ${blockData.count})`, 'color_bitaxe_stats');
                     }
                 })
             });
@@ -4224,45 +4218,137 @@ function escapeHtml(text) {
     return text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-function showDonationToast(donation) {
-    const sats = (donation.amount_sats || 0).toLocaleString();
-    const msg  = donation.message ? ` — "${escapeHtml(donation.message)}"` : '';
+// ── Live toast helpers ────────────────────────────────────────────────────────
 
-    const toast = document.createElement('div');
-    toast.className = 'donation-toast';
-    const satLabel = donation.amount_sats === 1 ? 'sat' : 'sats';
-    toast.innerHTML = `<span class="donation-toast-icon">⚡</span><span><strong>${sats} ${satLabel}</strong>${msg}</span>`;
-    document.body.appendChild(toast);
-
-    // Trigger fade-in
-    requestAnimationFrame(() => toast.classList.add('donation-toast--visible'));
-
-    // Auto-dismiss after 5 s
-    setTimeout(() => {
-        toast.classList.remove('donation-toast--visible');
-        toast.addEventListener('transitionend', () => toast.remove(), { once: true });
-    }, 5000);
+// Resolve the configured section colour for the current theme
+function _getLiveToastColor(keyBase) {
+    const isDark = document.body.classList.contains('dark-mode');
+    const cfg = window.currentConfig || {};
+    return cfg[isDark ? keyBase + '_dark' : keyBase + '_light'] || '#F7931A';
 }
 
-// Generic live-update toast (stacks from bottom-right, auto-dismiss)
-let _liveToastOffset = 0;
-function showLiveToast(icon, message) {
+// Return (or create) the shared upper-right toast stack container
+function _getLiveToastContainer() {
+    let el = document.getElementById('block-toast-container');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'block-toast-container';
+        el.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 10000;
+            font-family: 'Roboto', Arial, sans-serif;
+        `;
+        document.body.appendChild(el);
+    }
+    return el;
+}
+
+// Build and display a glass-card toast in the shared upper-right container
+function _buildLiveToast(titleText, bodyHtml, titleColor, autoDismissMs = 6000) {
+    const isDark      = document.body.classList.contains('dark-mode');
+    const toastBg     = isDark ? 'rgba(30, 30, 36, 0.92)'  : 'rgba(255, 255, 255, 0.95)';
+    const toastColor  = isDark ? '#e8e8ec'                  : '#1a1a2e';
+    const toastBorder = isDark ? 'rgba(255, 255, 255, 0.08)': 'rgba(0, 0, 0, 0.1)';
+    const toastShadow = isDark
+        ? '0 8px 32px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255,255,255,0.06)'
+        : '0 8px 32px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0,0,0,0.04)';
+    const closeBtnBg      = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)';
+    const closeBtnColor   = isDark ? '#9a9aaa'                   : '#555';
+    const closeBtnHoverBg = isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.12)';
+
     const toast = document.createElement('div');
-    toast.className = 'donation-toast';
-    toast.innerHTML = `<span class="donation-toast-icon">${icon}</span><span>${escapeHtml(message)}</span>`;
-    // Stack multiple toasts
-    const gap = _liveToastOffset * 50;
-    toast.style.bottom = (24 + gap) + 'px';
-    _liveToastOffset++;
-    document.body.appendChild(toast);
-    requestAnimationFrame(() => toast.classList.add('donation-toast--visible'));
-    setTimeout(() => {
-        toast.classList.remove('donation-toast--visible');
-        toast.addEventListener('transitionend', () => {
-            toast.remove();
-            _liveToastOffset = Math.max(0, _liveToastOffset - 1);
-        }, { once: true });
-    }, 5000);
+    toast.style.cssText = `
+        background: ${toastBg};
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        color: ${toastColor};
+        padding: 14px 18px;
+        border-radius: 14px;
+        box-shadow: ${toastShadow};
+        border: 1px solid ${toastBorder};
+        margin-bottom: 10px;
+        min-width: 280px;
+        max-width: 360px;
+        opacity: 0;
+        transform: translateX(100%);
+        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        position: relative;
+        font-size: 13px;
+        line-height: 1.4;
+        cursor: pointer;
+    `;
+
+    const closeBtn = document.createElement('button');
+    closeBtn.innerHTML = '&times;';
+    closeBtn.setAttribute('aria-label', 'Close notification');
+    closeBtn.style.cssText = `
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        background: ${closeBtnBg};
+        border: none;
+        color: ${closeBtnColor};
+        font-size: 18px;
+        cursor: pointer;
+        width: 26px;
+        height: 26px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        transition: background-color 0.2s;
+        font-weight: bold;
+        line-height: 1;
+    `;
+
+    const closeToast = () => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(100%)';
+        setTimeout(() => { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 400);
+    };
+
+    closeBtn.addEventListener('click', e => { e.stopPropagation(); closeToast(); });
+    closeBtn.addEventListener('mouseenter', () => { closeBtn.style.backgroundColor = closeBtnHoverBg; });
+    closeBtn.addEventListener('mouseleave', () => { closeBtn.style.backgroundColor = closeBtnBg; });
+    toast.addEventListener('click', closeToast);
+
+    const content = document.createElement('div');
+    content.style.cssText = 'margin-right: 28px;';
+    content.innerHTML =
+        `<div style="font-weight:600;font-size:14px;margin-bottom:5px;color:${titleColor};">${titleText}</div>` +
+        `<div style="opacity:0.85;font-size:13px;">${bodyHtml}</div>`;
+
+    toast.appendChild(closeBtn);
+    toast.appendChild(content);
+    _getLiveToastContainer().appendChild(toast);
+
+    requestAnimationFrame(() => {
+        toast.style.opacity = '1';
+        toast.style.transform = 'translateX(0)';
+    });
+
+    const timer = setTimeout(closeToast, autoDismissMs);
+    toast.closeToast = () => { clearTimeout(timer); closeToast(); };
+}
+
+function showDonationToast(donation) {
+    const sats     = (donation.amount_sats || 0).toLocaleString();
+    const satLabel = donation.amount_sats === 1 ? 'sat' : 'sats';
+    const bodyHtml = `<strong>${sats} ${satLabel}</strong>` +
+        (donation.message
+            ? `<br><span style="opacity:0.7;font-size:12px;">"${escapeHtml(donation.message)}"</span>`
+            : '');
+    const title = window.translations?.donation_toast_title || 'Lightning Donation';
+    _buildLiveToast(title, bodyHtml, _getLiveToastColor('color_donation'), 8000);
+}
+
+// title    — short section label shown in the configured colour (e.g. "Wallet", "Bitaxe")
+// message  — detail text (user data — will be HTML-escaped)
+// colorKey — config key base (e.g. 'color_wallets', 'color_bitaxe_stats')
+function showLiveToast(title, message, colorKey) {
+    _buildLiveToast(title, escapeHtml(message), _getLiveToastColor(colorKey));
 }
 
 async function uploadOpsecFiles(files) {
