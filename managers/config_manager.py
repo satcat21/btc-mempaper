@@ -1351,7 +1351,8 @@ class ConfigManager:
                 "type": "info_text",
                 "html": _donation_webhook_hint_html,
                 "category": "donation",
-                "always_visible": True
+                "always_visible": True,
+                "advanced": True
             },
             "webhook_relay_ws_url": {
                 "type": "string",
@@ -1360,7 +1361,8 @@ class ConfigManager:
                 "description": t.get("webhook_relay_ws_url_desc", "For Option B \u2014 paste the full WebSocket URL from your webhook-tester instance."),
                 "default": "",
                 "category": "donation",
-                "sensitive": False
+                "sensitive": False,
+                "advanced": True
             },
             "color_donation_light": {
                 "type": "color",
