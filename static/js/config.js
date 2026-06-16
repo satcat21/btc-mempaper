@@ -2953,6 +2953,7 @@ function createWalletTableInput(values, field) {
     balanceHeader.style.backgroundColor = '#2a2d3e';
     balanceHeader.style.color = '#ffffff';
     balanceHeader.style.width = '20%';
+    balanceHeader.style.textAlign = 'center';
     
     const actionsHeader = document.createElement('th');
     actionsHeader.textContent = '';
@@ -3100,7 +3101,7 @@ function addWalletTableRow(tbody, entry) {
     const balanceCell = document.createElement('td');
     balanceCell.style.padding = '8px';
     balanceCell.style.border = '1px solid var(--border-subtle)';
-    balanceCell.style.textAlign = 'right';
+    balanceCell.style.textAlign = 'center';
     
     const balanceDisplay = document.createElement('span');
     balanceDisplay.className = 'wallet-balance-display';
@@ -3216,6 +3217,7 @@ function createBitaxeTableInput(values, field) {
     bestDiffHeader.style.backgroundColor = '#2a2d3e';
     bestDiffHeader.style.color = '#ffffff';
     bestDiffHeader.style.width = '25%';
+    bestDiffHeader.style.textAlign = 'center';
 
     const actionsHeader = document.createElement('th');
     actionsHeader.textContent = '';
@@ -3358,7 +3360,7 @@ function addBitaxeTableRow(tbody, entry) {
     const bestDiffCell = document.createElement('td');
     bestDiffCell.style.padding = '8px';
     bestDiffCell.style.border = '1px solid var(--border-subtle)';
-    bestDiffCell.style.textAlign = 'right';
+    bestDiffCell.style.textAlign = 'center';
 
     const bestDiffDisplay = document.createElement('span');
     bestDiffDisplay.className = 'bitaxe-best-diff-display';
