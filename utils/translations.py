@@ -503,6 +503,11 @@ translations = {
         "installing_display_drivers": "Installing display drivers",
         "downloading_drivers": "Downloading drivers for",
         "drivers_installed_restarting": "Drivers installed! Service restarting...",
+        "fetching_package_list": "Fetching package list (apt update)...",
+        "installing_upgrades": "Installing upgrades (apt upgrade)...",
+        "installing_mempaper_deps": "Installing mempaper dependencies...",
+        "remounting_filesystem": "Remounting filesystem...",
+        "restoring_readonly": "Restoring read-only filesystem...",
     },
     "de": {
         # Dashboard UI
@@ -1008,6 +1013,11 @@ translations = {
         "installing_display_drivers": "Display-Treiber werden installiert",
         "downloading_drivers": "Treiber werden heruntergeladen für",
         "drivers_installed_restarting": "Treiber installiert! Dienst wird neu gestartet...",
+        "fetching_package_list": "Paketliste wird abgerufen (apt update)...",
+        "installing_upgrades": "Aktualisierungen werden installiert (apt upgrade)...",
+        "installing_mempaper_deps": "Mempaper-Abhängigkeiten werden installiert...",
+        "remounting_filesystem": "Dateisystem wird beschreibbar eingehängt...",
+        "restoring_readonly": "Schreibschutz wird wiederhergestellt...",
     },
     "es": {
         # Dashboard UI
@@ -1498,6 +1508,11 @@ translations = {
         "installing_display_drivers": "Instalando controladores de pantalla",
         "downloading_drivers": "Descargando controladores para",
         "drivers_installed_restarting": "¡Controladores instalados! Reiniciando servicio...",
+        "fetching_package_list": "Obteniendo lista de paquetes (apt update)...",
+        "installing_upgrades": "Instalando actualizaciones (apt upgrade)...",
+        "installing_mempaper_deps": "Instalando dependencias de mempaper...",
+        "remounting_filesystem": "Remontando sistema de archivos...",
+        "restoring_readonly": "Restaurando sistema de archivos de solo lectura...",
     },
     "fr": {
         # Dashboard UI
@@ -1989,6 +2004,11 @@ translations = {
         "installing_display_drivers": "Installation des pilotes d'écran",
         "downloading_drivers": "Téléchargement des pilotes pour",
         "drivers_installed_restarting": "Pilotes installés ! Redémarrage du service...",
+        "fetching_package_list": "Récupération de la liste des paquets (apt update)...",
+        "installing_upgrades": "Installation des mises à jour (apt upgrade)...",
+        "installing_mempaper_deps": "Installation des dépendances mempaper...",
+        "remounting_filesystem": "Remontage du système de fichiers...",
+        "restoring_readonly": "Restauration du système de fichiers en lecture seule...",
     },
     "it": {
         # Dashboard UI
@@ -2467,5 +2487,10 @@ translations = {
         "installing_display_drivers": "Installazione driver display",
         "downloading_drivers": "Download driver per",
         "drivers_installed_restarting": "Driver installati! Riavvio del servizio...",
+        "fetching_package_list": "Recupero elenco pacchetti (apt update)...",
+        "installing_upgrades": "Installazione aggiornamenti (apt upgrade)...",
+        "installing_mempaper_deps": "Installazione dipendenze mempaper...",
+        "remounting_filesystem": "Rimontaggio del file system...",
+        "restoring_readonly": "Ripristino del file system in sola lettura...",
     }
 }

@@ -2469,17 +2469,32 @@ function _startSystemUpdate(btn) {
     heading.className = 'confirm-modal-title';
     heading.textContent = window.translations?.system_update || 'System Update';
 
-    const logArea = document.createElement('pre');
-    logArea.className = 'system-update-log';
-    logArea.textContent = '';
+    const phaseBar = document.createElement('div');
+    phaseBar.className = 'system-update-phase';
+    phaseBar.textContent = window.translations?.fetching_package_list || 'Fetching package list...';
+
+    const progressBar = document.createElement('div');
+    progressBar.className = 'update-progress-bar-container';
+    progressBar.innerHTML = '<div class="update-progress-bar update-progress-bar-indeterminate"></div>';
 
     const statusBar = document.createElement('div');
     statusBar.className = 'system-update-status';
     statusBar.textContent = window.translations?.running || 'Running...';
 
-    const phaseBar = document.createElement('div');
-    phaseBar.className = 'system-update-phase';
-    phaseBar.textContent = 'Fetching package list…';
+    const detailsToggle = document.createElement('button');
+    detailsToggle.className = 'update-details-toggle';
+    detailsToggle.textContent = window.translations?.show_details || 'Show details';
+    detailsToggle.addEventListener('click', () => {
+        logArea.classList.toggle('update-log-visible');
+        logArea.classList.toggle('update-log-hidden');
+        detailsToggle.textContent = logArea.classList.contains('update-log-visible')
+            ? (window.translations?.hide_details || 'Hide details')
+            : (window.translations?.show_details || 'Show details');
+    });
+
+    const logArea = document.createElement('pre');
+    logArea.className = 'system-update-log update-log-hidden';
+    logArea.textContent = '';
 
     const closeBtn = document.createElement('button');
     closeBtn.className = 'confirm-modal-btn confirm';
@@ -2491,9 +2506,11 @@ function _startSystemUpdate(btn) {
     buttons.appendChild(closeBtn);
 
     dialog.appendChild(heading);
-    dialog.appendChild(logArea);
     dialog.appendChild(phaseBar);
+    dialog.appendChild(progressBar);
     dialog.appendChild(statusBar);
+    dialog.appendChild(detailsToggle);
+    dialog.appendChild(logArea);
     dialog.appendChild(buttons);
     overlay.appendChild(dialog);
     document.body.appendChild(overlay);
@@ -2516,15 +2533,23 @@ function _startSystemUpdate(btn) {
         return;
     }
 
+    function _stopAptProgressBar() {
+        const bar = progressBar.querySelector('.update-progress-bar');
+        if (bar) {
+            bar.classList.remove('update-progress-bar-indeterminate');
+            bar.classList.add('update-progress-bar-done');
+        }
+    }
+
     function onAptOutput(data) {
         logArea.textContent += data.line + '\n';
         logArea.scrollTop = logArea.scrollHeight;
-        // Update phase label based on current phase
         const phaseLabels = {
-            prepare:  'Remounting filesystem\u2026',
-            update:   'Fetching package list (apt update)\u2026 this may take a minute',
-            upgrade:  'Installing upgrades (apt upgrade)\u2026 this may take several minutes',
-            cleanup:  'Restoring read-only filesystem\u2026',
+            prepare:  window.translations?.remounting_filesystem || 'Remounting filesystem\u2026',
+            update:   window.translations?.fetching_package_list || 'Fetching package list (apt update)\u2026',
+            upgrade:  window.translations?.installing_upgrades || 'Installing upgrades (apt upgrade)\u2026',
+            deps:     window.translations?.installing_mempaper_deps || 'Installing mempaper dependencies\u2026',
+            cleanup:  window.translations?.restoring_readonly || 'Restoring read-only filesystem\u2026',
         };
         if (data.phase && phaseLabels[data.phase]) {
             phaseBar.textContent = phaseLabels[data.phase];
@@ -2534,6 +2559,7 @@ function _startSystemUpdate(btn) {
     function onAptDone(data) {
         socket.off('apt_output', onAptOutput);
         socket.off('apt_done', onAptDone);
+        _stopAptProgressBar();
         phaseBar.textContent = '';
         if (data.success) {
             statusBar.textContent = window.translations?.system_update_complete || 'System update complete!';
@@ -2541,6 +2567,9 @@ function _startSystemUpdate(btn) {
         } else {
             statusBar.textContent = (window.translations?.system_update_failed || 'Update failed') + ': ' + (data.error || '');
             statusBar.classList.add('system-update-error');
+            logArea.classList.remove('update-log-hidden');
+            logArea.classList.add('update-log-visible');
+            detailsToggle.textContent = window.translations?.hide_details || 'Hide details';
         }
         closeBtn.style.display = '';
         btn.disabled = false;
@@ -2555,7 +2584,11 @@ function _startSystemUpdate(btn) {
         .then(r => r.json())
         .then(data => {
             if (!data.success) {
+                _stopAptProgressBar();
                 logArea.textContent = data.message || 'Failed to start update';
+                logArea.classList.remove('update-log-hidden');
+                logArea.classList.add('update-log-visible');
+                detailsToggle.textContent = window.translations?.hide_details || 'Hide details';
                 statusBar.textContent = data.message || 'Failed';
                 statusBar.classList.add('system-update-error');
                 closeBtn.style.display = '';
@@ -2566,7 +2599,11 @@ function _startSystemUpdate(btn) {
             }
         })
         .catch(err => {
+            _stopAptProgressBar();
             logArea.textContent = 'Request failed: ' + err;
+            logArea.classList.remove('update-log-hidden');
+            logArea.classList.add('update-log-visible');
+            detailsToggle.textContent = window.translations?.hide_details || 'Hide details';
             statusBar.textContent = 'Request failed';
             statusBar.classList.add('system-update-error');
             closeBtn.style.display = '';
