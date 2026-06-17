@@ -487,14 +487,36 @@
 
 /* ── Disabled Section ───────────────────────────────────────── */
 .config-section.section-disabled {
+    pointer-events: none;
+}
+
+/* Dim all direct content children except the section title */
+.config-section.section-disabled > *:not(.section-title) {
     opacity: 0.45;
     pointer-events: none;
 }
 
-.config-section.section-disabled .section-toggle,
-.config-section.section-disabled .section-toggle-switch {
+/* Section title (incl. label text and toggle) stays fully visible and interactive */
+.config-section.section-disabled .section-title {
     pointer-events: all;
     opacity: 1;
+}
+
+/* Keep the toggle knob white so it looks clearly actionable */
+.config-section.section-disabled .section-toggle-switch::before {
+    background: #fff;
+}
+
+/* Light mode: mid-grey track so it reads as an off-toggle, not background */
+.config-section.section-disabled .section-toggle-switch {
+    background: #b8b8c8;
+    border-color: #a8a8b8;
+}
+
+/* Dark mode: lift the track to a visible grey */
+body.dark-mode .config-section.section-disabled .section-toggle-switch {
+    background: #4a4a5a;
+    border-color: #5a5a6a;
 }
 
 .config-section.section-disabled .form-group--always-visible {

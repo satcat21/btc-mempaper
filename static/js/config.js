@@ -84,8 +84,8 @@ function closeMemeModal() {
                     const prev = allPrev.find(p => (p.address || p.xpub) === addr);
                     const prevBal = prev ? (prev.balance_btc || 0) : -1;
 
-                    if (prevBal < 0 || isInit) {
-                        // Newly initialized
+                    if (prevBal < 0) {
+                        // Newly initialized — no previous balance known, wallet was unavailable
                         if (bal > 0) showLiveToast(window.translations?.toast_wallet_title || 'Wallet', `'${label}' initialized: ${bal.toFixed(8)} BTC`, 'color_wallets');
                     } else if (bal !== prevBal) {
                         showLiveToast(window.translations?.toast_wallet_title || 'Wallet', `'${label}' balance: ${prevBal.toFixed(8)} → ${bal.toFixed(8)} BTC`, 'color_wallets');
@@ -112,9 +112,9 @@ function closeMemeModal() {
                         diffDisplay.textContent = 'Offline';
                         diffDisplay.style.color = '#ff6b6b';
                     }
-                    // Toast for best diff changes
+                    // Toast for best diff changes — only when a real previous value exists
                     const label = minerData.label || ip;
-                    if (minerData.best_diff > 0 && minerData.best_diff !== minerData.prev_best_diff) {
+                    if (minerData.best_diff > 0 && minerData.prev_best_diff > 0 && minerData.best_diff !== minerData.prev_best_diff) {
                         showLiveToast(window.translations?.toast_bitaxe_title || 'Bitaxe', `New best diff for ${label}: ${formatBitaxeDifficulty(minerData.best_diff)}`, 'color_bitaxe_stats');
                     }
 

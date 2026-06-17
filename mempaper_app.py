@@ -5517,12 +5517,17 @@ class MempaperApp:
                     # Fetch fresh wallet balances in background and push when ready
                     def _bg_wallet_refresh_after_save():
                         try:
+                            # Snapshot current cache BEFORE fetching fresh data so the
+                            # frontend can compare and only toast on genuine changes.
+                            cached_before = self.image_renderer.wallet_api.get_cached_wallet_balances() or {}
                             fresh = self.image_renderer.wallet_api.fetch_wallet_balances(startup_mode=True)
                             if fresh and not fresh.get('error'):
                                 self.image_renderer.wallet_api.update_cache(fresh)
                                 if hasattr(self, 'socketio') and self.socketio:
                                     emit_data = dict(fresh)
                                     emit_data['after_config_save'] = True
+                                    emit_data['prev_addresses'] = cached_before.get('addresses', [])
+                                    emit_data['prev_xpubs'] = cached_before.get('xpubs', [])
                                     self.socketio.emit('wallet_balance_updated', emit_data, room='authenticated')
                         except Exception as e:
                             print(f"⚠️ Background wallet refresh after config save failed: {e}")
