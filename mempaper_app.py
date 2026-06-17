@@ -5596,11 +5596,28 @@ class MempaperApp:
                 
                 # Save file
                 file.save(upload_path)
-                
+
+                # Validate that PIL (or its ImageMagick fallback) can actually open the file.
+                # This catches missing codec support (e.g. WebP on Pi without libwebp-dev)
+                # before the broken file makes it into the meme pool.
+                try:
+                    self.image_renderer._open_image_robust(upload_path)
+                except Exception as img_err:
+                    os.remove(upload_path)
+                    hint = ''
+                    if file_ext == 'webp':
+                        hint = (' WebP requires libwebp support in Pillow. '
+                                'Run: sudo apt install libwebp-dev && '
+                                'pip install --no-binary :all: pillow')
+                    return jsonify({
+                        'success': False,
+                        'message': f'Image cannot be opened by the server: {img_err}.{hint}'
+                    }), 400
+
                 self.image_renderer.invalidate_meme_cache()
-                
+
                 return jsonify({
-                    'success': True, 
+                    'success': True,
                     'message': f'Meme uploaded successfully: {filename}',
                     'filename': filename
                 })
@@ -6347,8 +6364,11 @@ class MempaperApp:
 
         @self.app.route('/api/health', methods=['GET'])
         def health_check():
-            """Simple health check endpoint for update polling."""
-            return jsonify({'status': 'ok'})
+            """Health check endpoint for update polling."""
+            return jsonify({
+                'status': 'ok',
+                'started': self._startup_timestamp,
+            })
 
         @self.app.route('/api/update/current', methods=['GET'])
         @require_auth(self.auth_manager)
@@ -6414,91 +6434,169 @@ class MempaperApp:
         @require_auth(self.auth_manager)
         def install_update():
             """Install a specific release by checking out its git tag."""
+            if getattr(self, '_update_running', False):
+                return jsonify({'success': False, 'message': 'Update already in progress'}), 409
+
+            data = request.json or {}
+            tag = data.get('tag', '').strip()
+            if not tag:
+                return jsonify({'success': False, 'message': 'No tag specified'}), 400
+
+            project_dir = os.path.dirname(os.path.abspath(__file__))
+
+            # Verify the tag exists before starting background work
             try:
-                data = request.json or {}
-                tag = data.get('tag', '').strip()
-                if not tag:
-                    return jsonify({'success': False, 'message': 'No tag specified'}), 400
-
-                project_dir = os.path.dirname(os.path.abspath(__file__))
-
-                # Save rollback point
-                rollback_commit = subprocess.check_output(
-                    ['git', 'rev-parse', 'HEAD'],
-                    cwd=project_dir, stderr=subprocess.DEVNULL
-                ).decode().strip()
-
-                try:
-                    rollback_tag = subprocess.check_output(
-                        ['git', 'describe', '--tags', '--exact-match', 'HEAD'],
-                        cwd=project_dir, stderr=subprocess.DEVNULL
-                    ).decode().strip()
-                except subprocess.CalledProcessError:
-                    rollback_tag = None
-
-                # Fetch latest tags and commits
                 subprocess.check_call(
                     ['git', 'fetch', '--tags', '--force'],
                     cwd=project_dir, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL
                 )
+                subprocess.check_call(
+                    ['git', 'rev-parse', f'refs/tags/{tag}'],
+                    cwd=project_dir, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL
+                )
+            except subprocess.CalledProcessError:
+                return jsonify({'success': False, 'message': f'Tag {tag} not found'}), 404
 
-                # Verify the tag exists
+            def _emit(event, data):
+                if self.socketio:
+                    self.socketio.emit(event, data, room='authenticated')
+
+            def _run_update():
+                self._update_running = True
                 try:
+                    # Save rollback point
+                    rollback_commit = subprocess.check_output(
+                        ['git', 'rev-parse', 'HEAD'],
+                        cwd=project_dir, stderr=subprocess.DEVNULL
+                    ).decode().strip()
+
+                    try:
+                        rollback_tag = subprocess.check_output(
+                            ['git', 'describe', '--tags', '--exact-match', 'HEAD'],
+                            cwd=project_dir, stderr=subprocess.DEVNULL
+                        ).decode().strip()
+                    except subprocess.CalledProcessError:
+                        rollback_tag = None
+
+                    # Check if dependency files changed between current and target
+                    deps_changed = False
+                    apt_deps_changed = False
+                    pillow_changed = False
+                    try:
+                        diff_result = subprocess.run(
+                            ['git', 'diff', '--name-only', 'HEAD', f'refs/tags/{tag}', '--',
+                             'requirements.txt', 'apt-requirements.txt'],
+                            cwd=project_dir, capture_output=True, text=True
+                        )
+                        changed_files = diff_result.stdout.strip()
+                        deps_changed = 'requirements.txt' in changed_files
+                        apt_deps_changed = 'apt-requirements.txt' in changed_files
+                        if deps_changed:
+                            diff_content = subprocess.run(
+                                ['git', 'diff', 'HEAD', f'refs/tags/{tag}', '--', 'requirements.txt'],
+                                cwd=project_dir, capture_output=True, text=True
+                            )
+                            import re
+                            pillow_changed = bool(re.search(r'^\+.*pillow==', diff_content.stdout, re.IGNORECASE | re.MULTILINE))
+                    except Exception:
+                        deps_changed = True
+                        apt_deps_changed = True
+
+                    # Git checkout
+                    _emit('update_output', {'line': f'Checking out {tag}...', 'phase': 'git'})
                     subprocess.check_call(
-                        ['git', 'rev-parse', f'refs/tags/{tag}'],
+                        ['git', 'reset', '--hard'],
                         cwd=project_dir, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL
                     )
-                except subprocess.CalledProcessError:
-                    return jsonify({'success': False, 'message': f'Tag {tag} not found'}), 404
-
-                # Check if requirements.txt changed between current and target
-                deps_changed = False
-                try:
-                    diff_result = subprocess.run(
-                        ['git', 'diff', '--name-only', 'HEAD', f'refs/tags/{tag}', '--', 'requirements.txt'],
-                        cwd=project_dir, capture_output=True, text=True
+                    subprocess.check_call(
+                        ['git', 'checkout', f'refs/tags/{tag}'],
+                        cwd=project_dir, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL
                     )
-                    deps_changed = bool(diff_result.stdout.strip())
-                except Exception:
-                    deps_changed = True  # Assume changed if we can't check
+                    _emit('update_output', {'line': f'Checked out {tag}', 'phase': 'git'})
 
-                # Reset any local changes before checkout
-                subprocess.check_call(
-                    ['git', 'reset', '--hard'],
-                    cwd=project_dir, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL
-                )
+                    # Install apt dependencies if changed
+                    apt_req_file = os.path.join(project_dir, 'apt-requirements.txt')
+                    if apt_deps_changed and os.path.exists(apt_req_file):
+                        _emit('update_output', {'line': 'Installing system dependencies...', 'phase': 'apt'})
+                        try:
+                            with open(apt_req_file) as f:
+                                apt_pkgs = [
+                                    line.strip() for line in f
+                                    if line.strip() and not line.strip().startswith('#')
+                                ]
+                            if apt_pkgs:
+                                proc = subprocess.Popen(
+                                    ['sudo', 'apt-get', 'install', '-y', '--no-upgrade'] + apt_pkgs,
+                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                    text=True, bufsize=1
+                                )
+                                for line in proc.stdout:
+                                    _emit('update_output', {'line': line.rstrip('\n'), 'phase': 'apt'})
+                                proc.wait()
+                                if proc.returncode != 0:
+                                    _emit('update_output', {'line': 'Warning: some system dependencies failed to install', 'phase': 'apt'})
+                                else:
+                                    _emit('update_output', {'line': 'System dependencies installed', 'phase': 'apt'})
+                        except Exception as apt_err:
+                            _emit('update_output', {'line': f'Warning: {apt_err}', 'phase': 'apt'})
 
-                # Checkout the tag (detached HEAD)
-                subprocess.check_call(
-                    ['git', 'checkout', f'refs/tags/{tag}'],
-                    cwd=project_dir, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL
-                )
+                    # Install pip dependencies
+                    venv_pip = os.path.join(project_dir, '.venv', 'bin', 'pip')
+                    requirements_file = os.path.join(project_dir, 'requirements.txt')
 
-                # Install dependencies inside the venv
-                venv_pip = os.path.join(project_dir, '.venv', 'bin', 'pip')
-                requirements_file = os.path.join(project_dir, 'requirements.txt')
+                    if os.path.exists(venv_pip) and os.path.exists(requirements_file):
+                        _emit('update_output', {'line': 'Installing Python dependencies...', 'phase': 'pip'})
+                        try:
+                            proc = subprocess.Popen(
+                                [venv_pip, 'install', '-r', requirements_file],
+                                cwd=project_dir, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                text=True, bufsize=1
+                            )
+                            for line in proc.stdout:
+                                _emit('update_output', {'line': line.rstrip('\n'), 'phase': 'pip'})
+                            proc.wait()
+                            if proc.returncode != 0:
+                                # Rollback on pip failure
+                                _emit('update_output', {'line': 'pip install failed, rolling back...', 'phase': 'pip'})
+                                subprocess.check_call(
+                                    ['git', 'checkout', rollback_commit],
+                                    cwd=project_dir, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL
+                                )
+                                _emit('update_done', {
+                                    'success': False,
+                                    'error': 'Dependency installation failed. Rolled back to previous version.'
+                                })
+                                return
+                            _emit('update_output', {'line': 'Python dependencies installed', 'phase': 'pip'})
+                        except subprocess.TimeoutExpired:
+                            subprocess.check_call(
+                                ['git', 'checkout', rollback_commit],
+                                cwd=project_dir, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL
+                            )
+                            _emit('update_done', {
+                                'success': False,
+                                'error': 'pip install timed out. Rolled back to previous version.'
+                            })
+                            return
 
-                if os.path.exists(venv_pip) and os.path.exists(requirements_file):
-                    try:
-                        subprocess.check_call(
-                            [venv_pip, 'install', '-r', requirements_file, '--quiet'],
-                            cwd=project_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                            timeout=120
-                        )
-                    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as pip_err:
-                        # Rollback on pip failure
-                        print(f"pip install failed, rolling back: {pip_err}")
-                        subprocess.check_call(
-                            ['git', 'checkout', rollback_commit],
-                            cwd=project_dir, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL
-                        )
-                        return jsonify({
-                            'success': False,
-                            'message': f'Dependency installation failed: {pip_err}. Rolled back to previous version.'
-                        }), 500
+                    # Write flag file if Pillow version changed
+                    if pillow_changed:
+                        try:
+                            flag_path = os.path.join(project_dir, '.pillow-rebuild-needed')
+                            with open(flag_path, 'w') as f:
+                                f.write('1')
+                            _emit('update_output', {'line': 'Pillow will be rebuilt from source after restart', 'phase': 'pip'})
+                        except Exception:
+                            pass
 
-                # Schedule service restart after response is sent
-                def _delayed_restart():
+                    # Done — notify frontend, then restart
+                    _emit('update_done', {
+                        'success': True,
+                        'tag': tag,
+                        'rollback_tag': rollback_tag,
+                        'rollback_commit': rollback_commit
+                    })
+
                     time.sleep(2)
                     try:
                         subprocess.run(
@@ -6508,25 +6606,15 @@ class MempaperApp:
                     except Exception as restart_err:
                         print(f"Service restart failed: {restart_err}")
 
-                threading.Thread(target=_delayed_restart, daemon=True).start()
+                except Exception as e:
+                    print(f"Update error: {e}")
+                    traceback.print_exc()
+                    _emit('update_done', {'success': False, 'error': str(e)})
+                finally:
+                    self._update_running = False
 
-                return jsonify({
-                    'success': True,
-                    'message': f'Updated to {tag}. Service restarting...',
-                    'tag': tag,
-                    'deps_changed': deps_changed,
-                    'rollback_commit': rollback_commit,
-                    'rollback_tag': rollback_tag
-                })
-
-            except subprocess.CalledProcessError as e:
-                print(f"Update failed: {e}")
-                traceback.print_exc()
-                return jsonify({'success': False, 'message': f'Git operation failed: {e}'}), 500
-            except Exception as e:
-                print(f"Update error: {e}")
-                traceback.print_exc()
-                return jsonify({'success': False, 'message': str(e)}), 500
+            threading.Thread(target=_run_update, daemon=True).start()
+            return jsonify({'success': True, 'message': 'Update started'})
 
         # ── Display Driver Install Endpoint ──────────────────────
 
@@ -6599,6 +6687,109 @@ class MempaperApp:
                 print(f"Driver install error: {e}")
                 traceback.print_exc()
                 return jsonify({'success': False, 'message': str(e)}), 500
+
+        # ── System Package Update Endpoint ────────────────────────
+
+        @self.app.route('/api/system/update-packages', methods=['POST'])
+        @require_auth(self.auth_manager)
+        def update_system_packages():
+            """Run apt update && apt upgrade -y in background, streaming output via SocketIO."""
+            if getattr(self, '_apt_running', False):
+                return jsonify({'success': False, 'message': 'System update already in progress'}), 409
+
+            def _is_root_readonly():
+                """Check if / is mounted read-only."""
+                try:
+                    with open('/proc/mounts') as f:
+                        for line in f:
+                            parts = line.split()
+                            if len(parts) >= 4 and parts[1] == '/':
+                                return 'ro' in parts[3].split(',')
+                except Exception:
+                    pass
+                return False
+
+            def _emit(event, data):
+                if self.socketio:
+                    self.socketio.emit(event, data, room='authenticated')
+
+            def _run_apt():
+                self._apt_running = True
+                was_readonly = False
+                try:
+                    # Check if root filesystem is read-only and remount rw if needed
+                    if _is_root_readonly():
+                        was_readonly = True
+                        _emit('apt_output', {'line': '--- remounting filesystem read-write ---', 'phase': 'prepare'})
+                        rc = subprocess.call(['sudo', 'mount', '-o', 'remount,rw', '/'])
+                        if rc != 0:
+                            _emit('apt_done', {
+                                'success': False,
+                                'error': 'Failed to remount filesystem read-write'
+                            })
+                            return
+
+                    for phase, cmd in [
+                        ('update', ['sudo', 'apt-get', 'update']),
+                        ('upgrade', ['sudo', 'apt-get', 'upgrade', '-y']),
+                    ]:
+                        _emit('apt_output', {'line': f'--- apt {phase} ---', 'phase': phase})
+
+                        proc = subprocess.Popen(
+                            cmd,
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT,
+                            text=True,
+                            bufsize=1
+                        )
+                        for line in proc.stdout:
+                            _emit('apt_output', {'line': line.rstrip('\n'), 'phase': phase})
+
+                        proc.wait()
+                        if proc.returncode != 0:
+                            _emit('apt_done', {
+                                'success': False,
+                                'error': f'apt {phase} failed (exit code {proc.returncode})'
+                            })
+                            return
+
+                    # Ensure all packages from apt-requirements.txt are installed
+                    project_dir = os.path.dirname(os.path.abspath(__file__))
+                    apt_req_file = os.path.join(project_dir, 'apt-requirements.txt')
+                    if os.path.exists(apt_req_file):
+                        with open(apt_req_file) as f:
+                            apt_pkgs = [
+                                line.strip() for line in f
+                                if line.strip() and not line.strip().startswith('#')
+                            ]
+                        if apt_pkgs:
+                            _emit('apt_output', {'line': '--- installing mempaper dependencies ---', 'phase': 'deps'})
+                            proc = subprocess.Popen(
+                                ['sudo', 'apt-get', 'install', '-y', '--no-upgrade'] + apt_pkgs,
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT,
+                                text=True,
+                                bufsize=1
+                            )
+                            for line in proc.stdout:
+                                _emit('apt_output', {'line': line.rstrip('\n'), 'phase': 'deps'})
+                            proc.wait()
+                            if proc.returncode != 0:
+                                _emit('apt_output', {'line': f'Warning: some mempaper dependencies failed to install', 'phase': 'deps'})
+
+                    _emit('apt_done', {'success': True})
+                except Exception as e:
+                    print(f"System update error: {e}")
+                    _emit('apt_done', {'success': False, 'error': str(e)})
+                finally:
+                    # Restore read-only if it was read-only before
+                    if was_readonly:
+                        _emit('apt_output', {'line': '--- restoring read-only filesystem ---', 'phase': 'cleanup'})
+                        subprocess.call(['sudo', 'mount', '-o', 'remount,ro', '/'])
+                    self._apt_running = False
+
+            threading.Thread(target=_run_apt, daemon=True).start()
+            return jsonify({'success': True, 'message': 'System update started'})
 
         # WebSocket event handlers (only if SocketIO is enabled)
         if self.socketio:
@@ -6717,6 +6908,42 @@ class MempaperApp:
             else:
                 print("⚙️ WebSocket listener skipped (WebSocket disabled)")
     
+    def _start_pillow_rebuild_if_needed(self):
+        """Rebuild Pillow from source in the background if a previous update changed its version."""
+        project_dir = os.path.dirname(os.path.abspath(__file__))
+        flag_path = os.path.join(project_dir, '.pillow-rebuild-needed')
+        if not os.path.exists(flag_path):
+            return
+
+        venv_pip = os.path.join(project_dir, '.venv', 'bin', 'pip')
+        if not os.path.exists(venv_pip):
+            return
+
+        def _rebuild():
+            try:
+                print("📦 Rebuilding Pillow from source for native WebP support (this may take ~15 min on Pi Zero)...")
+                subprocess.check_call(
+                    [venv_pip, 'install', '--force-reinstall', '--no-cache-dir', '--no-binary', ':all:', 'Pillow'],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                    timeout=3600
+                )
+                os.remove(flag_path)
+                print("✅ Pillow rebuilt from source. Restarting service to activate...")
+                subprocess.run(
+                    ['sudo', 'systemctl', 'restart', 'mempaper.service'],
+                    timeout=30
+                )
+            except subprocess.TimeoutExpired:
+                print("⚠️ Pillow source build timed out. Will retry on next restart.")
+            except Exception as e:
+                print(f"⚠️ Pillow source rebuild failed: {e}. ImageMagick fallback remains active.")
+                try:
+                    os.remove(flag_path)
+                except OSError:
+                    pass
+
+        threading.Thread(target=_rebuild, daemon=True).start()
+
     def run(self, host='0.0.0.0', port=5000, debug=False):
         """
         Run the Flask application.
@@ -6727,7 +6954,10 @@ class MempaperApp:
             debug (bool): Enable debug mode
         """
         print(f"🚀 Starting Mempaper server on {host}:{port}")
-        
+
+        # Background Pillow source rebuild if flagged by a previous update
+        self._start_pillow_rebuild_if_needed()
+
         # Run Flask app
         if self.socketio:
             self.socketio.run(self.app, host=host, port=port, debug=debug, allow_unsafe_werkzeug=True)

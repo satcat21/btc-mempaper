@@ -29,6 +29,9 @@ config.json.backup
 config/.secret_key
 config/.config_key
 
+# Build flags
+.pillow-rebuild-needed
+
 # Runtime/cache artifacts
 cache/
 cache.json

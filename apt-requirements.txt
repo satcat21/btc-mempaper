@@ -1,0 +1,26 @@
+# System dependencies for Mempaper Bitcoin Dashboard
+# Parsed by the web updater to ensure required apt packages are installed.
+
+# Build tools and Python development
+libffi-dev
+build-essential
+python3-pip
+python3-dev
+
+# Python imaging libraries (system-level)
+python3-pil
+python3-numpy
+
+# Image codec development libraries (needed for Pillow source builds)
+libopenjp2-7
+pkg-config
+libjpeg-dev
+zlib1g-dev
+libfreetype-dev
+libwebp-dev
+
+# ImageMagick (fallback for WebP/AVIF when Pillow lacks native codec support)
+imagemagick
+
+# GPIO (Raspberry Pi)
+python3-gpiozero

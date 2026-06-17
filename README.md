@@ -267,7 +267,7 @@ These components are the same regardless of which display you choose:
 ```bash
 # Install system dependencies
 sudo apt update && sudo apt upgrade -y
-sudo apt install -y libffi-dev build-essential python3-pip python3-pil python3-dev python3-numpy python3-gpiozero libopenjp2-7 pkg-config libjpeg-dev zlib1g-dev libfreetype-dev libwebp-dev
+sudo apt install -y $(grep -v '^\s*#' apt-requirements.txt | grep -v '^\s*$')  # Install system dependencies from apt-requirements.txt
 
 # Clone and install
 git clone https://github.com/satcat21/btc-mempaper.git
@@ -276,6 +276,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install spidev gpiozero lgpio
 pip install -r requirements.txt
+pip install --force-reinstall --no-cache-dir --no-binary :all: Pillow  # Rebuild from source for native WebP support (slow on Pi Zero, but one-time only)
 ```
 
 **PC / Windows**

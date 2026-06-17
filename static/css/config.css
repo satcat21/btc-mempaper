@@ -1682,6 +1682,120 @@ body.dark-mode .upload-icon {
     font-size: 0.8rem;
 }
 
+/* ── System Package Update ─────────────────────────────────── */
+
+.system-update-hint {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    flex: 1;
+    min-width: 0;
+}
+
+.system-update-dialog {
+    max-width: 600px;
+    width: 90vw;
+    text-align: left;
+}
+
+.system-update-log {
+    background: #0d0d0d;
+    color: #c8c8c8;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    padding: 12px;
+    border-radius: var(--radius-sm);
+    max-height: 50vh;
+    min-height: 200px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+    margin: 12px 0;
+}
+
+.system-update-status {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    padding: 6px 0;
+}
+
+.system-update-phase {
+    font-size: 0.8rem;
+    color: var(--accent);
+    padding: 4px 0 2px;
+    min-height: 1.4em;
+    animation: system-update-pulse 1.8s ease-in-out infinite;
+}
+
+.system-update-phase:empty {
+    animation: none;
+}
+
+@keyframes system-update-pulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.45; }
+}
+
+.system-update-status.system-update-success {
+    color: var(--accent);
+}
+
+.system-update-status.system-update-error {
+    color: var(--danger, #e74c3c);
+}
+
+/* Log area toggle (hidden by default for release updates) */
+.system-update-log.update-log-hidden {
+    display: none;
+}
+.system-update-log.update-log-visible {
+    display: block;
+}
+
+.update-details-toggle {
+    background: none;
+    border: 1px solid var(--border-color, #333);
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    padding: 4px 10px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    margin: 4px 0 0;
+    transition: color 0.2s, border-color 0.2s;
+}
+.update-details-toggle:hover {
+    color: var(--text-primary);
+    border-color: var(--text-secondary);
+}
+
+/* Indeterminate progress bar */
+.update-progress-bar-container {
+    width: 100%;
+    height: 3px;
+    background: var(--border-color, #333);
+    border-radius: 2px;
+    overflow: hidden;
+    margin: 8px 0;
+}
+.update-progress-bar {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 2px;
+    transition: width 0.3s;
+}
+.update-progress-bar-indeterminate {
+    width: 30%;
+    animation: update-progress-slide 1.5s ease-in-out infinite;
+}
+@keyframes update-progress-slide {
+    0%   { margin-left: -30%; }
+    100% { margin-left: 100%; }
+}
+.update-progress-bar-done {
+    width: 100%;
+    animation: none;
+}
+
 /* ── Update Countdown Toast ────────────────────────────────── */
 .update-countdown-toast {
     position: fixed;

@@ -2035,6 +2035,130 @@ async function _performUpdate(tag, updateBtn) {
     updateBtn.disabled = true;
     updateBtn.textContent = window.translations?.updating || 'Updating...';
 
+    const socket = window.configSocket;
+    if (!socket) {
+        showNotification('Error: no socket connection', 'error', 8000);
+        updateBtn.disabled = false;
+        updateBtn.textContent = window.translations?.update_now || 'Update';
+        return;
+    }
+
+    // Capture current process startup timestamp before triggering update
+    let oldStarted = 0;
+    try {
+        const hResp = await fetch('/api/health', { cache: 'no-store' });
+        if (hResp.ok) {
+            const hData = await hResp.json();
+            oldStarted = hData.started || 0;
+        }
+    } catch (_) {}
+
+    // Show update progress modal
+    const overlay = document.createElement('div');
+    overlay.className = 'confirm-modal-overlay';
+
+    const dialog = document.createElement('div');
+    dialog.className = 'confirm-modal-dialog system-update-dialog';
+
+    const heading = document.createElement('h3');
+    heading.className = 'confirm-modal-title';
+    heading.textContent = (window.translations?.updating_to || 'Updating to') + ' ' + tag;
+
+    const phaseBar = document.createElement('div');
+    phaseBar.className = 'system-update-phase';
+    phaseBar.textContent = window.translations?.starting_update || 'Starting update...';
+
+    const progressBar = document.createElement('div');
+    progressBar.className = 'update-progress-bar-container';
+    progressBar.innerHTML = '<div class="update-progress-bar update-progress-bar-indeterminate"></div>';
+
+    const statusBar = document.createElement('div');
+    statusBar.className = 'system-update-status';
+    statusBar.textContent = window.translations?.running || 'Running...';
+
+    const detailsToggle = document.createElement('button');
+    detailsToggle.className = 'update-details-toggle';
+    detailsToggle.textContent = window.translations?.show_details || 'Show details';
+    detailsToggle.addEventListener('click', () => {
+        const isHidden = logArea.classList.toggle('update-log-visible');
+        detailsToggle.textContent = logArea.classList.contains('update-log-visible')
+            ? (window.translations?.hide_details || 'Hide details')
+            : (window.translations?.show_details || 'Show details');
+    });
+
+    const logArea = document.createElement('pre');
+    logArea.className = 'system-update-log update-log-hidden';
+    logArea.textContent = '';
+
+    dialog.appendChild(heading);
+    dialog.appendChild(phaseBar);
+    dialog.appendChild(progressBar);
+    dialog.appendChild(statusBar);
+    dialog.appendChild(detailsToggle);
+    dialog.appendChild(logArea);
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+    requestAnimationFrame(() => overlay.classList.add('visible'));
+
+    const phaseLabels = {
+        git: window.translations?.checking_out_code || 'Checking out code...',
+        apt: window.translations?.installing_system_deps || 'Installing system dependencies...',
+        pip: window.translations?.installing_python_deps || 'Installing Python dependencies...',
+    };
+
+    function onUpdateOutput(data) {
+        logArea.textContent += data.line + '\n';
+        logArea.scrollTop = logArea.scrollHeight;
+        if (data.phase && phaseLabels[data.phase]) {
+            phaseBar.textContent = phaseLabels[data.phase];
+        }
+    }
+
+    function _stopProgressBar() {
+        const bar = progressBar.querySelector('.update-progress-bar');
+        if (bar) {
+            bar.classList.remove('update-progress-bar-indeterminate');
+            bar.classList.add('update-progress-bar-done');
+        }
+    }
+
+    function onUpdateDone(data) {
+        socket.off('update_output', onUpdateOutput);
+        socket.off('update_done', onUpdateDone);
+        _stopProgressBar();
+
+        if (data.success) {
+            phaseBar.textContent = '';
+            statusBar.textContent = (window.translations?.service_restarting || 'Service restarting') + '...';
+            logArea.textContent += '\n' + (window.translations?.update_complete_restarting || 'Update complete. Restarting service...') + '\n';
+            _startHealthPolling(overlay, dialog, statusBar, tag, data.rollback_tag, data.rollback_commit, oldStarted, updateBtn);
+        } else {
+            phaseBar.textContent = '';
+            statusBar.textContent = (window.translations?.update_failed || 'Update failed') + ': ' + (data.error || '');
+            statusBar.classList.add('system-update-error');
+            logArea.classList.remove('update-log-hidden');
+            logArea.classList.add('update-log-visible');
+            detailsToggle.textContent = window.translations?.hide_details || 'Hide details';
+            const closeBtn = document.createElement('button');
+            closeBtn.className = 'confirm-modal-btn confirm';
+            closeBtn.textContent = window.translations?.close || 'Close';
+            closeBtn.addEventListener('click', () => {
+                overlay.classList.remove('visible');
+                overlay.addEventListener('transitionend', () => overlay.remove(), { once: true });
+                setTimeout(() => { if (overlay.parentNode) overlay.remove(); }, 350);
+            });
+            const buttons = document.createElement('div');
+            buttons.className = 'confirm-modal-buttons';
+            buttons.appendChild(closeBtn);
+            dialog.appendChild(buttons);
+            updateBtn.disabled = false;
+            updateBtn.textContent = window.translations?.update_now || 'Update';
+        }
+    }
+
+    socket.on('update_output', onUpdateOutput);
+    socket.on('update_done', onUpdateDone);
+
     try {
         const resp = await fetch('/api/update/install', {
             method: 'POST',
@@ -2045,84 +2169,82 @@ async function _performUpdate(tag, updateBtn) {
         const data = await resp.json();
 
         if (!data.success) {
-            showNotification(data.message || 'Update failed', 'error', 8000);
+            socket.off('update_output', onUpdateOutput);
+            socket.off('update_done', onUpdateDone);
+            _stopProgressBar();
+            logArea.textContent = data.message || 'Failed to start update';
+            logArea.classList.remove('update-log-hidden');
+            logArea.classList.add('update-log-visible');
+            detailsToggle.textContent = window.translations?.hide_details || 'Hide details';
+            statusBar.textContent = data.message || 'Failed';
+            statusBar.classList.add('system-update-error');
+            const closeBtn = document.createElement('button');
+            closeBtn.className = 'confirm-modal-btn confirm';
+            closeBtn.textContent = window.translations?.close || 'Close';
+            closeBtn.addEventListener('click', () => {
+                overlay.classList.remove('visible');
+                overlay.addEventListener('transitionend', () => overlay.remove(), { once: true });
+                setTimeout(() => { if (overlay.parentNode) overlay.remove(); }, 350);
+            });
+            const buttons = document.createElement('div');
+            buttons.className = 'confirm-modal-buttons';
+            buttons.appendChild(closeBtn);
+            dialog.appendChild(buttons);
             updateBtn.disabled = false;
             updateBtn.textContent = window.translations?.update_now || 'Update';
-            return;
         }
-
-        // Update succeeded — show restart countdown toast
-        const countdownSeconds = data.deps_changed ? 30 : 15;
-        _showUpdateCountdownToast(tag, countdownSeconds, data.rollback_tag, data.rollback_commit);
-
     } catch (err) {
         console.error('Update request failed:', err);
-        showNotification('Update request failed. Check your connection.', 'error', 8000);
+        socket.off('update_output', onUpdateOutput);
+        socket.off('update_done', onUpdateDone);
+        _stopProgressBar();
+        logArea.textContent = 'Request failed: ' + err;
+        logArea.classList.remove('update-log-hidden');
+        logArea.classList.add('update-log-visible');
+        detailsToggle.textContent = window.translations?.hide_details || 'Hide details';
+        statusBar.textContent = 'Request failed';
+        statusBar.classList.add('system-update-error');
+        const closeBtn = document.createElement('button');
+        closeBtn.className = 'confirm-modal-btn confirm';
+        closeBtn.textContent = window.translations?.close || 'Close';
+        closeBtn.addEventListener('click', () => {
+            overlay.classList.remove('visible');
+            overlay.addEventListener('transitionend', () => overlay.remove(), { once: true });
+            setTimeout(() => { if (overlay.parentNode) overlay.remove(); }, 350);
+        });
+        const buttons = document.createElement('div');
+        buttons.className = 'confirm-modal-buttons';
+        buttons.appendChild(closeBtn);
+        dialog.appendChild(buttons);
         updateBtn.disabled = false;
         updateBtn.textContent = window.translations?.update_now || 'Update';
     }
 }
 
-function _showUpdateCountdownToast(tag, totalSeconds, rollbackTag, rollbackCommit) {
-    // Remove any existing update toast
-    const existing = document.getElementById('update-countdown-toast');
-    if (existing) existing.remove();
-
-    const toast = document.createElement('div');
-    toast.id = 'update-countdown-toast';
-    toast.className = 'update-countdown-toast';
-
-    let remaining = totalSeconds;
-
-    function render() {
-        const pct = ((totalSeconds - remaining) / totalSeconds) * 100;
-        toast.innerHTML = `
-            <div class="update-toast-title">${window.translations?.updating_to || 'Updating to'} ${tag}</div>
-            <div class="update-toast-status" id="update-toast-status">${window.translations?.service_restarting || 'Service restarting'}... ${remaining}s</div>
-            <div class="update-toast-progress">
-                <div class="update-toast-progress-bar" style="width:${pct}%"></div>
-            </div>
-            <div class="update-toast-hint">${window.translations?.page_will_refresh || 'Page will refresh automatically'}</div>
-        `;
-    }
-
-    render();
-    document.body.appendChild(toast);
-
-    const countdownInterval = setInterval(() => {
-        remaining--;
-        if (remaining <= 0) {
-            clearInterval(countdownInterval);
-            _startHealthPolling(toast, tag, rollbackTag, rollbackCommit);
-        } else {
-            render();
-        }
-    }, 1000);
-}
-
-function _startHealthPolling(toast, tag, rollbackTag, rollbackCommit) {
-    const statusEl = toast.querySelector('#update-toast-status');
-    if (statusEl) {
-        statusEl.textContent = window.translations?.waiting_for_service || 'Waiting for service...';
-    }
-    // Keep progress bar at 100%
-    const bar = toast.querySelector('.update-toast-progress-bar');
-    if (bar) bar.style.width = '100%';
+function _startHealthPolling(overlay, dialog, statusBar, tag, rollbackTag, rollbackCommit, oldStarted, updateBtn) {
+    statusBar.textContent = window.translations?.waiting_for_service || 'Waiting for service...';
 
     let attempts = 0;
-    const maxAttempts = 30; // 60 seconds total (2s intervals)
+    const maxAttempts = 60; // 120 seconds total (2s intervals)
 
     const pollInterval = setInterval(async () => {
         attempts++;
         try {
+            const hResp = await fetch('/api/health', { cache: 'no-store' });
+            if (!hResp.ok) return;
+            const hData = await hResp.json();
+
+            // Ensure this is a NEW process (different startup timestamp)
+            if (oldStarted && hData.started && hData.started <= oldStarted) return;
+
+            // Verify the new version is active
             const vResp = await fetch('/api/update/current', { cache: 'no-store' });
             if (vResp.ok) {
                 const data = await vResp.json();
-                // Check if the service is now running the target version
                 if (data.current_tag === tag) {
                     clearInterval(pollInterval);
-                    if (statusEl) statusEl.textContent = window.translations?.update_complete || 'Update complete!';
-                    toast.classList.add('update-toast-success');
+                    statusBar.textContent = window.translations?.update_complete || 'Update complete!';
+                    statusBar.classList.add('system-update-success');
                     setTimeout(() => location.reload(), 1500);
                     return;
                 }
@@ -2133,34 +2255,45 @@ function _startHealthPolling(toast, tag, rollbackTag, rollbackCommit) {
 
         if (attempts >= maxAttempts) {
             clearInterval(pollInterval);
-            _showUpdateFailure(toast, rollbackTag, rollbackCommit);
+            _showUpdateFailure(overlay, dialog, statusBar, rollbackTag, rollbackCommit, updateBtn);
         }
     }, 2000);
 }
 
-function _showUpdateFailure(toast, rollbackTag, rollbackCommit) {
+function _showUpdateFailure(overlay, dialog, statusBar, rollbackTag, rollbackCommit, updateBtn) {
     const rollbackRef = rollbackTag || rollbackCommit || 'previous commit';
-    toast.classList.add('update-toast-error');
-    toast.innerHTML = `
-        <div class="update-toast-title">${window.translations?.update_may_have_failed || 'Service did not respond'}</div>
-        <div class="update-toast-ssh-fallback">
-            <p>${window.translations?.connect_via_ssh || 'Connect via SSH to check'}:</p>
-            <code>ssh pi@mempaper.local</code><br>
-            <code>sudo systemctl status mempaper</code><br>
-            <code>sudo journalctl -u mempaper -n 50</code>
-            <p style="margin-top:8px">${window.translations?.to_rollback || 'To rollback'}:</p>
-            <code>cd ~/btc-mempaper</code><br>
-            <code>git checkout ${rollbackRef}</code><br>
-            <code>sudo systemctl restart mempaper</code>
-        </div>
-        <button class="update-toast-dismiss" onclick="this.closest('.update-countdown-toast').remove()">
-            ${window.translations?.dismiss || 'Dismiss'}
-        </button>
-    `;
+    statusBar.textContent = window.translations?.update_may_have_failed || 'Service did not respond';
+    statusBar.classList.add('system-update-error');
 
-    // Also show the SSH info section in the config form
-    const sshInfo = document.getElementById('update-ssh-info');
-    if (sshInfo) sshInfo.style.display = '';
+    const sshInfo = document.createElement('div');
+    sshInfo.className = 'system-update-ssh-fallback';
+    sshInfo.innerHTML = `
+        <p>${window.translations?.connect_via_ssh || 'Connect via SSH to check'}:</p>
+        <code>ssh pi@mempaper.local</code><br>
+        <code>sudo systemctl status mempaper</code><br>
+        <code>sudo journalctl -u mempaper -n 50</code>
+        <p style="margin-top:8px">${window.translations?.to_rollback || 'To rollback'}:</p>
+        <code>cd ~/btc-mempaper</code><br>
+        <code>git checkout ${rollbackRef}</code><br>
+        <code>sudo systemctl restart mempaper</code>
+    `;
+    dialog.appendChild(sshInfo);
+
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'confirm-modal-btn confirm';
+    closeBtn.textContent = window.translations?.close || 'Close';
+    closeBtn.addEventListener('click', () => {
+        overlay.classList.remove('visible');
+        overlay.addEventListener('transitionend', () => overlay.remove(), { once: true });
+        setTimeout(() => { if (overlay.parentNode) overlay.remove(); }, 350);
+    });
+    const buttons = document.createElement('div');
+    buttons.className = 'confirm-modal-buttons';
+    buttons.appendChild(closeBtn);
+    dialog.appendChild(buttons);
+
+    updateBtn.disabled = false;
+    updateBtn.textContent = window.translations?.update_now || 'Update';
 }
 
 // ── Display Driver Install ──────────────────────────────────
@@ -2207,7 +2340,7 @@ async function _installDisplayDrivers(deviceId) {
                 if (statusEl) statusEl.textContent = window.translations?.drivers_installed_restarting || 'Drivers installed! Service restarting...';
                 toast.classList.add('update-toast-success');
                 // Poll for service to come back, then reload
-                _startHealthPolling(toast, deviceId, null, null);
+                _startDriverHealthPolling(toast);
             } else {
                 if (statusEl) statusEl.textContent = data.message;
                 toast.classList.add('update-toast-success');
@@ -2234,6 +2367,206 @@ async function _installDisplayDrivers(deviceId) {
             </button>
         `;
     }
+}
+
+function _startDriverHealthPolling(toast) {
+    const statusEl = toast.querySelector('#update-toast-status');
+    let attempts = 0;
+    const maxAttempts = 60;
+
+    const pollInterval = setInterval(async () => {
+        attempts++;
+        try {
+            const hResp = await fetch('/api/health', { cache: 'no-store' });
+            if (hResp.ok) {
+                clearInterval(pollInterval);
+                if (statusEl) statusEl.textContent = window.translations?.update_complete || 'Update complete!';
+                setTimeout(() => location.reload(), 1500);
+                return;
+            }
+        } catch (_) {}
+
+        if (attempts >= maxAttempts) {
+            clearInterval(pollInterval);
+            if (statusEl) statusEl.textContent = window.translations?.service_not_responding || 'Service not responding';
+            toast.classList.add('update-toast-error');
+            toast.innerHTML += `
+                <button class="update-toast-dismiss" onclick="this.closest('.update-countdown-toast').remove()">
+                    ${window.translations?.dismiss || 'Dismiss'}
+                </button>
+            `;
+        }
+    }, 2000);
+}
+
+// ── System Package Update ────────────────────────────────────
+
+function createSystemUpdateSection() {
+    const formGroup = document.createElement('div');
+    formGroup.className = 'form-group system-update-section';
+
+    const label = document.createElement('label');
+    label.className = 'form-label';
+    label.textContent = window.translations?.system_packages || 'System Packages';
+    formGroup.appendChild(label);
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'update-wrapper';
+
+    const row = document.createElement('div');
+    row.className = 'update-selector-row';
+
+    const hint = document.createElement('span');
+    hint.className = 'system-update-hint';
+    hint.textContent = window.translations?.system_update_hint || 'Update Raspberry Pi system packages (apt upgrade)';
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'update-install-btn';
+    btn.textContent = window.translations?.update_packages || 'Update';
+
+    row.appendChild(hint);
+    row.appendChild(btn);
+    wrapper.appendChild(row);
+    formGroup.appendChild(wrapper);
+
+    btn.addEventListener('click', async () => {
+        const confirmed = await showConfirmModal({
+            title: window.translations?.system_update || 'System Update',
+            message: window.translations?.system_update_confirm || 'Run apt update && apt upgrade on this device? This may take several minutes.',
+            confirmText: window.translations?.update_packages || 'Update',
+            cancelText: window.translations?.cancel || 'Cancel'
+        });
+        if (!confirmed) return;
+
+        _startSystemUpdate(btn);
+    });
+
+    return formGroup;
+}
+
+function _startSystemUpdate(btn) {
+    btn.disabled = true;
+    btn.textContent = window.translations?.updating || 'Updating...';
+
+    // Create modal overlay with log output
+    const overlay = document.createElement('div');
+    overlay.className = 'confirm-modal-overlay';
+    overlay.id = 'system-update-overlay';
+
+    const dialog = document.createElement('div');
+    dialog.className = 'confirm-modal-dialog system-update-dialog';
+
+    const heading = document.createElement('h3');
+    heading.className = 'confirm-modal-title';
+    heading.textContent = window.translations?.system_update || 'System Update';
+
+    const logArea = document.createElement('pre');
+    logArea.className = 'system-update-log';
+    logArea.textContent = '';
+
+    const statusBar = document.createElement('div');
+    statusBar.className = 'system-update-status';
+    statusBar.textContent = window.translations?.running || 'Running...';
+
+    const phaseBar = document.createElement('div');
+    phaseBar.className = 'system-update-phase';
+    phaseBar.textContent = 'Fetching package list…';
+
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'confirm-modal-btn confirm';
+    closeBtn.textContent = window.translations?.close || 'Close';
+    closeBtn.style.display = 'none';
+
+    const buttons = document.createElement('div');
+    buttons.className = 'confirm-modal-buttons';
+    buttons.appendChild(closeBtn);
+
+    dialog.appendChild(heading);
+    dialog.appendChild(logArea);
+    dialog.appendChild(phaseBar);
+    dialog.appendChild(statusBar);
+    dialog.appendChild(buttons);
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+    requestAnimationFrame(() => overlay.classList.add('visible'));
+
+    closeBtn.addEventListener('click', () => {
+        overlay.classList.remove('visible');
+        overlay.addEventListener('transitionend', () => overlay.remove(), { once: true });
+        setTimeout(() => { if (overlay.parentNode) overlay.remove(); }, 350);
+    });
+
+    // Listen for SocketIO events
+    const socket = window.configSocket;
+    if (!socket) {
+        logArea.textContent = 'Error: no socket connection';
+        statusBar.textContent = 'Failed';
+        closeBtn.style.display = '';
+        btn.disabled = false;
+        btn.textContent = window.translations?.update_packages || 'Update';
+        return;
+    }
+
+    function onAptOutput(data) {
+        logArea.textContent += data.line + '\n';
+        logArea.scrollTop = logArea.scrollHeight;
+        // Update phase label based on current phase
+        const phaseLabels = {
+            prepare:  'Remounting filesystem\u2026',
+            update:   'Fetching package list (apt update)\u2026 this may take a minute',
+            upgrade:  'Installing upgrades (apt upgrade)\u2026 this may take several minutes',
+            cleanup:  'Restoring read-only filesystem\u2026',
+        };
+        if (data.phase && phaseLabels[data.phase]) {
+            phaseBar.textContent = phaseLabels[data.phase];
+        }
+    }
+
+    function onAptDone(data) {
+        socket.off('apt_output', onAptOutput);
+        socket.off('apt_done', onAptDone);
+        phaseBar.textContent = '';
+        if (data.success) {
+            statusBar.textContent = window.translations?.system_update_complete || 'System update complete!';
+            statusBar.classList.add('system-update-success');
+        } else {
+            statusBar.textContent = (window.translations?.system_update_failed || 'Update failed') + ': ' + (data.error || '');
+            statusBar.classList.add('system-update-error');
+        }
+        closeBtn.style.display = '';
+        btn.disabled = false;
+        btn.textContent = window.translations?.update_packages || 'Update';
+    }
+
+    socket.on('apt_output', onAptOutput);
+    socket.on('apt_done', onAptDone);
+
+    // Trigger the update
+    fetch('/api/system/update-packages', { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                logArea.textContent = data.message || 'Failed to start update';
+                statusBar.textContent = data.message || 'Failed';
+                statusBar.classList.add('system-update-error');
+                closeBtn.style.display = '';
+                btn.disabled = false;
+                btn.textContent = window.translations?.update_packages || 'Update';
+                socket.off('apt_output', onAptOutput);
+                socket.off('apt_done', onAptDone);
+            }
+        })
+        .catch(err => {
+            logArea.textContent = 'Request failed: ' + err;
+            statusBar.textContent = 'Request failed';
+            statusBar.classList.add('system-update-error');
+            closeBtn.style.display = '';
+            btn.disabled = false;
+            btn.textContent = window.translations?.update_packages || 'Update';
+            socket.off('apt_output', onAptOutput);
+            socket.off('apt_done', onAptDone);
+        });
 }
 
 // (removed — user management is now inline in the General section)
@@ -2410,7 +2743,8 @@ function renderConfigurationForm() {
             advancedContainer.querySelector('.advanced-section-content').appendChild(createCurrentUserUsernameField());
             advancedContainer.querySelector('.advanced-section-content').appendChild(createCurrentUserPasswordField());
             advancedContainer.querySelector('.advanced-section-content').appendChild(createSoftwareUpdateSection());
-            fieldsAdded += 3;
+            advancedContainer.querySelector('.advanced-section-content').appendChild(createSystemUpdateSection());
+            fieldsAdded += 4;
         }
 
         //console.log(`Category ${category.id} has ${fieldsAdded} fields`);

@@ -430,6 +430,7 @@ class ImageRenderer:
         self._recent_memes = []              # last N meme paths to avoid repeats
         self._RECENT_MEMES_MAX = 50          # remember this many recent selections
         self._holiday_rr_index = {}          # round-robin index per date key (MM-DD)
+        self._imagemagick_available = None   # cached check; None = not yet tested
 
         self.font_regular = os.path.join("static", "fonts", "Roboto-Regular.ttf")
         self.font_bold = os.path.join("static", "fonts", "Roboto-Bold.ttf")
@@ -468,6 +469,64 @@ class ImageRenderer:
         # Example:
         if hasattr(self, "refresh_dashboard"):
             self.refresh_dashboard()
+
+    def _open_image_robust(self, path: str) -> 'Image.Image':
+        """Open an image file, falling back to ImageMagick when PIL lacks codec support.
+
+        This is particularly important for WebP files on Raspberry Pi where Pillow
+        may have been built before libwebp-dev was installed (no WebP codec compiled in).
+        ImageMagick's ``convert`` is used as a fallback if available.
+
+        Raises the original PIL exception if all attempts fail.
+        """
+        try:
+            return Image.open(path)
+        except Exception as pil_err:
+            # Only attempt ImageMagick fallback for formats PIL might lack codec support for.
+            ext = os.path.splitext(path)[1].lower()
+            if ext not in ('.webp', '.avif', '.heic', '.heif'):
+                raise
+
+            # Lazy-check whether ImageMagick convert is available.
+            if self._imagemagick_available is None:
+                try:
+                    import subprocess as _sp
+                    r = _sp.run(['convert', '--version'], capture_output=True, timeout=5)
+                    self._imagemagick_available = (r.returncode == 0)
+                except Exception:
+                    self._imagemagick_available = False
+
+            if not self._imagemagick_available:
+                print(f"⚠️ PIL cannot open {ext} file and ImageMagick is not available. "
+                      f"Install libwebp-dev then rebuild Pillow: "
+                      f"pip install --no-binary :all: pillow")
+                raise
+
+            import subprocess as _sp, tempfile as _tf
+            tmp_fd, tmp_path = _tf.mkstemp(suffix='.png')
+            os.close(tmp_fd)
+            try:
+                result = _sp.run(
+                    ['convert', path, tmp_path],
+                    capture_output=True, timeout=30
+                )
+                if result.returncode != 0:
+                    raise RuntimeError(
+                        f"ImageMagick convert failed: {result.stderr.decode(errors='replace')}"
+                    )
+                img = Image.open(tmp_path)
+                img.load()  # force full decode before temp file is removed
+                print(f"⚙️ Loaded {ext} via ImageMagick fallback: {os.path.basename(path)}")
+                return img
+            except Exception as im_err:
+                raise RuntimeError(
+                    f"PIL error: {pil_err}; ImageMagick fallback error: {im_err}"
+                ) from im_err
+            finally:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
 
     def _get_font(self, font_path, size):
         """Get a cached font object, loading from disk only on first request."""
@@ -1425,7 +1484,7 @@ class ImageRenderer:
         if not meme_path or not os.path.exists(meme_path):
             return -1
         try:
-            with Image.open(meme_path) as img:
+            with self._open_image_robust(meme_path) as img:
                 meme_w, meme_h = img.size
         except Exception:
             return -1
@@ -3343,7 +3402,7 @@ class ImageRenderer:
             
             if available_meme_width > 50 and meme_path:
                 try:
-                    meme_img = Image.open(meme_path)
+                    meme_img = self._open_image_robust(meme_path)
                     # Scale to fit
                     aspect = meme_img.width / meme_img.height
                     
@@ -3619,7 +3678,7 @@ class ImageRenderer:
 
             if meme_path:
                 try:
-                    meme_img = Image.open(meme_path)
+                    meme_img = self._open_image_robust(meme_path)
                     aspect_ratio = meme_img.width / meme_img.height
                     max_width = self.width - 40
 
@@ -3710,9 +3769,10 @@ class ImageRenderer:
                 img.paste(meme_img, (meme_x, current_y), meme_img)
                 current_y += meme_height
             else:
-                self._render_fallback_content(img, draw, current_y, meme_height,
+                fallback_h = max(50, max_meme_height) if meme_height == 0 else meme_height
+                self._render_fallback_content(img, draw, current_y, fallback_h,
                                             font_holiday_title, web_quality)
-                current_y += meme_height
+                current_y += fallback_h
             
             # Add gap before info blocks for even distribution
             if len(info_blocks_to_render):
@@ -3778,7 +3838,7 @@ class ImageRenderer:
             meme_width = 0
             if meme_path:
                 try:
-                    meme_img = Image.open(meme_path)
+                    meme_img = self._open_image_robust(meme_path)
                     aspect_ratio = meme_img.width / meme_img.height
                     max_width = self.width - 40
                     
@@ -3879,7 +3939,7 @@ class ImageRenderer:
                 print(f"⚙️ Using pre-selected meme: {meme_path}")
                 
                 # Open and process the meme image
-                meme_img = Image.open(meme_path)
+                meme_img = self._open_image_robust(meme_path)
                 
                 # Calculate optimal size and position
                 aspect_ratio = meme_img.width / meme_img.height
@@ -4478,7 +4538,7 @@ class ImageRenderer:
         if meme_path:
             try:
                 # Render the fallback meme
-                meme_img = Image.open(meme_path)
+                meme_img = self._open_image_robust(meme_path)
                 
                 # Calculate optimal size
                 aspect_ratio = meme_img.width / meme_img.height
