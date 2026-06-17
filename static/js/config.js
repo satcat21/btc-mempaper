@@ -2112,31 +2112,23 @@ function _startHealthPolling(toast, tag, rollbackTag, rollbackCommit) {
     let attempts = 0;
     const maxAttempts = 30; // 60 seconds total (2s intervals)
 
-    let serviceWasDown = false;
-
     const pollInterval = setInterval(async () => {
         attempts++;
         try {
-            const resp = await fetch('/api/health', { cache: 'no-store' });
-            if (resp.ok) {
-                if (!serviceWasDown) {
-                    // Health responded but service hasn't restarted yet (old process)
+            const vResp = await fetch('/api/update/current', { cache: 'no-store' });
+            if (vResp.ok) {
+                const data = await vResp.json();
+                // Check if the service is now running the target version
+                if (data.current_tag === tag) {
+                    clearInterval(pollInterval);
+                    if (statusEl) statusEl.textContent = window.translations?.update_complete || 'Update complete!';
+                    toast.classList.add('update-toast-success');
+                    setTimeout(() => location.reload(), 1500);
                     return;
                 }
-                // Service is back — poll /api/update/current to confirm new version loaded
-                try {
-                    const vResp = await fetch('/api/update/current', { cache: 'no-store' });
-                    if (!vResp.ok) return; // not fully ready yet
-                } catch (_) { return; }
-                clearInterval(pollInterval);
-                if (statusEl) statusEl.textContent = window.translations?.update_complete || 'Update complete!';
-                toast.classList.add('update-toast-success');
-                setTimeout(() => location.reload(), 1500);
-                return;
             }
         } catch (_) {
             // Service is down — expected during restart
-            serviceWasDown = true;
         }
 
         if (attempts >= maxAttempts) {
