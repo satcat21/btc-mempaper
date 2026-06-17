@@ -2222,7 +2222,14 @@ async function _performUpdate(tag, updateBtn) {
 }
 
 function _startHealthPolling(overlay, dialog, statusBar, tag, rollbackTag, rollbackCommit, oldStarted, updateBtn) {
-    statusBar.textContent = window.translations?.waiting_for_service || 'Waiting for service...';
+    statusBar.innerHTML = '<span class="update-spinner"></span> ' +
+        (window.translations?.waiting_for_service || 'Waiting for service...');
+
+    // Add auto-refresh hint below status
+    const hintEl = document.createElement('div');
+    hintEl.className = 'update-auto-refresh-hint';
+    hintEl.textContent = window.translations?.page_will_refresh || 'Page will refresh automatically';
+    statusBar.parentNode.insertBefore(hintEl, statusBar.nextSibling);
 
     let attempts = 0;
     const maxAttempts = 60; // 120 seconds total (2s intervals)
@@ -2243,8 +2250,9 @@ function _startHealthPolling(overlay, dialog, statusBar, tag, rollbackTag, rollb
                 const data = await vResp.json();
                 if (data.current_tag === tag) {
                     clearInterval(pollInterval);
-                    statusBar.textContent = window.translations?.update_complete || 'Update complete!';
+                    statusBar.innerHTML = window.translations?.update_complete || 'Update complete!';
                     statusBar.classList.add('system-update-success');
+                    if (hintEl.parentNode) hintEl.remove();
                     setTimeout(() => location.reload(), 1500);
                     return;
                 }
