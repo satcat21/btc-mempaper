@@ -1951,12 +1951,18 @@ function createSoftwareUpdateSection() {
     });
 
     // Install button click handler
-    updateBtn.addEventListener('click', () => {
+    updateBtn.addEventListener('click', async () => {
         const selectedTag = select.value;
         if (!selectedTag) return;
 
         const selectedName = select.options[select.selectedIndex]?.textContent || selectedTag;
-        if (!confirm(`${window.translations?.confirm_update || 'Install update'}?\n\n${selectedName}`)) return;
+        const confirmed = await showConfirmModal({
+            title: window.translations?.confirm_update || 'Install update',
+            message: selectedName,
+            confirmText: window.translations?.update_now || 'Update',
+            cancelText: window.translations?.cancel || 'Cancel'
+        });
+        if (!confirmed) return;
 
         _performUpdate(selectedTag, updateBtn);
     });
