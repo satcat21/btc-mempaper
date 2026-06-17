@@ -2254,9 +2254,15 @@ class MempaperApp:
                 try:
                     result = self._display_worker_results.get(timeout=120)
                 except queue.Empty:
+                    device_name = self.config.get("omni_device_name", "unknown")
                     print(f"❌ E-paper display timed out after 120s")
+                    print(f"   The selected display driver '{device_name}' may be incorrect.")
+                    print(f"   Run: python scripts/configure_display.py")
                     self._display_worker = None  # worker may be stuck; restart next time
-                    self._emit_display_error("Display timeout")
+                    self._emit_display_error(
+                        f'Display timed out after 120s. The driver "{device_name}" may be incorrect. '
+                        f'Check Settings → Display.'
+                    )
                     return
 
             display_duration = time.time() - display_start
@@ -2269,6 +2275,22 @@ class MempaperApp:
 
             if result.get("success"):
                 print(f"✅ E-paper display completed in {display_duration:.2f}s")
+
+                # Warn if display refresh took abnormally long (likely wrong driver)
+                if display_duration > 80:
+                    device_name = self.config.get("omni_device_name", "unknown")
+                    print(f"⚠️ Display refresh took {display_duration:.0f}s — this is unusually slow.")
+                    print(f"   The selected display driver '{device_name}' may be incorrect.")
+                    print(f"   Run: python scripts/configure_display.py")
+                    if hasattr(self, 'socketio') and self.socketio:
+                        self.socketio.emit('display_update', {
+                            'status': 'warning',
+                            'message': f'Display refresh took {display_duration:.0f}s (expected ~40s). '
+                                       f'The display driver "{device_name}" may be incorrect. '
+                                       f'Check Settings → Display.',
+                            'block_height': block_height,
+                            'timestamp': time.time()
+                        })
 
                 # Update block tracking if this result is still current
                 if block_height and block_hash:
@@ -6503,6 +6525,78 @@ class MempaperApp:
                 return jsonify({'success': False, 'message': f'Git operation failed: {e}'}), 500
             except Exception as e:
                 print(f"Update error: {e}")
+                traceback.print_exc()
+                return jsonify({'success': False, 'message': str(e)}), 500
+
+        # ── Display Driver Install Endpoint ──────────────────────
+
+        @self.app.route('/api/display/install-drivers', methods=['POST'])
+        @require_auth(self.auth_manager)
+        def install_display_drivers():
+            """Install display drivers for the configured device."""
+            try:
+                data = request.json or {}
+                device_id = data.get('device_id', '').strip()
+                if not device_id:
+                    return jsonify({'success': False, 'message': 'No device_id specified'}), 400
+
+                from scripts.configure_display import (
+                    DEVICE_CONFIGS, DRIVER_DOWNLOADS, _drivers_missing, install_drivers
+                )
+
+                if device_id not in DEVICE_CONFIGS:
+                    return jsonify({'success': False, 'message': f'Unknown device: {device_id}'}), 400
+
+                # Check if this device needs downloadable drivers
+                if device_id not in DRIVER_DOWNLOADS:
+                    return jsonify({
+                        'success': True,
+                        'message': 'No driver download required for this device',
+                        'installed': False,
+                        'restart_required': False
+                    })
+
+                missing = _drivers_missing(device_id)
+                if not missing:
+                    return jsonify({
+                        'success': True,
+                        'message': 'Drivers already installed',
+                        'installed': False,
+                        'restart_required': False
+                    })
+
+                print(f"📦 Installing display drivers for {device_id}...")
+                ok = install_drivers(device_id)
+
+                if ok:
+                    print(f"✅ Display drivers installed for {device_id}")
+                    # Schedule service restart so new drivers are loaded
+                    def _delayed_restart():
+                        time.sleep(2)
+                        try:
+                            subprocess.run(
+                                ['sudo', 'systemctl', 'restart', 'mempaper.service'],
+                                timeout=30
+                            )
+                        except Exception as e:
+                            print(f"Service restart failed: {e}")
+
+                    threading.Thread(target=_delayed_restart, daemon=True).start()
+
+                    return jsonify({
+                        'success': True,
+                        'message': f'Drivers installed for {DEVICE_CONFIGS[device_id]["name"]}. Service restarting...',
+                        'installed': True,
+                        'restart_required': True
+                    })
+                else:
+                    return jsonify({
+                        'success': False,
+                        'message': 'Driver download failed. Check internet connection.'
+                    }), 500
+
+            except Exception as e:
+                print(f"Driver install error: {e}")
                 traceback.print_exc()
                 return jsonify({'success': False, 'message': str(e)}), 500
 

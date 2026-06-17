@@ -2165,6 +2165,79 @@ function _showUpdateFailure(toast, rollbackTag, rollbackCommit) {
     if (sshInfo) sshInfo.style.display = '';
 }
 
+// ── Display Driver Install ──────────────────────────────────
+
+async function _installDisplayDrivers(deviceId) {
+    // Show installing toast
+    const existing = document.getElementById('update-countdown-toast');
+    if (existing) existing.remove();
+
+    const toast = document.createElement('div');
+    toast.id = 'update-countdown-toast';
+    toast.className = 'update-countdown-toast';
+    toast.innerHTML = `
+        <div class="update-toast-title">${window.translations?.installing_display_drivers || 'Installing display drivers'}...</div>
+        <div class="update-toast-status" id="update-toast-status">${window.translations?.downloading_drivers || 'Downloading drivers for'} ${deviceId}</div>
+        <div class="update-toast-progress">
+            <div class="update-toast-progress-bar" style="width:30%;transition:width 10s linear"></div>
+        </div>
+        <div class="update-toast-hint">${window.translations?.please_wait || 'Please wait'}</div>
+    `;
+    document.body.appendChild(toast);
+
+    // Animate progress bar while waiting
+    requestAnimationFrame(() => {
+        const bar = toast.querySelector('.update-toast-progress-bar');
+        if (bar) bar.style.width = '80%';
+    });
+
+    try {
+        const resp = await fetch('/api/display/install-drivers', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ device_id: deviceId })
+        });
+
+        const data = await resp.json();
+        const statusEl = toast.querySelector('#update-toast-status');
+        const bar = toast.querySelector('.update-toast-progress-bar');
+
+        if (data.success) {
+            if (bar) bar.style.width = '100%';
+
+            if (data.restart_required) {
+                if (statusEl) statusEl.textContent = window.translations?.drivers_installed_restarting || 'Drivers installed! Service restarting...';
+                toast.classList.add('update-toast-success');
+                // Poll for service to come back, then reload
+                _startHealthPolling(toast, deviceId, null, null);
+            } else {
+                if (statusEl) statusEl.textContent = data.message;
+                toast.classList.add('update-toast-success');
+                setTimeout(() => toast.remove(), 3000);
+            }
+        } else {
+            if (bar) bar.style.width = '100%';
+            if (statusEl) statusEl.textContent = data.message || 'Driver installation failed';
+            toast.classList.add('update-toast-error');
+            toast.innerHTML += `
+                <button class="update-toast-dismiss" onclick="this.closest('.update-countdown-toast').remove()">
+                    ${window.translations?.dismiss || 'Dismiss'}
+                </button>
+            `;
+        }
+    } catch (err) {
+        console.error('Driver install request failed:', err);
+        const statusEl = toast.querySelector('#update-toast-status');
+        if (statusEl) statusEl.textContent = 'Driver install request failed';
+        toast.classList.add('update-toast-error');
+        toast.innerHTML += `
+            <button class="update-toast-dismiss" onclick="this.closest('.update-countdown-toast').remove()">
+                ${window.translations?.dismiss || 'Dismiss'}
+            </button>
+        `;
+    }
+}
+
 // (removed — user management is now inline in the General section)
 function renderUserManagementSection(grid) { /* no-op */ }
 
@@ -4932,6 +5005,10 @@ async function saveConfiguration() {
         // Merge form values with current config to preserve non-form fields
         const newConfig = { ...currentConfig, ...formConfig };
 
+        // Capture old display state before save for driver install detection
+        const oldDeviceName = currentConfig.omni_device_name;
+        const oldDisplayEnabled = currentConfig['e-ink-display-connected'];
+
         const response = await fetch('/api/config', {
             method: 'POST',
             headers: {
@@ -4977,7 +5054,18 @@ async function saveConfiguration() {
             // Update current config
             currentConfig = newConfig;
             window.currentConfig = newConfig; // Make available globally
-            
+
+            // Check if display device changed — install drivers if needed
+            const newDeviceName = formConfig.omni_device_name || newConfig.omni_device_name;
+            const newDisplayEnabled = formConfig['e-ink-display-connected'];
+            if (newDeviceName && newDisplayEnabled !== false) {
+                const deviceChanged = oldDeviceName && newDeviceName !== oldDeviceName;
+                const displayJustEnabled = newDisplayEnabled === true && !oldDisplayEnabled;
+                if (deviceChanged || displayJustEnabled) {
+                    _installDisplayDrivers(newDeviceName);
+                }
+            }
+
             // Handle language change with page reload
             if (languageChanged) {
                 console.log('⚙️ LANGUAGE CHANGE DETECTED! (saveConfiguration) Processing language change from', oldLanguage, 'to', newLanguage);

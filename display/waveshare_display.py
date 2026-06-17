@@ -130,7 +130,27 @@ WAVESHARE_AVAILABLE = False
 WAVESHARE_MODULES = {}
 _failed_modules = []
 
+# Only import the configured driver to avoid GPIO conflicts between drivers
+# (e.g. epd13in3E uses ctypes GPIO, epd7in3f uses RPi.GPIO — loading both causes "GPIO busy").
+def _get_configured_device():
+    """Read the configured device name from config to decide which driver to load."""
+    try:
+        import json as _json
+        _cfg_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'config', 'config.json')
+        with open(_cfg_path, 'r') as _f:
+            _cfg = _json.load(_f)
+        _dev = _cfg.get('omni_device_name', '')
+        # Normalize: "waveshare_epd.epd7in3f" -> "epd7in3f"
+        return _dev.split('.')[-1] if '.' in _dev else _dev
+    except Exception:
+        return None
+
+_configured_device = _get_configured_device()
+
 for _name, _subdir, _fallbacks in _DISPLAY_CONFIGS:
+    # Skip drivers that aren't configured to avoid GPIO conflicts
+    if _configured_device and _name != _configured_device:
+        continue
     _mod = _import_display_isolated(_name, _subdir, _fallbacks)
     if _mod is not None:
         WAVESHARE_MODULES[_name] = _mod
