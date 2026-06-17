@@ -6321,6 +6321,185 @@ class MempaperApp:
                 traceback.print_exc()
                 return jsonify({'success': False, 'message': str(e)}), 500
 
+        # ── Software Update Endpoints ────────────────────────────────
+
+        @self.app.route('/api/health', methods=['GET'])
+        def health_check():
+            """Simple health check endpoint for update polling."""
+            return jsonify({'status': 'ok'})
+
+        @self.app.route('/api/update/current', methods=['GET'])
+        @require_auth(self.auth_manager)
+        def get_current_version():
+            """Get the currently checked-out git tag/commit."""
+            try:
+                project_dir = os.path.dirname(os.path.abspath(__file__))
+
+                # Get current tag (if on a tag)
+                try:
+                    current_tag = subprocess.check_output(
+                        ['git', 'describe', '--tags', '--exact-match', 'HEAD'],
+                        cwd=project_dir, stderr=subprocess.DEVNULL
+                    ).decode().strip()
+                except subprocess.CalledProcessError:
+                    current_tag = None
+
+                # Get current commit hash
+                current_commit = subprocess.check_output(
+                    ['git', 'rev-parse', '--short', 'HEAD'],
+                    cwd=project_dir, stderr=subprocess.DEVNULL
+                ).decode().strip()
+
+                return jsonify({
+                    'success': True,
+                    'current_tag': current_tag,
+                    'current_commit': current_commit
+                })
+            except Exception as e:
+                print(f"Error getting current version: {e}")
+                return jsonify({'success': False, 'message': str(e)}), 500
+
+        @self.app.route('/api/update/releases', methods=['GET'])
+        @require_auth(self.auth_manager)
+        def get_available_releases():
+            """Fetch available releases from GitHub."""
+            try:
+                resp = requests.get(
+                    'https://api.github.com/repos/satcat21/btc-mempaper/releases',
+                    headers={'Accept': 'application/vnd.github.v3+json'},
+                    timeout=15
+                )
+                resp.raise_for_status()
+                releases = resp.json()
+
+                result = []
+                for rel in releases:
+                    result.append({
+                        'tag': rel.get('tag_name', ''),
+                        'name': rel.get('name', '') or rel.get('tag_name', ''),
+                        'published_at': rel.get('published_at', ''),
+                        'body': rel.get('body', ''),
+                        'prerelease': rel.get('prerelease', False),
+                        'draft': rel.get('draft', False)
+                    })
+
+                return jsonify({'success': True, 'releases': result})
+            except requests.RequestException as e:
+                print(f"Error fetching releases: {e}")
+                return jsonify({'success': False, 'message': f'Failed to fetch releases: {e}'}), 502
+
+        @self.app.route('/api/update/install', methods=['POST'])
+        @require_auth(self.auth_manager)
+        def install_update():
+            """Install a specific release by checking out its git tag."""
+            try:
+                data = request.json or {}
+                tag = data.get('tag', '').strip()
+                if not tag:
+                    return jsonify({'success': False, 'message': 'No tag specified'}), 400
+
+                project_dir = os.path.dirname(os.path.abspath(__file__))
+
+                # Save rollback point
+                rollback_commit = subprocess.check_output(
+                    ['git', 'rev-parse', 'HEAD'],
+                    cwd=project_dir, stderr=subprocess.DEVNULL
+                ).decode().strip()
+
+                try:
+                    rollback_tag = subprocess.check_output(
+                        ['git', 'describe', '--tags', '--exact-match', 'HEAD'],
+                        cwd=project_dir, stderr=subprocess.DEVNULL
+                    ).decode().strip()
+                except subprocess.CalledProcessError:
+                    rollback_tag = None
+
+                # Fetch latest tags and commits
+                subprocess.check_call(
+                    ['git', 'fetch', '--tags', '--force'],
+                    cwd=project_dir, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL
+                )
+
+                # Verify the tag exists
+                try:
+                    subprocess.check_call(
+                        ['git', 'rev-parse', f'refs/tags/{tag}'],
+                        cwd=project_dir, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL
+                    )
+                except subprocess.CalledProcessError:
+                    return jsonify({'success': False, 'message': f'Tag {tag} not found'}), 404
+
+                # Check if requirements.txt changed between current and target
+                deps_changed = False
+                try:
+                    diff_result = subprocess.run(
+                        ['git', 'diff', '--name-only', 'HEAD', f'refs/tags/{tag}', '--', 'requirements.txt'],
+                        cwd=project_dir, capture_output=True, text=True
+                    )
+                    deps_changed = bool(diff_result.stdout.strip())
+                except Exception:
+                    deps_changed = True  # Assume changed if we can't check
+
+                # Checkout the tag (detached HEAD)
+                subprocess.check_call(
+                    ['git', 'checkout', f'refs/tags/{tag}'],
+                    cwd=project_dir, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL
+                )
+
+                # Install dependencies inside the venv
+                venv_pip = os.path.join(project_dir, '.venv', 'bin', 'pip')
+                requirements_file = os.path.join(project_dir, 'requirements.txt')
+
+                if os.path.exists(venv_pip) and os.path.exists(requirements_file):
+                    try:
+                        subprocess.check_call(
+                            [venv_pip, 'install', '-r', requirements_file, '--quiet'],
+                            cwd=project_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                            timeout=120
+                        )
+                    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as pip_err:
+                        # Rollback on pip failure
+                        print(f"pip install failed, rolling back: {pip_err}")
+                        subprocess.check_call(
+                            ['git', 'checkout', rollback_commit],
+                            cwd=project_dir, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL
+                        )
+                        return jsonify({
+                            'success': False,
+                            'message': f'Dependency installation failed: {pip_err}. Rolled back to previous version.'
+                        }), 500
+
+                # Schedule service restart after response is sent
+                def _delayed_restart():
+                    time.sleep(2)
+                    try:
+                        subprocess.run(
+                            ['sudo', 'systemctl', 'restart', 'mempaper.service'],
+                            timeout=30
+                        )
+                    except Exception as restart_err:
+                        print(f"Service restart failed: {restart_err}")
+
+                threading.Thread(target=_delayed_restart, daemon=True).start()
+
+                return jsonify({
+                    'success': True,
+                    'message': f'Updated to {tag}. Service restarting...',
+                    'tag': tag,
+                    'deps_changed': deps_changed,
+                    'rollback_commit': rollback_commit,
+                    'rollback_tag': rollback_tag
+                })
+
+            except subprocess.CalledProcessError as e:
+                print(f"Update failed: {e}")
+                traceback.print_exc()
+                return jsonify({'success': False, 'message': f'Git operation failed: {e}'}), 500
+            except Exception as e:
+                print(f"Update error: {e}")
+                traceback.print_exc()
+                return jsonify({'success': False, 'message': str(e)}), 500
+
         # WebSocket event handlers (only if SocketIO is enabled)
         if self.socketio:
             @self.socketio.on('connect')

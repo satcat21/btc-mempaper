@@ -32,6 +32,7 @@ SUDOERS_FILE="/etc/sudoers.d/mempaper-wifi"
 NMCLI_BIN="$(which nmcli 2>/dev/null || echo /usr/bin/nmcli)"
 IW_BIN="$(which iw 2>/dev/null || echo /usr/sbin/iw)"
 IPTABLES_BIN="$(which iptables 2>/dev/null || echo /usr/sbin/iptables)"
+SYSTEMCTL_BIN="$(which systemctl 2>/dev/null || echo /usr/bin/systemctl)"
 cat > "${SUDOERS_FILE}" <<EOF
 # mempaper: allow service user to manage NetworkManager connections (hotspot onboarding)
 ${SERVICE_USER} ALL=(root) NOPASSWD: ${NMCLI_BIN}
@@ -39,6 +40,8 @@ ${SERVICE_USER} ALL=(root) NOPASSWD: ${NMCLI_BIN}
 ${SERVICE_USER} ALL=(root) NOPASSWD: ${IW_BIN}
 # mempaper: allow captive-portal port redirect (80/443 → Flask) during setup hotspot
 ${SERVICE_USER} ALL=(root) NOPASSWD: ${IPTABLES_BIN}
+# mempaper: allow self-update to restart the service from the web UI
+${SERVICE_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} restart mempaper.service
 EOF
 chmod 440 "${SUDOERS_FILE}"
 # Validate the file (visudo -c exits non-zero if syntax is wrong)

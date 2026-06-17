@@ -1689,7 +1689,10 @@ function createCurrentUserUsernameField() {
     input.type = 'text';
     input.className = 'form-input';
     input.value = configCurrentUser;
-    input.setAttribute('autocomplete', 'off');
+    input.setAttribute('autocomplete', 'one-time-code');
+    input.setAttribute('data-1p-ignore', '');
+    input.setAttribute('data-lpignore', 'true');
+    input.setAttribute('data-form-type', 'other');
     input.setAttribute('data-config-key', 'admin_username');
     formGroup.appendChild(input);
 
@@ -1825,6 +1828,328 @@ function createCurrentUserPasswordInterface() {
     container.appendChild(buttonWrapper);
     container.appendChild(passwordForm);
     return container;
+}
+
+// ── Software Update Section ──────────────────────────────────────────────
+
+/** Lightweight line-by-line markdown→HTML for release notes. */
+function _renderReleaseMarkdown(md) {
+    if (!md) return '';
+    const lines = md.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').split('\n');
+    let html = '';
+    let inList = false;
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const hMatch = line.match(/^(#{1,4})\s+(.*)/);
+        const liMatch = line.match(/^[-*]\s+(.*)/);
+        if (hMatch) {
+            if (inList) { html += '</ul>'; inList = false; }
+            const lvl = hMatch[1].length;
+            html += `<h${lvl}>${_inlineMd(hMatch[2])}</h${lvl}>`;
+        } else if (liMatch) {
+            if (!inList) { html += '<ul>'; inList = true; }
+            html += `<li>${_inlineMd(liMatch[1])}</li>`;
+        } else if (line.trim() === '') {
+            if (inList) { html += '</ul>'; inList = false; }
+        } else {
+            if (inList) { html += '</ul>'; inList = false; }
+            html += `<p>${_inlineMd(line)}</p>`;
+        }
+    }
+    if (inList) html += '</ul>';
+    return html;
+}
+function _inlineMd(s) {
+    return s
+        .replace(/`([^`]+)`/g, '<code>$1</code>')
+        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+        .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+}
+
+function createSoftwareUpdateSection() {
+    const formGroup = document.createElement('div');
+    formGroup.className = 'form-group software-update-section';
+
+    const label = document.createElement('label');
+    label.className = 'form-label';
+    label.textContent = window.translations?.software_update || 'Software Update';
+    formGroup.appendChild(label);
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'update-wrapper';
+
+    // Current version display
+    const versionRow = document.createElement('div');
+    versionRow.className = 'update-version-row';
+    versionRow.innerHTML = `
+        <span class="update-version-label">${window.translations?.current_version || 'Current version'}:</span>
+        <span class="update-version-value" id="update-current-version">...</span>
+    `;
+    wrapper.appendChild(versionRow);
+
+    // Release selector row
+    const selectorRow = document.createElement('div');
+    selectorRow.className = 'update-selector-row';
+
+    const select = document.createElement('select');
+    select.className = 'form-select update-release-select';
+    select.id = 'update-release-select';
+    const loadingOpt = document.createElement('option');
+    loadingOpt.textContent = window.translations?.loading_releases || 'Loading releases...';
+    loadingOpt.disabled = true;
+    loadingOpt.selected = true;
+    select.appendChild(loadingOpt);
+
+    const updateBtn = document.createElement('button');
+    updateBtn.type = 'button';
+    updateBtn.className = 'update-install-btn';
+    updateBtn.textContent = window.translations?.update_now || 'Update';
+    updateBtn.disabled = true;
+
+    selectorRow.appendChild(select);
+    selectorRow.appendChild(updateBtn);
+    wrapper.appendChild(selectorRow);
+
+    // Release notes area (collapsed by default)
+    const notesContainer = document.createElement('div');
+    notesContainer.className = 'update-release-notes';
+    notesContainer.id = 'update-release-notes';
+    notesContainer.style.display = 'none';
+    wrapper.appendChild(notesContainer);
+
+    // SSH fallback info (hidden by default, shown on failure)
+    const sshInfo = document.createElement('div');
+    sshInfo.className = 'update-ssh-info';
+    sshInfo.id = 'update-ssh-info';
+    sshInfo.style.display = 'none';
+    sshInfo.innerHTML = `
+        <div class="form-info-box">
+            <strong>${window.translations?.manual_update || 'Manual Update via SSH'}:</strong><br>
+            <code class="info-copyable">ssh pi@mempaper.local</code><br>
+            <code class="info-copyable">cd ~/btc-mempaper</code><br>
+            <code class="info-copyable">git fetch --tags && git checkout &lt;tag&gt;</code><br>
+            <code class="info-copyable">.venv/bin/pip install -r requirements.txt --quiet</code><br>
+            <code class="info-copyable">sudo systemctl restart mempaper.service</code>
+        </div>
+    `;
+    wrapper.appendChild(sshInfo);
+
+    formGroup.appendChild(wrapper);
+
+    // Show release notes when selection changes
+    select.addEventListener('change', () => {
+        const selectedOpt = select.options[select.selectedIndex];
+        const body = selectedOpt?.dataset?.body;
+        if (body) {
+            notesContainer.innerHTML = _renderReleaseMarkdown(body);
+            notesContainer.style.display = '';
+        } else {
+            notesContainer.style.display = 'none';
+        }
+    });
+
+    // Install button click handler
+    updateBtn.addEventListener('click', () => {
+        const selectedTag = select.value;
+        if (!selectedTag) return;
+
+        const selectedName = select.options[select.selectedIndex]?.textContent || selectedTag;
+        if (!confirm(`${window.translations?.confirm_update || 'Install update'}?\n\n${selectedName}`)) return;
+
+        _performUpdate(selectedTag, updateBtn);
+    });
+
+    // Fetch data on creation (pass versionEl directly since formGroup isn't in DOM yet)
+    const versionEl = versionRow.querySelector('.update-version-value');
+    _loadUpdateData(select, updateBtn, versionEl, notesContainer);
+
+    return formGroup;
+}
+
+async function _loadUpdateData(selectEl, updateBtn, versionEl, notesContainer) {
+
+    try {
+        // Fetch current version and releases in parallel
+        const [versionResp, releasesResp] = await Promise.all([
+            fetch('/api/update/current'),
+            fetch('/api/update/releases')
+        ]);
+
+        const versionData = await versionResp.json();
+        const releasesData = await releasesResp.json();
+
+        // Display current version
+        if (versionData.success) {
+            const tag = versionData.current_tag;
+            const commit = versionData.current_commit;
+            if (versionEl) {
+                versionEl.textContent = tag ? `${tag} (${commit})` : commit;
+            }
+        }
+
+        // Populate release dropdown
+        if (releasesData.success && releasesData.releases.length > 0) {
+            selectEl.innerHTML = '';
+            const releases = releasesData.releases.filter(r => !r.draft);
+
+            releases.forEach((rel, i) => {
+                const opt = document.createElement('option');
+                opt.value = rel.tag;
+                const date = rel.published_at ? new Date(rel.published_at).toLocaleDateString() : '';
+                const pre = rel.prerelease ? ' (pre-release)' : '';
+                const current = (versionData.success && versionData.current_tag === rel.tag) ? ' [current]' : '';
+                opt.textContent = `${rel.name || rel.tag}${pre}${current} — ${date}`;
+                opt.dataset.body = rel.body || '';
+                if (i === 0) opt.selected = true;
+                selectEl.appendChild(opt);
+            });
+
+            updateBtn.disabled = false;
+
+            // Show notes for first release
+            if (releases[0]?.body && notesContainer) {
+                notesContainer.innerHTML = _renderReleaseMarkdown(releases[0].body);
+                notesContainer.style.display = '';
+            }
+        } else {
+            selectEl.innerHTML = '<option disabled selected>No releases found</option>';
+        }
+    } catch (err) {
+        console.error('Failed to load update data:', err);
+        selectEl.innerHTML = '<option disabled selected>Failed to load releases</option>';
+        if (versionEl) {
+            versionEl.textContent = 'unknown';
+        }
+    }
+}
+
+async function _performUpdate(tag, updateBtn) {
+    updateBtn.disabled = true;
+    updateBtn.textContent = window.translations?.updating || 'Updating...';
+
+    try {
+        const resp = await fetch('/api/update/install', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tag })
+        });
+
+        const data = await resp.json();
+
+        if (!data.success) {
+            showNotification(data.message || 'Update failed', 'error', 8000);
+            updateBtn.disabled = false;
+            updateBtn.textContent = window.translations?.update_now || 'Update';
+            return;
+        }
+
+        // Update succeeded — show restart countdown toast
+        const countdownSeconds = data.deps_changed ? 30 : 15;
+        _showUpdateCountdownToast(tag, countdownSeconds, data.rollback_tag, data.rollback_commit);
+
+    } catch (err) {
+        console.error('Update request failed:', err);
+        showNotification('Update request failed. Check your connection.', 'error', 8000);
+        updateBtn.disabled = false;
+        updateBtn.textContent = window.translations?.update_now || 'Update';
+    }
+}
+
+function _showUpdateCountdownToast(tag, totalSeconds, rollbackTag, rollbackCommit) {
+    // Remove any existing update toast
+    const existing = document.getElementById('update-countdown-toast');
+    if (existing) existing.remove();
+
+    const toast = document.createElement('div');
+    toast.id = 'update-countdown-toast';
+    toast.className = 'update-countdown-toast';
+
+    let remaining = totalSeconds;
+
+    function render() {
+        const pct = ((totalSeconds - remaining) / totalSeconds) * 100;
+        toast.innerHTML = `
+            <div class="update-toast-title">${window.translations?.updating_to || 'Updating to'} ${tag}</div>
+            <div class="update-toast-status" id="update-toast-status">${window.translations?.service_restarting || 'Service restarting'}... ${remaining}s</div>
+            <div class="update-toast-progress">
+                <div class="update-toast-progress-bar" style="width:${pct}%"></div>
+            </div>
+            <div class="update-toast-hint">${window.translations?.page_will_refresh || 'Page will refresh automatically'}</div>
+        `;
+    }
+
+    render();
+    document.body.appendChild(toast);
+
+    const countdownInterval = setInterval(() => {
+        remaining--;
+        if (remaining <= 0) {
+            clearInterval(countdownInterval);
+            _startHealthPolling(toast, tag, rollbackTag, rollbackCommit);
+        } else {
+            render();
+        }
+    }, 1000);
+}
+
+function _startHealthPolling(toast, tag, rollbackTag, rollbackCommit) {
+    const statusEl = toast.querySelector('#update-toast-status');
+    if (statusEl) {
+        statusEl.textContent = window.translations?.waiting_for_service || 'Waiting for service...';
+    }
+    // Keep progress bar at 100%
+    const bar = toast.querySelector('.update-toast-progress-bar');
+    if (bar) bar.style.width = '100%';
+
+    let attempts = 0;
+    const maxAttempts = 30; // 60 seconds total (2s intervals)
+
+    const pollInterval = setInterval(async () => {
+        attempts++;
+        try {
+            const resp = await fetch('/api/health', { cache: 'no-store' });
+            if (resp.ok) {
+                clearInterval(pollInterval);
+                if (statusEl) statusEl.textContent = window.translations?.update_complete || 'Update complete!';
+                toast.classList.add('update-toast-success');
+                setTimeout(() => location.reload(), 1500);
+                return;
+            }
+        } catch (_) {
+            // Service still restarting — expected
+        }
+
+        if (attempts >= maxAttempts) {
+            clearInterval(pollInterval);
+            _showUpdateFailure(toast, rollbackTag, rollbackCommit);
+        }
+    }, 2000);
+}
+
+function _showUpdateFailure(toast, rollbackTag, rollbackCommit) {
+    const rollbackRef = rollbackTag || rollbackCommit || 'previous commit';
+    toast.classList.add('update-toast-error');
+    toast.innerHTML = `
+        <div class="update-toast-title">${window.translations?.update_may_have_failed || 'Service did not respond'}</div>
+        <div class="update-toast-ssh-fallback">
+            <p>${window.translations?.connect_via_ssh || 'Connect via SSH to check'}:</p>
+            <code>ssh pi@mempaper.local</code><br>
+            <code>sudo systemctl status mempaper</code><br>
+            <code>sudo journalctl -u mempaper -n 50</code>
+            <p style="margin-top:8px">${window.translations?.to_rollback || 'To rollback'}:</p>
+            <code>cd ~/btc-mempaper</code><br>
+            <code>git checkout ${rollbackRef}</code><br>
+            <code>sudo systemctl restart mempaper</code>
+        </div>
+        <button class="update-toast-dismiss" onclick="this.closest('.update-countdown-toast').remove()">
+            ${window.translations?.dismiss || 'Dismiss'}
+        </button>
+    `;
+
+    // Also show the SSH info section in the config form
+    const sshInfo = document.getElementById('update-ssh-info');
+    if (sshInfo) sshInfo.style.display = '';
 }
 
 // (removed — user management is now inline in the General section)
@@ -2000,7 +2325,8 @@ function renderConfigurationForm() {
             }
             advancedContainer.querySelector('.advanced-section-content').appendChild(createCurrentUserUsernameField());
             advancedContainer.querySelector('.advanced-section-content').appendChild(createCurrentUserPasswordField());
-            fieldsAdded += 2;
+            advancedContainer.querySelector('.advanced-section-content').appendChild(createSoftwareUpdateSection());
+            fieldsAdded += 3;
         }
 
         //console.log(`Category ${category.id} has ${fieldsAdded} fields`);

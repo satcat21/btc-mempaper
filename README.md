@@ -358,6 +358,8 @@ pip install -r requirements.txt
 
   > If you updated scripts in this repository later, run the command again to refresh installed rules.
 
+  This also installs the sudoers rule for **software self-update** from the web UI (allows `systemctl restart mempaper.service` without a password).
+
   **Verify installation:**
 
   ```bash
@@ -652,6 +654,44 @@ The dashboard image is composed of a meme and a set of optional info blocks disp
 > All blocks are **on** by default except Bitaxe, Wallet Balances, and Donation, which require additional setup.
 
 See [Configuration Reference](docs/CONFIG_REFERENCE.md) for detailed explanation of all settings.
+
+<br/>
+
+---
+
+<br/>
+
+## SOFTWARE UPDATE
+
+mempaper can be updated directly from the web UI. Navigate to **Settings > General > Advanced > Software Update** to see the current version and available releases.
+
+### Web UI Update (Recommended)
+
+1. Open the **Software Update** section in Settings
+2. Select the desired release from the dropdown (latest is pre-selected)
+3. Click **Update** and confirm
+4. The app will fetch the release, install dependencies, and restart the service
+5. The page refreshes automatically once the service is back online
+
+### Manual Update via SSH
+
+```bash
+ssh pi@mempaper.local
+cd ~/btc-mempaper
+git fetch --tags
+git checkout <tag>                                    # e.g. git checkout v2.1.0
+.venv/bin/pip install -r requirements.txt --quiet
+sudo systemctl restart mempaper.service
+```
+
+### Permissions
+
+The web UI update requires a sudoers entry for passwordless service restart. This is automatically installed by `install_wifi_permissions.sh` (see [Quick Start step 5](#quick-start)). To install it manually:
+
+```bash
+echo "$(whoami) ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart mempaper.service" | sudo tee /etc/sudoers.d/mempaper-update
+sudo chmod 0440 /etc/sudoers.d/mempaper-update
+```
 
 <br/>
 
