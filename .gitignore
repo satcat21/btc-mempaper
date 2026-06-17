@@ -51,6 +51,9 @@ current_processed.png
 static/memes/*
 static/opsec/*
 
+# Display drivers
+display/drivers/
+
 # Temporary/dev files
 demo_*.py
 temp/
