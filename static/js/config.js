@@ -2107,7 +2107,14 @@ async function _performUpdate(tag, updateBtn) {
     };
 
     function onUpdateOutput(data) {
-        logArea.textContent += data.line + '\n';
+        if (data.header) {
+            const b = document.createElement('strong');
+            b.textContent = data.line;
+            logArea.appendChild(b);
+            logArea.appendChild(document.createTextNode('\n'));
+        } else {
+            logArea.appendChild(document.createTextNode(data.line + '\n'));
+        }
         logArea.scrollTop = logArea.scrollHeight;
         if (data.phase && phaseLabels[data.phase]) {
             phaseBar.textContent = phaseLabels[data.phase];
@@ -2130,7 +2137,10 @@ async function _performUpdate(tag, updateBtn) {
         if (data.success) {
             phaseBar.textContent = '';
             statusBar.textContent = (window.translations?.service_restarting || 'Service restarting') + '...';
-            logArea.textContent += '\n' + (window.translations?.update_complete_restarting || 'Update complete. Restarting service...') + '\n';
+            const doneMsg = document.createElement('strong');
+            doneMsg.textContent = '\n' + (window.translations?.update_complete_restarting || 'Update complete. Restarting service...');
+            logArea.appendChild(doneMsg);
+            logArea.appendChild(document.createTextNode('\n'));
             _startHealthPolling(overlay, dialog, statusBar, tag, data.rollback_tag, data.rollback_commit, oldStarted, updateBtn);
         } else {
             phaseBar.textContent = '';
@@ -2542,7 +2552,14 @@ function _startSystemUpdate(btn) {
     }
 
     function onAptOutput(data) {
-        logArea.textContent += data.line + '\n';
+        if (data.header) {
+            const b = document.createElement('strong');
+            b.textContent = data.line;
+            logArea.appendChild(b);
+            logArea.appendChild(document.createTextNode('\n'));
+        } else {
+            logArea.appendChild(document.createTextNode(data.line + '\n'));
+        }
         logArea.scrollTop = logArea.scrollHeight;
         const phaseLabels = {
             prepare:  window.translations?.remounting_filesystem || 'Remounting filesystem\u2026',
