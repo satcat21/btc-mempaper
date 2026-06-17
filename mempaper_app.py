@@ -6440,6 +6440,12 @@ class MempaperApp:
                 except Exception:
                     deps_changed = True  # Assume changed if we can't check
 
+                # Reset any local changes before checkout
+                subprocess.check_call(
+                    ['git', 'reset', '--hard'],
+                    cwd=project_dir, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL
+                )
+
                 # Checkout the tag (detached HEAD)
                 subprocess.check_call(
                     ['git', 'checkout', f'refs/tags/{tag}'],

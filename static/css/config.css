@@ -1560,6 +1560,21 @@ body.dark-mode .upload-icon {
     font-weight: 600;
 }
 
+.update-github-link {
+    margin-left: auto;
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 0.8rem;
+    padding: 3px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    transition: color 0.2s, border-color 0.2s;
+}
+.update-github-link:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+}
+
 .update-selector-row {
     display: flex;
     gap: 8px;

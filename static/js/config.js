@@ -1885,6 +1885,7 @@ function createSoftwareUpdateSection() {
     versionRow.innerHTML = `
         <span class="update-version-label">${window.translations?.current_version || 'Current version'}:</span>
         <span class="update-version-value" id="update-current-version">...</span>
+        <a href="https://github.com/satcat21/btc-mempaper/releases" target="_blank" rel="noopener" class="update-github-link">View on GitHub</a>
     `;
     wrapper.appendChild(versionRow);
 
@@ -2105,11 +2106,22 @@ function _startHealthPolling(toast, tag, rollbackTag, rollbackCommit) {
     let attempts = 0;
     const maxAttempts = 30; // 60 seconds total (2s intervals)
 
+    let serviceWasDown = false;
+
     const pollInterval = setInterval(async () => {
         attempts++;
         try {
             const resp = await fetch('/api/health', { cache: 'no-store' });
             if (resp.ok) {
+                if (!serviceWasDown) {
+                    // Health responded but service hasn't restarted yet (old process)
+                    return;
+                }
+                // Service is back — poll /api/update/current to confirm new version loaded
+                try {
+                    const vResp = await fetch('/api/update/current', { cache: 'no-store' });
+                    if (!vResp.ok) return; // not fully ready yet
+                } catch (_) { return; }
                 clearInterval(pollInterval);
                 if (statusEl) statusEl.textContent = window.translations?.update_complete || 'Update complete!';
                 toast.classList.add('update-toast-success');
@@ -2117,7 +2129,8 @@ function _startHealthPolling(toast, tag, rollbackTag, rollbackCommit) {
                 return;
             }
         } catch (_) {
-            // Service still restarting — expected
+            // Service is down — expected during restart
+            serviceWasDown = true;
         }
 
         if (attempts >= maxAttempts) {
