@@ -1712,6 +1712,10 @@ body.dark-mode .upload-icon {
     word-break: break-all;
     margin: 12px 0;
 }
+.system-update-log strong {
+    font-weight: bold;
+    color: #ffffff;
+}
 
 .system-update-status {
     font-size: 0.85rem;
