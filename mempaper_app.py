@@ -6503,7 +6503,7 @@ class MempaperApp:
                         apt_deps_changed = True
 
                     # Git checkout
-                    _emit('update_output', {'line': f'Checking out {tag}...', 'phase': 'git'})
+                    _emit('update_output', {'line': self.translations.get('checking_out_code', 'Checking out {tag}...').format(tag=tag), 'phase': 'git'})
                     subprocess.check_call(
                         ['git', 'reset', '--hard'],
                         cwd=project_dir, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL
@@ -6512,12 +6512,12 @@ class MempaperApp:
                         ['git', 'checkout', f'refs/tags/{tag}'],
                         cwd=project_dir, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL
                     )
-                    _emit('update_output', {'line': f'Checked out {tag}', 'phase': 'git'})
+                    _emit('update_output', {'line': self.translations.get('checked_out', 'Checked out {tag}').format(tag=tag), 'phase': 'git'})
 
                     # Install apt dependencies if changed
                     apt_req_file = os.path.join(project_dir, 'apt-requirements.txt')
                     if apt_deps_changed and os.path.exists(apt_req_file):
-                        _emit('update_output', {'line': 'Installing system dependencies...', 'phase': 'apt'})
+                        _emit('update_output', {'line': self.translations.get('installing_system_deps', 'Installing system dependencies...'), 'phase': 'apt'})
                         try:
                             with open(apt_req_file) as f:
                                 apt_pkgs = [
@@ -6534,9 +6534,9 @@ class MempaperApp:
                                     _emit('update_output', {'line': line.rstrip('\n'), 'phase': 'apt'})
                                 proc.wait()
                                 if proc.returncode != 0:
-                                    _emit('update_output', {'line': 'Warning: some system dependencies failed to install', 'phase': 'apt'})
+                                    _emit('update_output', {'line': self.translations.get('system_deps_warning', 'Warning: some system dependencies failed to install'), 'phase': 'apt'})
                                 else:
-                                    _emit('update_output', {'line': 'System dependencies installed', 'phase': 'apt'})
+                                    _emit('update_output', {'line': self.translations.get('system_deps_installed', 'System dependencies installed'), 'phase': 'apt'})
                         except Exception as apt_err:
                             _emit('update_output', {'line': f'Warning: {apt_err}', 'phase': 'apt'})
 
@@ -6545,7 +6545,7 @@ class MempaperApp:
                     requirements_file = os.path.join(project_dir, 'requirements.txt')
 
                     if os.path.exists(venv_pip) and os.path.exists(requirements_file):
-                        _emit('update_output', {'line': 'Installing Python dependencies...', 'phase': 'pip'})
+                        _emit('update_output', {'line': self.translations.get('installing_python_deps', 'Installing Python dependencies...'), 'phase': 'pip'})
                         try:
                             proc = subprocess.Popen(
                                 [venv_pip, 'install', '-r', requirements_file],
@@ -6557,17 +6557,17 @@ class MempaperApp:
                             proc.wait()
                             if proc.returncode != 0:
                                 # Rollback on pip failure
-                                _emit('update_output', {'line': 'pip install failed, rolling back...', 'phase': 'pip'})
+                                _emit('update_output', {'line': self.translations.get('pip_install_failed_rollback', 'pip install failed, rolling back...'), 'phase': 'pip'})
                                 subprocess.check_call(
                                     ['git', 'checkout', rollback_commit],
                                     cwd=project_dir, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL
                                 )
                                 _emit('update_done', {
                                     'success': False,
-                                    'error': 'Dependency installation failed. Rolled back to previous version.'
+                                    'error': self.translations.get('dep_install_failed_rollback', 'Dependency installation failed. Rolled back to previous version.')
                                 })
                                 return
-                            _emit('update_output', {'line': 'Python dependencies installed', 'phase': 'pip'})
+                            _emit('update_output', {'line': self.translations.get('python_deps_installed', 'Python dependencies installed'), 'phase': 'pip'})
                         except subprocess.TimeoutExpired:
                             subprocess.check_call(
                                 ['git', 'checkout', rollback_commit],
@@ -6575,7 +6575,7 @@ class MempaperApp:
                             )
                             _emit('update_done', {
                                 'success': False,
-                                'error': 'pip install timed out. Rolled back to previous version.'
+                                'error': self.translations.get('pip_timed_out_rollback_msg', 'pip install timed out. Rolled back to previous version.')
                             })
                             return
 
@@ -6585,7 +6585,7 @@ class MempaperApp:
                             flag_path = os.path.join(project_dir, '.pillow-rebuild-needed')
                             with open(flag_path, 'w') as f:
                                 f.write('1')
-                            _emit('update_output', {'line': 'Pillow will be rebuilt from source after restart', 'phase': 'pip'})
+                            _emit('update_output', {'line': self.translations.get('pillow_rebuild_scheduled', 'Pillow will be rebuilt from source after restart'), 'phase': 'pip'})
                         except Exception:
                             pass
 
@@ -6720,20 +6720,24 @@ class MempaperApp:
                     # Check if root filesystem is read-only and remount rw if needed
                     if _is_root_readonly():
                         was_readonly = True
-                        _emit('apt_output', {'line': '--- remounting filesystem read-write ---', 'phase': 'prepare'})
+                        _emit('apt_output', {'line': self.translations.get('remounting_filesystem', 'Remounting filesystem...'), 'phase': 'prepare'})
                         rc = subprocess.call(['sudo', 'mount', '-o', 'remount,rw', '/'])
                         if rc != 0:
                             _emit('apt_done', {
                                 'success': False,
-                                'error': 'Failed to remount filesystem read-write'
+                                'error': self.translations.get('remount_failed', 'Failed to remount filesystem read-write')
                             })
                             return
 
+                    phase_labels = {
+                        'update': self.translations.get('fetching_package_list', 'Fetching package list (apt update)...'),
+                        'upgrade': self.translations.get('installing_upgrades', 'Installing upgrades (apt upgrade)...'),
+                    }
                     for phase, cmd in [
                         ('update', ['sudo', 'apt-get', 'update']),
                         ('upgrade', ['sudo', 'apt-get', 'upgrade', '-y']),
                     ]:
-                        _emit('apt_output', {'line': f'--- apt {phase} ---', 'phase': phase})
+                        _emit('apt_output', {'line': phase_labels.get(phase, f'apt {phase}'), 'phase': phase})
 
                         proc = subprocess.Popen(
                             cmd,
@@ -6763,7 +6767,7 @@ class MempaperApp:
                                 if line.strip() and not line.strip().startswith('#')
                             ]
                         if apt_pkgs:
-                            _emit('apt_output', {'line': '--- installing mempaper dependencies ---', 'phase': 'deps'})
+                            _emit('apt_output', {'line': self.translations.get('installing_mempaper_deps', 'Installing mempaper dependencies...'), 'phase': 'deps'})
                             proc = subprocess.Popen(
                                 ['sudo', 'apt-get', 'install', '-y', '--no-upgrade'] + apt_pkgs,
                                 stdout=subprocess.PIPE,
@@ -6775,7 +6779,7 @@ class MempaperApp:
                                 _emit('apt_output', {'line': line.rstrip('\n'), 'phase': 'deps'})
                             proc.wait()
                             if proc.returncode != 0:
-                                _emit('apt_output', {'line': f'Warning: some mempaper dependencies failed to install', 'phase': 'deps'})
+                                _emit('apt_output', {'line': self.translations.get('mempaper_deps_warning', 'Warning: some mempaper dependencies failed to install'), 'phase': 'deps'})
 
                     _emit('apt_done', {'success': True})
                 except Exception as e:
@@ -6784,7 +6788,7 @@ class MempaperApp:
                 finally:
                     # Restore read-only if it was read-only before
                     if was_readonly:
-                        _emit('apt_output', {'line': '--- restoring read-only filesystem ---', 'phase': 'cleanup'})
+                        _emit('apt_output', {'line': self.translations.get('restoring_readonly', 'Restoring read-only filesystem...'), 'phase': 'cleanup'})
                         subprocess.call(['sudo', 'mount', '-o', 'remount,ro', '/'])
                     self._apt_running = False
 

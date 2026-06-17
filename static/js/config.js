@@ -2101,7 +2101,7 @@ async function _performUpdate(tag, updateBtn) {
     requestAnimationFrame(() => overlay.classList.add('visible'));
 
     const phaseLabels = {
-        git: window.translations?.checking_out_code || 'Checking out code...',
+        git: (window.translations?.checking_out_code || 'Checking out {tag}...').replace('{tag}', tag),
         apt: window.translations?.installing_system_deps || 'Installing system dependencies...',
         pip: window.translations?.installing_python_deps || 'Installing Python dependencies...',
     };
