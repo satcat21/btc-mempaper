@@ -12,6 +12,7 @@ watchdog==6.0.0  # For dynamic configuration file monitoring
 argon2-cffi==25.1.0  # Secure password hashing with Argon2id
 schedule==1.2.2  # For daily XPUB optimization scheduling
 numpy==2.4.4  # Fast vectorized operations for e-ink image processing
+pilmoji==2.0.5  # Emoji rendering in PIL images
 
 # Production WSGI server
 gunicorn==26.0.0  # Production WSGI server for Flask apps

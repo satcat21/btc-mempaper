@@ -33,6 +33,42 @@ from lib.btc_price_api import BitcoinPriceAPI
 from lib.bitaxe_api import BitaxeAPI
 from lib.wallet_balance_api import WalletBalanceAPI
 
+# ---------------------------------------------------------------------------
+# Emoji support — optional pilmoji dependency with persistent disk cache
+# ---------------------------------------------------------------------------
+try:
+    import hashlib as _hashlib
+    from pilmoji import Pilmoji as _Pilmoji
+    from pilmoji.source import TwitterEmojiSource as _TwitterEmojiSource
+
+    class _CachedEmojiSource(_TwitterEmojiSource):
+        """TwitterEmojiSource with a persistent on-disk cache.
+
+        Emoji images are downloaded once from Twitter's CDN and stored under
+        ``cache/emoji_cache/``.  Subsequent renders read from disk, so the
+        app works offline after a warm-up pass.
+        """
+        _CACHE_DIR = os.path.join("cache", "emoji_cache")
+
+        def request(self, url: str) -> bytes:
+            os.makedirs(self._CACHE_DIR, exist_ok=True)
+            key = _hashlib.md5(url.encode()).hexdigest() + ".png"
+            cache_file = os.path.join(self._CACHE_DIR, key)
+            if os.path.exists(cache_file):
+                with open(cache_file, "rb") as fh:
+                    return fh.read()
+            data = super().request(url)
+            try:
+                with open(cache_file, "wb") as fh:
+                    fh.write(data)
+            except OSError:
+                pass
+            return data
+
+    _PILMOJI_AVAILABLE = True
+except ImportError:
+    _PILMOJI_AVAILABLE = False
+
 COLOR_SETS = {
     "light": {
         "background": "#ffffff",
@@ -450,6 +486,95 @@ class ImageRenderer:
             if all((font.getbbox(t)[2] - font.getbbox(t)[0]) <= max_width for t in texts):
                 return font
         return self._get_font(font_path, min_size)
+
+    # ------------------------------------------------------------------
+    # Emoji support helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _has_emoji(text: str) -> bool:
+        """Return True if *text* contains any Unicode emoji or symbol codepoints."""
+        for char in text:
+            cp = ord(char)
+            if (
+                0x1F300 <= cp <= 0x1FFFF  # Misc Symbols, Pictographs, Emoticons, Transport, Supplemental
+                or 0x2600 <= cp <= 0x27BF  # Misc symbols & Dingbats
+                or 0x1F1E0 <= cp <= 0x1F1FF  # Regional indicator symbols (flags)
+                or 0xFE0F == cp  # Variation selector-16 (emoji presentation)
+                or 0x200D == cp  # Zero-width joiner (compound emoji sequences)
+                or 0x1F004 <= cp <= 0x1F0FF  # Mahjong/domino tile symbols
+            ):
+                return True
+        return False
+
+    @staticmethod
+    def _emoji_aware_getlength(text: str, font) -> float:
+        """Measure text pixel width, approximating emoji characters as *font.size* wide.
+
+        Roboto (and similar Latin fonts) have no emoji glyphs, so calling
+        ``font.getlength`` on an emoji codepoint returns the width of the
+        .notdef glyph (often ~0 or a tiny box).  This method replaces those
+        characters with a size-proportional estimate so that word-wrapping
+        and centering work correctly.
+        """
+        if not ImageRenderer._has_emoji(text):
+            return font.getlength(text)
+
+        emoji_size = getattr(font, 'size', 20)
+        total = 0.0
+        i = 0
+        while i < len(text):
+            cp = ord(text[i])
+            if (
+                0x1F300 <= cp <= 0x1FFFF
+                or 0x2600 <= cp <= 0x27BF
+                or 0x1F1E0 <= cp <= 0x1F1FF
+                or 0x1F004 <= cp <= 0x1F0FF
+            ):
+                total += emoji_size
+                # Consume any trailing variation selector / ZWJ / second emoji in sequence
+                i += 1
+                while i < len(text):
+                    nc = ord(text[i])
+                    if nc in (0xFE0F, 0x200D):
+                        i += 1
+                        # ZWJ — the next codepoint is part of this compound emoji
+                        if i < len(text) and (
+                            0x1F300 <= ord(text[i]) <= 0x1FFFF
+                            or 0x1F1E0 <= ord(text[i]) <= 0x1F1FF
+                        ):
+                            i += 1  # consume the joined character (already counted)
+                    else:
+                        break
+            elif cp in (0xFE0F, 0x200D):
+                # Standalone modifiers — skip, no width
+                i += 1
+            else:
+                total += font.getlength(text[i])
+                i += 1
+        return total
+
+    def _draw_text_with_emoji(self, draw, xy, text, font, fill):
+        """Draw *text* at *xy* with full emoji support via pilmoji.
+
+        Emoji images are fetched from Twitter's CDN on first use and cached to
+        ``cache/emoji_cache/`` so subsequent renders work offline.
+        Falls back to plain ``draw.text()`` when pilmoji is unavailable or the
+        text contains no emoji, so existing non-emoji rendering is unaffected.
+        """
+        if not self._has_emoji(text):
+            draw.text(xy, text, font=font, fill=fill)
+            return
+        if not _PILMOJI_AVAILABLE:
+            draw.text(xy, text, font=font, fill=fill)
+            return
+        try:
+            image = draw._image  # PIL semi-public attribute, stable across versions
+            with _Pilmoji(image, source=_CachedEmojiSource) as pilmoji:
+                pilmoji.text(xy, text, fill=fill, font=font)
+        except Exception:
+            # Graceful fallback: render without emoji (shows .notdef placeholder)
+            draw.text(xy, text, font=font, fill=fill)
 
     def _get_resolution_scale(self, orientation):
         """Return orientation-aware scale factor based on original baseline canvas."""
@@ -1427,9 +1552,15 @@ class ImageRenderer:
 
         start_y = text_y + layout["header_h"] + layout["body_top_gap"]
         for i, line in enumerate(layout["lines"]):
-            bb = layout["content_font"].getbbox(line)
-            x = self.layout.get_text_centered_x(bb, layout["content_center_x"])
-            draw.text(
+            # Use emoji-aware width for correct centering when line contains emoji
+            if self._has_emoji(line):
+                line_w = self._emoji_aware_getlength(line, layout["content_font"])
+                x = layout["content_center_x"] - int(line_w) // 2
+            else:
+                bb = layout["content_font"].getbbox(line)
+                x = self.layout.get_text_centered_x(bb, layout["content_center_x"])
+            self._draw_text_with_emoji(
+                draw,
                 (x, start_y + i * (layout["line_h"] + layout["line_gap"])),
                 line,
                 font=layout["content_font"],
@@ -4203,14 +4334,15 @@ class ImageRenderer:
         cannot be arranged without truncation (signalling the caller to reduce
         font size and retry).
         """
+        _getlength = ImageRenderer._emoji_aware_getlength
         words = text.split()
         lines = []
         current = ""
         for word in words:
-            if font.getlength(word) > max_width:
+            if _getlength(word, font) > max_width:
                 return None  # single word too wide — reduce font size
             candidate = (current + " " + word).strip()
-            if font.getlength(candidate) <= max_width:
+            if _getlength(candidate, font) <= max_width:
                 current = candidate
             else:
                 if current:
@@ -4228,13 +4360,14 @@ class ImageRenderer:
         boundary if not all words fit.  Used as a last-resort fallback at minimum
         font size when _wrap_text_to_lines cannot find a clean fit.
         """
+        _getlength = ImageRenderer._emoji_aware_getlength
         words = text.split()
         lines = []
         current = ""
         for word in words:
             # If a single word is too wide, squeeze it in alone (edge case at tiny sizes)
             candidate = (current + " " + word).strip()
-            if font.getlength(candidate) <= max_width:
+            if _getlength(candidate, font) <= max_width:
                 current = candidate
             else:
                 if current:
@@ -4250,7 +4383,7 @@ class ImageRenderer:
             parts = last.split()
             while parts:
                 candidate = " ".join(parts) + "…"
-                if font.getlength(candidate) <= max_width:
+                if _getlength(candidate, font) <= max_width:
                     lines[-1] = candidate
                     break
                 parts.pop()
