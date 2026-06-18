@@ -417,7 +417,7 @@ class ConfigManager:
             "color_donation_dark": "#F7931A",
             # --- Auto Update ---
             "auto_update_enabled": False,
-            "auto_update_hour": 3,
+            "auto_update_time": "03:00",
             "auto_update_days": ["mon", "wed", "fri"],
         }
     
@@ -606,11 +606,18 @@ class ConfigManager:
             "mempool_password",
             "omni_device_name",
             "admin_username",
-            "admin_password"
+            "admin_password",
         ]
         for setting in string_settings:
             if setting in config and isinstance(config[setting], str):
                 validated[setting] = config[setting].strip()
+
+        # Validate auto_update_time (HH:MM format, 00:00–23:59)
+        if "auto_update_time" in config and isinstance(config["auto_update_time"], str):
+            import re
+            m = re.match(r'^([01]\d|2[0-3]):([0-5]\d)$', config["auto_update_time"].strip())
+            if m:
+                validated["auto_update_time"] = config["auto_update_time"].strip()
 
         # Integer settings with validation (including backwards compatibility)
         int_settings = {
@@ -619,7 +626,6 @@ class ConfigManager:
             "network_outage_tolerance_minutes": (5, 10080),  # 5 min to 1 week
             "display_width": (100, 2000),
             "display_height": (100, 2000),
-            "auto_update_hour": (0, 23),
         }
         for setting, (min_val, max_val) in int_settings.items():
             if setting in config:
@@ -1406,13 +1412,11 @@ class ConfigManager:
                 "category": "updates",
                 "order": 0
             },
-            "auto_update_hour": {
-                "type": "number",
-                "label": t.get("auto_update_hour", "Update Hour"),
-                "description": t.get("auto_update_hour_desc", "Hour of day to run automatic updates (0-23)"),
-                "min": 0,
-                "max": 23,
-                "default": 3,
+            "auto_update_time": {
+                "type": "time",
+                "label": t.get("auto_update_time", "Update Time"),
+                "description": t.get("auto_update_time_desc", "Time of day to run automatic updates (HH:MM)"),
+                "default": "03:00",
                 "category": "updates",
                 "order": 1
             },
@@ -1451,13 +1455,13 @@ class ConfigManager:
             {"id": "general", "label": t.get("general_settings", "General Settings"), "icon": "/static/icons/settings.svg"},
             {"id": "mempool", "label": t.get("mempool_settings", "Mempool"), "icon": "/static/icons/bottom_drawer.svg"},
             {"id": "eink_display", "label": t.get("eink_display", "E-Ink Display"), "icon": "/static/icons/photo_frame.svg"},
-            {"id": "price_stats", "label": t.get("price_stats", "Price Stats"), "icon": "/static/icons/price_change.svg"},
-            {"id": "countdown", "label": t.get("countdown_settings", "Countdown"), "icon": "/static/icons/price_change.svg"},
-            {"id": "halving", "label": t.get("halving_settings", "Halving"), "icon": "/static/icons/price_change.svg"},
-            {"id": "network_stats", "label": t.get("network_settings", "Network"), "icon": "/static/icons/calculate.svg"},
+            {"id": "price_stats", "label": t.get("price_stats", "Price Stats"), "icon": "/static/icons/price.svg"},
+            {"id": "countdown", "label": t.get("countdown_settings", "Countdown"), "icon": "/static/icons/countdown.svg"},
+            {"id": "halving", "label": t.get("halving_settings", "Halving"), "icon": "/static/icons/halving.svg"},
+            {"id": "network_stats", "label": t.get("network_settings", "Network"), "icon": "/static/icons/network.svg"},
             {"id": "wallet_monitoring", "label": t.get("wallet_monitoring", "Wallet Monitoring"), "icon": "/static/icons/wallet.svg"},
-            {"id": "bitaxe_stats", "label": t.get("bitaxe_stats", "Bitaxe Stats"), "icon": "/static/icons/calculate.svg"},
-            {"id": "donation", "label": t.get("donation_settings", "Lightning Donation"), "icon": "/static/icons/price_change.svg"},
+            {"id": "bitaxe_stats", "label": t.get("bitaxe_stats", "Bitaxe Stats"), "icon": "/static/icons/bitaxe.svg"},
+            {"id": "donation", "label": t.get("donation_settings", "Lightning Donation"), "icon": "/static/icons/donation.svg"},
             {"id": "meme_management", "label": t.get("meme_management", "Meme Management"), "icon": "/static/icons/mood.svg"},
             {"id": "opsec", "label": t.get("opsec_settings", "OPSec"), "icon": "/static/icons/opsec.svg"},
             {"id": "updates", "label": t.get("updates_settings", "Updates"), "icon": "/static/icons/update.svg"},

@@ -8,6 +8,13 @@
     margin: 0 auto;
     padding: 16px;
     padding-bottom: 100px; /* room for mobile nav */
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.container > #config-container {
+    flex: 1;
 }
 
 @media (min-width: 1000px) {
@@ -76,14 +83,51 @@
     display: flex;
     gap: 6px;
     overflow-x: auto;
+    flex-wrap: nowrap;
     scrollbar-width: none;
     -ms-overflow-style: none;
-    scroll-behavior: smooth;
     padding-bottom: 2px;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-x pan-y;
+}
+
+.section-nav.expanded .section-nav-track {
+    flex-wrap: wrap;
+    overflow-x: visible;
 }
 
 .section-nav-track::-webkit-scrollbar {
     display: none;
+}
+
+/* Mobile expand/collapse toggle */
+.section-nav-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    padding: 4px 0 0;
+    border: none;
+    background: none;
+    color: var(--text-secondary);
+    font-size: 0.7rem;
+    cursor: pointer;
+    gap: 4px;
+    opacity: 0.6;
+    transition: opacity 0.2s ease;
+}
+
+.section-nav-toggle:hover {
+    opacity: 1;
+}
+
+.section-nav-toggle-icon {
+    transition: transform 0.2s ease;
+    font-size: 0.6rem;
+}
+
+.section-nav.expanded .section-nav-toggle-icon {
+    transform: rotate(180deg);
 }
 
 .section-nav-pill {
@@ -101,11 +145,50 @@
     cursor: pointer;
     transition: all 0.2s ease;
     flex-shrink: 0;
+    position: relative;
 }
 
-.section-nav-pill:hover {
-    border-color: var(--accent);
-    color: var(--text-primary);
+@media (hover: hover) {
+    .section-nav-pill:hover {
+        border-color: var(--accent);
+        color: var(--text-primary);
+    }
+
+    /* Hover icon: match accent/orange color */
+    .section-nav-pill:hover .section-nav-icon {
+        filter: brightness(0) saturate(100%) invert(56%) sepia(89%) saturate(1000%) hue-rotate(3deg) brightness(103%) contrast(97%) !important;
+    }
+}
+
+/* Instant CSS tooltip — only on devices with hover (mouse), not touch */
+@media (hover: hover) {
+    .section-nav-pill[data-tooltip]:not(.active)::after {
+        content: attr(data-tooltip);
+        position: absolute;
+        bottom: calc(100% + 6px);
+        left: 50%;
+        transform: translateX(-50%);
+        background: var(--bg-card);
+        color: var(--text-primary);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        padding: 4px 8px;
+        font-size: 0.72rem;
+        font-weight: 500;
+        white-space: nowrap;
+        pointer-events: none;
+        opacity: 0;
+        z-index: 110;
+    }
+
+    .section-nav.stuck .section-nav-pill[data-tooltip]:not(.active)::after {
+        bottom: auto;
+        top: calc(100% + 6px);
+    }
+
+    .section-nav-pill[data-tooltip]:not(.active):hover::after {
+        opacity: 1;
+    }
 }
 
 .section-nav-pill.active {
@@ -133,6 +216,23 @@ body.dark-mode .section-nav-pill:not(.active) .section-nav-icon {
 
 .section-nav-label {
     line-height: 1;
+    display: none;
+}
+
+.section-nav-pill.active .section-nav-label {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+/* Reserve bold width so pills don't shift on highlight */
+.section-nav-label::after {
+    content: attr(data-label);
+    font-weight: 600;
+    height: 0;
+    overflow: hidden;
+    visibility: hidden;
+    pointer-events: none;
 }
 
 /* Update available indicator dot */
@@ -151,7 +251,7 @@ body.dark-mode .section-nav-pill:not(.active) .section-nav-icon {
     50%      { opacity: 0.5; transform: scale(0.75); }
 }
 
-/* Desktop: wrap pills so all are visible */
+/* Desktop: wrap pills so all are visible, hide toggle */
 @media (min-width: 768px) {
     .section-nav {
         margin: 0 -24px;
@@ -167,6 +267,10 @@ body.dark-mode .section-nav-pill:not(.active) .section-nav-icon {
     .section-nav-pill {
         padding: 7px 14px;
         font-size: 0.82rem;
+    }
+
+    .section-nav-toggle {
+        display: none;
     }
 }
 
@@ -189,7 +293,7 @@ body.dark-mode .section-nav-pill:not(.active) .section-nav-icon {
     align-content: flex-start;
     transition: border-color var(--transition), opacity var(--transition);
     position: relative;
-    z-index: 1;
+    z-index: auto;
     box-shadow: none;
     scroll-margin-top: 60px;
 }
@@ -354,6 +458,12 @@ body.dark-mode .section-nav-pill:not(.active) .section-nav-icon {
 
 .form-input::placeholder {
     color: var(--text-muted);
+}
+
+/* Dark mode: make native time/date picker icons white */
+body.dark-mode .form-input[type="time"],
+body.dark-mode .form-input[type="date"] {
+    color-scheme: dark;
 }
 
 .form-input:focus {
@@ -1667,7 +1777,7 @@ body.dark-mode .upload-icon {
 }
 
 .update-version-value {
-    color: var(--accent);
+    color: var(--text-primary);
     font-family: var(--font-mono);
     font-weight: 600;
 }

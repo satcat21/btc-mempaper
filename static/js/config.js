@@ -2015,22 +2015,41 @@ async function _loadUpdateData(selectEl, updateBtn, versionEl, notesContainer) {
             const latestTag = releases[0]?.tag;
             const hasUpdate = versionData.success && latestTag && versionData.current_tag !== latestTag;
 
+            const latestLabel = window.translations?.latest_release_label || 'latest release';
+
             releases.forEach((rel, i) => {
                 const opt = document.createElement('option');
                 opt.value = rel.tag;
                 const date = rel.published_at ? new Date(rel.published_at).toLocaleDateString() : '';
                 const pre = rel.prerelease ? ' (pre-release)' : '';
+                const isLatest = i === 0;
                 const isCurrent = versionData.success && versionData.current_tag === rel.tag;
-                const isLatest = i === 0 && hasUpdate;
-                const currentLabel = isCurrent ? ` [${window.translations?.current_tag_label || 'current'}]` : '';
-                const newLabel = isLatest ? ` ★ ${window.translations?.new_version_label || 'NEW'}` : '';
-                opt.textContent = `${rel.name || rel.tag}${pre}${currentLabel}${newLabel} — ${date}`;
-                if (isCurrent) opt.style.fontWeight = 'bold';
-                if (isLatest) { opt.style.fontWeight = 'bold'; opt.style.color = '#f7931a'; }
+                const latestSuffix = isLatest ? ` (${latestLabel})` : '';
+                opt.textContent = `${rel.name || rel.tag}${pre}${latestSuffix} — ${date}`;
+                // Bold + orange for newest uninstalled release; bold only for current installed
+                if (isLatest && hasUpdate) {
+                    opt.style.fontWeight = 'bold';
+                    opt.style.color = '#f7931a';
+                } else if (isCurrent) {
+                    opt.style.fontWeight = 'bold';
+                }
                 opt.dataset.body = rel.body || '';
+                opt.dataset.isNew = (isLatest && hasUpdate) ? '1' : '';
                 if (i === 0) opt.selected = true;
                 selectEl.appendChild(opt);
             });
+
+            // Style the closed select: bold+orange when new uninstalled release is selected
+            function _updateSelectStyle() {
+                const isNew = selectEl.options[selectEl.selectedIndex]?.dataset?.isNew === '1';
+                selectEl.style.fontWeight = isNew ? 'bold' : '';
+                selectEl.style.color = isNew ? '#f7931a' : '';
+            }
+            selectEl.addEventListener('change', _updateSelectStyle);
+            _updateSelectStyle();
+            // Clear select color while dropdown is open so individual option colors show
+            selectEl.addEventListener('focus', () => { selectEl.style.color = ''; });
+            selectEl.addEventListener('blur', _updateSelectStyle);
 
             updateBtn.disabled = false;
 
@@ -2677,7 +2696,7 @@ function _showUpdateNavIndicator(hasUpdate, latestTag) {
 
     // Tooltip
     const tooltip = (window.translations?.update_available_hint || 'Update {version} available').replace('{version}', latestTag);
-    pill.title = tooltip;
+    pill.dataset.tooltip = tooltip;
 }
 
 // ── Section Navigation Bar ──────────────────────────────────────────
@@ -2720,16 +2739,19 @@ function buildSectionNav(grid) {
             pill.appendChild(img);
         }
 
+        pill.dataset.tooltip = cat.label;
+
         const label = document.createElement('span');
         label.className = 'section-nav-label';
         label.textContent = cat.label;
+        label.dataset.label = cat.label;
         pill.appendChild(label);
 
         pill.addEventListener('click', () => {
             const target = document.getElementById(sec.id);
             if (!target) return;
-            // Offset for the sticky nav height
-            const navHeight = nav.offsetHeight + 12;
+            // Scroll so section top is just above the nav bottom (ensures it becomes active)
+            const navHeight = nav.offsetHeight - 2;
             const top = target.getBoundingClientRect().top + window.pageYOffset - navHeight;
             window.scrollTo({ top, behavior: 'smooth' });
         });
@@ -2738,6 +2760,16 @@ function buildSectionNav(grid) {
     });
 
     nav.appendChild(track);
+
+    // Mobile expand/collapse toggle
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'section-nav-toggle';
+    toggle.innerHTML = '<span class="section-nav-toggle-icon">▼</span>';
+    toggle.addEventListener('click', () => {
+        nav.classList.toggle('expanded');
+    });
+    nav.appendChild(toggle);
 
     // Insert before config-container
     const container = document.getElementById('config-container');
@@ -2762,22 +2794,49 @@ function buildSectionNav(grid) {
     // Set first pill active initially
     if (pills.length) setActive(pills[0]);
 
-    const observerOpts = {
-        rootMargin: '-20% 0px -60% 0px',
-        threshold: 0
-    };
-
-    _sectionNavObserver = new IntersectionObserver(entries => {
-        entries.forEach(entry => {
-            if (entry.isIntersecting) {
-                const id = entry.target.id;
-                const pill = track.querySelector(`.section-nav-pill[data-target="${id}"]`);
-                if (pill) setActive(pill);
+    // Scroll-based active tracking — find the last section whose top has scrolled past the nav
+    function updateActiveFromScroll() {
+        // If scrolled to the bottom of the page, activate the last section
+        if ((window.innerHeight + window.scrollY) >= (document.documentElement.scrollHeight - 30)) {
+            const lastSec = sections[sections.length - 1];
+            if (lastSec) {
+                const pill = track.querySelector(`.section-nav-pill[data-target="${lastSec.id}"]`);
+                if (pill) { setActive(pill); return; }
             }
-        });
-    }, observerOpts);
+        }
+        const navBottom = nav.getBoundingClientRect().bottom + 10;
+        let bestPill = null;
+        for (let i = sections.length - 1; i >= 0; i--) {
+            const sec = sections[i];
+            if (sec.getBoundingClientRect().top <= navBottom) {
+                const pill = track.querySelector(`.section-nav-pill[data-target="${sec.id}"]`);
+                if (pill) bestPill = pill;
+                break;
+            }
+        }
+        if (bestPill) setActive(bestPill);
+    }
 
-    sections.forEach(sec => _sectionNavObserver.observe(sec));
+    let _scrollTick = false;
+    window.addEventListener('scroll', () => {
+        if (!_scrollTick) {
+            _scrollTick = true;
+            requestAnimationFrame(() => {
+                updateActiveFromScroll();
+                _scrollTick = false;
+            });
+        }
+    }, { passive: true });
+
+    // Detect when nav becomes stuck at the top to flip tooltip direction
+    const sentinel = document.createElement('div');
+    sentinel.style.height = '1px';
+    sentinel.style.visibility = 'hidden';
+    nav.parentNode.insertBefore(sentinel, nav);
+    const stickyObs = new IntersectionObserver(([e]) => {
+        nav.classList.toggle('stuck', !e.isIntersecting);
+    }, { threshold: 0 });
+    stickyObs.observe(sentinel);
 }
 
 function renderConfigurationForm() {
@@ -3047,7 +3106,15 @@ function createFormField(key, field, value) {
             input.min = field.min || '';
             input.max = field.max || '';
             break;
-            
+
+        case 'time':
+            input = document.createElement('input');
+            input.type = 'time';
+            input.className = 'form-input';
+            input.value = value !== undefined && value !== null ? value : '';
+            input.title = window.translations?.time_picker_tooltip || 'Select time';
+            break;
+
         case 'select':
             // Check if this select has HTML flags (like language selector)
             const hasHtmlFlags = field.options.some(option => option.flag && option.flag.includes('<img'));

@@ -7046,23 +7046,38 @@ class MempaperApp:
         def _auto_update_loop():
             day_map = {'mon': 0, 'tue': 1, 'wed': 2, 'thu': 3, 'fri': 4, 'sat': 5, 'sun': 6}
             last_run_date = None
+            _logged_status = False
 
             while True:
                 try:
                     time.sleep(60)  # Check every minute
 
-                    if not self.config.get('auto_update_enabled', False):
+                    enabled = self.config.get('auto_update_enabled', False)
+                    if not _logged_status:
+                        target_time = self.config.get('auto_update_time', self.config.get('auto_update_hour', '03:00'))
+                        days = self.config.get('auto_update_days', [])
+                        print(f"🕐 Auto-update scheduler active — enabled={enabled}, time={target_time}, days={days}")
+                        _logged_status = True
+
+                    if not enabled:
                         continue
 
                     now = datetime.datetime.now()
-                    target_hour = int(self.config.get('auto_update_hour', 3))
+                    # Support both new "HH:MM" format and legacy hour-only int
+                    raw_time = self.config.get('auto_update_time', self.config.get('auto_update_hour', '03:00'))
+                    if isinstance(raw_time, int):
+                        target_hour, target_minute = raw_time, 0
+                    else:
+                        parts = str(raw_time).split(':')
+                        target_hour = int(parts[0])
+                        target_minute = int(parts[1]) if len(parts) > 1 else 0
                     allowed_days = self.config.get('auto_update_days', ['mon', 'wed', 'fri'])
 
-                    # Only run once per day, at the configured hour
+                    # Only run once per day, at the configured time
                     today = now.date()
                     if last_run_date == today:
                         continue
-                    if now.hour != target_hour:
+                    if now.hour != target_hour or now.minute != target_minute:
                         continue
                     if now.weekday() not in [day_map.get(d, -1) for d in allowed_days]:
                         continue
@@ -7099,9 +7114,9 @@ class MempaperApp:
 
                     # Phase 2: Mempaper software update — only if a newer release exists
                     try:
-                        subprocess.check_call(
+                        subprocess.run(
                             ['git', 'fetch', '--tags', '--force'],
-                            cwd=project_dir, capture_output=True, timeout=60
+                            cwd=project_dir, capture_output=True, timeout=60, check=True
                         )
 
                         # Get latest tag by version sort
@@ -7154,13 +7169,13 @@ class MempaperApp:
                                     apt_deps_changed = True
 
                                 # Git checkout
-                                subprocess.check_call(
+                                subprocess.run(
                                     ['git', 'reset', '--hard'],
-                                    cwd=project_dir, capture_output=True
+                                    cwd=project_dir, capture_output=True, check=True
                                 )
-                                subprocess.check_call(
+                                subprocess.run(
                                     ['git', 'checkout', f'refs/tags/{latest_tag}'],
-                                    cwd=project_dir, capture_output=True
+                                    cwd=project_dir, capture_output=True, check=True
                                 )
 
                                 # Install apt deps if changed
@@ -7185,9 +7200,9 @@ class MempaperApp:
                                     )
                                     if result.returncode != 0:
                                         print(f"⚠️ Auto-update: pip install failed, rolling back...")
-                                        subprocess.check_call(
+                                        subprocess.run(
                                             ['git', 'checkout', current_tag or 'HEAD~1'],
-                                            cwd=project_dir, capture_output=True
+                                            cwd=project_dir, capture_output=True, check=True
                                         )
                                     else:
                                         needs_restart = True
@@ -7223,12 +7238,6 @@ class MempaperApp:
         """
         print(f"🚀 Starting Mempaper server on {host}:{port}")
 
-        # Background Pillow source rebuild if flagged by a previous update
-        self._start_pillow_rebuild_if_needed()
-
-        # Start automatic update scheduler
-        self._start_auto_update_scheduler()
-
         # Run Flask app
         if self.socketio:
             self.socketio.run(self.app, host=host, port=port, debug=debug, allow_unsafe_werkzeug=True)
@@ -7245,6 +7254,9 @@ def get_app_instance():
     global _app_instance
     if _app_instance is None:
         _app_instance = MempaperApp()
+        # Start background tasks (runs under both gunicorn and direct mode)
+        _app_instance._start_pillow_rebuild_if_needed()
+        _app_instance._start_auto_update_scheduler()
     return _app_instance
 
 def create_app():
