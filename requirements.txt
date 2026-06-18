@@ -16,7 +16,7 @@ pilmoji==2.0.5  # Emoji rendering in PIL images
 
 # Production WSGI server
 gunicorn==26.0.0  # Production WSGI server for Flask apps
-gevent==26.4.0  # Async networking library for SocketIO (replaces eventlet)
+gevent==26.5.0  # Async networking library for SocketIO (replaces eventlet)
 gevent-websocket==0.10.1  # Required for WebSocket upgrade support with gunicorn geventwebsocket worker
 # websocket-client (above) is used for outgoing connections to mempool API
 

@@ -53,6 +53,7 @@ static/opsec/*
 
 # Display drivers
 display/drivers/
+!display/drivers/README.md
 
 # Temporary/dev files
 demo_*.py
