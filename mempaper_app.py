@@ -6414,11 +6414,26 @@ class MempaperApp:
                 resp.raise_for_status()
                 releases = resp.json()
 
+                # Minimum version that supports web GUI updates — older releases
+                # lack this feature and installing them would lock out the user.
+                min_version = (1, 7, 0)
+
+                def _parse_version(tag):
+                    """Parse 'v1.7.0' into (1, 7, 0) tuple, or None on failure."""
+                    try:
+                        return tuple(int(x) for x in tag.lstrip('v').split('.'))
+                    except (ValueError, AttributeError):
+                        return None
+
                 result = []
                 for rel in releases:
+                    tag_name = rel.get('tag_name', '')
+                    ver = _parse_version(tag_name)
+                    if ver is not None and ver < min_version:
+                        continue
                     result.append({
-                        'tag': rel.get('tag_name', ''),
-                        'name': rel.get('name', '') or rel.get('tag_name', ''),
+                        'tag': tag_name,
+                        'name': rel.get('name', '') or tag_name,
                         'published_at': rel.get('published_at', ''),
                         'body': rel.get('body', ''),
                         'prerelease': rel.get('prerelease', False),
