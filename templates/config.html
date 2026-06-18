@@ -59,7 +59,10 @@
         </div>
 
         <div id="config-container">
-            <!-- Configuration sections will be loaded here -->
+            <div id="config-loading" class="config-loading">
+                <div class="config-loading-spinner"></div>
+                <p>{{ translations.loading or 'Loading...' }}</p>
+            </div>
         </div>
 
         <footer class="config-footer">

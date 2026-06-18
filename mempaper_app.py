@@ -6404,19 +6404,13 @@ class MempaperApp:
         @self.app.route('/api/update/releases', methods=['GET'])
         @require_auth(self.auth_manager)
         def get_available_releases():
-            """Fetch available releases from GitHub."""
+            """Fetch available releases from the git remote (GitHub or GitLab)."""
             try:
-                resp = requests.get(
-                    'https://api.github.com/repos/satcat21/btc-mempaper/releases',
-                    headers={'Accept': 'application/vnd.github.v3+json'},
-                    timeout=15
-                )
-                resp.raise_for_status()
-                releases = resp.json()
+                project_dir = os.path.dirname(os.path.abspath(__file__))
 
                 # Minimum version that supports web GUI updates — older releases
                 # lack this feature and installing them would lock out the user.
-                min_version = (1, 7, 0)
+                min_version = (1, 6, 0)
 
                 def _parse_version(tag):
                     """Parse 'v1.7.0' into (1, 7, 0) tuple, or None on failure."""
@@ -6425,23 +6419,105 @@ class MempaperApp:
                     except (ValueError, AttributeError):
                         return None
 
-                result = []
-                for rel in releases:
-                    tag_name = rel.get('tag_name', '')
-                    ver = _parse_version(tag_name)
-                    if ver is not None and ver < min_version:
-                        continue
-                    result.append({
-                        'tag': tag_name,
-                        'name': rel.get('name', '') or tag_name,
-                        'published_at': rel.get('published_at', ''),
-                        'body': rel.get('body', ''),
-                        'prerelease': rel.get('prerelease', False),
-                        'draft': rel.get('draft', False)
-                    })
+                # Read remote URL from git config
+                remote_url = subprocess.check_output(
+                    ['git', 'remote', 'get-url', 'origin'],
+                    cwd=project_dir, text=True
+                ).strip().rstrip('.git').rstrip('/')
 
-                return jsonify({'success': True, 'releases': result})
-            except requests.RequestException as e:
+                is_gitlab = 'github.com' not in remote_url
+                repo_url = remote_url
+                platform = 'GitLab' if is_gitlab else 'GitHub'
+
+                # Try fetching releases from the hosting API first
+                # Optional: GIT_API_TOKEN in .env for private repo access
+                api_token = os.getenv('GIT_API_TOKEN')
+                if not api_token:
+                    try:
+                        from dotenv import dotenv_values
+                        env_path = os.path.join(project_dir, '.env')
+                        env_vars = dotenv_values(env_path)
+                        api_token = env_vars.get('GIT_API_TOKEN')
+                    except Exception:
+                        pass
+
+                api_releases = None
+                try:
+                    if 'github.com' in remote_url:
+                        parts = remote_url.split('github.com/')[-1]
+                        api_url = f'https://api.github.com/repos/{parts}/releases'
+                        headers = {'Accept': 'application/vnd.github.v3+json'}
+                        if api_token:
+                            headers['Authorization'] = f'Bearer {api_token}'
+                    else:
+                        from urllib.parse import urlparse
+                        parsed = urlparse(remote_url)
+                        project_path = parsed.path.lstrip('/')
+                        api_url = f'{parsed.scheme}://{parsed.hostname}/api/v4/projects/{requests.utils.quote(project_path, safe="")}/releases'
+                        headers = {}
+                        if api_token:
+                            headers['PRIVATE-TOKEN'] = api_token
+
+                    resp = requests.get(api_url, headers=headers, timeout=15)
+                    resp.raise_for_status()
+                    api_releases = resp.json()
+                except requests.RequestException:
+                    pass  # Fall back to local git tags
+
+                if api_releases is not None:
+                    # Build result from API response (has release notes, dates, etc.)
+                    result = []
+                    for rel in api_releases:
+                        tag_name = rel.get('tag_name', '')
+                        ver = _parse_version(tag_name)
+                        if ver is not None and ver < min_version:
+                            continue
+                        result.append({
+                            'tag': tag_name,
+                            'name': rel.get('name', '') or tag_name,
+                            'published_at': rel.get('released_at', '') if is_gitlab else rel.get('published_at', ''),
+                            'body': rel.get('description', '') if is_gitlab else rel.get('body', ''),
+                            'prerelease': rel.get('upcoming_release', False) if is_gitlab else rel.get('prerelease', False),
+                            'draft': False if is_gitlab else rel.get('draft', False)
+                        })
+                else:
+                    # Fallback: use local git tags (works for private repos)
+                    subprocess.run(
+                        ['git', 'fetch', '--tags', '--force'],
+                        cwd=project_dir, capture_output=True, timeout=30
+                    )
+                    tag_output = subprocess.check_output(
+                        ['git', 'tag', '-l', '--sort=-version:refname'],
+                        cwd=project_dir, text=True
+                    ).strip()
+
+                    result = []
+                    for tag_name in tag_output.splitlines():
+                        tag_name = tag_name.strip()
+                        if not tag_name:
+                            continue
+                        ver = _parse_version(tag_name)
+                        if ver is not None and ver < min_version:
+                            continue
+                        # Get tag date
+                        try:
+                            date_str = subprocess.check_output(
+                                ['git', 'log', '-1', '--format=%aI', tag_name],
+                                cwd=project_dir, text=True
+                            ).strip()
+                        except subprocess.SubprocessError:
+                            date_str = ''
+                        result.append({
+                            'tag': tag_name,
+                            'name': tag_name,
+                            'published_at': date_str,
+                            'body': '',
+                            'prerelease': False,
+                            'draft': False
+                        })
+
+                return jsonify({'success': True, 'releases': result, 'repo_url': repo_url, 'platform': platform})
+            except Exception as e:
                 print(f"Error fetching releases: {e}")
                 return jsonify({'success': False, 'message': f'Failed to fetch releases: {e}'}), 502
 

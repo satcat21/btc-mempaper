@@ -685,6 +685,23 @@ git checkout <tag>                                    # e.g. git checkout v2.1.0
 sudo systemctl restart mempaper.service
 ```
 
+### Private Repositories
+
+If your git remote points to a private repository (e.g. self-hosted GitLab), the updater falls back to local git tags — updates still work, but release notes won't be shown in the web UI.
+
+To enable full release notes, create a `.env` file with an API token:
+
+```bash
+cp .env.example .env
+nano .env
+```
+
+```env
+# GitHub: Personal Access Token with "repo" scope
+# GitLab: Personal Access Token with "read_api" scope
+GIT_API_TOKEN=glpat-xxxxxxxxxxxxxxxxxxxx
+```
+
 ### Permissions
 
 The web UI update requires a sudoers entry for passwordless service restart. This is automatically installed by `install_wifi_permissions.sh` (see [Quick Start step 5](#quick-start)). To install it manually:

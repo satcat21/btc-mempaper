@@ -1977,6 +1977,35 @@ body.dark-mode .upload-icon {
 }
 
 /* ── Config Footer ──────────────────────────────────────────── */
+/* Loading state */
+.config-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 80px 0;
+    color: #888;
+    gap: 16px;
+}
+
+.config-loading p {
+    margin: 0;
+    font-size: 0.95rem;
+}
+
+.config-loading-spinner {
+    width: 36px;
+    height: 36px;
+    border: 3px solid rgba(255, 255, 255, 0.15);
+    border-top-color: #f7931a;
+    border-radius: 50%;
+    animation: config-spin 0.8s linear infinite;
+}
+
+@keyframes config-spin {
+    to { transform: rotate(360deg); }
+}
+
 .config-footer {
     margin-top: 48px;
     padding-top: 0;

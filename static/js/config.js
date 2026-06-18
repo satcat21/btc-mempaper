@@ -1885,7 +1885,7 @@ function createSoftwareUpdateSection() {
     versionRow.innerHTML = `
         <span class="update-version-label">${window.translations?.current_version || 'Current version'}:</span>
         <span class="update-version-value" id="update-current-version">...</span>
-        <a href="https://github.com/satcat21/btc-mempaper/releases" target="_blank" rel="noopener" class="update-github-link">View on GitHub</a>
+        <a href="#" target="_blank" rel="noopener" class="update-github-link" id="update-repo-link" style="display:none">View on GitHub</a>
     `;
     wrapper.appendChild(versionRow);
 
@@ -1992,6 +1992,17 @@ async function _loadUpdateData(selectEl, updateBtn, versionEl, notesContainer) {
             const commit = versionData.current_commit;
             if (versionEl) {
                 versionEl.textContent = tag ? `${tag} (${commit})` : commit;
+            }
+        }
+
+        // Update repo link dynamically
+        if (releasesData.success && releasesData.repo_url) {
+            const repoLink = document.getElementById('update-repo-link');
+            if (repoLink) {
+                const isGitLab = releasesData.platform === 'GitLab';
+                repoLink.href = releasesData.repo_url + (isGitLab ? '/-/releases' : '/releases');
+                repoLink.textContent = `View on ${releasesData.platform || 'GitHub'}`;
+                repoLink.style.display = '';
             }
         }
 
