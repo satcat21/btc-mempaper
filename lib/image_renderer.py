@@ -3676,16 +3676,16 @@ class ImageRenderer:
             meme_height = 0
             meme_width = 0
 
+            # Pre-calculate max meme height (needed by fallback even if image load fails)
+            min_gaps = 2 * STANDARD_SPACING  # Top gap + Bottom gap
+            max_meme_height = available_content_height - min_gaps - donation_reserved - holiday_reserved
+            max_meme_height = max(max_meme_height, 0)
+
             if meme_path:
                 try:
                     meme_img = self._open_image_robust(meme_path)
                     aspect_ratio = meme_img.width / meme_img.height
                     max_width = self.width - 40
-
-                    # Calculate maximum meme height with only mandatory gaps (top + bottom)
-                    min_gaps = 2 * STANDARD_SPACING  # Top gap + Bottom gap
-                    max_meme_height = available_content_height - min_gaps - donation_reserved - holiday_reserved
-                    max_meme_height = max(max_meme_height, 0)
 
                     # Scale meme to fit max width and max height
                     scaled_width = min(max_width, int(max_meme_height * aspect_ratio))

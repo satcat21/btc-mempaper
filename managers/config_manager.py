@@ -415,6 +415,10 @@ class ConfigManager:
             "webhook_relay_ws_url": "",
             "color_donation_light": "#F7931A",
             "color_donation_dark": "#F7931A",
+            # --- Auto Update ---
+            "auto_update_enabled": False,
+            "auto_update_hour": 3,
+            "auto_update_days": ["mon", "wed", "fri"],
         }
     
     def save_config(self, config: Dict[str, Any] = None) -> bool:
@@ -522,6 +526,7 @@ class ConfigManager:
             "mempool_verify_ssl",
             "opsec_mode_enabled",
             "public_dashboard",
+            "auto_update_enabled",
         ]
         for setting in bool_settings:
             if setting in config:
@@ -613,7 +618,8 @@ class ConfigManager:
             "mempool_ws_port": (1, 65535),
             "network_outage_tolerance_minutes": (5, 10080),  # 5 min to 1 week
             "display_width": (100, 2000),
-            "display_height": (100, 2000)
+            "display_height": (100, 2000),
+            "auto_update_hour": (0, 23),
         }
         for setting, (min_val, max_val) in int_settings.items():
             if setting in config:
@@ -643,6 +649,11 @@ class ConfigManager:
                 except (ValueError, TypeError):
                     pass
         
+        # Auto-update days (list of day abbreviations)
+        valid_days = {"mon", "tue", "wed", "thu", "fri", "sat", "sun"}
+        if "auto_update_days" in config and isinstance(config["auto_update_days"], list):
+            validated["auto_update_days"] = [d for d in config["auto_update_days"] if d in valid_days]
+
         # Backwards compatibility: old field names to new field names
         field_mappings = {
             "width": "display_width",

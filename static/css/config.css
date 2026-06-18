@@ -1692,7 +1692,7 @@ body.dark-mode .upload-icon {
 }
 
 .system-update-dialog {
-    max-width: 600px;
+    max-width: 780px;
     width: 90vw;
     text-align: left;
 }
@@ -1702,6 +1702,9 @@ body.dark-mode .upload-icon {
     height: 24px;
     vertical-align: middle;
     transform: translateY(-2px);
+}
+
+body.dark-mode .modal-title-icon {
     filter: invert(1);
 }
 

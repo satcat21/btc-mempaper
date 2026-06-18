@@ -105,6 +105,7 @@ translations = {
         "delete_meme": "Delete",
         "confirm_delete": "Confirm Delete",
         "cancel": "Cancel",
+        "delete": "Delete",
         "save": "Save",
         "delete_confirmation_title": "Delete Meme",
         "delete_confirmation_message": "Are you sure you want to permanently delete this meme? This action cannot be undone.",
@@ -534,6 +535,7 @@ translations = {
         "day_saturday": "Sat",
         "day_sunday": "Sun",
         "auto_update_log": "Auto-update: {action}",
+        "view_on_platform": "View on {platform}",
     },
     "de": {
         # Dashboard UI
@@ -639,6 +641,7 @@ translations = {
         "delete_meme": "Löschen",
         "confirm_delete": "Löschen bestätigen",
         "cancel": "Abbrechen",
+        "delete": "Löschen",
         "save": "Speichern",
         "delete_confirmation_title": "Meme löschen",
         "delete_confirmation_message": "Sind Sie sicher, dass Sie dieses Meme dauerhaft löschen möchten? Diese Aktion kann nicht rückgängig gemacht werden.",
@@ -1070,6 +1073,7 @@ translations = {
         "day_saturday": "Sa",
         "day_sunday": "So",
         "auto_update_log": "Auto-Update: {action}",
+        "view_on_platform": "Anzeigen auf {platform}",
     },
     "es": {
         # Dashboard UI
@@ -1173,6 +1177,7 @@ translations = {
         "delete_meme": "Eliminar",
         "confirm_delete": "Confirmar Eliminación",
         "cancel": "Cancelar",
+        "delete": "Eliminar",
         "save": "Guardar",
         "delete_confirmation_title": "Eliminar Meme",
         "delete_confirmation_message": "¿Está seguro de que desea eliminar permanentemente este meme? Esta acción no se puede deshacer.",
@@ -1591,6 +1596,7 @@ translations = {
         "day_saturday": "Sáb",
         "day_sunday": "Dom",
         "auto_update_log": "Actualización automática: {action}",
+        "view_on_platform": "Ver en {platform}",
     },
     "fr": {
         # Dashboard UI
@@ -1694,6 +1700,7 @@ translations = {
         "delete_meme": "Supprimer",
         "confirm_delete": "Confirmer la Suppression",
         "cancel": "Annuler",
+        "delete": "Supprimer",
         "save": "Enregistrer",
         "delete_confirmation_title": "Supprimer le Mème",
         "delete_confirmation_message": "Êtes-vous sûr de vouloir supprimer définitivement ce mème ? Cette action ne peut pas être annulée.",
@@ -2113,6 +2120,7 @@ translations = {
         "day_saturday": "Sam",
         "day_sunday": "Dim",
         "auto_update_log": "Mise à jour automatique : {action}",
+        "view_on_platform": "Voir sur {platform}",
     },
     "it": {
         # Dashboard UI
@@ -2218,6 +2226,7 @@ translations = {
         "delete_meme": "Elimina",
         "confirm_delete": "Conferma Eliminazione",
         "cancel": "Annulla",
+        "delete": "Elimina",
         "save": "Salva",
         "delete_confirmation_title": "Elimina Meme",
         "delete_confirmation_message": "Sei sicuro di voler eliminare definitivamente questo meme? Questa azione non può essere annullata.",
@@ -2622,5 +2631,6 @@ translations = {
         "day_saturday": "Sab",
         "day_sunday": "Dom",
         "auto_update_log": "Aggiornamento automatico: {action}",
+        "view_on_platform": "Vedi su {platform}",
     }
 }

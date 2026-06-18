@@ -2002,7 +2002,7 @@ async function _loadUpdateData(selectEl, updateBtn, versionEl, notesContainer) {
             if (repoLink) {
                 const isGitLab = releasesData.platform === 'GitLab';
                 repoLink.href = releasesData.repo_url + (isGitLab ? '/-/releases' : '/releases');
-                repoLink.textContent = `View on ${releasesData.platform || 'GitHub'}`;
+                repoLink.textContent = (window.translations?.view_on_platform || 'View on {platform}').replace('{platform}', releasesData.platform || 'GitHub');
                 repoLink.style.display = '';
             }
         }

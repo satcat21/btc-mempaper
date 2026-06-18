@@ -83,13 +83,9 @@
         <div class="modal-content">
             <h3><img src="{{ url_for('static', filename='icons/delete.svg') }}" alt="" class="modal-title-icon"> {{ translations.delete_confirmation_title }}</h3>
             <p>{{ translations.delete_confirmation_message }}</p>
-            <div class="modal-buttons">
-                <button id="confirm-delete" class="icon-button confirm">
-                    <img src="{{ url_for('static', filename='icons/check.svg') }}" alt="Confirm">
-                </button>
-                <button id="cancel-delete" class="icon-button cancel">
-                    <img src="{{ url_for('static', filename='icons/cancel.svg') }}" alt="Cancel">
-                </button>
+            <div class="confirm-modal-buttons">
+                <button id="cancel-delete" class="confirm-modal-btn cancel">{{ translations.cancel or 'Cancel' }}</button>
+                <button id="confirm-delete" class="confirm-modal-btn danger">{{ translations.delete or 'Delete' }}</button>
             </div>
         </div>
     </div>
@@ -99,13 +95,9 @@
         <div class="modal-content">
             <h3><img src="{{ url_for('static', filename='icons/delete.svg') }}" alt="" class="modal-title-icon"> {{ translations.opsec_delete_confirmation_title }}</h3>
             <p>{{ translations.opsec_delete_confirmation_message }}</p>
-            <div class="modal-buttons">
-                <button id="opsec-confirm-delete" class="icon-button confirm">
-                    <img src="{{ url_for('static', filename='icons/check.svg') }}" alt="Confirm">
-                </button>
-                <button id="opsec-cancel-delete" class="icon-button cancel">
-                    <img src="{{ url_for('static', filename='icons/cancel.svg') }}" alt="Cancel">
-                </button>
+            <div class="confirm-modal-buttons">
+                <button id="opsec-cancel-delete" class="confirm-modal-btn cancel">{{ translations.cancel or 'Cancel' }}</button>
+                <button id="opsec-confirm-delete" class="confirm-modal-btn danger">{{ translations.delete or 'Delete' }}</button>
             </div>
         </div>
     </div>
@@ -144,16 +136,10 @@
                     </div>
                 </div>
             </div>
-            <div class="modal-footer">
-                <button class="icon-button" onclick="downloadOpsecFromModal()" title="{{ translations.download_meme }}">
-                    <img src="/static/icons/download.svg" alt="Download" />
-                </button>
-                <button class="icon-button delete" onclick="deleteOpsecFromModal()" title="{{ translations.delete_meme }}">
-                    <img src="/static/icons/delete.svg" alt="Delete" />
-                </button>
-                <button class="icon-button cancel" onclick="closeOpsecModal()" title="{{ translations.cancel }}">
-                    <img src="/static/icons/cancel.svg" alt="Cancel" />
-                </button>
+            <div class="modal-footer confirm-modal-buttons">
+                <button class="confirm-modal-btn cancel" onclick="closeOpsecModal()">{{ translations.close or 'Close' }}</button>
+                <button class="confirm-modal-btn confirm" onclick="downloadOpsecFromModal()">{{ translations.download_meme or 'Download' }}</button>
+                <button class="confirm-modal-btn danger" onclick="deleteOpsecFromModal()">{{ translations.delete or 'Delete' }}</button>
             </div>
         </div>
     </div>
@@ -200,16 +186,10 @@
                     </div>
                 </div>
             </div>
-            <div class="modal-footer">
-                <button class="icon-button" onclick="downloadMemeFromModal()" title="{{ translations.download_meme }}">
-                    <img src="/static/icons/download.svg" alt="Download" />
-                </button>
-                <button class="icon-button delete" onclick="deleteMemeFromModal()" title="{{ translations.delete_meme }}">
-                    <img src="/static/icons/delete.svg" alt="Delete" />
-                </button>
-                <button class="icon-button cancel" onclick="closeMemeModal()" title="{{ translations.cancel }}">
-                    <img src="/static/icons/cancel.svg" alt="Cancel" />
-                </button>
+            <div class="modal-footer confirm-modal-buttons">
+                <button class="confirm-modal-btn cancel" onclick="closeMemeModal()">{{ translations.close or 'Close' }}</button>
+                <button class="confirm-modal-btn confirm" onclick="downloadMemeFromModal()">{{ translations.download_meme or 'Download' }}</button>
+                <button class="confirm-modal-btn danger" onclick="deleteMemeFromModal()">{{ translations.delete or 'Delete' }}</button>
             </div>
         </div>
     </div>
