@@ -2647,6 +2647,106 @@ function _startSystemUpdate(btn) {
 // (removed — user management is now inline in the General section)
 function renderUserManagementSection(grid) { /* no-op */ }
 
+// ── Section Navigation Bar ──────────────────────────────────────────
+let _sectionNavObserver = null;
+
+function buildSectionNav(grid) {
+    // Remove previous nav if re-rendering
+    const old = document.getElementById('section-nav');
+    if (old) old.remove();
+    if (_sectionNavObserver) { _sectionNavObserver.disconnect(); _sectionNavObserver = null; }
+
+    const sections = grid.querySelectorAll('.config-section[id]');
+    if (sections.length === 0) return;
+
+    // Build nav container
+    const nav = document.createElement('nav');
+    nav.id = 'section-nav';
+    nav.className = 'section-nav';
+
+    const track = document.createElement('div');
+    track.className = 'section-nav-track';
+
+    sections.forEach(sec => {
+        // Match section id back to category
+        const catId = sec.id.replace('section-', '');
+        const cat = categories.find(c => c.id === catId);
+        if (!cat) return;
+
+        const pill = document.createElement('button');
+        pill.type = 'button';
+        pill.className = 'section-nav-pill';
+        pill.dataset.target = sec.id;
+
+        // Icon
+        if (cat.icon && cat.icon.startsWith('/')) {
+            const img = document.createElement('img');
+            img.src = cat.icon;
+            img.alt = '';
+            img.className = 'section-nav-icon';
+            pill.appendChild(img);
+        }
+
+        const label = document.createElement('span');
+        label.className = 'section-nav-label';
+        label.textContent = cat.label;
+        pill.appendChild(label);
+
+        pill.addEventListener('click', () => {
+            const target = document.getElementById(sec.id);
+            if (!target) return;
+            // Offset for the sticky nav height
+            const navHeight = nav.offsetHeight + 12;
+            const top = target.getBoundingClientRect().top + window.pageYOffset - navHeight;
+            window.scrollTo({ top, behavior: 'smooth' });
+        });
+
+        track.appendChild(pill);
+    });
+
+    nav.appendChild(track);
+
+    // Insert before config-container
+    const container = document.getElementById('config-container');
+    container.parentNode.insertBefore(nav, container);
+
+    // ── IntersectionObserver for active state ──
+    const pills = track.querySelectorAll('.section-nav-pill');
+    let activePill = null;
+
+    function setActive(pill) {
+        if (activePill === pill) return;
+        if (activePill) activePill.classList.remove('active');
+        pill.classList.add('active');
+        activePill = pill;
+        // Scroll pill into view within the track (without affecting page scroll)
+        const trackRect = track.getBoundingClientRect();
+        const pillRect = pill.getBoundingClientRect();
+        const offset = pillRect.left - trackRect.left - (trackRect.width / 2) + (pillRect.width / 2);
+        track.scrollBy({ left: offset, behavior: 'smooth' });
+    }
+
+    // Set first pill active initially
+    if (pills.length) setActive(pills[0]);
+
+    const observerOpts = {
+        rootMargin: '-20% 0px -60% 0px',
+        threshold: 0
+    };
+
+    _sectionNavObserver = new IntersectionObserver(entries => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                const id = entry.target.id;
+                const pill = track.querySelector(`.section-nav-pill[data-target="${id}"]`);
+                if (pill) setActive(pill);
+            }
+        });
+    }, observerOpts);
+
+    sections.forEach(sec => _sectionNavObserver.observe(sec));
+}
+
 function renderConfigurationForm() {
     const container = document.getElementById('config-container');
     container.innerHTML = ''; // Clear any existing content
@@ -2675,7 +2775,8 @@ function renderConfigurationForm() {
         
         const section = document.createElement('div');
         section.className = 'config-section';
-        
+        section.id = 'section-' + category.id;
+
         // Add special class for meme/opsec management sections (spans 2 columns on desktop)
         if (category.id === 'meme_management' || category.id === 'opsec') {
             section.classList.add('meme-management-section');
@@ -2838,7 +2939,9 @@ function renderConfigurationForm() {
     });
 
     container.appendChild(grid);
-    // Render the configuration form
+
+    // ── Section Navigation Bar ──────────────────────────────────
+    buildSectionNav(grid);
 
     // Load cached balances for any existing wallet entries after form is rendered
     setTimeout(() => {

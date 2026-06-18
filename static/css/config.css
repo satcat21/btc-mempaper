@@ -8,7 +8,6 @@
     margin: 0 auto;
     padding: 16px;
     padding-bottom: 100px; /* room for mobile nav */
-    overflow-x: hidden;
 }
 
 @media (min-width: 1000px) {
@@ -59,6 +58,102 @@
     color: var(--text-secondary);
 }
 
+/* ── Section Navigation Bar ─────────────────────────────────── */
+.section-nav {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: var(--bg-primary);
+    padding: 10px 0 8px;
+    border-bottom: 1px solid var(--border-color);
+    margin: 0 -16px;
+    padding-left: 16px;
+    padding-right: 16px;
+    transition: box-shadow 0.2s ease;
+}
+
+.section-nav-track {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    scroll-behavior: smooth;
+    padding-bottom: 2px;
+}
+
+.section-nav-track::-webkit-scrollbar {
+    display: none;
+}
+
+.section-nav-pill {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 9999px;
+    background: var(--bg-card);
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    font-weight: 500;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+}
+
+.section-nav-pill:hover {
+    border-color: var(--accent);
+    color: var(--text-primary);
+}
+
+.section-nav-pill.active {
+    background: var(--accent-dim);
+    border-color: var(--accent);
+    color: var(--accent);
+    font-weight: 600;
+}
+
+.section-nav-icon {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+}
+
+/* Active pill icon: match accent color */
+.section-nav-pill.active .section-nav-icon {
+    filter: brightness(0) saturate(100%) invert(56%) sepia(89%) saturate(1000%) hue-rotate(3deg) brightness(103%) contrast(97%);
+}
+
+/* Dark mode: invert inactive pill icons to white */
+body.dark-mode .section-nav-pill:not(.active) .section-nav-icon {
+    filter: invert(1);
+}
+
+.section-nav-label {
+    line-height: 1;
+}
+
+/* Desktop: wrap pills so all are visible */
+@media (min-width: 768px) {
+    .section-nav {
+        margin: 0 -24px;
+        padding-left: 24px;
+        padding-right: 24px;
+    }
+
+    .section-nav-track {
+        flex-wrap: wrap;
+        overflow-x: visible;
+    }
+
+    .section-nav-pill {
+        padding: 7px 14px;
+        font-size: 0.82rem;
+    }
+}
+
 /* ── Config Grid ────────────────────────────────────────────── */
 .config-grid {
     display: flex;
@@ -80,6 +175,7 @@
     position: relative;
     z-index: 1;
     box-shadow: none;
+    scroll-margin-top: 60px;
 }
 
 .config-section:hover {
