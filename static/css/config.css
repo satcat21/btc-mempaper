@@ -135,6 +135,22 @@ body.dark-mode .section-nav-pill:not(.active) .section-nav-icon {
     line-height: 1;
 }
 
+/* Update available indicator dot */
+.nav-update-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    flex-shrink: 0;
+    animation: nav-dot-pulse 2s ease-in-out infinite;
+    box-shadow: 0 0 6px rgba(247, 147, 26, 0.6);
+}
+
+@keyframes nav-dot-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%      { opacity: 0.5; transform: scale(0.75); }
+}
+
 /* Desktop: wrap pills so all are visible */
 @media (min-width: 768px) {
     .section-nav {

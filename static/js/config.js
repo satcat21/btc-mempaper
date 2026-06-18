@@ -2012,13 +2012,21 @@ async function _loadUpdateData(selectEl, updateBtn, versionEl, notesContainer) {
             selectEl.innerHTML = '';
             const releases = releasesData.releases.filter(r => !r.draft);
 
+            const latestTag = releases[0]?.tag;
+            const hasUpdate = versionData.success && latestTag && versionData.current_tag !== latestTag;
+
             releases.forEach((rel, i) => {
                 const opt = document.createElement('option');
                 opt.value = rel.tag;
                 const date = rel.published_at ? new Date(rel.published_at).toLocaleDateString() : '';
                 const pre = rel.prerelease ? ' (pre-release)' : '';
-                const current = (versionData.success && versionData.current_tag === rel.tag) ? ' [current]' : '';
-                opt.textContent = `${rel.name || rel.tag}${pre}${current} — ${date}`;
+                const isCurrent = versionData.success && versionData.current_tag === rel.tag;
+                const isLatest = i === 0 && hasUpdate;
+                const currentLabel = isCurrent ? ` [${window.translations?.current_tag_label || 'current'}]` : '';
+                const newLabel = isLatest ? ` ★ ${window.translations?.new_version_label || 'NEW'}` : '';
+                opt.textContent = `${rel.name || rel.tag}${pre}${currentLabel}${newLabel} — ${date}`;
+                if (isCurrent) opt.style.fontWeight = 'bold';
+                if (isLatest) { opt.style.fontWeight = 'bold'; opt.style.color = '#f7931a'; }
                 opt.dataset.body = rel.body || '';
                 if (i === 0) opt.selected = true;
                 selectEl.appendChild(opt);
@@ -2031,6 +2039,9 @@ async function _loadUpdateData(selectEl, updateBtn, versionEl, notesContainer) {
                 notesContainer.innerHTML = _renderReleaseMarkdown(releases[0].body);
                 notesContainer.style.display = '';
             }
+
+            // Show update indicator on nav pill
+            _showUpdateNavIndicator(hasUpdate, latestTag);
         } else {
             selectEl.innerHTML = '<option disabled selected>No releases found</option>';
         }
@@ -2646,6 +2657,28 @@ function _startSystemUpdate(btn) {
 
 // (removed — user management is now inline in the General section)
 function renderUserManagementSection(grid) { /* no-op */ }
+
+// ── Update Available Indicator ───────────────────────────────────────
+function _showUpdateNavIndicator(hasUpdate, latestTag) {
+    const pill = document.querySelector('.section-nav-pill[data-target="section-updates"]');
+    if (!pill) return;
+
+    // Remove existing indicator
+    const existing = pill.querySelector('.nav-update-dot');
+    if (existing) existing.remove();
+    pill.removeAttribute('title');
+
+    if (!hasUpdate) return;
+
+    // Add pulsing dot
+    const dot = document.createElement('span');
+    dot.className = 'nav-update-dot';
+    pill.appendChild(dot);
+
+    // Tooltip
+    const tooltip = (window.translations?.update_available_hint || 'Update {version} available').replace('{version}', latestTag);
+    pill.title = tooltip;
+}
 
 // ── Section Navigation Bar ──────────────────────────────────────────
 let _sectionNavObserver = null;

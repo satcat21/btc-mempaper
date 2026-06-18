@@ -7075,8 +7075,9 @@ class MempaperApp:
                     print(f"🔄 Auto-update triggered at {now.strftime('%Y-%m-%d %H:%M')}")
 
                     project_dir = os.path.dirname(os.path.abspath(__file__))
+                    needs_restart = False
 
-                    # Phase 1: System packages (apt update + upgrade)
+                    # Phase 1: System packages (apt update + upgrade) — always runs
                     try:
                         print("🔄 Auto-update: running apt update && apt upgrade...")
                         subprocess.run(['sudo', 'apt-get', 'update'], capture_output=True, timeout=300)
@@ -7096,7 +7097,7 @@ class MempaperApp:
                     except Exception as e:
                         print(f"⚠️ Auto-update: apt failed: {e}")
 
-                    # Phase 2: Mempaper software update (latest release)
+                    # Phase 2: Mempaper software update — only if a newer release exists
                     try:
                         subprocess.check_call(
                             ['git', 'fetch', '--tags', '--force'],
@@ -7110,99 +7111,99 @@ class MempaperApp:
                         ).strip()
 
                         if not tags_output:
-                            print("⚠️ Auto-update: no tags found")
-                            continue
+                            print("⚠️ Auto-update: no tags found, skipping software update")
+                        else:
+                            latest_tag = tags_output.splitlines()[0].strip()
 
-                        latest_tag = tags_output.splitlines()[0].strip()
+                            # Get current tag
+                            try:
+                                current_tag = subprocess.check_output(
+                                    ['git', 'describe', '--tags', '--exact-match', 'HEAD'],
+                                    cwd=project_dir, stderr=subprocess.DEVNULL, text=True
+                                ).strip()
+                            except subprocess.CalledProcessError:
+                                current_tag = None
 
-                        # Get current tag
-                        try:
-                            current_tag = subprocess.check_output(
-                                ['git', 'describe', '--tags', '--exact-match', 'HEAD'],
-                                cwd=project_dir, stderr=subprocess.DEVNULL, text=True
-                            ).strip()
-                        except subprocess.CalledProcessError:
-                            current_tag = None
+                            if current_tag == latest_tag:
+                                print(f"✅ Auto-update: already on latest release ({latest_tag}), skipping")
+                            else:
+                                print(f"🔄 Auto-update: upgrading from {current_tag} to {latest_tag}...")
 
-                        if current_tag == latest_tag:
-                            print(f"✅ Auto-update: already on latest ({latest_tag})")
-                            continue
-
-                        print(f"🔄 Auto-update: upgrading from {current_tag} to {latest_tag}...")
-
-                        # Check dependency changes
-                        deps_changed = False
-                        apt_deps_changed = False
-                        pillow_changed = False
-                        try:
-                            diff_result = subprocess.run(
-                                ['git', 'diff', '--name-only', 'HEAD', f'refs/tags/{latest_tag}', '--',
-                                 'requirements.txt', 'apt-requirements.txt'],
-                                cwd=project_dir, capture_output=True, text=True
-                            )
-                            changed_files = diff_result.stdout.strip()
-                            deps_changed = 'requirements.txt' in changed_files
-                            apt_deps_changed = 'apt-requirements.txt' in changed_files
-                            if deps_changed:
-                                import re
-                                diff_content = subprocess.run(
-                                    ['git', 'diff', 'HEAD', f'refs/tags/{latest_tag}', '--', 'requirements.txt'],
-                                    cwd=project_dir, capture_output=True, text=True
-                                )
-                                pillow_changed = bool(re.search(r'^\+.*pillow==', diff_content.stdout, re.IGNORECASE | re.MULTILINE))
-                        except Exception:
-                            deps_changed = True
-                            apt_deps_changed = True
-
-                        # Git checkout
-                        subprocess.check_call(
-                            ['git', 'reset', '--hard'],
-                            cwd=project_dir, capture_output=True
-                        )
-                        subprocess.check_call(
-                            ['git', 'checkout', f'refs/tags/{latest_tag}'],
-                            cwd=project_dir, capture_output=True
-                        )
-
-                        # Install apt deps if changed
-                        if apt_deps_changed:
-                            apt_req_file = os.path.join(project_dir, 'apt-requirements.txt')
-                            if os.path.exists(apt_req_file):
-                                with open(apt_req_file) as f:
-                                    pkgs = [l.strip() for l in f if l.strip() and not l.strip().startswith('#')]
-                                if pkgs:
-                                    subprocess.run(
-                                        ['sudo', 'apt-get', 'install', '-y', '--no-upgrade'] + pkgs,
-                                        capture_output=True, timeout=300
+                                # Check dependency changes
+                                deps_changed = False
+                                apt_deps_changed = False
+                                pillow_changed = False
+                                try:
+                                    diff_result = subprocess.run(
+                                        ['git', 'diff', '--name-only', 'HEAD', f'refs/tags/{latest_tag}', '--',
+                                         'requirements.txt', 'apt-requirements.txt'],
+                                        cwd=project_dir, capture_output=True, text=True
                                     )
+                                    changed_files = diff_result.stdout.strip()
+                                    deps_changed = 'requirements.txt' in changed_files
+                                    apt_deps_changed = 'apt-requirements.txt' in changed_files
+                                    if deps_changed:
+                                        import re
+                                        diff_content = subprocess.run(
+                                            ['git', 'diff', 'HEAD', f'refs/tags/{latest_tag}', '--', 'requirements.txt'],
+                                            cwd=project_dir, capture_output=True, text=True
+                                        )
+                                        pillow_changed = bool(re.search(r'^\+.*pillow==', diff_content.stdout, re.IGNORECASE | re.MULTILINE))
+                                except Exception:
+                                    deps_changed = True
+                                    apt_deps_changed = True
 
-                        # Install pip deps
-                        venv_pip = os.path.join(project_dir, '.venv', 'bin', 'pip')
-                        requirements_file = os.path.join(project_dir, 'requirements.txt')
-                        if os.path.exists(venv_pip) and os.path.exists(requirements_file):
-                            result = subprocess.run(
-                                [venv_pip, 'install', '-r', requirements_file],
-                                cwd=project_dir, capture_output=True, timeout=600
-                            )
-                            if result.returncode != 0:
-                                print(f"⚠️ Auto-update: pip install failed, rolling back...")
+                                # Git checkout
                                 subprocess.check_call(
-                                    ['git', 'checkout', current_tag or 'HEAD~1'],
+                                    ['git', 'reset', '--hard'],
                                     cwd=project_dir, capture_output=True
                                 )
-                                continue
+                                subprocess.check_call(
+                                    ['git', 'checkout', f'refs/tags/{latest_tag}'],
+                                    cwd=project_dir, capture_output=True
+                                )
 
-                        # Flag Pillow rebuild if needed
-                        if pillow_changed:
-                            flag_path = os.path.join(project_dir, '.pillow-rebuild-needed')
-                            with open(flag_path, 'w') as f:
-                                f.write('1')
+                                # Install apt deps if changed
+                                if apt_deps_changed:
+                                    apt_req_file = os.path.join(project_dir, 'apt-requirements.txt')
+                                    if os.path.exists(apt_req_file):
+                                        with open(apt_req_file) as f:
+                                            pkgs = [l.strip() for l in f if l.strip() and not l.strip().startswith('#')]
+                                        if pkgs:
+                                            subprocess.run(
+                                                ['sudo', 'apt-get', 'install', '-y', '--no-upgrade'] + pkgs,
+                                                capture_output=True, timeout=300
+                                            )
 
-                        print(f"✅ Auto-update: upgraded to {latest_tag}. Restarting service...")
-                        subprocess.run(
-                            ['sudo', 'systemctl', 'restart', 'mempaper.service'],
-                            timeout=30
-                        )
+                                # Install pip deps
+                                venv_pip = os.path.join(project_dir, '.venv', 'bin', 'pip')
+                                requirements_file = os.path.join(project_dir, 'requirements.txt')
+                                if os.path.exists(venv_pip) and os.path.exists(requirements_file):
+                                    result = subprocess.run(
+                                        [venv_pip, 'install', '-r', requirements_file],
+                                        cwd=project_dir, capture_output=True, timeout=600
+                                    )
+                                    if result.returncode != 0:
+                                        print(f"⚠️ Auto-update: pip install failed, rolling back...")
+                                        subprocess.check_call(
+                                            ['git', 'checkout', current_tag or 'HEAD~1'],
+                                            cwd=project_dir, capture_output=True
+                                        )
+                                    else:
+                                        needs_restart = True
+
+                                # Flag Pillow rebuild if needed
+                                if pillow_changed:
+                                    flag_path = os.path.join(project_dir, '.pillow-rebuild-needed')
+                                    with open(flag_path, 'w') as f:
+                                        f.write('1')
+
+                                if needs_restart:
+                                    print(f"✅ Auto-update: upgraded to {latest_tag}. Restarting service...")
+                                    subprocess.run(
+                                        ['sudo', 'systemctl', 'restart', 'mempaper.service'],
+                                        timeout=30
+                                    )
                     except Exception as e:
                         print(f"⚠️ Auto-update: software update failed: {e}")
 

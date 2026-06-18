@@ -23,7 +23,7 @@ translations = {
         "login_failed": "Invalid credentials",
  
         # Configuration Categories
-        "general_settings": "General Settings",
+        "general_settings": "General",
         "display_settings": "Display Settings",
         "bitcoin_settings": "Bitcoin Settings", 
         "social_media": "Social Media",
@@ -78,7 +78,7 @@ translations = {
         "mempool_username_desc": "Optional username for Basic authentication (leave empty if not required)",
         "mempool_password": "Mempool Password",
         "mempool_password_desc": "Optional password for Basic authentication (leave empty if not required)",
-        "mempool_settings": "Mempool Settings",
+        "mempool_settings": "Mempool",
         "advanced_settings": "Advanced",
 
         # Security Settings
@@ -469,6 +469,9 @@ translations = {
         # Software & System Update
         "software_update": "Software Update",
         "current_version": "Current version",
+        "current_tag_label": "current",
+        "new_version_label": "NEW",
+        "update_available_hint": "Update {version} available",
         "update_now": "Update",
         "updating": "Updating...",
         "updating_to": "Updating to",
@@ -561,7 +564,7 @@ translations = {
         "login_failed": "Ungültige Anmeldedaten",
 
         # Configuration Categories
-        "general_settings": "Allgemeine Einstellungen",
+        "general_settings": "Allgemein",
         "display_settings": "Anzeige-Einstellungen",
         "bitcoin_settings": "Bitcoin-Einstellungen",
         "social_media": "Soziale Medien",
@@ -614,7 +617,7 @@ translations = {
         "mempool_username_desc": "Optionaler Benutzername für Basic-Authentifizierung (leer lassen, falls nicht erforderlich)",
         "mempool_password": "Mempool-Passwort",
         "mempool_password_desc": "Optionales Passwort für Basic-Authentifizierung (leer lassen, falls nicht erforderlich)",
-        "mempool_settings": "Mempool-Einstellungen",
+        "mempool_settings": "Mempool",
         "advanced_settings": "Erweitert",
 
         # Security Settings
@@ -1007,6 +1010,9 @@ translations = {
         # Software- & System-Update
         "software_update": "Software-Update",
         "current_version": "Aktuelle Version",
+        "current_tag_label": "aktuell",
+        "new_version_label": "NEU",
+        "update_available_hint": "Update {version} verfügbar",
         "update_now": "Aktualisieren",
         "updating": "Aktualisierung...",
         "updating_to": "Aktualisiere auf",
@@ -1099,7 +1105,7 @@ translations = {
         "login_failed": "Credenciales inválidas",
 
         # Configuration Categories
-        "general_settings": "Configuración General",
+        "general_settings": "General",
         "display_settings": "Configuración de Pantalla",
         "bitcoin_settings": "Configuración de Bitcoin",
         "social_media": "Redes Sociales",
@@ -1152,7 +1158,7 @@ translations = {
         "mempool_username_desc": "Nombre de usuario opcional para autenticación básica (dejar vacío si no es necesario)",
         "mempool_password": "Contraseña de Mempool",
         "mempool_password_desc": "Contraseña opcional para autenticación básica (dejar vacío si no es necesario)",
-        "mempool_settings": "Configuración de Mempool",
+        "mempool_settings": "Mempool",
         "advanced_settings": "Avanzado",
 
         # Security Settings
@@ -1530,6 +1536,9 @@ translations = {
         # Actualización de Software y Sistema
         "software_update": "Actualización de Software",
         "current_version": "Versión actual",
+        "current_tag_label": "actual",
+        "new_version_label": "NUEVO",
+        "update_available_hint": "Actualización {version} disponible",
         "update_now": "Actualizar",
         "updating": "Actualizando...",
         "updating_to": "Actualizando a",
@@ -1622,7 +1631,7 @@ translations = {
         "login_failed": "Identifiants invalides",
 
         # Configuration Categories
-        "general_settings": "Paramètres Généraux",
+        "general_settings": "Général",
         "display_settings": "Paramètres d'Affichage",
         "bitcoin_settings": "Paramètres Bitcoin",
         "social_media": "Réseaux Sociaux",
@@ -1675,7 +1684,7 @@ translations = {
         "mempool_username_desc": "Nom d'utilisateur optionnel pour l'authentification basique (laisser vide si non requis)",
         "mempool_password": "Mot de Passe Mempool",
         "mempool_password_desc": "Mot de passe optionnel pour l'authentification basique (laisser vide si non requis)",
-        "mempool_settings": "Paramètres Mempool",
+        "mempool_settings": "Mempool",
         "advanced_settings": "Avancé",
 
         # Security Settings
@@ -2054,6 +2063,9 @@ translations = {
         # Mise à jour Logicielle et Système
         "software_update": "Mise à jour logicielle",
         "current_version": "Version actuelle",
+        "current_tag_label": "actuelle",
+        "new_version_label": "NOUVEAU",
+        "update_available_hint": "Mise à jour {version} disponible",
         "update_now": "Mettre à jour",
         "updating": "Mise à jour...",
         "updating_to": "Mise à jour vers",
@@ -2146,7 +2158,7 @@ translations = {
         "login_failed": "Credenziali non valide",
 
         # Configuration Categories
-        "general_settings": "Impostazioni Generali",
+        "general_settings": "Generale",
         "display_settings": "Impostazioni Display",
         "bitcoin_settings": "Impostazioni Bitcoin",
         "social_media": "Social Media",
@@ -2199,7 +2211,7 @@ translations = {
         "mempool_username_desc": "Nome utente opzionale per l'autenticazione di base (lascia vuoto se non necessario)",
         "mempool_password": "Password Mempool",
         "mempool_password_desc": "Password opzionale per l'autenticazione di base (lascia vuoto se non necessario)",
-        "mempool_settings": "Impostazioni Mempool",
+        "mempool_settings": "Mempool",
         "advanced_settings": "Avanzato",
 
         # Security Settings
@@ -2565,6 +2577,9 @@ translations = {
         # Aggiornamento Software e Sistema
         "software_update": "Aggiornamento Software",
         "current_version": "Versione attuale",
+        "current_tag_label": "attuale",
+        "new_version_label": "NUOVO",
+        "update_available_hint": "Aggiornamento {version} disponibile",
         "update_now": "Aggiorna",
         "updating": "Aggiornamento...",
         "updating_to": "Aggiornamento a",
