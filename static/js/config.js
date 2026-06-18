@@ -1960,7 +1960,8 @@ function createSoftwareUpdateSection() {
             title: window.translations?.confirm_update || 'Install update',
             message: selectedName,
             confirmText: window.translations?.update_now || 'Update',
-            cancelText: window.translations?.cancel || 'Cancel'
+            cancelText: window.translations?.cancel || 'Cancel',
+            icon: '/static/icons/update.svg'
         });
         if (!confirmed) return;
 
@@ -2073,7 +2074,7 @@ async function _performUpdate(tag, updateBtn) {
 
     const heading = document.createElement('h3');
     heading.className = 'confirm-modal-title';
-    heading.textContent = (window.translations?.updating_to || 'Updating to') + ' ' + tag;
+    heading.innerHTML = `<img src="/static/icons/update.svg" alt="" class="modal-title-icon"> ${(window.translations?.updating_to || 'Updating to') + ' ' + tag}`;
 
     const phaseBar = document.createElement('div');
     phaseBar.className = 'system-update-phase';
@@ -2464,7 +2465,8 @@ function createSystemUpdateSection() {
             title: window.translations?.system_update || 'System Update',
             message: window.translations?.system_update_confirm || 'Run apt update && apt upgrade on this device? This may take several minutes.',
             confirmText: window.translations?.update_packages || 'Update',
-            cancelText: window.translations?.cancel || 'Cancel'
+            cancelText: window.translations?.cancel || 'Cancel',
+            icon: '/static/icons/update.svg'
         });
         if (!confirmed) return;
 
@@ -2488,7 +2490,7 @@ function _startSystemUpdate(btn) {
 
     const heading = document.createElement('h3');
     heading.className = 'confirm-modal-title';
-    heading.textContent = window.translations?.system_update || 'System Update';
+    heading.innerHTML = `<img src="/static/icons/update.svg" alt="" class="modal-title-icon"> ${window.translations?.system_update || 'System Update'}`;
 
     const phaseBar = document.createElement('div');
     phaseBar.className = 'system-update-phase';
@@ -2815,9 +2817,14 @@ function renderConfigurationForm() {
             }
             advancedContainer.querySelector('.advanced-section-content').appendChild(createCurrentUserUsernameField());
             advancedContainer.querySelector('.advanced-section-content').appendChild(createCurrentUserPasswordField());
-            advancedContainer.querySelector('.advanced-section-content').appendChild(createSoftwareUpdateSection());
-            advancedContainer.querySelector('.advanced-section-content').appendChild(createSystemUpdateSection());
-            fieldsAdded += 4;
+            fieldsAdded += 2;
+        }
+
+        // Populate the Updates section with software + system update
+        if (category.id === 'updates') {
+            section.appendChild(createSoftwareUpdateSection());
+            section.appendChild(createSystemUpdateSection());
+            fieldsAdded += 2;
         }
 
         //console.log(`Category ${category.id} has ${fieldsAdded} fields`);
@@ -3021,6 +3028,27 @@ function createFormField(key, field, value) {
             // Not a config value — excluded from saves
             infoBox.getValue = () => null;
             input = infoBox;
+            break;
+        }
+
+        case 'multiselect': {
+            const msContainer = document.createElement('div');
+            msContainer.className = 'multiselect-buttons';
+            const selected = new Set(Array.isArray(value) ? value : (field.default || []));
+            field.options.forEach(option => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'multiselect-btn' + (selected.has(option.value) ? ' active' : '');
+                btn.textContent = option.label;
+                btn.dataset.value = option.value;
+                btn.addEventListener('click', () => btn.classList.toggle('active'));
+                msContainer.appendChild(btn);
+            });
+            msContainer.getValue = () => {
+                return Array.from(msContainer.querySelectorAll('.multiselect-btn.active'))
+                    .map(b => b.dataset.value);
+            };
+            input = msContainer;
             break;
         }
 
@@ -6666,7 +6694,8 @@ function setupNavigationButtons() {
                     message: window.translations?.are_you_sure_logout || window.translations?.confirm_logout || 'Are you sure you want to logout?',
                     confirmText: window.translations?.logout || 'Logout',
                     cancelText: window.translations?.cancel || 'Cancel',
-                    danger: true
+                    danger: true,
+                    icon: '/static/icons/logout.svg'
                 });
                 if (confirmed) {
                     try {

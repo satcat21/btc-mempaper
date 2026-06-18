@@ -81,7 +81,7 @@
     <!-- Delete Meme Confirmation Modal -->
     <div id="delete-modal" class="modal" style="display: none;">
         <div class="modal-content">
-            <h3>{{ translations.delete_confirmation_title }}</h3>
+            <h3><img src="{{ url_for('static', filename='icons/delete.svg') }}" alt="" class="modal-title-icon"> {{ translations.delete_confirmation_title }}</h3>
             <p>{{ translations.delete_confirmation_message }}</p>
             <div class="modal-buttons">
                 <button id="confirm-delete" class="icon-button confirm">
@@ -97,7 +97,7 @@
     <!-- OPSec Delete Confirmation Modal -->
     <div id="opsec-delete-modal" class="modal" style="display: none;">
         <div class="modal-content">
-            <h3>{{ translations.opsec_delete_confirmation_title }}</h3>
+            <h3><img src="{{ url_for('static', filename='icons/delete.svg') }}" alt="" class="modal-title-icon"> {{ translations.opsec_delete_confirmation_title }}</h3>
             <p>{{ translations.opsec_delete_confirmation_message }}</p>
             <div class="modal-buttons">
                 <button id="opsec-confirm-delete" class="icon-button confirm">

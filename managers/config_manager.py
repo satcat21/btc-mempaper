@@ -1385,6 +1385,43 @@ class ConfigManager:
                 "label": t.get("donation_history", "Donation History"),
                 "category": "donation"
             },
+
+            # ── Auto Update Settings ───────────────────────────────
+            "auto_update_enabled": {
+                "type": "boolean",
+                "label": t.get("auto_update_enabled", "Automatic Updates"),
+                "description": t.get("auto_update_enabled_desc", "Automatically install mempaper releases and system package updates on a schedule"),
+                "default": False,
+                "category": "updates",
+                "order": 0
+            },
+            "auto_update_hour": {
+                "type": "number",
+                "label": t.get("auto_update_hour", "Update Hour"),
+                "description": t.get("auto_update_hour_desc", "Hour of day to run automatic updates (0-23)"),
+                "min": 0,
+                "max": 23,
+                "default": 3,
+                "category": "updates",
+                "order": 1
+            },
+            "auto_update_days": {
+                "type": "multiselect",
+                "label": t.get("auto_update_days", "Update Days"),
+                "description": t.get("auto_update_days_desc", "Days of the week to run automatic updates"),
+                "default": ["mon", "wed", "fri"],
+                "options": [
+                    {"value": "mon", "label": t.get("day_monday", "Monday")},
+                    {"value": "tue", "label": t.get("day_tuesday", "Tuesday")},
+                    {"value": "wed", "label": t.get("day_wednesday", "Wednesday")},
+                    {"value": "thu", "label": t.get("day_thursday", "Thursday")},
+                    {"value": "fri", "label": t.get("day_friday", "Friday")},
+                    {"value": "sat", "label": t.get("day_saturday", "Saturday")},
+                    {"value": "sun", "label": t.get("day_sunday", "Sunday")},
+                ],
+                "category": "updates",
+                "order": 2
+            },
         }
 
     def get_categories(self, translations: Dict[str, str] = None) -> List[Dict[str, str]]:
@@ -1412,6 +1449,7 @@ class ConfigManager:
             {"id": "donation", "label": t.get("donation_settings", "Lightning Donation"), "icon": "/static/icons/price_change.svg"},
             {"id": "meme_management", "label": t.get("meme_management", "Meme Management"), "icon": "/static/icons/mood.svg"},
             {"id": "opsec", "label": t.get("opsec_settings", "OPSec"), "icon": "/static/icons/opsec.svg"},
+            {"id": "updates", "label": t.get("updates_settings", "Updates"), "icon": "/static/icons/update.svg"},
         ]
     
     def get_color_options(self) -> List[Dict[str, str]]:

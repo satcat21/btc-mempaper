@@ -31,6 +31,7 @@ translations = {
         "advanced": "Advanced",
         "meme_management": "Meme Management",
         "opsec_settings": "OPSec",
+        "updates_settings": "Updates",
 
         # Display Settings
         "language": "Language",
@@ -519,6 +520,20 @@ translations = {
         "pillow_rebuild_scheduled": "Pillow will be rebuilt from source after restart",
         "mempaper_deps_warning": "Warning: some mempaper dependencies failed to install",
         "remount_failed": "Failed to remount filesystem read-write",
+        "auto_update_enabled": "Automatic Updates",
+        "auto_update_enabled_desc": "Automatically install mempaper releases and system package updates on a schedule",
+        "auto_update_hour": "Update Hour",
+        "auto_update_hour_desc": "Hour of day to run automatic updates (0-23)",
+        "auto_update_days": "Update Days",
+        "auto_update_days_desc": "Days of the week to run automatic updates",
+        "day_monday": "Mon",
+        "day_tuesday": "Tue",
+        "day_wednesday": "Wed",
+        "day_thursday": "Thu",
+        "day_friday": "Fri",
+        "day_saturday": "Sat",
+        "day_sunday": "Sun",
+        "auto_update_log": "Auto-update: {action}",
     },
     "de": {
         # Dashboard UI
@@ -552,6 +567,7 @@ translations = {
         "advanced": "Erweitert",
         "meme_management": "Meme-Verwaltung",
         "opsec_settings": "OPSec",
+        "updates_settings": "Updates",
 
         # Display Settings
         "language": "Sprache",
@@ -1040,6 +1056,20 @@ translations = {
         "pillow_rebuild_scheduled": "Pillow wird nach dem Neustart aus dem Quellcode neu erstellt",
         "mempaper_deps_warning": "Warnung: Einige Mempaper-Abhängigkeiten konnten nicht installiert werden",
         "remount_failed": "Dateisystem konnte nicht als beschreibbar eingehängt werden",
+        "auto_update_enabled": "Automatische Updates",
+        "auto_update_enabled_desc": "Mempaper-Releases und Systempaket-Updates automatisch nach Zeitplan installieren",
+        "auto_update_hour": "Update-Uhrzeit",
+        "auto_update_hour_desc": "Stunde für automatische Updates (0-23)",
+        "auto_update_days": "Update-Tage",
+        "auto_update_days_desc": "Wochentage für automatische Updates",
+        "day_monday": "Mo",
+        "day_tuesday": "Di",
+        "day_wednesday": "Mi",
+        "day_thursday": "Do",
+        "day_friday": "Fr",
+        "day_saturday": "Sa",
+        "day_sunday": "So",
+        "auto_update_log": "Auto-Update: {action}",
     },
     "es": {
         # Dashboard UI
@@ -1073,6 +1103,7 @@ translations = {
         "advanced": "Avanzado",
         "meme_management": "Gestión de Memes",
         "opsec_settings": "OPSec",
+        "updates_settings": "Updates",
 
         # Display Settings
         "language": "Idioma",
@@ -1546,6 +1577,20 @@ translations = {
         "pillow_rebuild_scheduled": "Pillow se reconstruirá desde el código fuente tras reiniciar",
         "mempaper_deps_warning": "Advertencia: algunas dependencias de mempaper no se pudieron instalar",
         "remount_failed": "No se pudo remontar el sistema de archivos como lectura-escritura",
+        "auto_update_enabled": "Actualizaciones automáticas",
+        "auto_update_enabled_desc": "Instalar automáticamente versiones de mempaper y actualizaciones de paquetes del sistema según un horario",
+        "auto_update_hour": "Hora de actualización",
+        "auto_update_hour_desc": "Hora del día para ejecutar actualizaciones automáticas (0-23)",
+        "auto_update_days": "Días de actualización",
+        "auto_update_days_desc": "Días de la semana para ejecutar actualizaciones automáticas",
+        "day_monday": "Lun",
+        "day_tuesday": "Mar",
+        "day_wednesday": "Mié",
+        "day_thursday": "Jue",
+        "day_friday": "Vie",
+        "day_saturday": "Sáb",
+        "day_sunday": "Dom",
+        "auto_update_log": "Actualización automática: {action}",
     },
     "fr": {
         # Dashboard UI
@@ -1579,6 +1624,7 @@ translations = {
         "advanced": "Avancé",
         "meme_management": "Gestion des Mèmes",
         "opsec_settings": "OPSec",
+        "updates_settings": "Updates",
 
         # Display Settings
         "language": "Langue",
@@ -2053,6 +2099,20 @@ translations = {
         "pillow_rebuild_scheduled": "Pillow sera recompilé depuis les sources après le redémarrage",
         "mempaper_deps_warning": "Attention : certaines dépendances mempaper n'ont pas pu être installées",
         "remount_failed": "Impossible de remonter le système de fichiers en lecture-écriture",
+        "auto_update_enabled": "Mises à jour automatiques",
+        "auto_update_enabled_desc": "Installer automatiquement les versions de mempaper et les mises à jour système selon un calendrier",
+        "auto_update_hour": "Heure de mise à jour",
+        "auto_update_hour_desc": "Heure de la journée pour les mises à jour automatiques (0-23)",
+        "auto_update_days": "Jours de mise à jour",
+        "auto_update_days_desc": "Jours de la semaine pour les mises à jour automatiques",
+        "day_monday": "Lun",
+        "day_tuesday": "Mar",
+        "day_wednesday": "Mer",
+        "day_thursday": "Jeu",
+        "day_friday": "Ven",
+        "day_saturday": "Sam",
+        "day_sunday": "Dim",
+        "auto_update_log": "Mise à jour automatique : {action}",
     },
     "it": {
         # Dashboard UI
@@ -2086,6 +2146,7 @@ translations = {
         "advanced": "Avanzate",
         "meme_management": "Gestione Meme",
         "opsec_settings": "OPSec",
+        "updates_settings": "Updates",
 
         # Display Settings
         "language": "Lingua",
@@ -2547,5 +2608,19 @@ translations = {
         "pillow_rebuild_scheduled": "Pillow verrà ricompilato dal codice sorgente dopo il riavvio",
         "mempaper_deps_warning": "Attenzione: alcune dipendenze mempaper non sono state installate",
         "remount_failed": "Impossibile rimontare il file system in lettura-scrittura",
+        "auto_update_enabled": "Aggiornamenti automatici",
+        "auto_update_enabled_desc": "Installare automaticamente le versioni di mempaper e gli aggiornamenti di sistema secondo una pianificazione",
+        "auto_update_hour": "Ora di aggiornamento",
+        "auto_update_hour_desc": "Ora del giorno per gli aggiornamenti automatici (0-23)",
+        "auto_update_days": "Giorni di aggiornamento",
+        "auto_update_days_desc": "Giorni della settimana per gli aggiornamenti automatici",
+        "day_monday": "Lun",
+        "day_tuesday": "Mar",
+        "day_wednesday": "Mer",
+        "day_thursday": "Gio",
+        "day_friday": "Ven",
+        "day_saturday": "Sab",
+        "day_sunday": "Dom",
+        "auto_update_log": "Aggiornamento automatico: {action}",
     }
 }

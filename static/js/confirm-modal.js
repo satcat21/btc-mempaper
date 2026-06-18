@@ -27,14 +27,18 @@
     }
 
     // ── Confirm Modal ──────────────────────────────────────────
-    window.showConfirmModal = function ({ title, message, confirmText, cancelText, danger } = {}) {
+    window.showConfirmModal = function ({ title, message, confirmText, cancelText, danger, icon } = {}) {
         return new Promise(resolve => {
             const overlay = createOverlay();
             const dialog = createDialog();
 
             const heading = document.createElement('h3');
             heading.className = 'confirm-modal-title';
-            heading.textContent = title || t('confirm', 'Confirm');
+            if (icon) {
+                heading.innerHTML = `<img src="${icon}" alt="" class="modal-title-icon"> ${title || t('confirm', 'Confirm')}`;
+            } else {
+                heading.textContent = title || t('confirm', 'Confirm');
+            }
 
             const body = document.createElement('p');
             body.className = 'confirm-modal-message';
@@ -87,14 +91,18 @@
     };
 
     // ── Alert Modal ────────────────────────────────────────────
-    window.showAlertModal = function ({ title, message, buttonText } = {}) {
+    window.showAlertModal = function ({ title, message, buttonText, icon } = {}) {
         return new Promise(resolve => {
             const overlay = createOverlay();
             const dialog = createDialog();
 
             const heading = document.createElement('h3');
             heading.className = 'confirm-modal-title';
-            heading.textContent = title || '';
+            if (icon) {
+                heading.innerHTML = `<img src="${icon}" alt="" class="modal-title-icon"> ${title || ''}`;
+            } else {
+                heading.textContent = title || '';
+            }
 
             const body = document.createElement('p');
             body.className = 'confirm-modal-message';
