@@ -6688,6 +6688,15 @@ class MempaperApp:
                         'rollback_commit': rollback_commit
                     })
 
+                    # Wait for any ongoing e-ink display refresh to finish before restarting
+                    _emit('update_output', {'line': 'Waiting for e-ink display to finish...', 'phase': 'restart', 'header': True})
+                    acquired = self._display_worker_lock.acquire(timeout=150)
+                    if acquired:
+                        self._display_worker_lock.release()
+                        print("✅ Display idle — safe to restart")
+                    else:
+                        print("⚠️ Display lock timeout after 150s — restarting anyway")
+
                     time.sleep(2)
                     try:
                         subprocess.run(

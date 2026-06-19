@@ -664,15 +664,34 @@ See [Configuration Reference](docs/CONFIG_REFERENCE.md) for detailed explanation
 
 ## SOFTWARE UPDATE
 
-mempaper can be updated directly from the web UI. Navigate to **Settings > General > Advanced > Software Update** to see the current version and available releases.
+mempaper can be updated directly from the web UI. Navigate to **Settings > Updates** to see the current version and available releases.
+
+<p align="center">
+  <img src="images/screenshots/software-update.png" alt="Software Update Section" width="600"/>
+  <br/>
+  <em>Software Update section in Settings</em>
+</p>
 
 ### Web UI Update (Recommended)
 
-1. Open the **Software Update** section in Settings
-2. Select the desired release from the dropdown (latest is pre-selected)
+1. Open the **Software Updates** section in Settings
+2. Select the desired release from the dropdown (latest is pre-selected and highlighted in orange)
 3. Click **Update** and confirm
 4. The app will fetch the release, install dependencies, and restart the service
-5. The page refreshes automatically once the service is back online
+5. If the e-ink display is currently refreshing, the restart waits until the display is idle
+6. The page refreshes automatically once the service is back online
+
+### Automatic Updates
+
+Enable scheduled updates to keep mempaper up to date without manual intervention:
+
+| Setting | Config Key | Description |
+|---------|-----------|-------------|
+| **Automatic Updates** | `auto_update_enabled` | Enable/disable scheduled updates |
+| **Update Time** | `auto_update_time` | Time of day to check for updates (HH:MM, default: `03:00`) |
+| **Update Days** | `auto_update_days` | Days of the week to run updates (default: Mon, Wed, Fri) |
+
+When enabled, mempaper checks for new releases at the configured time and day, installs the update, and restarts the service automatically.
 
 ### Manual Update via SSH
 
