@@ -1464,6 +1464,7 @@ class ConfigManager:
             {"id": "donation", "label": t.get("donation_settings", "Lightning Donation"), "icon": "/static/icons/donation.svg"},
             {"id": "meme_management", "label": t.get("meme_management", "Meme Management"), "icon": "/static/icons/mood.svg"},
             {"id": "opsec", "label": t.get("opsec_settings", "OPSec"), "icon": "/static/icons/opsec.svg"},
+            {"id": "wifi", "label": t.get("wifi_settings", "WiFi"), "icon": "/static/icons/wifi.svg"},
             {"id": "updates", "label": t.get("updates_settings", "Updates"), "icon": "/static/icons/update.svg"},
         ]
     

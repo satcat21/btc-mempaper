@@ -1755,6 +1755,318 @@ body.dark-mode .upload-icon {
     }
 }
 
+/* ── WiFi Management ───────────────────────────────────────── */
+.wifi-saved-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 12px;
+}
+
+.wifi-saved-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    background: var(--bg-input);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    transition: border-color var(--transition);
+}
+
+.wifi-saved-row.wifi-active {
+    border-color: var(--accent);
+}
+
+.wifi-row-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+}
+
+.wifi-ssid {
+    font-weight: 500;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.wifi-badge {
+    font-size: 0.7rem;
+    padding: 2px 6px;
+    border-radius: 8px;
+    white-space: nowrap;
+    font-weight: 600;
+}
+
+.wifi-badge-connected {
+    background: rgba(40, 167, 69, 0.15);
+    color: #28a745;
+}
+
+.wifi-badge-preferred {
+    background: var(--accent-dim);
+    color: var(--accent);
+}
+
+.wifi-badge-saved {
+    background: rgba(100, 100, 100, 0.15);
+    color: var(--text-muted);
+}
+
+.wifi-row-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.wifi-btn-icon {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 1rem;
+    padding: 4px 6px;
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    transition: color var(--transition), background var(--transition), font-size var(--transition);
+}
+
+.wifi-btn-prefer.wifi-prefer-active {
+    color: var(--accent);
+    font-size: 1.15rem;
+}
+
+.wifi-btn-icon:hover {
+    color: var(--accent);
+    background: var(--accent-dim);
+}
+
+.wifi-btn-icon.wifi-btn-delete:hover {
+    color: #dc3545;
+    background: rgba(220, 53, 69, 0.1);
+}
+
+.wifi-actions {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.wifi-btn {
+    padding: 8px 14px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
+    background: var(--bg-input);
+    color: var(--text-primary);
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: border-color var(--transition), background var(--transition);
+}
+
+.wifi-btn:hover {
+    border-color: var(--accent);
+}
+
+.wifi-btn-save {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+}
+
+.wifi-btn-save:hover {
+    background: #e5841a;
+}
+
+.wifi-btn-cancel {
+    background: var(--bg-input);
+}
+
+.wifi-add-form {
+    background: var(--bg-input);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 14px;
+    margin-bottom: 12px;
+}
+
+.wifi-add-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.wifi-hidden-label {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.wifi-add-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.wifi-scan-results {
+    margin-top: 4px;
+}
+
+.wifi-scan-header {
+    font-weight: 600;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+}
+
+.wifi-scan-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 14px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    margin-bottom: 4px;
+    background: var(--bg-input);
+}
+
+.wifi-scan-row.wifi-scan-saved {
+    opacity: 0.6;
+}
+
+.wifi-signal {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    letter-spacing: 1px;
+}
+
+.wifi-btn-add-scan {
+    padding: 4px 10px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--accent);
+    background: transparent;
+    color: var(--accent);
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: background var(--transition);
+}
+
+.wifi-btn-add-scan:hover {
+    background: var(--accent-dim);
+}
+
+.wifi-loading, .wifi-empty {
+    padding: 16px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+}
+
+/* ── Device Control (Restart / Reboot) ─────────────────────── */
+.device-control-wrapper {
+    display: flex;
+    gap: 10px;
+}
+
+.device-control-btn {
+    flex: 1;
+    padding: 10px 16px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
+    background: var(--bg-input);
+    color: var(--text-primary);
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: border-color var(--transition), background var(--transition);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+}
+
+.device-control-btn:hover {
+    border-color: var(--accent);
+    background: var(--accent-dim);
+}
+
+.device-control-btn-danger:hover {
+    border-color: #dc3545;
+    background: rgba(220, 53, 69, 0.1);
+    color: #dc3545;
+}
+
+.device-control-icon {
+    font-size: 1.1rem;
+}
+
+/* ── Restart / Reboot Countdown ───────────────────────────── */
+.restart-countdown {
+    text-align: center;
+    padding: 16px 0;
+}
+
+.restart-countdown-number {
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.2;
+}
+
+.restart-countdown-number.restart-countdown-success {
+    color: #28a745;
+}
+
+.restart-countdown-number.restart-countdown-error {
+    color: #dc3545;
+}
+
+.restart-countdown-label {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    margin-top: 6px;
+}
+
+.restart-progress-bar {
+    height: 4px;
+    background: var(--bg-elevated);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 16px;
+}
+
+.restart-progress-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 2px;
+    width: 0;
+    transition: width 1s linear;
+}
+
+.restart-progress-fill.restart-progress-error {
+    background: #dc3545;
+}
+
+.restart-spinner {
+    width: 36px;
+    height: 36px;
+    border: 4px solid rgba(255, 153, 0, 0.25);
+    border-top-color: #f90;
+    border-radius: 50%;
+    animation: restart-spin 0.8s linear infinite;
+    margin: 0 auto;
+}
+
+@keyframes restart-spin {
+    to { transform: rotate(360deg); }
+}
+
 /* ── Software Update ────────────────────────────────────────── */
 .update-wrapper {
     background: var(--bg-input);

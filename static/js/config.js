@@ -182,6 +182,16 @@ function closeMemeModal() {
                 // Toast notification
                 showDonationToast(donation);
             });
+
+            // Auto-update service restart — show countdown modal
+            socket.on('service_restarting', function(data) {
+                console.log('🔄 Service restarting:', data);
+                const t = window.translations || {};
+                const title = data.reason === 'auto_update'
+                    ? (t.auto_update_restarting || 'Auto-update complete. Restarting...')
+                    : (t.service_restarting || 'Service restarting...');
+                _showRestartCountdown(title, data.estimated_seconds || 21, data.tag);
+            });
         } else {
             console.error('Socket.IO client (window.io) not found. Make sure socket.io.min.js is loaded.');
         }
@@ -1867,6 +1877,451 @@ function _inlineMd(s) {
         .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
 }
 
+// ── WiFi Management Section ──────────────────────────────────────────
+function createWifiSection() {
+    const t = window.translations || {};
+    const section = document.createElement('div');
+    section.className = 'form-group wifi-management-section';
+
+    // Header with title
+    const label = document.createElement('label');
+    label.className = 'form-label';
+    label.textContent = t.wifi_saved_networks || 'Saved Networks';
+    section.appendChild(label);
+
+    // Saved networks container
+    const savedList = document.createElement('div');
+    savedList.id = 'wifi-saved-list';
+    savedList.className = 'wifi-saved-list';
+    savedList.innerHTML = `<div class="wifi-loading">${t.loading || 'Loading...'}</div>`;
+    section.appendChild(savedList);
+
+    // Add network form (collapsed by default)
+    const addForm = document.createElement('div');
+    addForm.className = 'wifi-add-form';
+    addForm.id = 'wifi-add-form';
+    addForm.style.display = 'none';
+    addForm.innerHTML = `
+        <div class="wifi-add-fields">
+            <input type="text" class="form-input" id="wifi-add-ssid" placeholder="${t.wifi_ssid || 'Network name (SSID)'}" />
+            <input type="password" class="form-input" id="wifi-add-password" placeholder="${t.wifi_password || 'Password'}" />
+            <label class="wifi-hidden-label">
+                <input type="checkbox" id="wifi-add-hidden" /> ${t.wifi_hidden_network || 'Hidden network'}
+            </label>
+        </div>
+        <div class="wifi-add-actions">
+            <button type="button" class="wifi-btn wifi-btn-save" id="wifi-add-save">${t.save || 'Save'}</button>
+            <button type="button" class="wifi-btn wifi-btn-cancel" id="wifi-add-cancel">${t.cancel || 'Cancel'}</button>
+        </div>
+    `;
+    section.appendChild(addForm);
+
+    // Action buttons row
+    const actions = document.createElement('div');
+    actions.className = 'wifi-actions';
+    actions.innerHTML = `
+        <button type="button" class="wifi-btn wifi-btn-add" id="wifi-btn-add">+ ${t.wifi_add_network || 'Add Network'}</button>
+        <button type="button" class="wifi-btn wifi-btn-scan" id="wifi-btn-scan">${t.wifi_scan || 'Scan Nearby'}</button>
+    `;
+    section.appendChild(actions);
+
+    // Scan results container (hidden by default)
+    const scanResults = document.createElement('div');
+    scanResults.id = 'wifi-scan-results';
+    scanResults.className = 'wifi-scan-results';
+    scanResults.style.display = 'none';
+    section.appendChild(scanResults);
+
+    // Reboot button
+    const rebootRow = document.createElement('div');
+    rebootRow.className = 'wifi-reboot-row';
+    const rebootBtn = document.createElement('button');
+    rebootBtn.type = 'button';
+    rebootBtn.className = 'device-control-btn device-control-btn-danger';
+    rebootBtn.innerHTML = `<span class="device-control-icon">⏻</span> ${t.reboot_device || 'Reboot Device'}`;
+    rebootBtn.addEventListener('click', async () => {
+        const ok = await showConfirmModal({
+            title: t.reboot_device || 'Reboot Device',
+            message: t.reboot_device_confirm || 'Reboot the entire device? This takes about 70 seconds. The page will reload when the service is back.',
+            confirmText: t.reboot || 'Reboot',
+            cancelText: t.cancel || 'Cancel',
+            danger: true,
+        });
+        if (!ok) return;
+        _performSystemAction('/api/system/reboot', t.reboot_device || 'Reboot Device', 81);
+    });
+    rebootRow.appendChild(rebootBtn);
+    section.appendChild(rebootRow);
+
+    // Wire up events after a tick (elements need to be in DOM)
+    setTimeout(() => _initWifiEvents(), 0);
+
+    return section;
+}
+
+function _initWifiEvents() {
+    const t = window.translations || {};
+
+    // Load saved networks
+    _loadSavedWifi();
+
+    // Add network button
+    document.getElementById('wifi-btn-add')?.addEventListener('click', () => {
+        const form = document.getElementById('wifi-add-form');
+        form.style.display = form.style.display === 'none' ? 'block' : 'none';
+        document.getElementById('wifi-scan-results').style.display = 'none';
+        if (form.style.display === 'block') {
+            document.getElementById('wifi-add-ssid')?.focus();
+        }
+    });
+
+    // Cancel add
+    document.getElementById('wifi-add-cancel')?.addEventListener('click', () => {
+        document.getElementById('wifi-add-form').style.display = 'none';
+        document.getElementById('wifi-add-ssid').value = '';
+        document.getElementById('wifi-add-password').value = '';
+        document.getElementById('wifi-add-hidden').checked = false;
+    });
+
+    // Save new network
+    document.getElementById('wifi-add-save')?.addEventListener('click', () => _addWifi());
+
+    // Scan button
+    document.getElementById('wifi-btn-scan')?.addEventListener('click', () => _scanWifi());
+}
+
+// Track the server-side preferred UUID and the client-side pending selection
+let _wifiServerPreferredUuid = null;
+let _wifiPendingPreferredUuid = null;
+
+function _loadSavedWifi() {
+    const t = window.translations || {};
+    const list = document.getElementById('wifi-saved-list');
+    if (!list) return;
+
+    list.innerHTML = `<div class="wifi-loading">${t.loading || 'Loading...'}</div>`;
+
+    fetch('/api/wifi/saved', { credentials: 'same-origin' })
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                list.innerHTML = `<div class="wifi-empty">${data.error || 'Failed to load'}</div>`;
+                return;
+            }
+            if (!data.connections || data.connections.length === 0) {
+                list.innerHTML = `<div class="wifi-empty">${t.wifi_no_saved || 'No saved WiFi networks'}</div>`;
+                return;
+            }
+
+            // Determine server-side preferred
+            const serverPreferred = data.connections.find(c => c.priority > 0);
+            _wifiServerPreferredUuid = serverPreferred ? serverPreferred.uuid : null;
+            // Initialize pending to server state if not already changed by user
+            if (_wifiPendingPreferredUuid === null) {
+                _wifiPendingPreferredUuid = _wifiServerPreferredUuid;
+            }
+
+            list.innerHTML = '';
+            data.connections.forEach(conn => {
+                const row = document.createElement('div');
+                row.className = 'wifi-saved-row' + (conn.active ? ' wifi-active' : '');
+                row.dataset.uuid = conn.uuid;
+
+                const isPending = conn.uuid === _wifiPendingPreferredUuid;
+
+                row.innerHTML = `
+                    <div class="wifi-row-info">
+                        <button type="button" class="wifi-btn-icon wifi-btn-prefer${isPending ? ' wifi-prefer-active' : ''}" title="${t.wifi_set_preferred || 'Set as preferred'}">★</button>
+                        <span class="wifi-ssid">${_escHtml(conn.ssid)}</span>
+                        ${conn.active ? `<span class="wifi-badge wifi-badge-connected">${t.wifi_connected || 'Connected'}</span>` : ''}
+                        ${isPending ? `<span class="wifi-badge wifi-badge-preferred">${t.wifi_preferred || 'Preferred'}</span>` : ''}
+                    </div>
+                    <div class="wifi-row-actions">
+                        ${!conn.active ? `<button type="button" class="wifi-btn-icon wifi-btn-delete" title="${t.delete || 'Delete'}">✕</button>` : ''}
+                    </div>
+                `;
+
+                // Star click — toggle preferred (client-side only)
+                row.querySelector('.wifi-btn-prefer').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    // Toggle: if already preferred, unset; otherwise set this one
+                    _wifiPendingPreferredUuid = (_wifiPendingPreferredUuid === conn.uuid) ? null : conn.uuid;
+                    _renderWifiPreferredState();
+                    _updateWifiSaveButton();
+                });
+
+                // Delete
+                row.querySelector('.wifi-btn-delete')?.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    _deleteWifi(conn.uuid);
+                });
+
+                list.appendChild(row);
+            });
+
+            _updateWifiSaveButton();
+        })
+        .catch(() => {
+            list.innerHTML = `<div class="wifi-empty">${t.wifi_not_available || 'WiFi management not available on this device'}</div>`;
+        });
+}
+
+function _renderWifiPreferredState() {
+    const t = window.translations || {};
+    const list = document.getElementById('wifi-saved-list');
+    if (!list) return;
+
+    list.querySelectorAll('.wifi-saved-row').forEach(row => {
+        const uuid = row.dataset.uuid;
+        const isPending = uuid === _wifiPendingPreferredUuid;
+        const star = row.querySelector('.wifi-btn-prefer');
+        if (star) star.classList.toggle('wifi-prefer-active', isPending);
+
+        // Update or add/remove preferred badge
+        const info = row.querySelector('.wifi-row-info');
+        let badge = info.querySelector('.wifi-badge-preferred');
+        if (isPending && !badge) {
+            badge = document.createElement('span');
+            badge.className = 'wifi-badge wifi-badge-preferred';
+            badge.textContent = t.wifi_preferred || 'Preferred';
+            info.appendChild(badge);
+        } else if (!isPending && badge) {
+            badge.remove();
+        }
+    });
+}
+
+function _updateWifiSaveButton() {
+    const t = window.translations || {};
+    let saveBtn = document.getElementById('wifi-save-preferred');
+    const changed = _wifiPendingPreferredUuid !== _wifiServerPreferredUuid;
+
+    if (changed && !saveBtn) {
+        // Create save button
+        saveBtn = document.createElement('button');
+        saveBtn.type = 'button';
+        saveBtn.id = 'wifi-save-preferred';
+        saveBtn.className = 'wifi-btn wifi-btn-save';
+        saveBtn.textContent = t.save || 'Save';
+        saveBtn.addEventListener('click', () => _saveWifiPreferred());
+        // Insert after the saved list
+        const list = document.getElementById('wifi-saved-list');
+        if (list) list.after(saveBtn);
+    } else if (!changed && saveBtn) {
+        saveBtn.remove();
+    }
+}
+
+function _saveWifiPreferred() {
+    const t = window.translations || {};
+    const saveBtn = document.getElementById('wifi-save-preferred');
+    if (saveBtn) saveBtn.disabled = true;
+
+    // Reset all priorities to 0, then set the pending one to 100
+    fetch('/api/wifi/saved', { credentials: 'same-origin' })
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) return;
+            const resets = data.connections
+                .filter(c => c.priority > 0 && c.uuid !== _wifiPendingPreferredUuid)
+                .map(c => fetch('/api/wifi/priority', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ uuid: c.uuid, priority: 0 }),
+                }));
+            return Promise.all(resets);
+        })
+        .then(() => {
+            if (_wifiPendingPreferredUuid) {
+                return fetch('/api/wifi/priority', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ uuid: _wifiPendingPreferredUuid, priority: 100 }),
+                }).then(r => r.json());
+            }
+            return { success: true };
+        })
+        .then(data => {
+            if (data.success) {
+                _wifiServerPreferredUuid = _wifiPendingPreferredUuid;
+                _updateWifiSaveButton();
+                showNotification(
+                    t.wifi_preferred_saved || 'Preferred WiFi saved. Change takes effect on next reboot.',
+                    'success'
+                );
+            } else {
+                _wifiModal({ title: data.error || 'Failed to save preferred', confirmText: 'OK' });
+                if (saveBtn) saveBtn.disabled = false;
+            }
+        });
+}
+
+function _wifiModal({ title, message, inputType, inputPlaceholder, confirmText, cancelText, danger }) {
+    return new Promise((resolve) => {
+        const t = window.translations || {};
+        const overlay = document.createElement('div');
+        overlay.className = 'confirm-modal-overlay';
+
+        const dialog = document.createElement('div');
+        dialog.className = 'confirm-modal-dialog';
+
+        let html = `<h3 class="confirm-modal-title">${title}</h3>`;
+        if (message) html += `<p class="confirm-modal-message">${message}</p>`;
+        if (inputType) {
+            html += `<input type="${inputType}" class="form-input wifi-modal-input" placeholder="${inputPlaceholder || ''}" style="margin-bottom: 20px; width: 100%; box-sizing: border-box;" />`;
+        }
+        html += `<div class="confirm-modal-buttons">
+            <button type="button" class="confirm-modal-btn cancel">${cancelText || t.cancel || 'Cancel'}</button>
+            <button type="button" class="confirm-modal-btn ${danger ? 'danger' : 'confirm'}">${confirmText || 'OK'}</button>
+        </div>`;
+        dialog.innerHTML = html;
+        overlay.appendChild(dialog);
+        document.body.appendChild(overlay);
+
+        requestAnimationFrame(() => overlay.classList.add('visible'));
+
+        const input = dialog.querySelector('.wifi-modal-input');
+        if (input) input.focus();
+
+        const close = (value) => {
+            overlay.classList.remove('visible');
+            setTimeout(() => overlay.remove(), 200);
+            resolve(value);
+        };
+
+        dialog.querySelector('.confirm-modal-btn.cancel').addEventListener('click', () => close(null));
+        dialog.querySelector('.confirm-modal-btn.confirm, .confirm-modal-btn.danger').addEventListener('click', () => {
+            close(input ? input.value : true);
+        });
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) close(null); });
+        if (input) input.addEventListener('keydown', (e) => { if (e.key === 'Enter') close(input.value); });
+    });
+}
+
+function _deleteWifi(uuid) {
+    const t = window.translations || {};
+    _wifiModal({
+        title: t.wifi_delete_confirm || 'Delete this network?',
+        confirmText: t.delete || 'Delete',
+        cancelText: t.cancel || 'Cancel',
+        danger: true,
+    }).then(confirmed => {
+        if (!confirmed) return;
+        fetch(`/api/wifi/saved/${uuid}`, { method: 'DELETE', credentials: 'same-origin' })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) _loadSavedWifi();
+                else _wifiModal({ title: data.error || 'Delete failed', confirmText: 'OK' });
+            });
+    });
+}
+
+
+function _addWifi(ssid, password, hidden) {
+    const t = window.translations || {};
+    ssid = ssid || document.getElementById('wifi-add-ssid')?.value.trim();
+    password = password || document.getElementById('wifi-add-password')?.value;
+    hidden = hidden ?? document.getElementById('wifi-add-hidden')?.checked;
+
+    if (!ssid) return;
+
+    fetch('/api/wifi/add', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ssid, password, hidden }),
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                document.getElementById('wifi-add-form').style.display = 'none';
+                document.getElementById('wifi-add-ssid').value = '';
+                document.getElementById('wifi-add-password').value = '';
+                document.getElementById('wifi-add-hidden').checked = false;
+                _loadSavedWifi();
+            } else {
+                _wifiModal({ title: data.error || t.wifi_add_failed || 'Failed to add network', confirmText: 'OK' });
+            }
+        });
+}
+
+function _scanWifi() {
+    const t = window.translations || {};
+    const container = document.getElementById('wifi-scan-results');
+    if (!container) return;
+
+    document.getElementById('wifi-add-form').style.display = 'none';
+    container.style.display = 'block';
+    container.innerHTML = `<div class="wifi-loading">${t.wifi_scanning || 'Scanning...'}</div>`;
+
+    fetch('/api/wifi/scan', { credentials: 'same-origin' })
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                container.innerHTML = `<div class="wifi-empty">${data.error || 'Scan failed'}</div>`;
+                return;
+            }
+            if (!data.networks || data.networks.length === 0) {
+                container.innerHTML = `<div class="wifi-empty">${t.wifi_no_networks || 'No networks found'}</div>`;
+                return;
+            }
+
+            let html = `<div class="wifi-scan-header">${t.wifi_nearby_networks || 'Nearby Networks'}</div>`;
+            data.networks.forEach(net => {
+                const signalBars = net.signal >= 70 ? '▂▄▆█' : net.signal >= 50 ? '▂▄▆' : net.signal >= 30 ? '▂▄' : '▂';
+                const savedLabel = net.saved ? ` <span class="wifi-badge wifi-badge-saved">${t.wifi_saved || 'Saved'}</span>` : '';
+                const connectedLabel = net.in_use ? ` <span class="wifi-badge wifi-badge-connected">${t.wifi_connected || 'Connected'}</span>` : '';
+                const lockIcon = net.open ? '' : '🔒 ';
+
+                html += `
+                    <div class="wifi-scan-row${net.saved ? ' wifi-scan-saved' : ''}" data-ssid="${_escHtml(net.ssid)}" data-open="${net.open}">
+                        <div class="wifi-row-info">
+                            <span class="wifi-ssid">${lockIcon}${_escHtml(net.ssid)}</span>
+                            ${connectedLabel}${savedLabel}
+                        </div>
+                        <div class="wifi-row-actions">
+                            <span class="wifi-signal" title="${net.signal}%">${signalBars}</span>
+                            ${!net.saved ? `<button type="button" class="wifi-btn wifi-btn-add-scan">+ ${t.wifi_add_short || 'Add'}</button>` : ''}
+                        </div>
+                    </div>
+                `;
+            });
+            container.innerHTML = html;
+
+            // Wire add buttons for scanned networks
+            container.querySelectorAll('.wifi-btn-add-scan').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const row = e.target.closest('.wifi-scan-row');
+                    const ssid = row.dataset.ssid;
+                    const isOpen = row.dataset.open === 'true';
+                    if (isOpen) {
+                        _addWifi(ssid, '', false);
+                    } else {
+                        _wifiModal({
+                            title: `${t.wifi_enter_password || 'Enter password for'} "${ssid}"`,
+                            inputType: 'password',
+                            inputPlaceholder: t.wifi_password || 'Password',
+                            confirmText: t.wifi_add_short || 'Add',
+                        }).then(pw => {
+                            if (pw !== null && pw !== '') _addWifi(ssid, pw, false);
+                        });
+                    }
+                });
+            });
+        })
+        .catch(() => {
+            container.innerHTML = `<div class="wifi-empty">${t.wifi_scan_failed || 'Scan failed'}</div>`;
+        });
+}
+
+function _escHtml(s) {
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+}
+
 function createSoftwareUpdateSection() {
     const formGroup = document.createElement('div');
     formGroup.className = 'form-group software-update-section';
@@ -2177,13 +2632,21 @@ async function _performUpdate(tag, updateBtn) {
         _stopProgressBar();
 
         if (data.success) {
-            phaseBar.textContent = '';
-            statusBar.textContent = (window.translations?.service_restarting || 'Service restarting') + '...';
-            const doneMsg = document.createElement('strong');
-            doneMsg.textContent = '\n' + (window.translations?.update_complete_restarting || 'Update complete. Restarting service...');
-            logArea.appendChild(doneMsg);
-            logArea.appendChild(document.createTextNode('\n'));
-            _startHealthPolling(overlay, dialog, statusBar, tag, data.rollback_tag, data.rollback_commit, oldStarted, updateBtn);
+            // Close the update dialog
+            overlay.classList.remove('visible');
+            overlay.addEventListener('transitionend', () => overlay.remove(), { once: true });
+            setTimeout(() => { if (overlay.parentNode) overlay.remove(); }, 350);
+
+            // Show the restart countdown modal (same as manual restart)
+            _showRestartCountdown(
+                window.translations?.service_restarting || 'Service restarting...',
+                21,
+                tag,
+                data.rollback_tag,
+                data.rollback_commit,
+                oldStarted,
+                updateBtn
+            );
         } else {
             phaseBar.textContent = '';
             statusBar.textContent = (window.translations?.update_failed || 'Update failed') + ': ' + (data.error || '');
@@ -2273,87 +2736,22 @@ async function _performUpdate(tag, updateBtn) {
     }
 }
 
-function _startHealthPolling(overlay, dialog, statusBar, tag, rollbackTag, rollbackCommit, oldStarted, updateBtn) {
-    statusBar.innerHTML = '<span class="update-spinner"></span> ' +
-        (window.translations?.waiting_for_service || 'Waiting for service...');
-
-    // Add auto-refresh hint below status
-    const hintEl = document.createElement('div');
-    hintEl.className = 'update-auto-refresh-hint';
-    hintEl.textContent = window.translations?.page_will_refresh || 'Page will refresh automatically';
-    statusBar.parentNode.insertBefore(hintEl, statusBar.nextSibling);
-
-    let attempts = 0;
-    const maxAttempts = 60; // 120 seconds total (2s intervals)
-
-    const pollInterval = setInterval(async () => {
-        attempts++;
-        try {
-            const hResp = await fetch('/api/health', { cache: 'no-store' });
-            if (!hResp.ok) return;
-            const hData = await hResp.json();
-
-            // Ensure this is a NEW process (different startup timestamp)
-            if (oldStarted && hData.started && hData.started <= oldStarted) return;
-
-            // Verify the new version is active
-            const vResp = await fetch('/api/update/current', { cache: 'no-store' });
-            if (vResp.ok) {
-                const data = await vResp.json();
-                if (data.current_tag === tag) {
-                    clearInterval(pollInterval);
-                    statusBar.innerHTML = window.translations?.update_complete || 'Update complete!';
-                    statusBar.classList.add('system-update-success');
-                    if (hintEl.parentNode) hintEl.remove();
-                    setTimeout(() => location.reload(), 1500);
-                    return;
-                }
-            }
-        } catch (_) {
-            // Service is down — expected during restart
-        }
-
-        if (attempts >= maxAttempts) {
-            clearInterval(pollInterval);
-            _showUpdateFailure(overlay, dialog, statusBar, rollbackTag, rollbackCommit, updateBtn);
-        }
-    }, 2000);
-}
-
-function _showUpdateFailure(overlay, dialog, statusBar, rollbackTag, rollbackCommit, updateBtn) {
+function _appendUpdateFailureInfo(dialogEl, rollbackTag, rollbackCommit) {
+    const t = window.translations || {};
     const rollbackRef = rollbackTag || rollbackCommit || 'previous commit';
-    statusBar.textContent = window.translations?.update_may_have_failed || 'Service did not respond';
-    statusBar.classList.add('system-update-error');
-
     const sshInfo = document.createElement('div');
     sshInfo.className = 'system-update-ssh-fallback';
     sshInfo.innerHTML = `
-        <p>${window.translations?.connect_via_ssh || 'Connect via SSH to check'}:</p>
+        <p>${t.connect_via_ssh || 'Connect via SSH to check'}:</p>
         <code>ssh pi@mempaper.local</code><br>
         <code>sudo systemctl status mempaper</code><br>
         <code>sudo journalctl -u mempaper -n 50</code>
-        <p style="margin-top:8px">${window.translations?.to_rollback || 'To rollback'}:</p>
+        <p style="margin-top:8px">${t.to_rollback || 'To rollback'}:</p>
         <code>cd ~/btc-mempaper</code><br>
-        <code>git checkout ${rollbackRef}</code><br>
+        <code>git checkout ${_escHtml(rollbackRef)}</code><br>
         <code>sudo systemctl restart mempaper</code>
     `;
-    dialog.appendChild(sshInfo);
-
-    const closeBtn = document.createElement('button');
-    closeBtn.className = 'confirm-modal-btn confirm';
-    closeBtn.textContent = window.translations?.close || 'Close';
-    closeBtn.addEventListener('click', () => {
-        overlay.classList.remove('visible');
-        overlay.addEventListener('transitionend', () => overlay.remove(), { once: true });
-        setTimeout(() => { if (overlay.parentNode) overlay.remove(); }, 350);
-    });
-    const buttons = document.createElement('div');
-    buttons.className = 'confirm-modal-buttons';
-    buttons.appendChild(closeBtn);
-    dialog.appendChild(buttons);
-
-    updateBtn.disabled = false;
-    updateBtn.textContent = window.translations?.update_now || 'Update';
+    dialogEl.appendChild(sshInfo);
 }
 
 // ── Display Driver Install ──────────────────────────────────
@@ -2397,7 +2795,7 @@ async function _installDisplayDrivers(deviceId) {
             if (bar) bar.style.width = '100%';
 
             if (data.restart_required) {
-                if (statusEl) statusEl.textContent = window.translations?.drivers_installed_restarting || 'Drivers installed! Service restarting...';
+                if (statusEl) statusEl.innerHTML = '<span class="update-spinner"></span> ' + (window.translations?.drivers_installed_restarting || 'Drivers installed! Service restarting...');
                 toast.classList.add('update-toast-success');
                 // Poll for service to come back, then reload
                 _startDriverHealthPolling(toast);
@@ -2504,6 +2902,209 @@ function createSystemUpdateSection() {
     });
 
     return formGroup;
+}
+
+// ── Device Control (Restart / Reboot) ────────────────────────
+
+function createDeviceControlSection() {
+    const t = window.translations || {};
+    const formGroup = document.createElement('div');
+    formGroup.className = 'form-group device-control-section';
+
+    const label = document.createElement('label');
+    label.className = 'form-label';
+    label.textContent = t.device_control || 'Device Control';
+    formGroup.appendChild(label);
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'update-wrapper device-control-wrapper';
+
+    // Restart Service button
+    const restartBtn = document.createElement('button');
+    restartBtn.type = 'button';
+    restartBtn.className = 'device-control-btn';
+    restartBtn.innerHTML = `<span class="device-control-icon">↻</span> ${t.restart_service || 'Restart Service'}`;
+
+    restartBtn.addEventListener('click', async () => {
+        const ok = await showConfirmModal({
+            title: t.restart_service || 'Restart Service',
+            message: t.restart_service_confirm || 'Restart the mempaper service? The page will reload when the service is back.',
+            confirmText: t.restart || 'Restart',
+            cancelText: t.cancel || 'Cancel',
+        });
+        if (!ok) return;
+        _performSystemAction('/api/system/restart-service', t.restart_service || 'Restart Service', 21);
+    });
+
+    // Reboot Device button
+    const rebootBtn = document.createElement('button');
+    rebootBtn.type = 'button';
+    rebootBtn.className = 'device-control-btn device-control-btn-danger';
+    rebootBtn.innerHTML = `<span class="device-control-icon">⏻</span> ${t.reboot_device || 'Reboot Device'}`;
+
+    rebootBtn.addEventListener('click', async () => {
+        const ok = await showConfirmModal({
+            title: t.reboot_device || 'Reboot Device',
+            message: t.reboot_device_confirm || 'Reboot the entire device? This takes about 70 seconds. The page will reload when the service is back.',
+            confirmText: t.reboot || 'Reboot',
+            cancelText: t.cancel || 'Cancel',
+            danger: true,
+        });
+        if (!ok) return;
+        _performSystemAction('/api/system/reboot', t.reboot_device || 'Reboot Device', 81);
+    });
+
+    wrapper.appendChild(restartBtn);
+    wrapper.appendChild(rebootBtn);
+    formGroup.appendChild(wrapper);
+    return formGroup;
+}
+
+function _performSystemAction(apiUrl, title, estimatedSeconds) {
+    const t = window.translations || {};
+
+    // Call the API
+    fetch(apiUrl, { method: 'POST', credentials: 'same-origin' })
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                showAlertModal({ title: data.error || 'Action failed' });
+                return;
+            }
+            // Show countdown modal
+            _showRestartCountdown(title, estimatedSeconds);
+        })
+        .catch(() => showAlertModal({ title: 'Request failed' }));
+}
+
+function _showRestartCountdown(title, estimatedSeconds, updateTag, rollbackTag, rollbackCommit, oldStarted, updateBtn) {
+    const t = window.translations || {};
+    const overlay = document.createElement('div');
+    overlay.className = 'confirm-modal-overlay';
+
+    const dialog = document.createElement('div');
+    dialog.className = 'confirm-modal-dialog';
+
+    const heading = document.createElement('h3');
+    heading.className = 'confirm-modal-title';
+    heading.textContent = title;
+
+    const countdown = document.createElement('div');
+    countdown.className = 'restart-countdown';
+
+    const countdownNumber = document.createElement('div');
+    countdownNumber.className = 'restart-countdown-number';
+    countdownNumber.textContent = estimatedSeconds;
+
+    const countdownLabel = document.createElement('div');
+    countdownLabel.className = 'restart-countdown-label';
+    countdownLabel.textContent = t.waiting_for_service || 'Waiting for service...';
+
+    const progressBar = document.createElement('div');
+    progressBar.className = 'restart-progress-bar';
+    const progressFill = document.createElement('div');
+    progressFill.className = 'restart-progress-fill';
+    progressBar.appendChild(progressFill);
+
+    countdown.appendChild(countdownNumber);
+    countdown.appendChild(countdownLabel);
+
+    dialog.appendChild(heading);
+    dialog.appendChild(countdown);
+    dialog.appendChild(progressBar);
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+
+    requestAnimationFrame(() => overlay.classList.add('visible'));
+
+    let remaining = estimatedSeconds;
+    let polling = false;
+
+    const interval = setInterval(() => {
+        remaining--;
+        if (remaining >= 0) {
+            countdownNumber.textContent = remaining;
+            progressFill.style.width = ((1 - remaining / estimatedSeconds) * 100) + '%';
+        }
+
+        if (remaining <= 0 && !polling) {
+            polling = true;
+            countdownLabel.textContent = t.checking_service || 'Checking service...';
+            countdownNumber.innerHTML = '<div class="restart-spinner"></div>';
+            _pollForService(overlay, countdownNumber, countdownLabel, progressFill, interval, updateTag, rollbackTag, rollbackCommit, oldStarted, updateBtn);
+        }
+    }, 1000);
+}
+
+function _pollForService(overlay, countdownNumber, countdownLabel, progressFill, countdownInterval, updateTag, rollbackTag, rollbackCommit, oldStarted, updateBtn) {
+    const t = window.translations || {};
+    let attempts = 0;
+    const maxAttempts = 60;
+
+    const pollInterval = setInterval(async () => {
+        attempts++;
+        try {
+            const resp = await fetch('/api/health', { cache: 'no-store' });
+            if (resp.ok) {
+                const hData = await resp.json();
+
+                // For update restarts: ensure this is a NEW process
+                if (updateTag && oldStarted && hData.started && hData.started <= oldStarted) return;
+
+                // For update restarts: verify the new version is active
+                if (updateTag) {
+                    try {
+                        const vResp = await fetch('/api/update/current', { cache: 'no-store' });
+                        if (vResp.ok) {
+                            const vData = await vResp.json();
+                            if (vData.current_tag !== updateTag) return; // not yet on new version
+                        }
+                    } catch (_) { return; }
+                }
+
+                clearInterval(pollInterval);
+                clearInterval(countdownInterval);
+                countdownNumber.textContent = '\u2713';
+                countdownNumber.classList.add('restart-countdown-success');
+                countdownLabel.textContent = t.service_back_online || 'Service is back online!';
+                progressFill.style.width = '100%';
+                setTimeout(() => location.reload(), 1500);
+                return;
+            }
+        } catch (_) {}
+
+        if (attempts >= maxAttempts) {
+            clearInterval(pollInterval);
+            clearInterval(countdownInterval);
+            countdownNumber.textContent = '\u2715';
+            countdownNumber.classList.add('restart-countdown-error');
+            countdownLabel.textContent = t.service_not_responding || 'Service not responding. Try refreshing manually.';
+            progressFill.style.width = '100%';
+            progressFill.classList.add('restart-progress-error');
+
+            const dialogEl = overlay.querySelector('.confirm-modal-dialog');
+
+            // For update failures: show SSH rollback info
+            if (updateTag && rollbackTag) {
+                _appendUpdateFailureInfo(dialogEl, rollbackTag, rollbackCommit);
+                if (updateBtn) {
+                    updateBtn.disabled = false;
+                    updateBtn.textContent = t.update_now || 'Update';
+                }
+            }
+
+            // Add dismiss button
+            const dismissBtn = document.createElement('button');
+            dismissBtn.className = 'confirm-modal-btn confirm';
+            dismissBtn.textContent = t.dismiss || 'Dismiss';
+            dismissBtn.style.marginTop = '16px';
+            dismissBtn.addEventListener('click', () => {
+                overlay.classList.remove('visible');
+                setTimeout(() => overlay.remove(), 200);
+            });
+            dialogEl.appendChild(dismissBtn);
+        }
+    }, 2000);
 }
 
 function _startSystemUpdate(btn) {
@@ -3013,11 +3614,18 @@ function renderConfigurationForm() {
             fieldsAdded += 2;
         }
 
+        // Populate the WiFi section
+        if (category.id === 'wifi') {
+            section.appendChild(createWifiSection());
+            fieldsAdded += 1;
+        }
+
         // Populate the Updates section with software + system update
         if (category.id === 'updates') {
             section.appendChild(createSoftwareUpdateSection());
             section.appendChild(createSystemUpdateSection());
-            fieldsAdded += 2;
+            section.appendChild(createDeviceControlSection());
+            fieldsAdded += 3;
         }
 
         //console.log(`Category ${category.id} has ${fieldsAdded} fields`);

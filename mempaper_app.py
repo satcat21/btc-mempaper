@@ -1863,68 +1863,82 @@ class MempaperApp:
     POWER_CYCLE_RESET_WINDOW = 900    # seconds (15 minutes — 3 cycles × ~3.5 min + 4th boot)
 
     def _check_power_cycle_reset(self):
-        """Detect rapid power-cycling (3 boots in 10 min) and trigger factory reset.
+        """Detect rapid power-cycling (3 reboots in 15 min) and trigger factory reset.
 
-        On each startup the current timestamp is appended to a small JSON file.
-        If the file already contains enough recent timestamps, a full factory
-        reset is triggered: admin + sensitive data cleared, saved WiFi profiles
-        deleted, and the delivery-state e-ink image rendered.
+        Each unique system boot (identified by kernel boot time) is recorded.
+        Service restarts on the same boot are deduplicated and do NOT count.
+        If 3+ distinct reboots occur within the window, a full factory reset is
+        triggered: admin + sensitive data cleared, saved WiFi profiles deleted,
+        and the delivery-state e-ink image rendered.
 
         Returns True if a reset was triggered (caller should skip normal startup).
         """
         now = time.time()
-        timestamps = []
 
-        # Log system uptime so we know exactly how long from power-on to this point.
-        # Only count as a power-cycle boot if uptime is low (< 5 min).
-        # A service restart (systemctl restart) won't reset system uptime,
-        # so it will be ignored and not count towards the reset threshold.
+        # Distinguish real reboots from service restarts.
+        # Use the kernel boot time (now - uptime) as a unique boot ID.
+        # If boot_time matches a previously recorded value, this is just a
+        # service restart on the same boot — skip it entirely.
+        boot_time = None
         uptime_seconds = None
         try:
             with open('/proc/uptime', 'r') as f:
                 uptime_seconds = float(f.read().split()[0])
-            print(f'⏱️ System uptime at boot timestamp write: {uptime_seconds:.1f}s '
-                  f'— safe to power off after this point')
+            boot_time = round(now - uptime_seconds)  # epoch second the kernel booted
+            print(f'⏱️ System uptime: {uptime_seconds:.1f}s  (boot_time={boot_time})')
         except (OSError, ValueError, IndexError):
             pass  # Not on Linux (dev machine)
 
-        max_boot_uptime = 300  # 5 minutes — cold boot on Pi Zero takes ~80-120s
-        if uptime_seconds is not None and uptime_seconds > max_boot_uptime:
-            print(f'🔄 Power-cycle reset check: skipped (uptime {uptime_seconds:.0f}s > {max_boot_uptime}s — '
-                  f'this is a service restart, not a cold boot)')
-            return False
-
-        # Load existing boot timestamps
+        # Load existing boot timestamps — now stored as {boot_time: timestamp} pairs
+        # to deduplicate multiple service restarts within the same boot.
+        boot_records = {}  # {boot_time_str: first_seen_timestamp}
         try:
             if os.path.exists(self.BOOT_TIMESTAMPS_PATH):
                 with open(self.BOOT_TIMESTAMPS_PATH, 'r', encoding='utf-8') as f:
-                    timestamps = json.load(f)
-                if not isinstance(timestamps, list):
-                    timestamps = []
+                    raw = json.load(f)
+                # Migrate from old list format [ts, ts, ...] to new dict format
+                if isinstance(raw, list):
+                    boot_records = {}
+                    print('🔄 Migrating boot_timestamps from old list format')
+                elif isinstance(raw, dict):
+                    boot_records = raw
         except (json.JSONDecodeError, OSError):
-            timestamps = []
+            pass
 
-        # Keep only timestamps within the detection window
-        timestamps = [ts for ts in timestamps if (now - ts) < self.POWER_CYCLE_RESET_WINDOW]
-        timestamps.append(now)
+        # Prune records outside the detection window
+        boot_records = {k: v for k, v in boot_records.items()
+                        if (now - v) < self.POWER_CYCLE_RESET_WINDOW}
 
-        # Persist updated timestamps and force filesystem sync so the data
+        if boot_time is not None:
+            bt_key = str(boot_time)
+            if bt_key in boot_records:
+                print(f'🔄 Power-cycle reset check: skipped (service restart on same boot, '
+                      f'uptime {uptime_seconds:.0f}s)')
+                return False
+            # New boot — record it
+            boot_records[bt_key] = now
+        else:
+            # Fallback (non-Linux): use timestamp as key (old behavior)
+            boot_records[str(int(now))] = now
+
+        # Persist updated boot records and force filesystem sync so the data
         # survives the next hard power-off without corrupting the SD card.
         try:
             os.makedirs(os.path.dirname(self.BOOT_TIMESTAMPS_PATH), exist_ok=True)
             with open(self.BOOT_TIMESTAMPS_PATH, 'w', encoding='utf-8') as f:
-                json.dump(timestamps, f)
+                json.dump(boot_records, f)
                 f.flush()
                 os.fsync(f.fileno())
             os.sync()  # flush all pending filesystem writes to SD card
         except OSError:
             pass
 
-        print(f'🔄 Power-cycle reset check: {len(timestamps)}/{self.POWER_CYCLE_RESET_THRESHOLD} '
-              f'boots in {self.POWER_CYCLE_RESET_WINDOW}s window')
+        boot_count = len(boot_records)
+        print(f'🔄 Power-cycle reset check: {boot_count}/{self.POWER_CYCLE_RESET_THRESHOLD} '
+              f'unique boots in {self.POWER_CYCLE_RESET_WINDOW}s window')
 
-        if len(timestamps) >= self.POWER_CYCLE_RESET_THRESHOLD:
-            print(f'🔄 Power-cycle reset detected! ({len(timestamps)} boots in {self.POWER_CYCLE_RESET_WINDOW}s window)')
+        if boot_count >= self.POWER_CYCLE_RESET_THRESHOLD:
+            print(f'🔄 Power-cycle reset detected! ({boot_count} boots in {self.POWER_CYCLE_RESET_WINDOW}s window)')
             print('🔄 Triggering factory reset...')
 
             # Clear the timestamps file so the next boot is clean
@@ -6370,6 +6384,313 @@ class MempaperApp:
                 'started': self._startup_timestamp,
             })
 
+        # ── WiFi Management API ───────────────────────────────────────────
+        @self.app.route('/api/wifi/saved', methods=['GET'])
+        @require_auth(self.auth_manager)
+        def wifi_saved_list():
+            """List saved WiFi connections with priority and active status."""
+            try:
+                # Use sudo to see system-owned connections
+                result = self._nmcli(['-t', '-f', 'NAME,UUID,TYPE', 'connection', 'show'])
+                if result is None or result.returncode != 0:
+                    return jsonify({'success': False, 'error': 'nmcli not available'}), 500
+
+                # Get current active connection
+                iface = self._detect_wifi_interface()
+                status_result = self._nmcli_read(['-t', '-f', 'DEVICE,TYPE,STATE,CONNECTION', 'device', 'status'])
+                active_connection = ''
+                if status_result and status_result.returncode == 0:
+                    for line in status_result.stdout.splitlines():
+                        parts = line.split(':')
+                        if len(parts) >= 4 and parts[0] == iface and parts[1] == 'wifi':
+                            if parts[2].startswith('connected'):
+                                active_connection = parts[3]
+
+                connections = []
+                for line in result.stdout.splitlines():
+                    parts = line.split(':', 2)
+                    if len(parts) < 3:
+                        continue
+                    name, uuid, conn_type = parts[0].strip(), parts[1].strip(), parts[2].strip()
+                    if conn_type not in ('wifi', '802-11-wireless'):
+                        continue
+                    # Skip setup hotspot profiles
+                    if self._is_setup_hotspot_connection(name):
+                        continue
+
+                    # Get connection details (SSID and autoconnect-priority)
+                    detail = self._nmcli_read(['connection', 'show', uuid])
+                    ssid = name
+                    priority = 0
+                    autoconnect = True
+                    if detail and detail.returncode == 0:
+                        for prop in detail.stdout.splitlines():
+                            if '802-11-wireless.ssid:' in prop:
+                                ssid = prop.split(':', 1)[1].strip()
+                            elif 'connection.autoconnect-priority:' in prop:
+                                try:
+                                    priority = int(prop.split(':', 1)[1].strip())
+                                except ValueError:
+                                    pass
+                            elif 'connection.autoconnect:' in prop:
+                                autoconnect = prop.split(':', 1)[1].strip().lower() == 'yes'
+
+                    connections.append({
+                        'name': name,
+                        'uuid': uuid,
+                        'ssid': ssid,
+                        'priority': priority,
+                        'autoconnect': autoconnect,
+                        'active': name == active_connection,
+                    })
+
+                # Sort by priority (highest first), then by name
+                connections.sort(key=lambda c: (-c['priority'], c['name'].lower()))
+                return jsonify({'success': True, 'connections': connections})
+            except Exception as e:
+                return jsonify({'success': False, 'error': str(e)}), 500
+
+        @self.app.route('/api/wifi/saved/<uuid>', methods=['DELETE'])
+        @require_auth(self.auth_manager)
+        def wifi_delete_connection(uuid):
+            """Delete a saved WiFi connection (cannot delete active connection)."""
+            try:
+                # Check if this is the active connection
+                iface = self._detect_wifi_interface()
+                status_result = self._nmcli_read(['-t', '-f', 'DEVICE,TYPE,STATE,CONNECTION', 'device', 'status'])
+                if status_result and status_result.returncode == 0:
+                    for line in status_result.stdout.splitlines():
+                        parts = line.split(':')
+                        if len(parts) >= 4 and parts[0] == iface and parts[1] == 'wifi':
+                            if parts[2].startswith('connected'):
+                                # Get UUID of active connection
+                                active_result = self._nmcli_read(['-t', '-f', 'NAME,UUID,TYPE', 'connection', 'show', '--active'])
+                                if active_result and active_result.returncode == 0:
+                                    for aline in active_result.stdout.splitlines():
+                                        aparts = aline.split(':', 2)
+                                        if len(aparts) >= 2 and aparts[1].strip() == uuid:
+                                            return jsonify({'success': False, 'error': 'Cannot delete the currently connected WiFi'}), 400
+
+                result = self._nmcli(['connection', 'delete', uuid])
+                if result is None or result.returncode != 0:
+                    err = (result.stderr or result.stdout or '').strip() if result else 'nmcli failed'
+                    return jsonify({'success': False, 'error': err}), 500
+
+                return jsonify({'success': True})
+            except Exception as e:
+                return jsonify({'success': False, 'error': str(e)}), 500
+
+        @self.app.route('/api/wifi/add', methods=['POST'])
+        @require_auth(self.auth_manager)
+        def wifi_add_connection():
+            """Add a new WiFi connection."""
+            try:
+                data = request.get_json()
+                ssid = (data.get('ssid') or '').strip()
+                password = (data.get('password') or '').strip()
+                hidden = data.get('hidden', False)
+
+                if not ssid:
+                    return jsonify({'success': False, 'error': 'SSID is required'}), 400
+                if password and len(password) < 8:
+                    return jsonify({'success': False, 'error': 'Password must be at least 8 characters'}), 400
+
+                iface = self._detect_wifi_interface()
+
+                # Build nmcli command to add the connection (don't activate it)
+                cmd = ['connection', 'add', 'type', 'wifi', 'ifname', iface,
+                       'con-name', ssid, 'ssid', ssid,
+                       'connection.autoconnect', 'yes']
+                if hidden:
+                    cmd += ['802-11-wireless.hidden', 'yes']
+
+                result = self._nmcli(cmd, timeout=15)
+                if result is None or result.returncode != 0:
+                    err = (result.stderr or result.stdout or '').strip() if result else 'nmcli failed'
+                    return jsonify({'success': False, 'error': err}), 500
+
+                # Set password if provided (WPA-PSK)
+                if password:
+                    self._nmcli(['connection', 'modify', ssid,
+                                 'wifi-sec.key-mgmt', 'wpa-psk',
+                                 'wifi-sec.psk', password])
+
+                return jsonify({'success': True})
+            except Exception as e:
+                return jsonify({'success': False, 'error': str(e)}), 500
+
+        @self.app.route('/api/wifi/priority', methods=['POST'])
+        @require_auth(self.auth_manager)
+        def wifi_set_priority():
+            """Set preferred WiFi by adjusting autoconnect-priority."""
+            try:
+                data = request.get_json()
+                uuid = (data.get('uuid') or '').strip()
+                priority = data.get('priority', 100)
+
+                if not uuid:
+                    return jsonify({'success': False, 'error': 'UUID is required'}), 400
+
+                result = self._nmcli(['connection', 'modify', uuid,
+                                      'connection.autoconnect-priority', str(int(priority))])
+                if result is None or result.returncode != 0:
+                    err = (result.stderr or result.stdout or '').strip() if result else 'nmcli failed'
+                    return jsonify({'success': False, 'error': err}), 500
+
+                return jsonify({'success': True})
+            except Exception as e:
+                return jsonify({'success': False, 'error': str(e)}), 500
+
+        @self.app.route('/api/wifi/scan', methods=['GET'])
+        @require_auth(self.auth_manager)
+        def wifi_scan_networks():
+            """Scan for nearby WiFi networks."""
+            try:
+                import time as _time
+
+                iface = self._detect_wifi_interface()
+
+                # Trigger rescan
+                if shutil.which('iw'):
+                    subprocess.run(
+                        ['sudo', 'iw', 'dev', iface, 'scan', 'passive'],
+                        capture_output=True, timeout=15,
+                    )
+                    _time.sleep(2)
+                else:
+                    self._nmcli(['device', 'wifi', 'rescan', 'ifname', iface])
+                    _time.sleep(2)
+
+                result = self._nmcli_read([
+                    '-t', '-f', 'IN-USE,SSID,SIGNAL,SECURITY',
+                    'device', 'wifi', 'list', 'ifname', iface,
+                ])
+                if result is None or result.returncode != 0:
+                    return jsonify({'success': False, 'error': 'Scan failed'}), 500
+
+                # Get saved connection SSIDs to mark which are already saved
+                saved_result = self._nmcli(['-t', '-f', 'NAME,TYPE', 'connection', 'show'])
+                saved_ssids = set()
+                if saved_result and saved_result.returncode == 0:
+                    for line in saved_result.stdout.splitlines():
+                        parts = line.strip().split(':', 1)
+                        if len(parts) >= 2 and parts[1] in ('wifi', '802-11-wireless'):
+                            if not self._is_setup_hotspot_connection(parts[0]):
+                                saved_ssids.add(parts[0].strip())
+
+                networks = []
+                seen = set()
+                for line in result.stdout.splitlines():
+                    parts = line.split(':')
+                    if len(parts) < 4:
+                        continue
+                    in_use = parts[0].strip()
+                    ssid = parts[1].strip()
+                    signal = parts[2].strip()
+                    security = parts[3].strip()
+                    if not ssid or ssid in seen:
+                        continue
+                    # Skip our own hotspot
+                    own_ssid = self._setup_ssid_from_mac(iface) if hasattr(self, '_setup_ssid_from_mac') else None
+                    if own_ssid and ssid == own_ssid:
+                        continue
+                    seen.add(ssid)
+                    try:
+                        signal_int = int(signal)
+                    except ValueError:
+                        signal_int = 0
+                    networks.append({
+                        'ssid': ssid,
+                        'signal': signal_int,
+                        'security': security,
+                        'in_use': in_use == '*',
+                        'open': security in ('', '--'),
+                        'saved': ssid in saved_ssids,
+                    })
+
+                networks.sort(key=lambda n: n.get('signal', 0), reverse=True)
+                return jsonify({'success': True, 'networks': networks})
+            except Exception as e:
+                return jsonify({'success': False, 'error': str(e)}), 500
+
+        @self.app.route('/api/wifi/connect', methods=['POST'])
+        @require_auth(self.auth_manager)
+        def wifi_connect():
+            """Connect to a saved WiFi network by UUID."""
+            try:
+                data = request.get_json()
+                uuid = (data.get('uuid') or '').strip()
+                if not uuid:
+                    return jsonify({'success': False, 'error': 'UUID is required'}), 400
+
+                result = self._nmcli(['connection', 'up', uuid], timeout=30)
+                if result is None or result.returncode != 0:
+                    err = (result.stderr or result.stdout or '').strip() if result else 'Connection failed'
+                    return jsonify({'success': False, 'error': err}), 500
+
+                return jsonify({'success': True})
+            except Exception as e:
+                return jsonify({'success': False, 'error': str(e)}), 500
+
+        @self.app.route('/api/wifi/modify', methods=['POST'])
+        @require_auth(self.auth_manager)
+        def wifi_modify_connection():
+            """Modify password of a saved WiFi connection."""
+            try:
+                data = request.get_json()
+                uuid = (data.get('uuid') or '').strip()
+                password = (data.get('password') or '').strip()
+
+                if not uuid:
+                    return jsonify({'success': False, 'error': 'UUID is required'}), 400
+                if password and len(password) < 8:
+                    return jsonify({'success': False, 'error': 'Password must be at least 8 characters'}), 400
+
+                if password:
+                    result = self._nmcli(['connection', 'modify', uuid,
+                                          'wifi-sec.key-mgmt', 'wpa-psk',
+                                          'wifi-sec.psk', password])
+                    if result is None or result.returncode != 0:
+                        err = (result.stderr or result.stdout or '').strip() if result else 'Modify failed'
+                        return jsonify({'success': False, 'error': err}), 500
+
+                return jsonify({'success': True})
+            except Exception as e:
+                return jsonify({'success': False, 'error': str(e)}), 500
+
+        # ── Device Power Management API ────────────────────────────────────
+        @self.app.route('/api/system/restart-service', methods=['POST'])
+        @require_auth(self.auth_manager)
+        def restart_service():
+            """Restart the mempaper service."""
+            try:
+                def _do_restart():
+                    time.sleep(1)
+                    subprocess.run(
+                        ['sudo', 'systemctl', 'restart', 'mempaper.service'],
+                        timeout=30
+                    )
+                threading.Thread(target=_do_restart, daemon=True).start()
+                return jsonify({'success': True})
+            except Exception as e:
+                return jsonify({'success': False, 'error': str(e)}), 500
+
+        @self.app.route('/api/system/reboot', methods=['POST'])
+        @require_auth(self.auth_manager)
+        def reboot_device():
+            """Reboot the entire device."""
+            try:
+                def _do_reboot():
+                    time.sleep(2)
+                    subprocess.run(
+                        ['sudo', 'systemctl', 'reboot'],
+                        timeout=30
+                    )
+                threading.Thread(target=_do_reboot, daemon=True).start()
+                return jsonify({'success': True})
+            except Exception as e:
+                return jsonify({'success': False, 'error': str(e)}), 500
+
         @self.app.route('/api/update/current', methods=['GET'])
         @require_auth(self.auth_manager)
         def get_current_version():
@@ -7224,6 +7545,14 @@ class MempaperApp:
 
                                 if needs_restart:
                                     print(f"✅ Auto-update: upgraded to {latest_tag}. Restarting service...")
+                                    # Notify any connected browsers so they show the restart countdown
+                                    if hasattr(self, 'socketio') and self.socketio:
+                                        self.socketio.emit('service_restarting', {
+                                            'reason': 'auto_update',
+                                            'tag': latest_tag,
+                                            'estimated_seconds': 21
+                                        })
+                                        time.sleep(1)  # give clients time to receive
                                     subprocess.run(
                                         ['sudo', 'systemctl', 'restart', 'mempaper.service'],
                                         timeout=30

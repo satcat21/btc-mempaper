@@ -265,13 +265,15 @@ These components are the same regardless of which display you choose:
 
 **Raspberry Pi / Linux**
 ```bash
-# Install system dependencies
+# Clone the repository
 sudo apt update && sudo apt upgrade -y
-sudo apt install -y $(grep -v '^\s*#' apt-requirements.txt | grep -v '^\s*$')  # Install system dependencies from apt-requirements.txt
-
-# Clone and install
 git clone https://github.com/satcat21/btc-mempaper.git
 cd btc-mempaper
+
+# Install system dependencies from apt-requirements.txt
+sudo apt install -y $(grep -v '^\s*#' apt-requirements.txt | grep -v '^\s*$')
+
+# Create virtual environment and install Python dependencies
 python3 -m venv .venv
 source .venv/bin/activate
 pip install spidev gpiozero lgpio
@@ -648,7 +650,7 @@ The dashboard image is composed of a meme and a set of optional info blocks disp
 | **Countdown** | `show_countdown_block` | Remaining BTC supply and percentage mined |
 | **Halving** | `show_halving_block` | Estimated next halving date and blocks remaining |
 | **Network** | `show_network_block` | Global hashrate and mining difficulty |
-| **Bitaxe** | `show_bitaxe_block` | Aggregate hashrate and found blocks |
+| **Bitaxe** | `show_bitaxe_block` | Aggregate hashrate and found blocks or best difficulty |
 | **Wallet Balances** | `show_wallet_balances_block` | On-chain balances for addresses / XPUBs / ZPUBs |
 | **Lightning Donation** | `show_donation_block` | Latest Lightning donation via LNbits webhook |
 

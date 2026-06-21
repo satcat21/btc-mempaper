@@ -42,6 +42,8 @@ ${SERVICE_USER} ALL=(root) NOPASSWD: ${IW_BIN}
 ${SERVICE_USER} ALL=(root) NOPASSWD: ${IPTABLES_BIN}
 # mempaper: allow self-update to restart the service from the web UI
 ${SERVICE_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} restart mempaper.service
+# mempaper: allow device reboot from the web UI
+${SERVICE_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} reboot
 EOF
 chmod 440 "${SUDOERS_FILE}"
 # Validate the file (visudo -c exits non-zero if syntax is wrong)
