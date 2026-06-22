@@ -24,6 +24,8 @@ import subprocess
 import hashlib
 import shutil
 import requests
+# Strip identifying User-Agent header from all outgoing requests (privacy)
+requests.utils.default_user_agent = lambda *_args, **_kw: "python-requests"
 from datetime import datetime
 from werkzeug.utils import secure_filename
 from flask import Flask, send_file, render_template, request, jsonify, session, redirect, url_for
@@ -886,6 +888,10 @@ class MempaperApp:
     # ALL domains to the hotspot IP.  iptables redirects incoming DNS
     # (UDP 53) to this port, bypassing any NM-managed DNS that would
     # try to forward to an upstream that doesn't exist.
+    #
+    # This is the same approach as AxeOS/ESP-IDF captive portals and
+    # is critical for Android/iOS: without instant DNS responses, the
+    # OS times out the connectivity check and drops the network.
 
     _CAPTIVE_DNS_PORT = 5353
     _CAPTIVE_DNS_CONF = '/tmp/mempaper-captive-dns.conf'
@@ -1797,11 +1803,12 @@ class MempaperApp:
             print("✅ Initial dashboard image generated and cached")
             
             # ASYNC WALLET REFRESH: Update wallet balances in background and regenerate if changed
-            threading.Thread(
-                target=self._async_wallet_refresh_and_regenerate,
-                args=(block_info['block_height'], block_info['block_hash']),
-                daemon=True
-            ).start()
+            if self.config.get("show_wallet_balances_block", True):
+                threading.Thread(
+                    target=self._async_wallet_refresh_and_regenerate,
+                    args=(block_info['block_height'], block_info['block_hash']),
+                    daemon=True
+                ).start()
             
             # Display on e-Paper in background thread (don't block startup)
             if self.e_ink_enabled:
@@ -1941,9 +1948,9 @@ class MempaperApp:
         except Exception as e:
             print(f"⚠️ BTC price API warm-up failed: {e}")
         
-        # Warm up wallet balance API (if configured)
-        # Get wallet entries from modern table format  
-        wallet_entries = self.config.get("wallet_balance_addresses_with_comments", [])
+        # Warm up wallet balance API (if configured and enabled)
+        # Get wallet entries from modern table format
+        wallet_entries = self.config.get("wallet_balance_addresses_with_comments", []) if self.config.get("show_wallet_balances_block", True) else []
         # Extract actual addresses from table format for validation
         wallet_addresses = []
         for entry in wallet_entries:
@@ -3584,7 +3591,8 @@ class MempaperApp:
 
             # Bitaxe stats for all configured miners (with labels)
             miner_table = config.get('bitaxe_miner_table', [])
-            if miner_table:
+            bitaxe_enabled = config.get('bitaxe_enabled', True) and config.get('show_bitaxe_block', True)
+            if miner_table and bitaxe_enabled:
                 from lib.bitaxe_api import BitaxeAPI
                 bitaxe_api = getattr(self.image_renderer, 'bitaxe_api', None) or BitaxeAPI()
                 miners = {}
@@ -4698,7 +4706,8 @@ class MempaperApp:
         # "Sign in to WiFi network" popup on Android, iOS, and Windows.
         #
         # Combined with the wildcard dnsmasq (all DNS → hotspot IP) and
-        # iptables port redirect (80/443 → Flask).
+        # iptables port redirect (80/443 → Flask), this mirrors the proven
+        # approach used by Bitaxe AxeOS / ESP-IDF captive portals.
         #
         # Previous approach returned 204/success for Android probes to
         # "keep the connection stable" — but this backfired because Android
@@ -5630,23 +5639,24 @@ class MempaperApp:
                     self._emit_config_page_updates()
 
                     # Fetch fresh wallet balances in background and push when ready
-                    def _bg_wallet_refresh_after_save():
-                        try:
-                            # Snapshot current cache BEFORE fetching fresh data so the
-                            # frontend can compare and only toast on genuine changes.
-                            cached_before = self.image_renderer.wallet_api.get_cached_wallet_balances() or {}
-                            fresh = self.image_renderer.wallet_api.fetch_wallet_balances(startup_mode=True)
-                            if fresh and not fresh.get('error'):
-                                self.image_renderer.wallet_api.update_cache(fresh)
-                                if hasattr(self, 'socketio') and self.socketio:
-                                    emit_data = dict(fresh)
-                                    emit_data['after_config_save'] = True
-                                    emit_data['prev_addresses'] = cached_before.get('addresses', [])
-                                    emit_data['prev_xpubs'] = cached_before.get('xpubs', [])
-                                    self.socketio.emit('wallet_balance_updated', emit_data, room='authenticated')
-                        except Exception as e:
-                            print(f"⚠️ Background wallet refresh after config save failed: {e}")
-                    threading.Thread(target=_bg_wallet_refresh_after_save, daemon=True).start()
+                    if new_config.get("show_wallet_balances_block", True):
+                        def _bg_wallet_refresh_after_save():
+                            try:
+                                # Snapshot current cache BEFORE fetching fresh data so the
+                                # frontend can compare and only toast on genuine changes.
+                                cached_before = self.image_renderer.wallet_api.get_cached_wallet_balances() or {}
+                                fresh = self.image_renderer.wallet_api.fetch_wallet_balances(startup_mode=True)
+                                if fresh and not fresh.get('error'):
+                                    self.image_renderer.wallet_api.update_cache(fresh)
+                                    if hasattr(self, 'socketio') and self.socketio:
+                                        emit_data = dict(fresh)
+                                        emit_data['after_config_save'] = True
+                                        emit_data['prev_addresses'] = cached_before.get('addresses', [])
+                                        emit_data['prev_xpubs'] = cached_before.get('xpubs', [])
+                                        self.socketio.emit('wallet_balance_updated', emit_data, room='authenticated')
+                            except Exception as e:
+                                print(f"⚠️ Background wallet refresh after config save failed: {e}")
+                        threading.Thread(target=_bg_wallet_refresh_after_save, daemon=True).start()
 
                     return jsonify({
                         'success': True,
@@ -6385,6 +6395,44 @@ class MempaperApp:
                 traceback.print_exc()
                 return jsonify({'success': False, 'message': str(e)}), 500
 
+        @self.app.route('/api/clear_wallet_cache', methods=['POST'])
+        @require_auth(self.auth_manager)
+        def clear_wallet_cache():
+            """Clear all cached wallet data (balances, derivation, addresses)."""
+            try:
+                removed = []
+                for cache_file in [
+                    'cache/wallet_balances.json',
+                    'cache/async_wallet_address_cache.secure.json',
+                ]:
+                    try:
+                        if os.path.exists(cache_file):
+                            os.remove(cache_file)
+                            removed.append(cache_file)
+                    except OSError:
+                        pass
+                # Clear address derivation cache if it exists
+                if hasattr(self.image_renderer, 'wallet_api'):
+                    api = self.image_renderer.wallet_api
+                    if hasattr(api, 'address_derivation') and hasattr(api.address_derivation, 'unified_cache'):
+                        try:
+                            api.address_derivation.unified_cache.clear_cache('address_derivation_cache')
+                            removed.append('address_derivation_cache')
+                        except Exception:
+                            pass
+                    if hasattr(api, 'unified_cache'):
+                        for cache_name in ['wallet_cache', 'balance_cache', 'optimized_balance_cache']:
+                            try:
+                                api.unified_cache.clear_cache(cache_name)
+                                removed.append(cache_name)
+                            except Exception:
+                                pass
+                print(f"🧹 Wallet cache cleared: {', '.join(removed) if removed else 'no files found'}")
+                return jsonify({'success': True, 'cleared': removed})
+            except Exception as e:
+                print(f"Error clearing wallet cache: {e}")
+                return jsonify({'success': False, 'message': str(e)}), 500
+
         @self.app.route('/api/block-rewards/<address>/found-blocks', methods=['GET'])
         @require_auth(self.auth_manager)
         def get_found_blocks_count(address):
@@ -7010,6 +7058,8 @@ class MempaperApp:
                     if apt_deps_changed and os.path.exists(apt_req_file):
                         _emit('update_output', {'line': self.translations.get('installing_system_deps', 'Installing system dependencies...'), 'phase': 'apt', 'header': True})
                         try:
+                            # Ensure root filesystem is writable (may be read-only after unclean shutdown)
+                            subprocess.run(['sudo', 'mount', '-o', 'remount,rw', '/'], timeout=10, capture_output=True)
                             with open(apt_req_file) as f:
                                 apt_pkgs = [
                                     line.strip() for line in f

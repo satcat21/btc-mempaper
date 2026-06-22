@@ -14,10 +14,22 @@
         return (window.translations && window.translations[key]) || fallback;
     }
 
+    function lockScroll() {
+        document.documentElement.style.setProperty('--scroll-y', `-${window.scrollY}px`);
+        document.body.classList.add('modal-open');
+    }
+
+    function unlockScroll() {
+        document.body.classList.remove('modal-open');
+        const scrollY = document.documentElement.style.getPropertyValue('--scroll-y');
+        document.documentElement.style.removeProperty('--scroll-y');
+        window.scrollTo(0, parseInt(scrollY || '0') * -1);
+    }
+
     function createOverlay() {
         const overlay = document.createElement('div');
         overlay.className = 'confirm-modal-overlay';
-        document.body.classList.add('modal-open');
+        lockScroll();
         return overlay;
     }
 
@@ -25,7 +37,7 @@
         overlay.classList.remove('visible');
         overlay.addEventListener('transitionend', () => overlay.remove(), { once: true });
         setTimeout(() => { if (overlay.parentNode) overlay.remove(); }, 350);
-        document.body.classList.remove('modal-open');
+        unlockScroll();
     }
 
     function createDialog() {

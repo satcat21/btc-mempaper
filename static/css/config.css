@@ -472,6 +472,41 @@ body.dark-mode .form-input[type="date"] {
     box-shadow: 0 0 0 3px var(--accent-dim);
 }
 
+/* Mempool host + private-instance checkbox side by side */
+.mempool-host-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.mempool-private-check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    user-select: none;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+@media (max-width: 600px) {
+    .mempool-host-row {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+    }
+}
+
+.mempool-private-check input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--accent);
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
 .form-select {
     width: 100%;
     padding: 10px 14px;
@@ -969,6 +1004,25 @@ body.dark-mode .table-delete-icon {
 
 .block-reward-add-btn {
     margin-top: 10px;
+}
+
+.wallet-clear-cache-btn {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    padding: 8px 16px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 0.82rem;
+    font-weight: 600;
+    transition: all var(--transition);
+    text-shadow: none;
+}
+
+.wallet-clear-cache-btn:hover {
+    background: rgba(229, 62, 62, 0.1);
+    border-color: var(--danger);
+    color: var(--danger);
 }
 
 /* ── Save / Cancel Buttons ──────────────────────────────────── */
@@ -1542,6 +1596,7 @@ body.dark-mode .upload-icon {
     }
     .wallet-balance-display { font-size: 0.75em; }
     .wallet-add-btn { padding: 10px 14px; font-size: 14px; margin-bottom: 5px; }
+    .wallet-clear-cache-btn { padding: 10px 14px; font-size: 14px; margin-bottom: 5px; }
 
     .tags-input { padding: 10px; min-height: 48px; }
     .tag-add-button { padding: 8px 12px; font-size: 14px; min-width: 44px; min-height: 44px; }

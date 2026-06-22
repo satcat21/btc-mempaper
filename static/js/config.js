@@ -235,6 +235,41 @@ function applyDarkModeFromStorage() {
 // Check if we're on the config page
 const isConfigPage = window.location.pathname.includes('/config');
 
+// Privacy: detect whether the configured mempool is a public (non-local) instance
+// Returns false (safe) if the user has explicitly marked the instance as private.
+function _isPublicMempool() {
+    const cfg = window.currentConfig || {};
+    // User has explicitly confirmed this instance is private/self-hosted
+    if (cfg.mempool_is_private) return false;
+    const host = (cfg.mempool_host || '127.0.0.1').trim().toLowerCase();
+    if (!host || host === 'localhost') return false;
+    // Private IPv4 ranges
+    if (host.startsWith('127.') || host.startsWith('10.') || host.startsWith('192.168.')) return false;
+    if (/^172\.(1[6-9]|2\d|3[01])\./.test(host)) return false;
+    // IPv6 loopback
+    if (host === '::1') return false;
+    // Anything with a dot that isn't a private IP is public
+    return true;
+}
+
+// Privacy: show warning when wallet monitoring uses a public mempool instance
+// Returns a promise: true = user accepted, false = user declined
+async function _showPrivacyWarning() {
+    const t = window.translations || {};
+    return showConfirmModal({
+        title: t.privacy_warning_title || 'Privacy Warning',
+        message: (t.privacy_warning_public_mempool || 'You are connected to a public Mempool instance. Querying wallet addresses or extended public keys (XPUB/ZPUB) exposes your entire wallet \u2014 all derived addresses, balances, and transaction history \u2014 to the server operator.')
+            + '\n\n' + (t.privacy_warning_recommendation || 'For maximum privacy, use a self-hosted Mempool instance on your local network.'),
+        confirmText: t.privacy_warning_accept || 'I understand the risks',
+        cancelText: t.privacy_warning_decline || 'Cancel',
+        danger: true
+    });
+}
+
+// Privacy: host-change listener is now inline in the mempool_host field creation.
+// This function is kept as a no-op for the setTimeout call in loadConfiguration.
+function _initMempoolPrivacyWatch() {}
+
 // Helper function to get the toggle key for a category
 function getSectionToggleKey(categoryId) {
     const toggleMapping = {
@@ -1694,6 +1729,8 @@ async function loadConfiguration() {
         renderConfigurationForm();
         // Start tracking unsaved changes after a short delay (let form render settle)
         setTimeout(_initDirtyTracking, 300);
+        // Privacy: monitor mempool_host changes and reset mempool_is_private when host changes
+        setTimeout(_initMempoolPrivacyWatch, 400);
     } catch (error) {
         // console.error('Configuration load error:', error);
         const failedMessage = window.translations?.failed_to_load_configuration || 'Failed to load configuration';
@@ -2601,6 +2638,7 @@ async function _performUpdate(tag, updateBtn) {
     // Show update progress modal
     const overlay = document.createElement('div');
     overlay.className = 'confirm-modal-overlay';
+    document.documentElement.style.setProperty('--scroll-y', `-${window.scrollY}px`);
     document.body.classList.add('modal-open');
 
     const dialog = document.createElement('div');
@@ -2745,6 +2783,9 @@ async function _performUpdate(tag, updateBtn) {
                 overlay.addEventListener('transitionend', () => overlay.remove(), { once: true });
                 setTimeout(() => { if (overlay.parentNode) overlay.remove(); }, 350);
                 document.body.classList.remove('modal-open');
+                var _sy = document.documentElement.style.getPropertyValue('--scroll-y');
+                document.documentElement.style.removeProperty('--scroll-y');
+                window.scrollTo(0, parseInt(_sy || '0') * -1);
             });
             const buttons = document.createElement('div');
             buttons.className = 'confirm-modal-buttons';
@@ -2785,6 +2826,9 @@ async function _performUpdate(tag, updateBtn) {
                 overlay.addEventListener('transitionend', () => overlay.remove(), { once: true });
                 setTimeout(() => { if (overlay.parentNode) overlay.remove(); }, 350);
                 document.body.classList.remove('modal-open');
+                var _sy = document.documentElement.style.getPropertyValue('--scroll-y');
+                document.documentElement.style.removeProperty('--scroll-y');
+                window.scrollTo(0, parseInt(_sy || '0') * -1);
             });
             const buttons = document.createElement('div');
             buttons.className = 'confirm-modal-buttons';
@@ -3046,20 +3090,28 @@ function createDeviceControlSection() {
 }
 
 function _performSystemAction(apiUrl, title, estimatedSeconds) {
-    const t = window.translations || {};
+    // Show countdown modal immediately so the user sees feedback right away
+    _showRestartCountdown(title, estimatedSeconds);
 
-    // Call the API
+    // Fire the API call (response may never arrive if the service restarts)
     fetch(apiUrl, { method: 'POST', credentials: 'same-origin' })
         .then(r => r.json())
         .then(data => {
             if (!data.success) {
+                // Remove the countdown overlay and show error instead
+                const countdownOverlay = document.querySelector('.confirm-modal-overlay');
+                if (countdownOverlay) {
+                    countdownOverlay.classList.remove('visible');
+                    setTimeout(() => countdownOverlay.remove(), 200);
+                    document.body.classList.remove('modal-open');
+                    var _sy = document.documentElement.style.getPropertyValue('--scroll-y');
+                    document.documentElement.style.removeProperty('--scroll-y');
+                    window.scrollTo(0, parseInt(_sy || '0') * -1);
+                }
                 showAlertModal({ title: data.error || 'Action failed' });
-                return;
             }
-            // Show countdown modal
-            _showRestartCountdown(title, estimatedSeconds);
         })
-        .catch(() => showAlertModal({ title: 'Request failed' }));
+        .catch(() => { /* Service restarted – countdown is already showing */ });
 }
 
 function _fmtCountdown(secs) {
@@ -3075,6 +3127,7 @@ function _showRestartCountdown(title, estimatedSeconds, updateTag, rollbackTag, 
     overlay.className = 'confirm-modal-overlay';
 
     // Prevent background scrolling while modal is open
+    document.documentElement.style.setProperty('--scroll-y', `-${window.scrollY}px`);
     document.body.classList.add('modal-open');
 
     const dialog = document.createElement('div');
@@ -3170,6 +3223,9 @@ function _pollForService(overlay, countdownNumber, countdownLabel, progressFill,
                 countdownLabel.textContent = t.service_back_online || 'Service is back online!';
                 progressFill.style.width = '100%';
                 document.body.classList.remove('modal-open');
+                var _sy = document.documentElement.style.getPropertyValue('--scroll-y');
+                document.documentElement.style.removeProperty('--scroll-y');
+                window.scrollTo(0, parseInt(_sy || '0') * -1);
                 setTimeout(() => location.reload(), 1500);
                 return;
             }
@@ -3202,6 +3258,9 @@ function _pollForService(overlay, countdownNumber, countdownLabel, progressFill,
             dismissBtn.style.marginTop = '16px';
             dismissBtn.addEventListener('click', () => {
                 document.body.classList.remove('modal-open');
+                var _sy = document.documentElement.style.getPropertyValue('--scroll-y');
+                document.documentElement.style.removeProperty('--scroll-y');
+                window.scrollTo(0, parseInt(_sy || '0') * -1);
                 overlay.classList.remove('visible');
                 setTimeout(() => overlay.remove(), 200);
             });
@@ -3218,6 +3277,7 @@ function _startSystemUpdate(btn) {
     const overlay = document.createElement('div');
     overlay.className = 'confirm-modal-overlay';
     overlay.id = 'system-update-overlay';
+    document.documentElement.style.setProperty('--scroll-y', `-${window.scrollY}px`);
     document.body.classList.add('modal-open');
 
     const dialog = document.createElement('div');
@@ -3279,6 +3339,9 @@ function _startSystemUpdate(btn) {
         overlay.addEventListener('transitionend', () => overlay.remove(), { once: true });
         setTimeout(() => { if (overlay.parentNode) overlay.remove(); }, 350);
         document.body.classList.remove('modal-open');
+        var _sy = document.documentElement.style.getPropertyValue('--scroll-y');
+        document.documentElement.style.removeProperty('--scroll-y');
+        window.scrollTo(0, parseInt(_sy || '0') * -1);
     });
 
     // Listen for SocketIO events
@@ -3620,16 +3683,32 @@ function renderConfigurationForm() {
             }
             
             // Add click handler
-            toggleSwitch.addEventListener('click', function() {
+            toggleSwitch.addEventListener('click', async function() {
                 const newValue = !toggleSwitch.classList.contains('enabled');
+
+                // Privacy gate: warn when enabling wallet monitoring with a public mempool
+                if (newValue && enableToggleKey === 'show_wallet_balances_block' && _isPublicMempool()) {
+                    const accepted = await _showPrivacyWarning();
+                    if (!accepted) return; // user declined — keep toggle off
+                }
+
+                // Privacy gate: warn when enabling bitaxe stats with block reward addresses on a public mempool
+                if (newValue && enableToggleKey === 'show_bitaxe_block' && _isPublicMempool()) {
+                    const addrs = currentConfig.block_reward_addresses_table || [];
+                    if (addrs.length > 0 && addrs.some(e => e.address && e.address.trim())) {
+                        const accepted = await _showPrivacyWarning();
+                        if (!accepted) return;
+                    }
+                }
+
                 toggleSwitch.classList.toggle('enabled', newValue);
-                
+
                 // Update configuration
                 currentConfig[enableToggleKey] = newValue;
-                
+
                 // Update section disabled state
                 section.classList.toggle('section-disabled', !newValue);
-                
+
             });
             
             toggleContainer.appendChild(toggleSwitch);
@@ -3795,6 +3874,50 @@ function createFormField(key, field, value) {
             // Disable autocomplete for admin_username field
             if (key === 'admin_username') {
                 input.setAttribute('autocomplete', 'off');
+            }
+            // Inline "private instance" checkbox for mempool_host
+            if (key === 'mempool_host') {
+                const hostInput = input; // keep reference to the actual text input
+                const wrapper = document.createElement('div');
+                wrapper.className = 'mempool-host-row';
+                hostInput.style.flex = '1';
+                hostInput.style.minWidth = '0';
+                wrapper.appendChild(hostInput);
+                // Forward value access to the text input so form collection works
+                wrapper.getValue = function () { return hostInput.value; };
+                Object.defineProperty(wrapper, 'value', {
+                    get: () => hostInput.value,
+                    set: (v) => { hostInput.value = v; }
+                });
+
+                const checkRow = document.createElement('label');
+                checkRow.className = 'mempool-private-check';
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.checked = !!(currentConfig && currentConfig.mempool_is_private);
+                cb.dataset.configKey = 'mempool_is_private';
+                cb.getValue = function () { return cb.checked; };
+                const span = document.createElement('span');
+                const t = window.translations || {};
+                span.textContent = t.mempool_is_private || 'Private/Self-Hosted Instance';
+                checkRow.appendChild(cb);
+                checkRow.appendChild(span);
+                wrapper.appendChild(checkRow);
+
+                // When host is edited, uncheck the private flag immediately
+                hostInput.addEventListener('input', () => {
+                    if (cb.checked) {
+                        cb.checked = false;
+                        if (window.currentConfig) window.currentConfig.mempool_is_private = false;
+                        cb.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                });
+                // Sync checkbox to currentConfig
+                cb.addEventListener('change', () => {
+                    if (window.currentConfig) window.currentConfig.mempool_is_private = cb.checked;
+                });
+
+                input = wrapper;
             }
             break;
             
@@ -3977,6 +4100,12 @@ function createFormField(key, field, value) {
             input.style.display = 'none';
             break;
             
+        case 'hidden_boolean':
+            // Rendered inline by another field (e.g. mempool_is_private inside mempool_host)
+            formGroup.style.display = 'none';
+            input = document.createElement('span');
+            break;
+
         default:
             // Fallback for unknown field types
             input = document.createElement('input');
@@ -3989,8 +4118,8 @@ function createFormField(key, field, value) {
     
     if (input) {
         // Ensure the input has the data-config-key attribute for form collection
-        // (skip for composite widgets that manage their own child config keys)
-        if (field.type !== 'holiday_color_group') {
+        // (skip for composite widgets and hidden_boolean fields managed inline by another field)
+        if (field.type !== 'holiday_color_group' && field.type !== 'hidden_boolean') {
             if (input.dataset) {
                 input.dataset.configKey = key;
             } else {
@@ -4015,7 +4144,7 @@ function createFormField(key, field, value) {
         description.innerHTML = field.description;
         formGroup.appendChild(description);
     }
-    
+
     return formGroup;
 }
 
@@ -4366,7 +4495,7 @@ function createColorSelect(value) {
 // Diagnostic function to test boolean elements
 function diagnoseBooleanElements() {
     console.log('👁️ [DIAGNOSTIC] Checking all boolean elements:');
-    const booleanFields = ['prioritize_large_scaled_meme', 'color_mode_dark', 'show_btc_price_block', 'show_bitaxe_block', 'show_wallet_balances_block', 'show_donation_block', 'e-ink-display-connected'];
+    const booleanFields = ['prioritize_large_scaled_meme', 'color_mode_dark', 'show_btc_price_block', 'show_bitaxe_block', 'show_wallet_balances_block', 'show_donation_block', 'e-ink-display-connected', 'mempool_is_private'];
     
     booleanFields.forEach(fieldName => {
         const element = document.querySelector(`[data-config-key="${fieldName}"]`);
@@ -4754,15 +4883,60 @@ function createWalletTableInput(values, field) {
     addButton.textContent = window.translations?.wallet_table_add || 'Add Wallet';
     addButton.style.marginRight = '10px';
     
-    addButton.addEventListener('click', (e) => {
+    addButton.addEventListener('click', async (e) => {
         e.preventDefault();
+        // Privacy gate: warn when adding wallet addresses with public mempool
+        if (_isPublicMempool()) {
+            const accepted = await _showPrivacyWarning();
+            if (!accepted) return;
+        }
         addWalletTableRow(tbody, { address: '', comment: '', balance: 0 });
         updateTableVisibility();
         container.dispatchEvent(new Event('change', { bubbles: true }));
     });
-    
+
+    // Cache wipe button
+    const clearCacheButton = document.createElement('button');
+    clearCacheButton.type = 'button';
+    clearCacheButton.className = 'btn btn-outline-primary wallet-clear-cache-btn';
+    clearCacheButton.textContent = window.translations?.clear_wallet_cache || 'Clear Wallet Data';
+    clearCacheButton.addEventListener('click', async (e) => {
+        e.preventDefault();
+        const t = window.translations || {};
+        const ok = await showConfirmModal({
+            title: t.clear_wallet_cache || 'Clear Wallet Data',
+            message: t.clear_wallet_cache_confirm || 'This will permanently delete all cached wallet data and remove all configured wallet addresses. Continue?',
+            confirmText: t.delete || 'Delete',
+            cancelText: t.cancel || 'Cancel',
+            danger: true
+        });
+        if (!ok) return;
+        try {
+            const resp = await fetch('/api/clear_wallet_cache', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+            const result = await resp.json();
+            if (result.success) {
+                // Clear wallet table rows
+                const walletTbody = container.querySelector('tbody');
+                if (walletTbody) walletTbody.innerHTML = '';
+                // Update config
+                if (currentConfig) currentConfig.wallet_balance_addresses_with_comments = [];
+                // Save the cleared wallet list
+                await saveConfigurationSilent({ ...currentConfig, wallet_balance_addresses_with_comments: [] });
+                showNotification(t.clear_wallet_cache_success || 'Wallet data cleared successfully', 'success');
+                _markClean();
+            } else {
+                showNotification(result.message || 'Failed to clear wallet data', 'error');
+            }
+        } catch (err) {
+            showNotification('Failed to clear wallet data', 'error');
+        }
+    });
+
     const buttonContainer = document.createElement('div');
+    buttonContainer.style.display = 'flex';
+    buttonContainer.style.gap = '10px';
     buttonContainer.appendChild(addButton);
+    buttonContainer.appendChild(clearCacheButton);
     container.appendChild(buttonContainer);
     
     // Add getter for value (used by form system)
@@ -5294,14 +5468,48 @@ function createBlockRewardTableInput(values, field) {
     addButton.className = 'btn btn-outline-success block-reward-add-btn';
     addButton.textContent = window.translations?.block_reward_table_add || 'Add Address';
     
-    addButton.addEventListener('click', () => {
+    addButton.addEventListener('click', async () => {
+        // Privacy gate: warn when adding addresses with public mempool
+        if (_isPublicMempool()) {
+            const accepted = await _showPrivacyWarning();
+            if (!accepted) return;
+        }
         addBlockRewardTableRow(tbody, { address: '', comment: '' });
         updateTableVisibility();
     });
     
+    // Clear block reward data button
+    const clearRewardButton = document.createElement('button');
+    clearRewardButton.type = 'button';
+    clearRewardButton.className = 'btn btn-outline-primary wallet-clear-cache-btn';
+    clearRewardButton.textContent = window.translations?.clear_block_reward_data || 'Clear Block Reward Data';
+    clearRewardButton.addEventListener('click', async (e) => {
+        e.preventDefault();
+        const t = window.translations || {};
+        const ok = await showConfirmModal({
+            title: t.clear_block_reward_data || 'Clear Block Reward Data',
+            message: t.clear_block_reward_data_confirm || 'This will remove all configured block reward monitoring addresses. Continue?',
+            confirmText: t.delete || 'Delete',
+            cancelText: t.cancel || 'Cancel',
+            danger: true
+        });
+        if (!ok) return;
+        tbody.innerHTML = '';
+        updateTableVisibility();
+        if (currentConfig) currentConfig.block_reward_addresses_table = [];
+        await saveConfigurationSilent({ ...currentConfig, block_reward_addresses_table: [] });
+        showNotification(t.clear_block_reward_data_success || 'Block reward data cleared successfully', 'success');
+        _markClean();
+    });
+
     container.appendChild(table);
-    container.appendChild(addButton);
-    
+    const buttonContainer = document.createElement('div');
+    buttonContainer.style.display = 'flex';
+    buttonContainer.style.gap = '10px';
+    buttonContainer.appendChild(addButton);
+    buttonContainer.appendChild(clearRewardButton);
+    container.appendChild(buttonContainer);
+
     // Add getValue and setValue methods for form compatibility
     Object.defineProperty(container, 'value', {
         get: function() {
@@ -6261,7 +6469,7 @@ async function saveConfiguration() {
         
         // Additional safety check: ensure all boolean fields are properly collected
         // This is a fallback in case boolean switches weren't collected above
-        const expectedBooleanFields = ['prioritize_large_scaled_meme', 'color_mode_dark', 'show_btc_price_block', 'show_bitaxe_block', 'show_wallet_balances_block', 'show_donation_block', 'e-ink-display-connected'];
+        const expectedBooleanFields = ['prioritize_large_scaled_meme', 'color_mode_dark', 'show_btc_price_block', 'show_bitaxe_block', 'show_wallet_balances_block', 'show_donation_block', 'e-ink-display-connected', 'mempool_is_private'];
         expectedBooleanFields.forEach(fieldName => {
             if (!(fieldName in formConfig)) {
                 console.log(`🚨 [FALLBACK] Missing boolean field ${fieldName} in form collection, attempting to recover...`);
@@ -6289,6 +6497,14 @@ async function saveConfiguration() {
             formConfig.language = pendingLanguageChange;
         }
         
+        // Privacy gate: warn when mempool host changed and private checkbox is unchecked
+        const savedHost = (currentConfig.mempool_host || '').trim().toLowerCase();
+        const newHost = (formConfig.mempool_host || '').trim().toLowerCase();
+        if (newHost && newHost !== savedHost && !formConfig.mempool_is_private) {
+            const accepted = await _showPrivacyWarning();
+            if (!accepted) return false;
+        }
+
         // Merge form values with current config to preserve non-form fields
         const newConfig = { ...currentConfig, ...formConfig };
 
@@ -7385,7 +7601,7 @@ function setupNavigationButtons() {
                     console.log('👁️ [SAVE DEBUG] Final formConfig:', formConfig);
                     
                     // Temporary: Show what we collected for boolean fields
-                    const booleanFields = ['prioritize_large_scaled_meme', 'color_mode_dark', 'show_btc_price_block', 'show_bitaxe_block', 'show_wallet_balances_block', 'show_donation_block', 'e-ink-display-connected'];
+                    const booleanFields = ['prioritize_large_scaled_meme', 'color_mode_dark', 'show_btc_price_block', 'show_bitaxe_block', 'show_wallet_balances_block', 'show_donation_block', 'e-ink-display-connected', 'mempool_is_private'];
                     const booleanData = {};
                     booleanFields.forEach(field => {
                         if (formConfig.hasOwnProperty(field)) {
@@ -7405,9 +7621,20 @@ function setupNavigationButtons() {
                     console.log('Current config language:', currentConfig.language);
                     console.log('Form config language:', formConfig.language);
                     console.log('Pending language change:', pendingLanguageChange);
-                    
+
+                    // Privacy gate: warn when mempool host changed and private checkbox is unchecked
+                    const savedHost = (currentConfig.mempool_host || '').trim().toLowerCase();
+                    const newHost = (formConfig.mempool_host || '').trim().toLowerCase();
+                    if (newHost && newHost !== savedHost && !formConfig.mempool_is_private) {
+                        const accepted = await _showPrivacyWarning();
+                        if (!accepted) {
+                            button.disabled = false;
+                            return;
+                        }
+                    }
+
                     console.log('Saving configuration: object with', Object.keys(formConfig).length, 'fields (sensitive data masked)');
-                    
+
                     const response = await fetch('/api/config', {
                         method: 'POST',
                         headers: {
@@ -7750,7 +7977,7 @@ window.testConfigSave = function() {
     console.log('🧪 Starting config save test...');
     
     // Test current boolean values
-    const booleanFields = ['prioritize_large_scaled_meme', 'color_mode_dark', 'show_btc_price_block', 'show_bitaxe_block', 'show_wallet_balances_block', 'show_donation_block', 'e-ink-display-connected'];
+    const booleanFields = ['prioritize_large_scaled_meme', 'color_mode_dark', 'show_btc_price_block', 'show_bitaxe_block', 'show_wallet_balances_block', 'show_donation_block', 'e-ink-display-connected', 'mempool_is_private'];
     
     console.log('💾 Current boolean values:');
     booleanFields.forEach(fieldName => {

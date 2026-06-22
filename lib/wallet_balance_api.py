@@ -138,6 +138,7 @@ class WalletBalanceAPI:
         
         # Initialize requests session with robust retry logic
         self.session = requests.Session()
+        self.session.headers['User-Agent'] = 'python-requests'
         retry_strategy = Retry(
             total=3,  # Increase retries to handle transient failures
             backoff_factor=1,  # Increase backoff

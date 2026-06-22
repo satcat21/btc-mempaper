@@ -366,6 +366,7 @@ class ConfigManager:
             "web_orientation": "vertical",
             "eink_orientation": "vertical",
             "prioritize_large_scaled_meme": False,
+            "mempool_is_private": False,
             "mempool_host": "127.0.0.1",
             "mempool_rest_port": 4081,
             "mempool_ws_port": 8999,
@@ -524,6 +525,7 @@ class ConfigManager:
             "eink_dark_mode",
             "mempool_use_https",
             "mempool_verify_ssl",
+            "mempool_is_private",
             "opsec_mode_enabled",
             "public_dashboard",
             "auto_update_enabled",
@@ -1111,6 +1113,11 @@ class ConfigManager:
                 "label": t.get("mempool_host", "Mempool Server Host"),
                 "placeholder": "192.168.0.119 or mempool.mydomain.com",
                 "description": t.get("mempool_host_desc", "IP address or domain name of your mempool server"),
+                "category": "mempool"
+            },
+            "mempool_is_private": {
+                "type": "hidden_boolean",
+                "label": "",
                 "category": "mempool"
             },
             "mempool_rest_port": {

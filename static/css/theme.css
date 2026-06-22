@@ -259,6 +259,9 @@ body {
 /* Prevent background scrolling when a modal is open */
 body.modal-open {
     overflow: hidden;
+    position: fixed;
+    width: 100%;
+    top: var(--scroll-y, 0px);
 }
 
 /* ── Confirm / Alert Modal ──────────────────────────────────── */
@@ -310,6 +313,7 @@ body.modal-open {
     color: var(--text-secondary);
     font-size: 0.92rem;
     line-height: 1.55;
+    white-space: pre-line;
 }
 
 .confirm-modal-buttons {
