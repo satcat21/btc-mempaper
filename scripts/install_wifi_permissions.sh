@@ -33,13 +33,20 @@ NMCLI_BIN="$(which nmcli 2>/dev/null || echo /usr/bin/nmcli)"
 IW_BIN="$(which iw 2>/dev/null || echo /usr/sbin/iw)"
 IPTABLES_BIN="$(which iptables 2>/dev/null || echo /usr/sbin/iptables)"
 SYSTEMCTL_BIN="$(which systemctl 2>/dev/null || echo /usr/bin/systemctl)"
+DNSMASQ_BIN="$(which dnsmasq 2>/dev/null || echo /usr/sbin/dnsmasq)"
+KILL_BIN="$(which kill 2>/dev/null || echo /bin/kill)"
+PKILL_BIN="$(which pkill 2>/dev/null || echo /usr/bin/pkill)"
 cat > "${SUDOERS_FILE}" <<EOF
 # mempaper: allow service user to manage NetworkManager connections (hotspot onboarding)
 ${SERVICE_USER} ALL=(root) NOPASSWD: ${NMCLI_BIN}
 # mempaper: allow passive WiFi scan while in AP mode
 ${SERVICE_USER} ALL=(root) NOPASSWD: ${IW_BIN}
-# mempaper: allow captive-portal port redirect (80/443 → Flask) during setup hotspot
+# mempaper: allow captive-portal port redirect (80/443 + DNS 53 → Flask/dnsmasq)
 ${SERVICE_USER} ALL=(root) NOPASSWD: ${IPTABLES_BIN}
+# mempaper: captive-portal wildcard DNS (dnsmasq on port 5353)
+${SERVICE_USER} ALL=(root) NOPASSWD: ${DNSMASQ_BIN}
+${SERVICE_USER} ALL=(root) NOPASSWD: ${KILL_BIN}
+${SERVICE_USER} ALL=(root) NOPASSWD: ${PKILL_BIN}
 # mempaper: allow self-update to restart the service from the web UI
 ${SERVICE_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} restart mempaper.service
 # mempaper: allow device reboot from the web UI
@@ -109,6 +116,23 @@ echo "   Verify with:  nmcli general permissions | grep -E 'modify.system|share.
 echo "   Expected:     org.freedesktop.NetworkManager.settings.modify.system  ja"
 echo "                 org.freedesktop.NetworkManager.wifi.share.protected     ja"
 echo ""
+
+# --- Captive-portal DNS (dnsmasq) ---------------------------------------------
+# Ensure dnsmasq is installed for wildcard DNS during setup hotspot.
+if ! command -v dnsmasq >/dev/null 2>&1; then
+    echo "📦  Installing dnsmasq for captive-portal DNS..."
+    apt-get install -y dnsmasq >/dev/null 2>&1 || true
+    # Disable the system dnsmasq service — we only run it on-demand
+    systemctl stop dnsmasq 2>/dev/null || true
+    systemctl disable dnsmasq 2>/dev/null || true
+fi
+# Make sure the system dnsmasq service doesn't interfere
+if systemctl is-enabled dnsmasq 2>/dev/null | grep -q enabled; then
+    systemctl stop dnsmasq 2>/dev/null || true
+    systemctl disable dnsmasq 2>/dev/null || true
+    echo "✅  System dnsmasq disabled (mempaper runs its own on-demand)"
+fi
+echo "✅  dnsmasq available for captive-portal DNS"
 
 # --- Integrated mode cleanup -------------------------------------------------
 echo "🔧 Enforcing integrated service mode (no separate onboarding service)…"

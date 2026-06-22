@@ -49,7 +49,7 @@ tmp_upload_dir = "/dev/shm"  # Use RAM for uploads to avoid SD card wear
 # Memory management for Pi Zero (512MB total)
 # Keep worker memory usage low
 preload_app = False  # Disabled to reduce memory usage
-graceful_timeout = 60  # Allow time for graceful shutdown
+graceful_timeout = 5  # Quick shutdown — WebSocket clients reconnect automatically
 
 # Enable auto-restart on code changes (development only)
 reload = False

@@ -84,6 +84,7 @@ Environment="REQUEST_TIMEOUT=30"
 # 'sudo nmcli' to manage NetworkManager connections (WPA2 hotspot onboarding).
 # The sudo rule is narrowly scoped to /usr/bin/nmcli only (see
 # /etc/sudoers.d/mempaper-wifi installed by install_wifi_permissions.sh).
+TimeoutStopSec=10
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=false

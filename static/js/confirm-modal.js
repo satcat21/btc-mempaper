@@ -17,7 +17,15 @@
     function createOverlay() {
         const overlay = document.createElement('div');
         overlay.className = 'confirm-modal-overlay';
+        document.body.classList.add('modal-open');
         return overlay;
+    }
+
+    function removeOverlay(overlay) {
+        overlay.classList.remove('visible');
+        overlay.addEventListener('transitionend', () => overlay.remove(), { once: true });
+        setTimeout(() => { if (overlay.parentNode) overlay.remove(); }, 350);
+        document.body.classList.remove('modal-open');
     }
 
     function createDialog() {
@@ -68,10 +76,7 @@
             requestAnimationFrame(() => overlay.classList.add('visible'));
 
             function close(result) {
-                overlay.classList.remove('visible');
-                overlay.addEventListener('transitionend', () => overlay.remove(), { once: true });
-                // Fallback removal in case transitionend doesn't fire
-                setTimeout(() => { if (overlay.parentNode) overlay.remove(); }, 350);
+                removeOverlay(overlay);
                 resolve(result);
             }
 
@@ -126,9 +131,7 @@
             requestAnimationFrame(() => overlay.classList.add('visible'));
 
             function close() {
-                overlay.classList.remove('visible');
-                overlay.addEventListener('transitionend', () => overlay.remove(), { once: true });
-                setTimeout(() => { if (overlay.parentNode) overlay.remove(); }, 350);
+                removeOverlay(overlay);
                 resolve();
             }
 

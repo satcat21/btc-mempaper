@@ -149,6 +149,31 @@ body {
     height: 20px;
 }
 
+.nav-button.unsaved-changes,
+.mobile-nav-button.unsaved-changes {
+    position: relative;
+}
+
+.nav-button.unsaved-changes::after,
+.mobile-nav-button.unsaved-changes::after {
+    content: '';
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 6px rgba(247, 147, 26, 0.6);
+    animation: save-dot-pulse 2s ease-in-out infinite;
+    pointer-events: none;
+}
+
+@keyframes save-dot-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%      { opacity: 0.5; transform: scale(0.75); }
+}
+
 /* Mobile: bottom nav bar */
 .mobile-nav-buttons {
     position: fixed;
@@ -229,6 +254,11 @@ body {
 /* Pending icon animation */
 .pending-icon {
     animation: spin 1s linear infinite;
+}
+
+/* Prevent background scrolling when a modal is open */
+body.modal-open {
+    overflow: hidden;
 }
 
 /* ── Confirm / Alert Modal ──────────────────────────────────── */

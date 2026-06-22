@@ -422,7 +422,7 @@ def render_connected_screen(access_url, config, timeout_seconds=180, eink=True,
     url_bottom_y = y + url_h
 
     # ── Countdown (vertically centred in free space between URL and bottom row)
-    mascot_row_top = H - PAD - mascot_h if mascot_img else H - PAD - SZ_WELCOME
+    mascot_row_top = H - mascot_h if mascot_img else H - PAD - SZ_WELCOME
     note_y = url_bottom_y + (mascot_row_top - url_bottom_y - SZ_NOTE) // 2
     _centered(draw, cx, note_y, countdown_text, f_note, FG)
 
@@ -436,7 +436,7 @@ def render_connected_screen(access_url, config, timeout_seconds=180, eink=True,
         mascot_resized = mascot_img.resize((new_w, new_h), Image.LANCZOS)
 
         mascot_x = PAD
-        mascot_y = H - PAD - new_h
+        mascot_y = H - new_h - 5
 
         # Paste with alpha for transparency support
         if mascot_resized.mode == 'RGBA':

@@ -22,5 +22,9 @@ libwebp-dev
 # ImageMagick (fallback for WebP/AVIF when Pillow lacks native codec support)
 imagemagick
 
+# Captive-portal: wildcard DNS + port redirects for setup hotspot (Android/iOS)
+dnsmasq
+iptables
+
 # GPIO (Raspberry Pi)
 python3-gpiozero

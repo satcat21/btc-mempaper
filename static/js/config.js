@@ -183,6 +183,17 @@ function closeMemeModal() {
                 showDonationToast(donation);
             });
 
+            // Auto-update started — show toast notification
+            socket.on('auto_update_started', function() {
+                const t = window.translations || {};
+                _buildLiveToast(
+                    '<img src="/static/icons/update.svg" width="16" height="16" class="toast-title-icon"> ' + (t.auto_update_started || 'Auto-update started'),
+                    t.auto_update_started_body || 'Checking for system and software updates...',
+                    '#F7931A',
+                    10000
+                );
+            });
+
             // Auto-update service restart — show countdown modal
             socket.on('service_restarting', function(data) {
                 console.log('🔄 Service restarting:', data);
@@ -190,7 +201,11 @@ function closeMemeModal() {
                 const title = data.reason === 'auto_update'
                     ? (t.auto_update_restarting || 'Auto-update complete. Restarting...')
                     : (t.service_restarting || 'Service restarting...');
-                _showRestartCountdown(title, data.estimated_seconds || 21, data.tag);
+                // Capture current process start time so polling can detect a fresh process
+                fetch('/api/health', { cache: 'no-store' })
+                    .then(r => r.json())
+                    .then(h => _showRestartCountdown(title, data.estimated_seconds || 25, data.tag, null, null, h.started))
+                    .catch(() => _showRestartCountdown(title, data.estimated_seconds || 25, data.tag));
             });
         } else {
             console.error('Socket.IO client (window.io) not found. Make sure socket.io.min.js is loaded.');
@@ -1677,6 +1692,8 @@ async function loadConfiguration() {
         // console.log('Categories loaded:', categories);
         
         renderConfigurationForm();
+        // Start tracking unsaved changes after a short delay (let form render settle)
+        setTimeout(_initDirtyTracking, 300);
     } catch (error) {
         // console.error('Configuration load error:', error);
         const failedMessage = window.translations?.failed_to_load_configuration || 'Failed to load configuration';
@@ -1942,7 +1959,7 @@ function createWifiSection() {
     rebootBtn.addEventListener('click', async () => {
         const ok = await showConfirmModal({
             title: t.reboot_device || 'Reboot Device',
-            message: t.reboot_device_confirm || 'Reboot the entire device? This takes about 70 seconds. The page will reload when the service is back.',
+            message: t.reboot_device_confirm || 'Reboot the entire device? This takes about 1 min 21 sec. The page will reload when the service is back.',
             confirmText: t.reboot || 'Reboot',
             cancelText: t.cancel || 'Cancel',
             danger: true,
@@ -2340,6 +2357,7 @@ function createSoftwareUpdateSection() {
     versionRow.innerHTML = `
         <span class="update-version-label">${window.translations?.current_version || 'Current version'}:</span>
         <span class="update-version-value" id="update-current-version">...</span>
+        <button type="button" class="check-updates-btn" id="check-updates-btn">${window.translations?.check_for_updates || 'Check for Updates'}</button>
         <a href="#" target="_blank" rel="noopener" class="update-github-link" id="update-repo-link" style="display:none">View on GitHub</a>
     `;
     wrapper.appendChild(versionRow);
@@ -2426,6 +2444,24 @@ function createSoftwareUpdateSection() {
     // Fetch data on creation (pass versionEl directly since formGroup isn't in DOM yet)
     const versionEl = versionRow.querySelector('.update-version-value');
     _loadUpdateData(select, updateBtn, versionEl, notesContainer);
+
+    // "Check for Updates" button — re-fetches releases
+    const checkBtn = versionRow.querySelector('#check-updates-btn');
+    checkBtn.addEventListener('click', async () => {
+        checkBtn.disabled = true;
+        checkBtn.classList.add('checking');
+        select.innerHTML = '';
+        const opt = document.createElement('option');
+        opt.disabled = true;
+        opt.selected = true;
+        opt.textContent = window.translations?.loading_releases || 'Loading releases...';
+        select.appendChild(opt);
+        updateBtn.disabled = true;
+        notesContainer.style.display = 'none';
+        await _loadUpdateData(select, updateBtn, versionEl, notesContainer);
+        checkBtn.disabled = false;
+        checkBtn.classList.remove('checking');
+    });
 
     return formGroup;
 }
@@ -2516,6 +2552,18 @@ async function _loadUpdateData(selectEl, updateBtn, versionEl, notesContainer) {
 
             // Show update indicator on nav pill
             _showUpdateNavIndicator(hasUpdate, latestTag);
+
+            // Toast notification when a new update is available
+            if (hasUpdate) {
+                const t = window.translations || {};
+                const msg = (t.update_available_hint || 'Update {version} available').replace('{version}', latestTag);
+                _buildLiveToast(
+                    '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 -960 960 960" fill="#F7931A" style="vertical-align:middle;margin-right:4px"><path d="M240-120v-80l40-40H160q-33 0-56.5-23.5T80-320v-440q0-33 23.5-56.5T160-840h320v80H160v440h640v-120h80v120q0 33-23.5 56.5T800-240H680l40 40v80H240Zm360-240L400-560l56-56 104 103v-327h80v327l104-103 56 56-200 200Z"/></svg> ' + (t.software_update || 'Software Update'),
+                    msg,
+                    '#F7931A',
+                    8000
+                );
+            }
         } else {
             selectEl.innerHTML = '<option disabled selected>No releases found</option>';
         }
@@ -2553,6 +2601,7 @@ async function _performUpdate(tag, updateBtn) {
     // Show update progress modal
     const overlay = document.createElement('div');
     overlay.className = 'confirm-modal-overlay';
+    document.body.classList.add('modal-open');
 
     const dialog = document.createElement('div');
     dialog.className = 'confirm-modal-dialog system-update-dialog';
@@ -2612,7 +2661,8 @@ async function _performUpdate(tag, updateBtn) {
         } else {
             logArea.appendChild(document.createTextNode(data.line + '\n'));
         }
-        logArea.scrollTop = logArea.scrollHeight;
+        var atBottom = logArea.scrollHeight - logArea.scrollTop - logArea.clientHeight < 40;
+        if (atBottom) logArea.scrollTop = logArea.scrollHeight;
         if (data.phase && phaseLabels[data.phase]) {
             phaseBar.textContent = phaseLabels[data.phase];
         }
@@ -2632,21 +2682,54 @@ async function _performUpdate(tag, updateBtn) {
         _stopProgressBar();
 
         if (data.success) {
-            // Close the update dialog
-            overlay.classList.remove('visible');
-            overlay.addEventListener('transitionend', () => overlay.remove(), { once: true });
-            setTimeout(() => { if (overlay.parentNode) overlay.remove(); }, 350);
+            // Integrate countdown into existing modal (keep log visible)
+            const t = window.translations || {};
+            heading.innerHTML = `<img src="/static/icons/update.svg" alt="" class="modal-title-icon"> ${t.service_restarting || 'Service restarting...'}`;
+            phaseBar.textContent = '';
+            statusBar.textContent = '';
 
-            // Show the restart countdown modal (same as manual restart)
-            _showRestartCountdown(
-                window.translations?.service_restarting || 'Service restarting...',
-                21,
-                tag,
-                data.rollback_tag,
-                data.rollback_commit,
-                oldStarted,
-                updateBtn
-            );
+            // Replace progress bar with countdown UI
+            progressBar.innerHTML = '';
+            const countdown = document.createElement('div');
+            countdown.className = 'restart-countdown';
+            const countdownNumber = document.createElement('div');
+            countdownNumber.className = 'restart-countdown-number';
+            const estimatedSeconds = 25;
+            countdownNumber.textContent = _fmtCountdown(estimatedSeconds);
+            const countdownLabel = document.createElement('div');
+            countdownLabel.className = 'restart-countdown-label';
+            countdownLabel.textContent = t.waiting_for_service || 'Waiting for service...';
+            countdown.appendChild(countdownNumber);
+            countdown.appendChild(countdownLabel);
+            progressBar.appendChild(countdown);
+
+            const restartBar = document.createElement('div');
+            restartBar.className = 'restart-progress-bar';
+            const progressFill = document.createElement('div');
+            progressFill.className = 'restart-progress-fill';
+            restartBar.appendChild(progressFill);
+            progressBar.appendChild(restartBar);
+            progressBar.classList.remove('update-progress-bar-container');
+
+            // Start countdown + polling (reuse shared logic)
+            let remaining = estimatedSeconds;
+            let polling = false;
+            const earlyPollStart = 5;
+            const interval = setInterval(() => {
+                remaining--;
+                if (remaining >= 0) {
+                    countdownNumber.textContent = _fmtCountdown(remaining);
+                    progressFill.style.width = ((1 - remaining / estimatedSeconds) * 100) + '%';
+                }
+                if (remaining <= earlyPollStart && !polling) {
+                    polling = true;
+                    _pollForService(overlay, countdownNumber, countdownLabel, progressFill, interval, tag, data.rollback_tag, data.rollback_commit, oldStarted, updateBtn);
+                }
+                if (remaining === 0) {
+                    countdownLabel.textContent = t.checking_service || 'Checking service...';
+                    countdownNumber.innerHTML = '<div class="restart-spinner"></div>';
+                }
+            }, 1000);
         } else {
             phaseBar.textContent = '';
             statusBar.textContent = (window.translations?.update_failed || 'Update failed') + ': ' + (data.error || '');
@@ -2661,6 +2744,7 @@ async function _performUpdate(tag, updateBtn) {
                 overlay.classList.remove('visible');
                 overlay.addEventListener('transitionend', () => overlay.remove(), { once: true });
                 setTimeout(() => { if (overlay.parentNode) overlay.remove(); }, 350);
+                document.body.classList.remove('modal-open');
             });
             const buttons = document.createElement('div');
             buttons.className = 'confirm-modal-buttons';
@@ -2700,6 +2784,7 @@ async function _performUpdate(tag, updateBtn) {
                 overlay.classList.remove('visible');
                 overlay.addEventListener('transitionend', () => overlay.remove(), { once: true });
                 setTimeout(() => { if (overlay.parentNode) overlay.remove(); }, 350);
+                document.body.classList.remove('modal-open');
             });
             const buttons = document.createElement('div');
             buttons.className = 'confirm-modal-buttons';
@@ -2933,7 +3018,7 @@ function createDeviceControlSection() {
             cancelText: t.cancel || 'Cancel',
         });
         if (!ok) return;
-        _performSystemAction('/api/system/restart-service', t.restart_service || 'Restart Service', 21);
+        _performSystemAction('/api/system/restart-service', t.restart_service || 'Restart Service', 25);
     });
 
     // Reboot Device button
@@ -2945,7 +3030,7 @@ function createDeviceControlSection() {
     rebootBtn.addEventListener('click', async () => {
         const ok = await showConfirmModal({
             title: t.reboot_device || 'Reboot Device',
-            message: t.reboot_device_confirm || 'Reboot the entire device? This takes about 70 seconds. The page will reload when the service is back.',
+            message: t.reboot_device_confirm || 'Reboot the entire device? This takes about 1 min 21 sec. The page will reload when the service is back.',
             confirmText: t.reboot || 'Reboot',
             cancelText: t.cancel || 'Cancel',
             danger: true,
@@ -2977,10 +3062,20 @@ function _performSystemAction(apiUrl, title, estimatedSeconds) {
         .catch(() => showAlertModal({ title: 'Request failed' }));
 }
 
+function _fmtCountdown(secs) {
+    if (secs < 60) return String(secs);
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return m + ':' + String(s).padStart(2, '0');
+}
+
 function _showRestartCountdown(title, estimatedSeconds, updateTag, rollbackTag, rollbackCommit, oldStarted, updateBtn) {
     const t = window.translations || {};
     const overlay = document.createElement('div');
     overlay.className = 'confirm-modal-overlay';
+
+    // Prevent background scrolling while modal is open
+    document.body.classList.add('modal-open');
 
     const dialog = document.createElement('div');
     dialog.className = 'confirm-modal-dialog';
@@ -2994,7 +3089,7 @@ function _showRestartCountdown(title, estimatedSeconds, updateTag, rollbackTag, 
 
     const countdownNumber = document.createElement('div');
     countdownNumber.className = 'restart-countdown-number';
-    countdownNumber.textContent = estimatedSeconds;
+    countdownNumber.textContent = _fmtCountdown(estimatedSeconds);
 
     const countdownLabel = document.createElement('div');
     countdownLabel.className = 'restart-countdown-label';
@@ -3019,19 +3114,25 @@ function _showRestartCountdown(title, estimatedSeconds, updateTag, rollbackTag, 
 
     let remaining = estimatedSeconds;
     let polling = false;
+    const earlyPollStart = 5; // start polling N seconds before countdown ends
 
     const interval = setInterval(() => {
         remaining--;
         if (remaining >= 0) {
-            countdownNumber.textContent = remaining;
+            countdownNumber.textContent = _fmtCountdown(remaining);
             progressFill.style.width = ((1 - remaining / estimatedSeconds) * 100) + '%';
         }
 
-        if (remaining <= 0 && !polling) {
+        // Start early background polling before countdown finishes
+        if (remaining <= earlyPollStart && !polling) {
             polling = true;
+            _pollForService(overlay, countdownNumber, countdownLabel, progressFill, interval, updateTag, rollbackTag, rollbackCommit, oldStarted, updateBtn);
+        }
+
+        // Switch to spinner UI once countdown reaches 0 (only once to preserve animation)
+        if (remaining === 0) {
             countdownLabel.textContent = t.checking_service || 'Checking service...';
             countdownNumber.innerHTML = '<div class="restart-spinner"></div>';
-            _pollForService(overlay, countdownNumber, countdownLabel, progressFill, interval, updateTag, rollbackTag, rollbackCommit, oldStarted, updateBtn);
         }
     }, 1000);
 }
@@ -3049,10 +3150,10 @@ function _pollForService(overlay, countdownNumber, countdownLabel, progressFill,
                 const hData = await resp.json();
 
                 // For update restarts: ensure this is a NEW process
-                if (updateTag && oldStarted && hData.started && hData.started <= oldStarted) return;
+                if (oldStarted && hData.started && hData.started <= oldStarted) return;
 
-                // For update restarts: verify the new version is active
-                if (updateTag) {
+                // For update restarts: verify the new version (soft check — accept after 30s even if tag differs)
+                if (updateTag && attempts <= 30) {
                     try {
                         const vResp = await fetch('/api/update/current', { cache: 'no-store' });
                         if (vResp.ok) {
@@ -3064,10 +3165,11 @@ function _pollForService(overlay, countdownNumber, countdownLabel, progressFill,
 
                 clearInterval(pollInterval);
                 clearInterval(countdownInterval);
-                countdownNumber.textContent = '\u2713';
+                countdownNumber.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="restart-check-icon" viewBox="0 -960 960 960" fill="#28a745"><path d="M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z"/></svg>';
                 countdownNumber.classList.add('restart-countdown-success');
                 countdownLabel.textContent = t.service_back_online || 'Service is back online!';
                 progressFill.style.width = '100%';
+                document.body.classList.remove('modal-open');
                 setTimeout(() => location.reload(), 1500);
                 return;
             }
@@ -3099,6 +3201,7 @@ function _pollForService(overlay, countdownNumber, countdownLabel, progressFill,
             dismissBtn.textContent = t.dismiss || 'Dismiss';
             dismissBtn.style.marginTop = '16px';
             dismissBtn.addEventListener('click', () => {
+                document.body.classList.remove('modal-open');
                 overlay.classList.remove('visible');
                 setTimeout(() => overlay.remove(), 200);
             });
@@ -3115,6 +3218,7 @@ function _startSystemUpdate(btn) {
     const overlay = document.createElement('div');
     overlay.className = 'confirm-modal-overlay';
     overlay.id = 'system-update-overlay';
+    document.body.classList.add('modal-open');
 
     const dialog = document.createElement('div');
     dialog.className = 'confirm-modal-dialog system-update-dialog';
@@ -3174,6 +3278,7 @@ function _startSystemUpdate(btn) {
         overlay.classList.remove('visible');
         overlay.addEventListener('transitionend', () => overlay.remove(), { once: true });
         setTimeout(() => { if (overlay.parentNode) overlay.remove(); }, 350);
+        document.body.classList.remove('modal-open');
     });
 
     // Listen for SocketIO events
@@ -3204,7 +3309,8 @@ function _startSystemUpdate(btn) {
         } else {
             logArea.appendChild(document.createTextNode(data.line + '\n'));
         }
-        logArea.scrollTop = logArea.scrollHeight;
+        var atBottom = logArea.scrollHeight - logArea.scrollTop - logArea.clientHeight < 40;
+        if (atBottom) logArea.scrollTop = logArea.scrollHeight;
         const phaseLabels = {
             prepare:  window.translations?.remounting_filesystem || 'Remounting filesystem\u2026',
             update:   window.translations?.fetching_package_list || 'Fetching package list (apt update)\u2026',
@@ -5883,111 +5989,7 @@ function _getLiveToastColor(keyBase) {
     return cfg[isDark ? keyBase + '_dark' : keyBase + '_light'] || '#F7931A';
 }
 
-// Return (or create) the shared upper-right toast stack container
-function _getLiveToastContainer() {
-    let el = document.getElementById('block-toast-container');
-    if (!el) {
-        el = document.createElement('div');
-        el.id = 'block-toast-container';
-        el.style.cssText = `
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 10000;
-            font-family: 'Roboto', Arial, sans-serif;
-        `;
-        document.body.appendChild(el);
-    }
-    return el;
-}
-
-// Build and display a glass-card toast in the shared upper-right container
-function _buildLiveToast(titleText, bodyHtml, titleColor, autoDismissMs = 6000) {
-    const isDark      = document.body.classList.contains('dark-mode');
-    const toastBg     = isDark ? 'rgba(30, 30, 36, 0.92)'  : 'rgba(255, 255, 255, 0.95)';
-    const toastColor  = isDark ? '#e8e8ec'                  : '#1a1a2e';
-    const toastBorder = isDark ? 'rgba(255, 255, 255, 0.08)': 'rgba(0, 0, 0, 0.1)';
-    const toastShadow = isDark
-        ? '0 8px 32px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255,255,255,0.06)'
-        : '0 8px 32px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0,0,0,0.04)';
-    const closeBtnBg      = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)';
-    const closeBtnColor   = isDark ? '#9a9aaa'                   : '#555';
-    const closeBtnHoverBg = isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.12)';
-
-    const toast = document.createElement('div');
-    toast.style.cssText = `
-        background: ${toastBg};
-        backdrop-filter: blur(20px);
-        -webkit-backdrop-filter: blur(20px);
-        color: ${toastColor};
-        padding: 14px 18px;
-        border-radius: 14px;
-        box-shadow: ${toastShadow};
-        border: 1px solid ${toastBorder};
-        margin-bottom: 10px;
-        min-width: 280px;
-        max-width: 360px;
-        opacity: 0;
-        transform: translateX(100%);
-        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-        position: relative;
-        font-size: 13px;
-        line-height: 1.4;
-        cursor: pointer;
-    `;
-
-    const closeBtn = document.createElement('button');
-    closeBtn.innerHTML = '&times;';
-    closeBtn.setAttribute('aria-label', 'Close notification');
-    closeBtn.style.cssText = `
-        position: absolute;
-        top: 8px;
-        right: 8px;
-        background: ${closeBtnBg};
-        border: none;
-        color: ${closeBtnColor};
-        font-size: 18px;
-        cursor: pointer;
-        width: 26px;
-        height: 26px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        border-radius: 50%;
-        transition: background-color 0.2s;
-        font-weight: bold;
-        line-height: 1;
-    `;
-
-    const closeToast = () => {
-        toast.style.opacity = '0';
-        toast.style.transform = 'translateX(100%)';
-        setTimeout(() => { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 400);
-    };
-
-    closeBtn.addEventListener('click', e => { e.stopPropagation(); closeToast(); });
-    closeBtn.addEventListener('mouseenter', () => { closeBtn.style.backgroundColor = closeBtnHoverBg; });
-    closeBtn.addEventListener('mouseleave', () => { closeBtn.style.backgroundColor = closeBtnBg; });
-    toast.addEventListener('click', closeToast);
-
-    const content = document.createElement('div');
-    content.style.cssText = 'margin-right: 28px;';
-    content.innerHTML =
-        `<div style="font-weight:600;font-size:14px;margin-bottom:5px;color:${titleColor};">${titleText}</div>` +
-        `<div style="opacity:0.85;font-size:13px;">${bodyHtml}</div>`;
-
-    toast.appendChild(closeBtn);
-    toast.appendChild(content);
-    _getLiveToastContainer().appendChild(toast);
-
-    requestAnimationFrame(() => {
-        toast.style.opacity = '1';
-        toast.style.transform = 'translateX(0)';
-    });
-
-    const timer = setTimeout(closeToast, autoDismissMs);
-    toast.closeToast = () => { clearTimeout(timer); closeToast(); };
-}
+// _getLiveToastContainer and _buildLiveToast are provided by toast.js
 
 function showDonationToast(donation) {
     const sats     = (donation.amount_sats || 0).toLocaleString();
@@ -6144,6 +6146,47 @@ async function uploadOpsecFiles(files) {
     }
 }
 
+
+// ── Unsaved-changes tracking ─────────────────────────────────────────────────
+let _savedSnapshot = '';
+
+function _collectFormSnapshot() {
+    const vals = {};
+    document.querySelectorAll('[data-config-key]').forEach(el => {
+        const key = el.dataset.configKey;
+        if (el.getValue) vals[key] = el.getValue();
+        else if (el.type === 'checkbox') vals[key] = el.checked;
+        else vals[key] = el.value;
+    });
+    return JSON.stringify(vals);
+}
+
+function _checkDirty() {
+    const dirty = _collectFormSnapshot() !== _savedSnapshot;
+    document.querySelectorAll('#desktop-save-button, #mobile-save-button').forEach(btn => {
+        btn.classList.toggle('unsaved-changes', dirty);
+    });
+}
+
+function _markClean() {
+    _savedSnapshot = _collectFormSnapshot();
+    _checkDirty();
+}
+
+function _initDirtyTracking() {
+    _savedSnapshot = _collectFormSnapshot();
+    const form = document.getElementById('config-form') || document.querySelector('.config-container');
+    if (form) {
+        form.addEventListener('input', _checkDirty);
+        form.addEventListener('change', _checkDirty);
+    }
+    // Also listen for custom toggle clicks (boolean switches fire click, not change)
+    document.addEventListener('click', (e) => {
+        if (e.target.closest('.boolean-switch, .toggle-switch, [data-config-key]')) {
+            setTimeout(_checkDirty, 50);
+        }
+    });
+}
 
 // Silent configuration save (no user feedback)
 async function saveConfigurationSilent(configToSave) {
@@ -6351,6 +6394,9 @@ async function saveConfiguration() {
 const saveButton = document.getElementById('save-button');
 if (saveButton) {
     saveButton.addEventListener('click', async () => {
+        document.querySelectorAll('#desktop-save-button, #mobile-save-button').forEach(btn => {
+            btn.classList.remove('unsaved-changes');
+        });
         saveButton.disabled = true;
         saveButton.textContent = '';
         try {
@@ -6398,6 +6444,7 @@ if (saveButton) {
                     }, 1000);
                 } else {
                     showNotification(window.translations?.configuration_saved || 'Configuration saved successfully!', 'success');
+                    _markClean();
                 }
             } else {
                 showNotification(result.message || window.translations?.failed_to_save_configuration || 'Failed to save configuration', 'error');
@@ -7097,77 +7144,7 @@ async function fetchAndUpdateBalances(tbody, walletEntries) {
     }
 }
 
-// Show notification message
-function showNotification(message, type = 'info', duration = 5000) {
-    // Create notification element
-    const notification = document.createElement('div');
-    notification.className = `notification notification-${type}`;
-    notification.textContent = message;
-    
-    // Style the notification
-    notification.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        padding: 12px 20px;
-        border-radius: 6px;
-        color: white;
-        font-weight: 500;
-        z-index: 9999;
-        max-width: 400px;
-        word-wrap: break-word;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-        animation: slideIn 0.3s ease-out;
-    `;
-    
-    // Set background color based on type
-    switch (type) {
-        case 'success':
-            notification.style.backgroundColor = '#38a169';
-            break;
-        case 'warning':
-            notification.style.backgroundColor = '#ffc107';
-            notification.style.color = '#212529';
-            break;
-        case 'error':
-            notification.style.backgroundColor = '#e53e3e';
-            break;
-        default:
-            notification.style.backgroundColor = '#17a2b8';
-    }
-    
-    // Add animation styles if not already present
-    if (!document.querySelector('#notification-styles')) {
-        const styles = document.createElement('style');
-        styles.id = 'notification-styles';
-        styles.textContent = `
-            @keyframes slideIn {
-                from { transform: translateX(100%); opacity: 0; }
-                to { transform: translateX(0); opacity: 1; }
-            }
-            @keyframes slideOut {
-                from { transform: translateX(0); opacity: 1; }
-                to { transform: translateX(100%); opacity: 0; }
-            }
-        `;
-        document.head.appendChild(styles);
-    }
-    
-    // Add to page
-    document.body.appendChild(notification);
-    
-    // Auto-remove after duration
-    setTimeout(() => {
-        notification.style.animation = 'slideOut 0.3s ease-in';
-        setTimeout(() => {
-            if (notification.parentNode) {
-                notification.parentNode.removeChild(notification);
-            }
-        }, 300);
-    }, duration);
-    
-    return notification;
-}
+// showNotification is provided by toast.js (glass-card style)
 
 // WebSocket connection for real-time updates
 let configSocket = null;
@@ -7373,6 +7350,9 @@ function setupNavigationButtons() {
         const button = document.getElementById(buttonId);
         if (button) {
             button.addEventListener('click', async () => {
+                document.querySelectorAll('#desktop-save-button, #mobile-save-button').forEach(btn => {
+                    btn.classList.remove('unsaved-changes');
+                });
                 button.disabled = true;
                 // Keep original content, just disable the button
                 
@@ -7480,6 +7460,7 @@ function setupNavigationButtons() {
                                 }, 1000);
                             } else {
                                 showNotification(window.translations?.configuration_saved || 'Configuration saved successfully!', 'success');
+                                _markClean();
                             }
                         }
                     } else {

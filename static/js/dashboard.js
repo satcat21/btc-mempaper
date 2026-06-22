@@ -208,6 +208,18 @@ function setupSocketHandlers() {
         }
     });
 
+    // Auto-update started notification (authenticated only)
+    socket.on('auto_update_started', () => {
+        if (!window.isAuthenticated) return;
+        const t = window.translations || {};
+        _buildLiveToast(
+            '<img src="/static/icons/update.svg" width="16" height="16" class="toast-title-icon"> ' + (t.auto_update_started || 'Auto-update started'),
+            t.auto_update_started_body || 'Checking for system and software updates...',
+            '#F7931A',
+            10000
+        );
+    });
+
     // ... other socket event handlers ...
 }
 
@@ -308,11 +320,14 @@ function showBlockToast(blockData) {
             position: fixed;
             top: 20px;
             right: 20px;
-            z-index: 10000;
+            z-index: 100100;
             font-family: 'Roboto', Arial, sans-serif;
+            isolation: isolate;
         `;
         document.body.appendChild(toastContainer);
     }
+    // Ensure container is the last body child so it paints above nav backdrop-filter elements
+    if (toastContainer.nextSibling) document.body.appendChild(toastContainer);
     
     const blockHeight = blockData.block_height;
     const toastId = `toast-${blockHeight}`;
@@ -743,46 +758,7 @@ function _formatDiff(value) {
     return `${Math.round(value)}`;
 }
 
-// Dashboard live-update toast (stacks from bottom-right, auto-dismiss)
-let _dashToastOffset = 0;
+// Dashboard live-update toast — uses shared glass-card style from toast.js
 function showDashboardToast(icon, message) {
-    const isDark = document.body.classList.contains('dark-mode');
-    const toast = document.createElement('div');
-    toast.style.cssText = `
-        position: fixed;
-        bottom: ${24 + _dashToastOffset * 50}px;
-        right: 24px;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        background: ${isDark ? 'rgba(30,30,36,0.95)' : 'rgba(255,255,255,0.97)'};
-        color: ${isDark ? '#e8e8ec' : '#1a1a2e'};
-        padding: 12px 18px;
-        border-radius: 8px;
-        border-left: 4px solid #F7931A;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-        font-size: 0.82rem;
-        max-width: 380px;
-        z-index: 9999;
-        opacity: 0;
-        transform: translateY(12px);
-        transition: opacity 0.25s ease, transform 0.25s ease;
-        pointer-events: none;
-        font-family: 'Roboto', Arial, sans-serif;
-    `;
-    toast.innerHTML = `<span style="font-size:20px;flex-shrink:0;">${icon}</span><span>${message}</span>`;
-    _dashToastOffset++;
-    document.body.appendChild(toast);
-    requestAnimationFrame(() => {
-        toast.style.opacity = '1';
-        toast.style.transform = 'translateY(0)';
-    });
-    setTimeout(() => {
-        toast.style.opacity = '0';
-        toast.style.transform = 'translateY(12px)';
-        toast.addEventListener('transitionend', () => {
-            toast.remove();
-            _dashToastOffset = Math.max(0, _dashToastOffset - 1);
-        }, { once: true });
-    }, 5000);
+    _buildLiveToast(icon, message, '#F7931A', 6000);
 }

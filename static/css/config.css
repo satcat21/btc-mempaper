@@ -2023,6 +2023,12 @@ body.dark-mode .upload-icon {
     color: #28a745;
 }
 
+.restart-check-icon {
+    width: 2.5rem;
+    height: 2.5rem;
+    vertical-align: middle;
+}
+
 .restart-countdown-number.restart-countdown-error {
     color: #dc3545;
 }
@@ -2078,6 +2084,7 @@ body.dark-mode .upload-icon {
 .update-version-row {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 8px;
     margin-bottom: 12px;
     font-size: 0.85rem;
@@ -2107,6 +2114,47 @@ body.dark-mode .upload-icon {
 .update-github-link:hover {
     color: var(--accent);
     border-color: var(--accent);
+}
+
+.check-updates-btn {
+    margin-left: 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 10px;
+    font-size: 0.8rem;
+    background: transparent;
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: color 0.2s, border-color 0.2s;
+    white-space: nowrap;
+}
+.check-updates-btn:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+}
+.check-updates-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+.check-updates-icon {
+    width: 14px;
+    height: 14px;
+    vertical-align: middle;
+    transition: transform 0.3s;
+    opacity: 0.7;
+}
+.dark-mode .check-updates-icon {
+    filter: invert(1);
+}
+.check-updates-btn.checking .check-updates-icon {
+    animation: spin-check 1s linear infinite;
+}
+@keyframes spin-check {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
 }
 
 .update-selector-row {

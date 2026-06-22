@@ -812,6 +812,12 @@ class MempaperApp:
         # (which hit port 80) actually reach our /generate_204 handler.
         self._add_captive_portal_redirect(interface)
 
+        # Start wildcard DNS so all domain lookups resolve to the hotspot IP.
+        # Must be AFTER AP is up so we can detect the assigned IP.
+        time.sleep(1)  # give NM a moment to assign the IP
+        hotspot_ip = self._get_hotspot_ip(interface)
+        self._start_captive_dns(interface, hotspot_ip)
+
         self._write_setup_mode_flag(True, ssid=ssid, interface=interface)
         print(f"📶 Wi-Fi recovery: setup hotspot enabled ({ssid})")
         if self.e_ink_enabled and not self._onboarding_hotspot_screen_shown:
@@ -825,6 +831,7 @@ class MempaperApp:
 
     def _bring_down_setup_hotspot(self):
         self._onboarding_hotspot_screen_shown = False
+        self._stop_captive_dns()
         self._remove_captive_portal_redirect()
         self._cleanup_legacy_setup_hotspots()
         self._nmcli(['connection', 'down', 'mempaper-setup'])
@@ -837,17 +844,22 @@ class MempaperApp:
         Android (and some iOS) captive-portal probes hit port 80.  Without this
         redirect they get "connection refused" and the OS drops the network.
         """
+        if not shutil.which('iptables'):
+            print('⚠️ iptables not installed — captive-portal port redirect unavailable (install: sudo apt install iptables)')
+            return
         port = self._get_web_port()
         for src_port in (80, 443):
             try:
-                subprocess.run(
+                result = subprocess.run(
                     ['sudo', 'iptables', '-t', 'nat', '-A', 'PREROUTING',
                      '-i', interface, '-p', 'tcp', '--dport', str(src_port),
                      '-j', 'REDIRECT', '--to-port', str(port)],
-                    capture_output=True, timeout=10,
+                    capture_output=True, text=True, timeout=10,
                 )
-            except Exception:
-                pass
+                if result.returncode != 0:
+                    print(f'⚠️ iptables redirect {src_port}→{port} failed: {(result.stderr or result.stdout).strip()}')
+            except Exception as e:
+                print(f'⚠️ iptables redirect {src_port}→{port} error: {e}')
         print(f"🔀 Captive-portal redirect: ports 80/443 → {port}")
 
     def _remove_captive_portal_redirect(self):
@@ -867,6 +879,108 @@ class MempaperApp:
                         break
                 except Exception:
                     break
+
+    # ── Captive-portal DNS (standalone dnsmasq wildcard) ────────
+    #
+    # Run our own dnsmasq on a non-standard port (5353) that resolves
+    # ALL domains to the hotspot IP.  iptables redirects incoming DNS
+    # (UDP 53) to this port, bypassing any NM-managed DNS that would
+    # try to forward to an upstream that doesn't exist.
+
+    _CAPTIVE_DNS_PORT = 5353
+    _CAPTIVE_DNS_CONF = '/tmp/mempaper-captive-dns.conf'
+    _CAPTIVE_DNS_PID  = '/tmp/mempaper-captive-dns.pid'
+
+    def _start_captive_dns(self, interface, hotspot_ip):
+        """Start a wildcard dnsmasq and redirect DNS traffic to it."""
+        self._stop_captive_dns()
+
+        if not shutil.which('dnsmasq'):
+            print('⚠️ dnsmasq not installed — captive-portal DNS unavailable')
+            return
+
+        conf = (
+            f'port={self._CAPTIVE_DNS_PORT}\n'
+            f'listen-address={hotspot_ip}\n'
+            f'bind-interfaces\n'
+            f'address=/#/{hotspot_ip}\n'
+            f'no-resolv\n'
+            f'no-poll\n'
+            f'no-dhcp-interface=\n'
+        )
+        try:
+            with open(self._CAPTIVE_DNS_CONF, 'w', encoding='utf-8') as f:
+                f.write(conf)
+        except OSError as e:
+            print(f'⚠️ Could not write captive DNS config: {e}')
+            return
+
+        try:
+            result = subprocess.run(
+                ['sudo', 'dnsmasq',
+                 f'--conf-file={self._CAPTIVE_DNS_CONF}',
+                 f'--pid-file={self._CAPTIVE_DNS_PID}'],
+                capture_output=True, text=True, timeout=10,
+            )
+            if result.returncode != 0:
+                print(f'⚠️ dnsmasq failed: {(result.stderr or result.stdout).strip()}')
+                return
+        except Exception as e:
+            print(f'⚠️ dnsmasq launch error: {e}')
+            return
+
+        # Redirect incoming DNS (UDP 53) to our dnsmasq port
+        if shutil.which('iptables'):
+            try:
+                result = subprocess.run(
+                    ['sudo', 'iptables', '-t', 'nat', '-A', 'PREROUTING',
+                     '-i', interface, '-p', 'udp', '--dport', '53',
+                     '-j', 'REDIRECT', '--to-port', str(self._CAPTIVE_DNS_PORT)],
+                    capture_output=True, text=True, timeout=10,
+                )
+                if result.returncode != 0:
+                    print(f'⚠️ DNS iptables redirect failed: {(result.stderr or result.stdout).strip()}')
+            except Exception as e:
+                print(f'⚠️ DNS iptables redirect error: {e}')
+        else:
+            print('⚠️ iptables not installed — DNS redirect unavailable')
+
+        print(f'✅ Captive-portal DNS started (all domains → {hotspot_ip}, '
+              f'port 53 → {self._CAPTIVE_DNS_PORT})')
+
+    def _stop_captive_dns(self):
+        """Stop the captive-portal dnsmasq and remove iptables DNS redirect."""
+        # Remove iptables DNS redirect
+        for _ in range(5):
+            try:
+                result = subprocess.run(
+                    ['sudo', 'iptables', '-t', 'nat', '-D', 'PREROUTING',
+                     '-p', 'udp', '--dport', '53',
+                     '-j', 'REDIRECT', '--to-port', str(self._CAPTIVE_DNS_PORT)],
+                    capture_output=True, timeout=10,
+                )
+                if result.returncode != 0:
+                    break
+            except Exception:
+                break
+
+        # Kill dnsmasq
+        if os.path.exists(self._CAPTIVE_DNS_PID):
+            try:
+                with open(self._CAPTIVE_DNS_PID, 'r') as f:
+                    pid = f.read().strip()
+                if pid:
+                    subprocess.run(['sudo', 'kill', pid],
+                                   capture_output=True, timeout=5)
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+        subprocess.run(['sudo', 'pkill', '-f', self._CAPTIVE_DNS_CONF],
+                       capture_output=True, timeout=5)
+        for path in (self._CAPTIVE_DNS_CONF, self._CAPTIVE_DNS_PID):
+            try:
+                os.remove(path)
+            except OSError:
+                pass
 
     def _get_web_port(self):
         """Return the configured HTTP port (default 5000)."""
@@ -974,6 +1088,7 @@ class MempaperApp:
             if path:
                 print(f'📺 Displaying connected onboarding screen on e-ink ({access_url})')
                 self._display_on_epaper_async(path, None, None)
+                render_start = time.time()
 
             # Render web version (same screen) and serve it as the dashboard image
             # so the browser shows the connected screen instead of a stale/broken template.
@@ -990,13 +1105,16 @@ class MempaperApp:
             print(f'⚠️ Could not render connected onboarding screen: {e}')
             return
 
-        # Wait for the e-ink display to finish rendering (~40s) before starting
-        # the 60-second countdown.  The display worker thread holds this lock
-        # for the entire refresh duration; acquiring it here blocks until done.
+        # The e-ink display worker takes ~40s to render.  Start the 60s
+        # countdown from when the image was submitted to the display, so the
+        # total on-screen time is ~60s, not render_time + 60s.
         with self._display_worker_lock:
             pass  # lock released = display finished
-        print('📺 Connected screen displayed on e-ink — starting 60s countdown')
-        time.sleep(60)
+        elapsed = time.time() - render_start
+        remaining = max(0, 60 - elapsed)
+        print(f'📺 Connected screen on e-ink (render took {elapsed:.0f}s, waiting {remaining:.0f}s more)')
+        if remaining > 0:
+            time.sleep(remaining)
         # After onboarding, always force a fresh image generation.
         # The cached image is likely stale (old block height, old language)
         # because it was rendered before the WiFi setup / language change.
@@ -1865,8 +1983,10 @@ class MempaperApp:
     def _check_power_cycle_reset(self):
         """Detect rapid power-cycling (3 reboots in 15 min) and trigger factory reset.
 
-        Each unique system boot (identified by kernel boot time) is recorded.
-        Service restarts on the same boot are deduplicated and do NOT count.
+        Each unique system boot (identified by /proc/sys/kernel/random/boot_id)
+        is recorded. Service restarts on the same boot are deduplicated and do
+        NOT count.  Using boot_id instead of (now - uptime) avoids false
+        positives caused by NTP clock corrections after boot.
         If 3+ distinct reboots occur within the window, a full factory reset is
         triggered: admin + sensitive data cleared, saved WiFi profiles deleted,
         and the delivery-state e-ink image rendered.
@@ -1875,33 +1995,36 @@ class MempaperApp:
         """
         now = time.time()
 
-        # Distinguish real reboots from service restarts.
-        # Use the kernel boot time (now - uptime) as a unique boot ID.
-        # If boot_time matches a previously recorded value, this is just a
-        # service restart on the same boot — skip it entirely.
-        boot_time = None
-        uptime_seconds = None
+        # Distinguish real reboots from service restarts using the kernel
+        # boot_id — a UUID that changes on every reboot but stays constant
+        # across service restarts.  Unlike (now - uptime), this is immune to
+        # NTP clock corrections that shift the computed boot epoch.
+        boot_id = None
         try:
-            with open('/proc/uptime', 'r') as f:
-                uptime_seconds = float(f.read().split()[0])
-            boot_time = round(now - uptime_seconds)  # epoch second the kernel booted
-            print(f'⏱️ System uptime: {uptime_seconds:.1f}s  (boot_time={boot_time})')
-        except (OSError, ValueError, IndexError):
+            with open('/proc/sys/kernel/random/boot_id', 'r') as f:
+                boot_id = f.read().strip()
+            print(f'⏱️ Kernel boot_id: {boot_id}')
+        except (OSError, ValueError):
             pass  # Not on Linux (dev machine)
 
-        # Load existing boot timestamps — now stored as {boot_time: timestamp} pairs
+        # Load existing boot records — stored as {boot_id: timestamp} pairs
         # to deduplicate multiple service restarts within the same boot.
-        boot_records = {}  # {boot_time_str: first_seen_timestamp}
+        boot_records = {}  # {boot_id_str: first_seen_timestamp}
         try:
             if os.path.exists(self.BOOT_TIMESTAMPS_PATH):
                 with open(self.BOOT_TIMESTAMPS_PATH, 'r', encoding='utf-8') as f:
                     raw = json.load(f)
-                # Migrate from old list format [ts, ts, ...] to new dict format
+                # Migrate from old list/dict format that used numeric keys
                 if isinstance(raw, list):
                     boot_records = {}
                     print('🔄 Migrating boot_timestamps from old list format')
                 elif isinstance(raw, dict):
-                    boot_records = raw
+                    # Detect old numeric-key format and discard it
+                    if raw and all(k.replace('-', '').isdigit() or len(k) < 30 for k in raw):
+                        boot_records = {}
+                        print('🔄 Migrating boot_timestamps from old numeric format')
+                    else:
+                        boot_records = raw
         except (json.JSONDecodeError, OSError):
             pass
 
@@ -1909,14 +2032,12 @@ class MempaperApp:
         boot_records = {k: v for k, v in boot_records.items()
                         if (now - v) < self.POWER_CYCLE_RESET_WINDOW}
 
-        if boot_time is not None:
-            bt_key = str(boot_time)
-            if bt_key in boot_records:
-                print(f'🔄 Power-cycle reset check: skipped (service restart on same boot, '
-                      f'uptime {uptime_seconds:.0f}s)')
+        if boot_id is not None:
+            if boot_id in boot_records:
+                print(f'🔄 Power-cycle reset check: skipped (service restart on same boot)')
                 return False
             # New boot — record it
-            boot_records[bt_key] = now
+            boot_records[boot_id] = now
         else:
             # Fallback (non-Linux): use timestamp as key (old behavior)
             boot_records[str(int(now))] = now
@@ -4367,6 +4488,7 @@ class MempaperApp:
             # stale mempaper-setup profiles (there can be many duplicates), and
             # free wlan0 for client mode.
             print(f'📶 Tearing down setup hotspot to connect to {ssid}...')
+            self._stop_captive_dns()
             self._remove_captive_portal_redirect()
             self._cleanup_legacy_setup_hotspots()
             # Ensure the interface is fully disconnected from AP mode
@@ -4570,6 +4692,18 @@ class MempaperApp:
             )
 
         # Captive-portal detection endpoints used by Android / iOS / Windows.
+        # ── Captive-portal detection ──────────────────────────────
+        # When in setup/hotspot mode, ALL captive-portal probe URLs return
+        # a 302 redirect to the setup page.  This is what triggers the
+        # "Sign in to WiFi network" popup on Android, iOS, and Windows.
+        #
+        # Combined with the wildcard dnsmasq (all DNS → hotspot IP) and
+        # iptables port redirect (80/443 → Flask).
+        #
+        # Previous approach returned 204/success for Android probes to
+        # "keep the connection stable" — but this backfired because Android
+        # then expected real internet and disconnected when it failed.
+
         @self.app.route('/generate_204')
         @self.app.route('/hotspot-detect.html')
         @self.app.route('/ncsi.txt')
@@ -4579,76 +4713,21 @@ class MempaperApp:
         @self.app.route('/canonical.html')             # Windows 11
         def captive_portal_redirect():
             if setup_mode_enabled():
-                # Auto-open mode: force captive-portal redirects so devices
-                # launch the setup page immediately after joining the hotspot.
-                auto_open_portal = bool(
-                    self.config.get('wifi_setup_auto_open_portal', True)
-                )
-
-                # Some mobile OSes aggressively drop Wi-Fi networks that fail
-                # internet checks. In stable mode, answer probe endpoints
-                # with expected success content so clients stay connected.
-                prefer_stable_connection = bool(
-                    self.config.get('wifi_setup_prefer_stable_connection', True)
-                )
-
-                user_agent = (request.headers.get('User-Agent') or '').lower()
-                is_android_client = 'android' in user_agent
-
-                # Android clients can be more aggressive about dropping
-                # captive/no-internet networks. If stability mode is enabled,
-                # prefer stable probe responses for Android instead of redirects.
-                if auto_open_portal and not (prefer_stable_connection and is_android_client):
-                    return redirect(url_for('setup_wifi_page'), code=302)
-
-                if prefer_stable_connection:
-                    path = request.path
-                    if path == '/generate_204':
-                        return '', 204
-                    if path in ('/hotspot-detect.html', '/library/test/success.html'):
-                        return '<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>', 200
-                    if path == '/ncsi.txt':
-                        return 'Microsoft NCSI', 200
-                    if path == '/connecttest.txt':
-                        return 'Microsoft Connect Test', 200
-                    if path == '/success.txt':
-                        return 'success', 200
-                    if path == '/canonical.html':
-                        return '<html><body>Success</body></html>', 200
-
                 return redirect(url_for('setup_wifi_page'), code=302)
             return '', 204
 
-        # Catch-all: any request to an unknown host while in setup mode
-        # triggers the captive portal popup on Android / iOS / Windows.
-        #
-        # IMPORTANT: captive-portal probe paths (e.g. /generate_204) must be
-        # allowed through so the dedicated route handler can return the correct
-        # status code.  If we redirect them here, Android sees a 302 instead of
-        # 204, marks the network as "no internet", and disconnects.
-        _CAPTIVE_PROBE_PATHS = {
-            '/generate_204',
-            '/hotspot-detect.html',
-            '/ncsi.txt',
-            '/connecttest.txt',
-            '/library/test/success.html',
-            '/success.txt',
-            '/canonical.html',
-        }
-
         @self.app.before_request
         def captive_portal_catch_all():
+            """Redirect any request to an unknown host while in setup mode."""
             if not setup_mode_enabled():
-                return None
-            # Let captive-portal probe paths reach their dedicated handler
-            if request.path in _CAPTIVE_PROBE_PATHS:
                 return None
             host = request.host.split(':')[0]
             # Pass through requests already destined for the Pi
             local_hosts = {'192.168.12.1', '10.42.0.1', 'localhost', '127.0.0.1'}
             if host in local_hosts:
                 return None
-            # Anything else: redirect to setup page
+            # Everything else (including captive-portal probes via external
+            # domains) → redirect to setup page
             return redirect(url_for('setup_wifi_page'), code=302)
 
         @self.app.route('/api/setup/wifi/scan', methods=['GET'])
@@ -7419,6 +7498,10 @@ class MempaperApp:
                     last_run_date = today
                     print(f"🔄 Auto-update triggered at {now.strftime('%Y-%m-%d %H:%M')}")
 
+                    # Notify connected browsers
+                    if hasattr(self, 'socketio') and self.socketio:
+                        self.socketio.emit('auto_update_started')
+
                     project_dir = os.path.dirname(os.path.abspath(__file__))
                     needs_restart = False
 
@@ -7545,12 +7628,22 @@ class MempaperApp:
 
                                 if needs_restart:
                                     print(f"✅ Auto-update: upgraded to {latest_tag}. Restarting service...")
+
+                                    # Wait for any ongoing e-ink display refresh to finish
+                                    print("⏳ Auto-update: waiting for e-ink display to finish...")
+                                    acquired = self._display_worker_lock.acquire(timeout=150)
+                                    if acquired:
+                                        self._display_worker_lock.release()
+                                        print("✅ Auto-update: display idle — safe to restart")
+                                    else:
+                                        print("⚠️ Auto-update: display lock timeout after 150s — restarting anyway")
+
                                     # Notify any connected browsers so they show the restart countdown
                                     if hasattr(self, 'socketio') and self.socketio:
                                         self.socketio.emit('service_restarting', {
                                             'reason': 'auto_update',
                                             'tag': latest_tag,
-                                            'estimated_seconds': 21
+                                            'estimated_seconds': 25
                                         })
                                         time.sleep(1)  # give clients time to receive
                                     subprocess.run(
