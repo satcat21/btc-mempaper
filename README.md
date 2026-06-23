@@ -13,12 +13,12 @@
 
 <p align="center">
   <a href="#what-is-this">What is this?</a> &nbsp;&bull;&nbsp;
-  <a href="#gallery">Gallery</a> &nbsp;&bull;&nbsp;
   <a href="#technical-stuff">Technical Stuff</a> &nbsp;&bull;&nbsp;
-  <a href="#quick-start">Quick Start</a> &nbsp;&bull;&nbsp;
-  <a href="#onboarding--first-time-setup">Onboarding</a> &nbsp;&bull;&nbsp;
+  <a href="#gallery">Gallery</a> &nbsp;&bull;&nbsp;
+  <a href="#getting-started">Getting Started</a> &nbsp;&bull;&nbsp;
   <a href="#configuration">Configuration</a> &nbsp;&bull;&nbsp;
-  <a href="#documentation">Documentation</a>
+  <a href="#documentation">Documentation</a> &nbsp;&bull;&nbsp;
+  <a href="#support-the-project">Support</a>
 </p>
 
 ---
@@ -71,7 +71,8 @@ The memes on this display come from **[einundzwanzig-memes.space](https://einund
     </td>
     <td>
       <strong>SOFTWARE</strong><br/>
-      Custom Python - by Bitcoiners for Bitcoiners
+      Python backend (Flask + Jinja2, Flask-SocketIO, Gunicorn/gevent, Pillow/numpy)<br/>
+      Web frontend (Vanilla JS + Socket.IO)<br/>
     </td>
   </tr>
   <tr>
@@ -81,26 +82,28 @@ The memes on this display come from **[einundzwanzig-memes.space](https://einund
     </td>
     <td>
       <strong>DATA SOURCE</strong><br/>
-      mempool.space or self-hosted full node
+      mempool.space API — public or<br/>
+      self-hosted mempool on your own node
     </td>
   </tr>
 </table>
 
-<br/>
+### Features
 
----
-
-<br/>
-
-## FEATURES
-
-- **Real-time Data** - Blocks, difficulty, hashrate, and fees from mempool.space integration
-- **Hardware Support** - Ready for Raspberry Pi (Zero/3/4/5) and Waveshare e-Paper displays
-- **Web Dashboard** - Responsive interface for configuration and monitoring
-- **Miner Integration** - Monitor Bitaxe miner stats and aggregate hashrate
-- **Wallet Monitoring** - Track balances and block rewards (XPUB support included)
-- **Security** - Argon2id password hashing, rate limiting, and encrypted configuration
+- **Real-time Data** - BTC price, halving countdown, network hashrate, difficulty, fees, and remaining supply via mempool.space or self-hosted mempool instance
+- **Hardware Support** - Ready for Raspberry Pi (Zero/3/4/5) and Waveshare e-Paper displays (7.3" 7-color, 13.3" 6-color)
+- **Web Dashboard** - Responsive interface for configuration, monitoring, and live block notifications
+- **Miner Integration** - Monitor Bitaxe miner stats, aggregate hashrate, best difficulty, and found blocks
+- **Wallet Monitoring** - Track on-chain balances for addresses, XPUBs, and ZPUBs with automatic address derivation
+- **Block Reward Monitoring** - Track mining pool payouts and solo mining rewards for specific addresses
+- **Lightning Donations** - Display incoming Lightning tips via LNbits webhook relay
+- **Meme Rotation** - Curated Bitcoin memes from the Einundzwanzig community, with custom upload support
 - **OPSec Mode** - One-click toggle to show a random cover image on the e-ink display instead of Bitcoin data
+- **Privacy Controls** - Public mempool warnings, wallet cache wipe, User-Agent stripping
+- **Security** - Argon2id password hashing, rate limiting, encrypted configuration, and basic auth for mempool
+- **Auto Updates** - Scheduled software and system updates from the web UI
+- **Multi-language** - English, German, Spanish, French, and Italian
+- **WiFi Onboarding** - Hotspot-based setup flow for shipped devices, no SSH required
 
 <br/>
 
@@ -141,35 +144,6 @@ The memes on this display come from **[einundzwanzig-memes.space](https://einund
     </td>
   </tr>
 </table>
-
-<details>
-<summary><b>Assembly Photos</b> (Click to expand)</summary>
-
-<p align="center">
-  <img src="images/hardware/assembly-1-components.jpg" alt="Components" width="400"/>
-  <br/>
-  <em>All components ready for assembly</em>
-</p>
-
-<p align="center">
-  <img src="images/hardware/assembly-2-wiring.jpg" alt="Wiring" width="400"/>
-  <br/>
-  <em>Raspberry Pi Zero W connected to e-Paper display via SPI Control interface</em>
-</p>
-
-<p align="center">
-  <img src="images/hardware/assembly-3-mounting.jpg" alt="Mounting" width="400"/>
-  <br/>
-  <em>Mounting display in photo frame</em>
-</p>
-
-<p align="center">
-  <img src="images/hardware/assembly-4-back.jpg" alt="Complete Setup" width="400"/>
-  <br/>
-  <em>Photo frame back with USB-C power connector</em>
-</p>
-
-</details>
 
 ### Web Interface
 
@@ -213,13 +187,15 @@ The memes on this display come from **[einundzwanzig-memes.space](https://einund
 
 <br/>
 
-## SHOPPING LIST
+## GETTING STARTED
+
+### Shopping List
 
 Here are the components needed to build your own mempaper display.
 
 > **Note:** Prices are approximate and may vary by region and vendor. The Raspberry Pi Zero 2 W is recommended over the original Zero W for better performance.
 
-### Shared Components (~63 EUR)
+#### Shared Components (~63 EUR)
 
 These components are the same regardless of which display you choose:
 
@@ -233,7 +209,7 @@ These components are the same regardless of which display you choose:
 
 > **Cable Routing:** The USB-C to Micro-USB adapter and 90 deg panel mount cable allow you to cleanly route power from the Raspberry Pi to the back of the picture frame for a professional finish.
 
-### Option A -- Waveshare 7.3" e-Paper (7-color) -- Total ~215 EUR
+#### Option A -- Waveshare 7.3" e-Paper (7-color) -- Total ~215 EUR
 
 | Component | Description | Price | Link |
 |-----------|-------------|-------|------|
@@ -243,7 +219,7 @@ These components are the same regardless of which display you choose:
 
 > **Passepartout Dimensions:** The 7.3" display has a visible area of 160x96mm. The passepartout opening is 158x94mm (2mm smaller on each side) to hold the display securely in place.
 
-### Option B -- Waveshare 13.3" e-Paper (6-color) -- Total ~518 EUR
+#### Option B -- Waveshare 13.3" e-Paper (6-color) -- Total ~518 EUR
 
 | Component | Description | Price | Link |
 |-----------|-------------|-------|------|
@@ -251,15 +227,38 @@ These components are the same regardless of which display you choose:
 | **Photo Frame** | 28x35cm frame for display mounting | ~76 EUR | [allesrahmen.de](https://www.allesrahmen.de/bilderrahmen-ystad-aus-massivholz-mit-distanzleiste-28x35-cmweiss-gemasert27-1001000.html) |
 | **Passepartout (Mat Board)** | 280x350mm outer, 200x268mm opening | ~17 EUR | [wandstyle.com](https://www.wandstyle.com/passepartout-bianco-naturale-30-x-40-cm/psta-254-030-040p-p1) |
 
-<br/>
+<details>
+<summary><b>Assembly Photos</b> (Click to expand)</summary>
 
----
+<p align="center">
+  <img src="images/hardware/assembly-1-components.jpg" alt="Components" width="400"/>
+  <br/>
+  <em>All components ready for assembly</em>
+</p>
 
-<br/>
+<p align="center">
+  <img src="images/hardware/assembly-2-wiring.jpg" alt="Wiring" width="400"/>
+  <br/>
+  <em>Raspberry Pi Zero W connected to e-Paper display via SPI Control interface</em>
+</p>
 
-## QUICK START
+<p align="center">
+  <img src="images/hardware/assembly-3-mounting.jpg" alt="Mounting" width="400"/>
+  <br/>
+  <em>Mounting display in photo frame</em>
+</p>
 
-### 1. Installation
+<p align="center">
+  <img src="images/hardware/assembly-4-back.jpg" alt="Complete Setup" width="400"/>
+  <br/>
+  <em>Photo frame back with USB-C power connector</em>
+</p>
+
+</details>
+
+### Quick Start
+
+#### 1. Installation
 
 > **Recommended OS:** Raspberry Pi OS Lite **Bookworm (Debian 12, 32-bit)** -- this is the tested and supported OS version. Debian 13 (trixie) with Python 3.13 causes Pillow SIGILL crashes on Pi Zero 1 WH due to incompatible SIMD instructions in the piwheels armv6l build.
 
@@ -291,7 +290,7 @@ python -m venv venv
 pip install -r requirements.txt
 ```
 
-### 2. Setup (All Platforms)
+#### 2. Setup (All Platforms)
 
 1. **Create Configuration**
    ```bash
@@ -377,23 +376,17 @@ pip install -r requirements.txt
   - User connects to `mempaper-XXXX`, opens `http://192.168.12.1:5000`, enters Wi-Fi credentials
   - On successful connection, setup hotspot is disabled and normal operation resumes automatically
 
-<br/>
+### Display Setup (Raspberry Pi)
 
----
+mempaper supports Waveshare e-Paper displays. The **Waveshare 7.3inch F (7-color)** is the primary target.
 
-<br/>
-
-## DISPLAY SETUP (RASPBERRY PI)
-
-Mempaper supports Waveshare e-Paper displays. The **Waveshare 7.3inch F (7-color)** is the primary target.
-
-### 1. Enable SPI Interface
+#### 1. Enable SPI Interface
 ```bash
 sudo raspi-config
 # Navigate to: 3 Interface Options -> I4 SPI -> Yes
 ```
 
-### 2. Configure Display
+#### 2. Configure Display
 
 Run the configuration tool to select your display. It automatically downloads and installs the required driver files:
 
@@ -419,13 +412,223 @@ pip3 install --prefer-binary .
 
 > **Note:** Service setup is covered in the [Quick Start](#quick-start) section above.
 
-<br/>
+### User Management
+
+Multiple admin users are supported. Users are stored as Argon2id hashes in `config/config.json` under the `admin_users` key.
+
+```bash
+python scripts/setup_user.py                # Create or update a user
+python scripts/setup_user.py --list         # List all configured users
+python scripts/setup_user.py --delete alice # Delete a user
+```
+
+> The script refuses to delete the last remaining user to prevent lockout.
+>
+> The script can be run while the service is running -- the application picks up the config change automatically. For password resets it is safer to stop the service first: `sudo systemctl stop mempaper`.
+
+**Existing installations** are migrated automatically on first startup: the single `admin_username` / `admin_password_hash` fields in the config are moved into the `admin_users` dict -- no manual action required.
+
+### Delivery Mode (Shipment)
+
+Prepare a reset device for shipment:
+
+```bash
+python scripts/delivery_state.py
+```
+
+What this does:
+- renders a clean delivery image on e-ink
+- leaves startup behavior in integrated mode (`mempaper.service` only)
+- clears setup-mode state so the next boot starts clean
+
+At next boot, `mempaper.service` automatically enables setup hotspot if Wi-Fi cannot connect.
+
+### Onboarding / First-Time Setup
+
+When a customer powers on a freshly prepared device for the first time, the following onboarding flow guides them through WiFi configuration and admin account creation -- no SSH or technical knowledge required.
+
+#### Step 1 -- Delivery State (E-Ink)
+
+The device ships with the delivery-state image on the e-ink display.
+
+<p align="center"><img src="images/readme/onboarding_1_delivery_state.png" alt="Delivery state e-ink screen" width="600"/></p>
+
+#### Step 2 -- Setup Hotspot (E-Ink)
+
+On first boot, the device detects that no WiFi is configured and automatically starts a WPA2 setup hotspot. **This takes between 90 seconds and 2 minutes 21 seconds** -- the Pi needs to boot, initialize the WiFi radio, and switch to AP mode. Once ready, the e-ink display refreshes and shows the hotspot SSID, password, and a QR code to connect.
+
+- **SSID:** `mempaper-XXXX` (4-digit suffix derived from the device MAC)
+- **Security:** WPA2 (password = 8 hex chars derived from device MAC)
+- Scan the QR code with your phone to connect automatically
+
+> **Tip:** Wait until the e-ink display updates from the delivery-state image to the hotspot screen before trying to connect. If the display does not refresh after 2 minutes, the hotspot may have failed to start -- simply power-cycle the device and try again.
+
+<p align="center"><img src="images/readme/onboarding_2_hotspot.png" alt="Hotspot onboarding e-ink screen" width="600"/></p>
+
+#### Step 3 -- WiFi Setup Web Page
+
+After connecting to the hotspot, open `http://10.42.0.1:5000/setup` in your browser (this URL is also available as a QR code on the right side of the e-ink screen). The setup page allows the user to:
+
+1. **Select a language** (English, German, Spanish, French, Italian)
+2. **Choose your home WiFi** from a scanned list (or enter a hidden SSID)
+3. **Enter the WiFi password**
+4. **Create an admin account** (username + password for the dashboard)
+
+<p align="center"><img src="images/readme/onboarding_3_wifi_setup.png" alt="WiFi setup web page" width="400"/></p>
+
+#### Step 4 -- Connection Success (E-Ink)
+
+Once the device connects to the home WiFi, the e-ink display shows a success screen with instructions on how to access the dashboard from the home network.
+
+<p align="center"><img src="images/readme/onboarding_4_connected.png" alt="WiFi connected e-ink screen" width="600"/></p>
+
+After 60 seconds, the display switches to normal operation mode and shows the first dashboard image.
+
+#### Device Reset
+
+If the user forgets their admin password or needs to start fresh, there are two reset options:
+
+##### Option A -- Reset Button (Setup Page)
+
+If the device is in hotspot/setup mode (e.g. stored WiFi unavailable), the setup web page shows a **"Reset Device"** button at the bottom. This clears:
+
+- All admin accounts
+- Wallet addresses and monitoring data
+- Bitaxe miner configuration
+- Donation history and webhook URLs
+- Mempool authentication
+- Mobile app tokens
+
+The device remains in setup mode so the user can reconfigure WiFi and create a new admin account.
+
+##### Option B -- Power-Cycle Factory Reset
+
+For a full factory reset (including WiFi profiles and e-ink display), the user can power-cycle the device rapidly:
+
+1. **Power on** the device, wait **2 minutes**, then **power off**
+2. **Repeat** two more times (3 power cycles total)
+3. **Power on** a 4th time -- the device now detects the pattern and resets
+
+The device detects 3 recent boot timestamps within a 15-minute window and automatically:
+
+- Clears all user data (same as Option A)
+- Deletes all saved WiFi profiles
+- Renders and displays the delivery-state e-ink image
+- Starts the setup hotspot for fresh onboarding
+
+> **Important:** Wait the full 2 minutes before powering off each time. The device needs enough time to boot, record the timestamp, and flush all writes to the SD card. Cutting power too early risks corrupting the filesystem.
 
 ---
 
 <br/>
 
-## PROJECT STRUCTURE
+## CONFIGURATION
+
+Navigate to **Settings** in the web interface ([http://mempaper-ip:5000](http://mempaper-ip:5000)).
+
+- **Mempool Connection** -- Default is `mempool.space`. Change IP/Port to use a local node or self-hosted mempool instance.
+- **Display** -- Toggle "E-Ink Display Connected" to ON.
+- **Bitaxe** -- Add miner IPs to monitor hashrate.
+
+For advanced manual configuration, edit `config/config.json`.
+
+### Info Blocks
+
+The dashboard image is composed of a meme and a set of optional info blocks displayed alongside it. Each block can be independently enabled or disabled in Settings. If more blocks are enabled than fit the available space, a random subset is shown each refresh.
+
+| Block | Config key | What it shows |
+|-------|-----------|---------------|
+| **BTC Price** | `show_btc_price_block` | Current price in fiat and Moscow Time (sats/fiat) |
+| **Countdown** | `show_countdown_block` | Remaining BTC supply and percentage mined |
+| **Halving** | `show_halving_block` | Estimated next halving date and blocks remaining |
+| **Network** | `show_network_block` | Global hashrate and mining difficulty |
+| **Bitaxe** | `show_bitaxe_block` | Aggregate hashrate and found blocks or best difficulty |
+| **Wallet Balances** | `show_wallet_balances_block` | On-chain balances for addresses / XPUBs / ZPUBs |
+| **Lightning Donation** | `show_donation_block` | Latest Lightning donation via LNbits webhook |
+
+> All blocks are **on** by default except Bitaxe, Wallet Balances, and Donation, which require additional setup.
+
+See [Configuration Reference](docs/CONFIG_REFERENCE.md) for detailed explanation of all settings.
+
+### Software Update
+
+mempaper can be updated directly from the web UI. Navigate to **Settings > Updates** to see the current version and available releases.
+
+<p align="center">
+  <img src="images/screenshots/software-update.png" alt="Software Update Section" width="600"/>
+  <br/>
+  <em>Software Update section in Settings</em>
+</p>
+
+#### Web UI Update (Recommended)
+
+1. Open the **Software Updates** section in Settings
+2. Select the desired release from the dropdown (latest is pre-selected and highlighted in orange)
+3. Click **Update** and confirm
+4. The app will fetch the release, install dependencies, and restart the service
+5. If the e-ink display is currently refreshing, the restart waits until the display is idle
+6. The page refreshes automatically once the service is back online
+
+#### Automatic Updates
+
+Enable scheduled updates to keep mempaper up to date without manual intervention:
+
+| Setting | Config Key | Description |
+|---------|-----------|-------------|
+| **Automatic Updates** | `auto_update_enabled` | Enable/disable scheduled updates |
+| **Update Time** | `auto_update_time` | Time of day to check for updates (HH:MM, default: `03:00`) |
+| **Update Days** | `auto_update_days` | Days of the week to run updates (default: Mon, Wed, Fri) |
+
+When enabled, mempaper checks for new releases at the configured time and day, installs the update, and restarts the service automatically.
+
+#### Manual Update via SSH
+
+```bash
+ssh pi@mempaper.local
+cd ~/btc-mempaper
+git fetch --tags
+git checkout <tag>                                    # e.g. git checkout v2.1.0
+.venv/bin/pip install -r requirements.txt --quiet
+sudo systemctl restart mempaper.service
+```
+
+#### Private Repositories
+
+If your git remote points to a private repository (e.g. self-hosted GitLab), the updater falls back to local git tags — updates still work, but release notes won't be shown in the web UI.
+
+To enable full release notes, create a `.env` file with an API token:
+
+```bash
+cp .env.example .env
+nano .env
+```
+
+```env
+# GitHub: Personal Access Token with "repo" scope
+# GitLab: Personal Access Token with "read_api" scope
+GIT_API_TOKEN=glpat-xxxxxxxxxxxxxxxxxxxx
+```
+
+#### Permissions
+
+The web UI update requires a sudoers entry for passwordless service restart. This is automatically installed by `install_wifi_permissions.sh` (see [Quick Start step 5](#quick-start)). To install it manually:
+
+```bash
+echo "$(whoami) ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart mempaper.service" | sudo tee /etc/sudoers.d/mempaper-update
+sudo chmod 0440 /etc/sudoers.d/mempaper-update
+```
+
+---
+
+<br/>
+
+## DOCUMENTATION
+
+- [Configuration Reference](docs/CONFIG_REFERENCE.md) -- Complete guide to all settings
+- [Security Guide](docs/SECURITY_GUIDE.md) -- Encryption and password protection
+- [Cache System Documentation](docs/UNIFIED_CACHE_DOCUMENTATION.md) -- Technical cache implementation details
+
+### Project Structure
 
 The codebase is organized into functional modules:
 
@@ -499,250 +702,6 @@ btc-mempaper/
 - **managers/** handle security, authentication, and configuration
 - **utils/** provide shared functionality across the application
 - **scripts/** are standalone tools for setup and maintenance
-
-<br/>
-
----
-
-<br/>
-
-## USER MANAGEMENT
-
-Multiple admin users are supported. Users are stored as Argon2id hashes in `config/config.json` under the `admin_users` key.
-
-```bash
-python scripts/setup_user.py                # Create or update a user
-python scripts/setup_user.py --list         # List all configured users
-python scripts/setup_user.py --delete alice # Delete a user
-```
-
-> The script refuses to delete the last remaining user to prevent lockout.
->
-> The script can be run while the service is running -- the application picks up the config change automatically. For password resets it is safer to stop the service first: `sudo systemctl stop mempaper`.
-
-**Existing installations** are migrated automatically on first startup: the single `admin_username` / `admin_password_hash` fields in the config are moved into the `admin_users` dict -- no manual action required.
-
-<br/>
-
----
-
-<br/>
-
-## DELIVERY MODE (SHIPMENT)
-
-Prepare a reset device for shipment:
-
-```bash
-python scripts/delivery_state.py
-```
-
-What this does:
-- renders a clean delivery image on e-ink
-- leaves startup behavior in integrated mode (`mempaper.service` only)
-- clears setup-mode state so the next boot starts clean
-
-At next boot, `mempaper.service` automatically enables setup hotspot if Wi-Fi cannot connect.
-
-<br/>
-
----
-
-<br/>
-
-## ONBOARDING / FIRST-TIME SETUP
-
-When a customer powers on a freshly prepared device for the first time, the following onboarding flow guides them through WiFi configuration and admin account creation -- no SSH or technical knowledge required.
-
-### Step 1 -- Delivery State (E-Ink)
-
-The device ships with the delivery-state image on the e-ink display.
-
-<p align="center"><img src="images/readme/onboarding_1_delivery_state.png" alt="Delivery state e-ink screen" width="600"/></p>
-
-### Step 2 -- Setup Hotspot (E-Ink)
-
-On first boot, the device detects that no WiFi is configured and automatically starts a WPA2 setup hotspot. **This takes between 90 seconds and 2 minutes 21 seconds** -- the Pi needs to boot, initialize the WiFi radio, and switch to AP mode. Once ready, the e-ink display refreshes and shows the hotspot SSID, password, and a QR code to connect.
-
-- **SSID:** `mempaper-XXXX` (4-digit suffix derived from the device MAC)
-- **Security:** WPA2 (password = 8 hex chars derived from device MAC)
-- Scan the QR code with your phone to connect automatically
-
-> **Tip:** Wait until the e-ink display updates from the delivery-state image to the hotspot screen before trying to connect. If the display does not refresh after 2 minutes, the hotspot may have failed to start -- simply power-cycle the device and try again.
-
-<p align="center"><img src="images/readme/onboarding_2_hotspot.png" alt="Hotspot onboarding e-ink screen" width="600"/></p>
-
-### Step 3 -- WiFi Setup Web Page
-
-After connecting to the hotspot, open `http://10.42.0.1:5000/setup` in your browser (this URL is also available as a QR code on the right side of the e-ink screen). The setup page allows the user to:
-
-1. **Select a language** (English, German, Spanish, French, Italian)
-2. **Choose your home WiFi** from a scanned list (or enter a hidden SSID)
-3. **Enter the WiFi password**
-4. **Create an admin account** (username + password for the dashboard)
-
-<p align="center"><img src="images/readme/onboarding_3_wifi_setup.png" alt="WiFi setup web page" width="400"/></p>
-
-### Step 4 -- Connection Success (E-Ink)
-
-Once the device connects to the home WiFi, the e-ink display shows a success screen with instructions on how to access the dashboard from the home network.
-
-<p align="center"><img src="images/readme/onboarding_4_connected.png" alt="WiFi connected e-ink screen" width="600"/></p>
-
-After 60 seconds, the display switches to normal operation mode and shows the first dashboard image.
-
-### Device Reset
-
-If the user forgets their admin password or needs to start fresh, there are two reset options:
-
-#### Option A -- Reset Button (Setup Page)
-
-If the device is in hotspot/setup mode (e.g. stored WiFi unavailable), the setup web page shows a **"Reset Device"** button at the bottom. This clears:
-
-- All admin accounts
-- Wallet addresses and monitoring data
-- Bitaxe miner configuration
-- Donation history and webhook URLs
-- Mempool authentication
-- Mobile app tokens
-
-The device remains in setup mode so the user can reconfigure WiFi and create a new admin account.
-
-#### Option B -- Power-Cycle Factory Reset
-
-For a full factory reset (including WiFi profiles and e-ink display), the user can power-cycle the device rapidly:
-
-1. **Power on** the device, wait **2 minutes**, then **power off**
-2. **Repeat** two more times (3 power cycles total)
-3. **Power on** a 4th time -- the device now detects the pattern and resets
-
-The device detects 3 recent boot timestamps within a 15-minute window and automatically:
-
-- Clears all user data (same as Option A)
-- Deletes all saved WiFi profiles
-- Renders and displays the delivery-state e-ink image
-- Starts the setup hotspot for fresh onboarding
-
-> **Important:** Wait the full 2 minutes before powering off each time. The device needs enough time to boot, record the timestamp, and flush all writes to the SD card. Cutting power too early risks corrupting the filesystem.
-
-<br/>
-
----
-
-<br/>
-
-## CONFIGURATION
-
-Navigate to **Settings** in the web interface ([http://mempaper-ip:5000](http://mempaper-ip:5000)).
-
-- **Mempool Connection** -- Default is `mempool.space`. Change IP/Port to use a local node or self-hosted mempool instance.
-- **Display** -- Toggle "E-Ink Display Connected" to ON.
-- **Bitaxe** -- Add miner IPs to monitor hashrate.
-
-For advanced manual configuration, edit `config/config.json`.
-
-### Info Blocks
-
-The dashboard image is composed of a meme and a set of optional info blocks displayed alongside it. Each block can be independently enabled or disabled in Settings. If more blocks are enabled than fit the available space, a random subset is shown each refresh.
-
-| Block | Config key | What it shows |
-|-------|-----------|---------------|
-| **BTC Price** | `show_btc_price_block` | Current price in fiat and Moscow Time (sats/fiat) |
-| **Countdown** | `show_countdown_block` | Remaining BTC supply and percentage mined |
-| **Halving** | `show_halving_block` | Estimated next halving date and blocks remaining |
-| **Network** | `show_network_block` | Global hashrate and mining difficulty |
-| **Bitaxe** | `show_bitaxe_block` | Aggregate hashrate and found blocks or best difficulty |
-| **Wallet Balances** | `show_wallet_balances_block` | On-chain balances for addresses / XPUBs / ZPUBs |
-| **Lightning Donation** | `show_donation_block` | Latest Lightning donation via LNbits webhook |
-
-> All blocks are **on** by default except Bitaxe, Wallet Balances, and Donation, which require additional setup.
-
-See [Configuration Reference](docs/CONFIG_REFERENCE.md) for detailed explanation of all settings.
-
-<br/>
-
----
-
-<br/>
-
-## SOFTWARE UPDATE
-
-mempaper can be updated directly from the web UI. Navigate to **Settings > Updates** to see the current version and available releases.
-
-<p align="center">
-  <img src="images/screenshots/software-update.png" alt="Software Update Section" width="600"/>
-  <br/>
-  <em>Software Update section in Settings</em>
-</p>
-
-### Web UI Update (Recommended)
-
-1. Open the **Software Updates** section in Settings
-2. Select the desired release from the dropdown (latest is pre-selected and highlighted in orange)
-3. Click **Update** and confirm
-4. The app will fetch the release, install dependencies, and restart the service
-5. If the e-ink display is currently refreshing, the restart waits until the display is idle
-6. The page refreshes automatically once the service is back online
-
-### Automatic Updates
-
-Enable scheduled updates to keep mempaper up to date without manual intervention:
-
-| Setting | Config Key | Description |
-|---------|-----------|-------------|
-| **Automatic Updates** | `auto_update_enabled` | Enable/disable scheduled updates |
-| **Update Time** | `auto_update_time` | Time of day to check for updates (HH:MM, default: `03:00`) |
-| **Update Days** | `auto_update_days` | Days of the week to run updates (default: Mon, Wed, Fri) |
-
-When enabled, mempaper checks for new releases at the configured time and day, installs the update, and restarts the service automatically.
-
-### Manual Update via SSH
-
-```bash
-ssh pi@mempaper.local
-cd ~/btc-mempaper
-git fetch --tags
-git checkout <tag>                                    # e.g. git checkout v2.1.0
-.venv/bin/pip install -r requirements.txt --quiet
-sudo systemctl restart mempaper.service
-```
-
-### Private Repositories
-
-If your git remote points to a private repository (e.g. self-hosted GitLab), the updater falls back to local git tags — updates still work, but release notes won't be shown in the web UI.
-
-To enable full release notes, create a `.env` file with an API token:
-
-```bash
-cp .env.example .env
-nano .env
-```
-
-```env
-# GitHub: Personal Access Token with "repo" scope
-# GitLab: Personal Access Token with "read_api" scope
-GIT_API_TOKEN=glpat-xxxxxxxxxxxxxxxxxxxx
-```
-
-### Permissions
-
-The web UI update requires a sudoers entry for passwordless service restart. This is automatically installed by `install_wifi_permissions.sh` (see [Quick Start step 5](#quick-start)). To install it manually:
-
-```bash
-echo "$(whoami) ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart mempaper.service" | sudo tee /etc/sudoers.d/mempaper-update
-sudo chmod 0440 /etc/sudoers.d/mempaper-update
-```
-
-<br/>
-
----
-
-<br/>
-
-## DOCUMENTATION
-
-- [Configuration Reference](docs/CONFIG_REFERENCE.md) -- Complete guide to all settings
-- [Security Guide](docs/SECURITY_GUIDE.md) -- Encryption and password protection
-- [Cache System Documentation](docs/UNIFIED_CACHE_DOCUMENTATION.md) -- Technical cache implementation details
 
 <br/>
 

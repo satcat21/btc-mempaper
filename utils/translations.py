@@ -8,7 +8,7 @@ translations = {
         "holiday_desc": "Segregated Witness is officially locked in by the UASF on the Bitcoin network.",
         
         # Web Interface
-        "dashboard_title": "Mempaper - Bitcoin Dashboard",
+        "dashboard_title": "mempaper - Bitcoin Dashboard",
         "settings": "Settings",
         "admin_access": "Admin Access",
         "login": "Login",
@@ -608,7 +608,7 @@ translations = {
         "holiday_desc": "Segregated Witness wurde offiziell durch den UASF-Client im Bitcoin-Netzwerk aktiviert.",
         
         # Web Interface
-        "dashboard_title": "Mempaper - Bitcoin Dashboard",
+        "dashboard_title": "mempaper - Bitcoin Dashboard",
         "settings": "Einstellungen",
         "admin_access": "Administrator-Zugang",
         "login": "Anmelden",
@@ -1208,7 +1208,7 @@ translations = {
         "holiday_desc": "Segregated Witness fue activado oficialmente por el cliente UASF en la red de Bitcoin.",
         
         # Web Interface
-        "dashboard_title": "Mempaper - Panel de Bitcoin",
+        "dashboard_title": "mempaper - Panel de Bitcoin",
         "settings": "Configuración",
         "admin_access": "Acceso de Administrador",
         "login": "Iniciar Sesión",
@@ -1793,7 +1793,7 @@ translations = {
         "holiday_desc": "Segregated Witness a été activé officiellement par le client UASF sur le réseau Bitcoin.",
         
         # Web Interface
-        "dashboard_title": "Mempaper - Tableau de Bord Bitcoin",
+        "dashboard_title": "mempaper - Tableau de Bord Bitcoin",
         "settings": "Paramètres",
         "admin_access": "Accès Administrateur",
         "login": "Connexion",
@@ -2379,7 +2379,7 @@ translations = {
         "holiday_desc": "Segregated Witness è stato attivato ufficialmente dal client UASF sulla rete Bitcoin.",
         
         # Web Interface
-        "dashboard_title": "Mempaper - Dashboard Bitcoin",
+        "dashboard_title": "mempaper - Dashboard Bitcoin",
         "settings": "Impostazioni",
         "admin_access": "Accesso Amministratore",
         "login": "Accedi",

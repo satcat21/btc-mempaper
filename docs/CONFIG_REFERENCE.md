@@ -22,7 +22,8 @@ These settings can be modified via the Web Dashboard (recommended) or by editing
 
 | Web Label | Config Key | Type | Description | Default Light / Dark |
 | :--- | :--- | :--- | :--- | :--- |
-| **Holiday Color** | `color_holiday_light`<br>`color_holiday_dark` | Color | Text color for holiday events | `#CD853F` / `#09A3BA` |
+| **Holiday Start Color** | `color_holiday_light`<br>`color_holiday_dark` | Color | Gradient start color for holiday events | `#F7931A` / `#F7931A` |
+| **Holiday End Color** | `color_holiday_end_light`<br>`color_holiday_end_dark` | Color | Gradient end color for holiday events | `#C62828` / `#FF6F6F` |
 | **BTC Price Color** | `color_btc_price_light`<br>`color_btc_price_dark` | Color | Text color for Bitcoin price | `#17805B` / `#00C896` |
 | **Countdown Color** | `color_countdown_light`<br>`color_countdown_dark` | Color | Text color for supply countdown | `#C55A00` / `#FF9E40` |
 | **Halving Color** | `color_halving_light`<br>`color_halving_dark` | Color | Text color for halving countdown | `#1565C0` / `#4FC3F7` |
@@ -38,6 +39,7 @@ These settings can be modified via the Web Dashboard (recommended) or by editing
 | Web Label | Config Key | Type | Description | Allowed Values / Examples |
 | :--- | :--- | :--- | :--- | :--- |
 | **Mempool Host** | `mempool_host` | String | Mempool instance hostname | `mempool.space` (public), `192.168.1.50` (local) |
+| **Private/Self-Hosted** | `mempool_is_private` | Switch | Marks the instance as self-hosted on your local network; disables privacy warnings for wallet monitoring | `true` (private), `false` (public, default) |
 | **Use HTTPS/SSL** | `mempool_use_https` | Switch | Secure connection | `true` (https://), `false` (http://) |
 | **Verify SSL Cert** | `mempool_verify_ssl` | Switch | Validate SSL certificate | `true` (Verify), `false` (Skip -- for self-signed) |
 | **REST Port** | `mempool_rest_port` | Number | API port | `443` (public), `80`, `3006` (local MyNode/Umbrel) |
