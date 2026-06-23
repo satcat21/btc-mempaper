@@ -3714,6 +3714,8 @@ class MempaperApp:
                     if isinstance(cached_wallet_data, dict):
                         emit_data['prev_addresses'] = cached_wallet_data.get('addresses', [])
                         emit_data['prev_xpubs'] = cached_wallet_data.get('xpubs', [])
+                    if startup_mode:
+                        emit_data['startup_refresh'] = True
                     self.socketio.emit('wallet_balance_updated', emit_data, room='authenticated')
                     self._emit_config_page_updates()
                 
@@ -4632,8 +4634,18 @@ class MempaperApp:
             except Exception as e:
                 print(f"❌ Error adding CORS headers: {type(e).__name__}: {str(e)}")
                 traceback.print_exc()
+
+            # Cache static assets (icons, CSS, JS, fonts) for 24 hours
+            try:
+                path = request.path
+                if path.startswith('/static/') and not path.startswith('/static/memes/'):
+                    if path.endswith(('.svg', '.css', '.js', '.png', '.woff', '.woff2', '.ttf')):
+                        response.headers.setdefault('Cache-Control', 'public, max-age=86400, must-revalidate')
+            except Exception:
+                pass
+
             return response
-        
+
         # Add optimized static file serving with cache headers for memes
         @self.app.route('/static/memes/<filename>')
         def serve_meme_with_cache(filename):

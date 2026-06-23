@@ -53,15 +53,18 @@ class MempoolWebSocket:
         # This applies to both domains and IP addresses
         is_standard_port = (use_wss and port_str == "443") or (not use_wss and port_str == "80")
         
-        # Add authentication credentials to URL if provided
-        auth_prefix = ""
-        if username and password:
-            auth_prefix = f"{username}:{password}@"
-        
+        # Build WebSocket URL (without credentials in URL)
         if is_standard_port:
-            self.ws_url = f"{protocol}://{auth_prefix}{host}{path}"
+            self.ws_url = f"{protocol}://{host}{path}"
         else:
-            self.ws_url = f"{protocol}://{auth_prefix}{host}:{port}{path}"
+            self.ws_url = f"{protocol}://{host}:{port}{path}"
+
+        # Build Basic Auth header if credentials provided
+        self._auth_header = None
+        if username and password:
+            import base64
+            credentials = base64.b64encode(f"{username}:{password}".encode()).decode()
+            self._auth_header = f"Basic {credentials}"
         
         self.ws = None
         self.is_connected = False
@@ -263,9 +266,13 @@ class MempoolWebSocket:
     
     def start_connection(self):
         """Start the WebSocket connection and run forever."""
+        ws_headers = {}
+        if self._auth_header:
+            ws_headers['Authorization'] = self._auth_header
+
         self.ws = websocket.WebSocketApp(
             self.ws_url,
-            # No custom headers - let websocket-client handle Upgrade headers
+            header=ws_headers or None,
             on_message=self.on_message,
             on_error=self.on_error,
             on_close=self.on_close,

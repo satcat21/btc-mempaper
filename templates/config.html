@@ -3,6 +3,7 @@
 
 <head>
     <title>{{ translations.dashboard_title }} - {{ translations.settings }}</title>
+    <link rel="icon" type="image/svg+xml" href="static/favicon.svg">
     <link rel="icon" type="image/png" href="static/favicon.png">
     <link rel="stylesheet" href="static/css/theme.css">
     <link rel="stylesheet" href="static/css/config.css">
@@ -355,7 +356,7 @@
         }
 
         function peek() {
-            if (window.innerWidth < 1200) return;
+            if (window.innerWidth < 1200 || document.body.classList.contains('modal-open')) return;
             whacked = false;
             mole.classList.remove('peek-bottom', 'peek-top', 'peek-left', 'peek-right',
                                   'flee-bottom', 'flee-top', 'flee-left', 'flee-right',
@@ -375,10 +376,11 @@
                 mole.removeEventListener('animationend', handler);
             });
         }
-        setTimeout(function() {
-            peek();
-            setInterval(peek, 60000);
-        }, 60000);
+        function scheduleNext() {
+            var delay = 60000 + Math.floor(Math.random() * 150000);
+            setTimeout(function() { peek(); scheduleNext(); }, delay);
+        }
+        scheduleNext();
     })();
     </script>
 </body>

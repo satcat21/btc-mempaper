@@ -1924,6 +1924,7 @@ body.dark-mode .upload-icon {
 
 .wifi-btn:hover {
     border-color: var(--accent);
+    color: var(--accent);
 }
 
 .wifi-btn-save {
@@ -2048,6 +2049,7 @@ body.dark-mode .upload-icon {
 .device-control-btn:hover {
     border-color: var(--accent);
     background: var(--accent-dim);
+    color: var(--accent);
 }
 
 .device-control-btn-danger:hover {
@@ -2674,7 +2676,7 @@ body.dark-mode .modal-title-icon {
 
 .multiselect-btn:hover {
     border-color: #f7931a;
-    color: #ccc;
+    color: var(--accent);
 }
 
 .multiselect-btn.active {

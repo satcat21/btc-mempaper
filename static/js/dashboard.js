@@ -157,7 +157,7 @@ function setupSocketHandlers() {
         if (!window.isAuthenticated || !window.featureFlags || !window.featureFlags.wallet) return;
         const allEntries = [].concat(data.addresses || [], data.xpubs || []);
         const allPrev = [].concat(data.prev_addresses || [], data.prev_xpubs || []);
-        const isInit = data.after_config_save || false;
+        const isStartup = data.startup_refresh || data.after_config_save || false;
 
         allEntries.forEach(entry => {
             const label = entry.comment || entry.xpub_short || 'Wallet';
@@ -166,8 +166,8 @@ function setupSocketHandlers() {
             const prev = allPrev.find(p => (p.address || p.xpub) === addr);
             const prevBal = prev ? (prev.balance_btc || 0) : -1;
 
-            if (prevBal < 0 || isInit) {
-                if (bal > 0) showDashboardToast('💰', `Wallet '${label}' initialized: ${bal.toFixed(8)} BTC`);
+            if (prevBal < 0 || isStartup) {
+                // Skip toast on startup/config-save — only toast for genuinely new wallets
             } else if (bal !== prevBal) {
                 showDashboardToast('💰', `Wallet '${label}' balance: ${prevBal.toFixed(8)} → ${bal.toFixed(8)} BTC`);
             }
@@ -213,7 +213,7 @@ function setupSocketHandlers() {
         if (!window.isAuthenticated) return;
         const t = window.translations || {};
         _buildLiveToast(
-            '<img src="/static/icons/update.svg" width="16" height="16" class="toast-title-icon"> ' + (t.auto_update_started || 'Auto-update started'),
+            '<img src="/static/icons/update.svg" width="16" height="16" class="toast-title-icon toast-icon-accent"> ' + (t.auto_update_started || 'Auto-update started'),
             t.auto_update_started_body || 'Checking for system and software updates...',
             '#F7931A',
             10000

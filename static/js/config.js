@@ -50,6 +50,7 @@ function closeMemeModal() {
 
             // Live wallet balance updates from backend
             socket.on('wallet_balance_updated', function(data) {
+                if (window._suppressWalletUpdates) return;
                 console.log('💰 [CONFIG] Wallet balance updated via WebSocket');
                 const tbody = document.querySelector('.wallet-table tbody');
                 if (!tbody) return;
@@ -57,8 +58,6 @@ function closeMemeModal() {
                 const prevAddrs = data.prev_addresses || [];
                 const prevXpubs = data.prev_xpubs || [];
                 const allPrev = [].concat(prevAddrs, prevXpubs);
-                const isInit = data.after_config_save || false;
-
                 // Update table cells
                 if (data.addresses) {
                     const rows = tbody.querySelectorAll('tr');
@@ -84,9 +83,9 @@ function closeMemeModal() {
                     const prev = allPrev.find(p => (p.address || p.xpub) === addr);
                     const prevBal = prev ? (prev.balance_btc || 0) : -1;
 
-                    if (prevBal < 0) {
-                        // Newly initialized — no previous balance known, wallet was unavailable
-                        if (bal > 0) showLiveToast(window.translations?.toast_wallet_title || 'Wallet', `'${label}' initialized: ${bal.toFixed(8)} BTC`, 'color_wallets');
+                    var isStartup = data.startup_refresh || data.after_config_save || false;
+                    if (prevBal < 0 || isStartup) {
+                        // Skip toast on startup/config-save — only toast for genuinely new wallets
                     } else if (bal !== prevBal) {
                         showLiveToast(window.translations?.toast_wallet_title || 'Wallet', `'${label}' balance: ${prevBal.toFixed(8)} → ${bal.toFixed(8)} BTC`, 'color_wallets');
                     }
@@ -187,7 +186,7 @@ function closeMemeModal() {
             socket.on('auto_update_started', function() {
                 const t = window.translations || {};
                 _buildLiveToast(
-                    '<img src="/static/icons/update.svg" width="16" height="16" class="toast-title-icon"> ' + (t.auto_update_started || 'Auto-update started'),
+                    '<img src="/static/icons/update.svg" width="16" height="16" class="toast-title-icon toast-icon-accent"> ' + (t.auto_update_started || 'Auto-update started'),
                     t.auto_update_started_body || 'Checking for system and software updates...',
                     '#F7931A',
                     10000
@@ -4915,15 +4914,22 @@ function createWalletTableInput(values, field) {
             const resp = await fetch('/api/clear_wallet_cache', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
             const result = await resp.json();
             if (result.success) {
-                // Clear wallet table rows
-                const walletTbody = container.querySelector('tbody');
-                if (walletTbody) walletTbody.innerHTML = '';
+                // Suppress incoming wallet socket updates while clearing
+                window._suppressWalletUpdates = true;
+                // Clear wallet table rows and hide table
+                tbody.innerHTML = '';
+                updateTableVisibility();
                 // Update config
                 if (currentConfig) currentConfig.wallet_balance_addresses_with_comments = [];
                 // Save the cleared wallet list
                 await saveConfigurationSilent({ ...currentConfig, wallet_balance_addresses_with_comments: [] });
+                // Clear again in case a socket event repopulated rows during save
+                tbody.innerHTML = '';
+                updateTableVisibility();
                 showNotification(t.clear_wallet_cache_success || 'Wallet data cleared successfully', 'success');
                 _markClean();
+                // Re-enable wallet updates after backend settles
+                setTimeout(() => { window._suppressWalletUpdates = false; }, 3000);
             } else {
                 showNotification(result.message || 'Failed to clear wallet data', 'error');
             }
@@ -7403,9 +7409,9 @@ function setupConfigSocketHandlers() {
 
     // Listen for wallet balance updates
     configSocket.on('wallet_balance_updated', (data) => {
+        if (window._suppressWalletUpdates) return;
         console.log('💾 Received wallet balance update:', data ? Object.keys(data).length + ' addresses (data masked for privacy)' : 'no data');
         updateWalletBalancesFromWebSocket(data);
-        showNotification(window.translations?.wallet_balances_updated || 'Wallet balances updated automatically!', 'success');
     });
 
     // Listen for block notifications
@@ -7798,11 +7804,14 @@ function showBlockToast(blockData) {
             position: fixed;
             top: 20px;
             right: 20px;
-            z-index: 10000;
+            z-index: 100100;
             font-family: 'Roboto', Arial, sans-serif;
+            isolation: isolate;
         `;
         document.body.appendChild(toastContainer);
     }
+    // Ensure toast container is always last child so it paints above nav elements
+    if (toastContainer.nextSibling) document.body.appendChild(toastContainer);
     
     const blockHeight = blockData.block_height;
     const toastId = `toast-${blockHeight}`;
