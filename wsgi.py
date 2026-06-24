@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-WSGI Entry Point for Mempaper Bitcoin Dashboard
+WSGI Entry Point for mempaper Bitcoin Dashboard
 
 This module provides the WSGI application interface for production
 deployment with Gunicorn using gevent workers for better compatibility.
@@ -29,7 +29,7 @@ socketio = get_socketio()
 
 if __name__ == "__main__":
     # This allows running the WSGI app directly for testing
-    print("🚀 Starting Mempaper via WSGI interface")
+    print("🚀 Starting mempaper via WSGI interface")
     if socketio:
         socketio.run(application, host="0.0.0.0", port=5000, debug=False)
     else:

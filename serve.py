@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Optimized Production Server for Mempaper Bitcoin Dashboard
+Optimized Production Server for mempaper Bitcoin Dashboard
 
 This script starts the application in production mode with optimizations:
 - No debug mode (prevents double initialization)
@@ -24,8 +24,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from mempaper_app import get_app_instance
 
 def main():
-    """Start the Mempaper application in production mode."""
-    print("🚀 Starting Mempaper Bitcoin Dashboard (Production Mode)")
+    """Start the mempaper application in production mode."""
+    print("🚀 Starting mempaper Bitcoin Dashboard (Production Mode)")
     print("=" * 60)
     
     try:
@@ -40,9 +40,9 @@ def main():
         )
         
     except KeyboardInterrupt:
-        print("\n👋 Mempaper application stopped by user")
+        print("\n👋 mempaper application stopped by user")
     except Exception as e:
-        print(f"❌ Failed to start Mempaper application: {e}")
+        print(f"❌ Failed to start mempaper application: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)

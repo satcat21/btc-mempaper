@@ -91,12 +91,6 @@ body.dark-mode #dashboard {
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.3s ease;
-    /* Override the base position from theme.css for dashboard */
-    bottom: 20px;
-    border-radius: 25px;
-    border-top: none;
-    padding: 15px 20px;
-    gap: 20px;
 }
 
 .mobile-nav-buttons.visible {
@@ -119,16 +113,7 @@ body.dark-mode #dashboard {
     height: 20px !important;
 }
 
-/* Dashboard-specific mobile button sizing */
-.mobile-nav-button {
-    width: 50px;
-    height: 50px;
-}
-
-.mobile-nav-button.icon-only svg {
-    width: 24px;
-    height: 24px;
-}
+/* Dashboard mobile buttons: inherit base sizing from theme.css */
 
 /* ── Extreme mobile optimization ────────────────────────────── */
 @media (max-width: 414px) {
@@ -163,15 +148,6 @@ body.dark-mode #dashboard {
 }
 
 @media (max-width: 480px) {
-    .mobile-nav-button {
-        width: 45px;
-        height: 45px;
-        font-size: 16px;
-    }
-    .mobile-nav-buttons {
-        padding: 12px;
-        gap: 15px;
-    }
     .mobile-nav-toggle {
         width: 32px;
         height: 32px;

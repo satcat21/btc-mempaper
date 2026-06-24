@@ -520,7 +520,7 @@ class BlockRewardMonitor:
                 
                 # Custom headers to ensure proper handshake
                 # headers = {
-                #     "User-Agent": "Mempaper/2.0",
+                #     "User-Agent": "mempaper/2.0",
                 #     "Upgrade": "websocket",
                 #     "Connection": "Upgrade"
                 # }

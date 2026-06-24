@@ -2,7 +2,7 @@
 """
 setup_user.py
 ~~~~~~~~~~~~~
-Create or update admin users for the Mempaper application.
+Create or update admin users for the mempaper application.
 
 Usage:
     python scripts/setup_user.py              # interactive: list users, add/update one
@@ -136,7 +136,7 @@ def cmd_delete(pm: SecurePasswordManager, config_manager: ConfigManager, usernam
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Manage Mempaper admin users"
+        description="Manage mempaper admin users"
     )
     parser.add_argument("--list", action="store_true", help="List configured users and exit")
     parser.add_argument("--delete", metavar="USERNAME", help="Delete a user")

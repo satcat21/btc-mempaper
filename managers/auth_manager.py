@@ -1,7 +1,7 @@
 """
 Authentication and Rate Limiting Module
 
-Handles admin authentication and rate limiting for the Mempaper application.
+Handles admin authentication and rate limiting for the mempaper application.
 Provides protection against unauthorized access and request flooding.
 Now includes secure Argon2 password hashing for enhanced security.
 

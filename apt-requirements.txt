@@ -1,4 +1,4 @@
-# System dependencies for Mempaper Bitcoin Dashboard
+# System dependencies for mempaper Bitcoin Dashboard
 # Parsed by the web updater to ensure required apt packages are installed.
 
 # Build tools and Python development

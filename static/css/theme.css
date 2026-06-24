@@ -39,6 +39,7 @@
     --shadow-elevated: 0 8px 30px rgba(0,0,0,0.12);
     --transition: 0.2s ease;
     --nav-bg: rgba(255, 255, 255, 0.75);
+    --mobile-nav-bg: rgba(230, 230, 235, 0.45);
     --nav-btn-bg: #ffffff;
     --nav-btn-border: #e0e0e4;
     --nav-btn-shadow: 0 2px 8px rgba(0,0,0,0.06);
@@ -68,6 +69,7 @@ body.dark-mode {
     --shadow-card: 0 1px 3px rgba(0,0,0,0.3), 0 0 0 1px var(--border-color);
     --shadow-elevated: 0 8px 30px rgba(0,0,0,0.4);
     --nav-bg: rgba(19, 19, 22, 0.75);
+    --mobile-nav-bg: rgba(80, 80, 95, 0.35);
     --nav-btn-bg: #1a1a1f;
     --nav-btn-border: #2a2a32;
     --nav-btn-shadow: 0 2px 8px rgba(0,0,0,0.3);
@@ -177,22 +179,21 @@ body {
 /* Mobile: bottom nav bar */
 .mobile-nav-buttons {
     position: fixed;
-    bottom: 0;
+    bottom: 6px;
+    bottom: calc(6px + env(safe-area-inset-bottom, 0px));
     left: 50%;
     transform: translateX(-50%);
     display: flex;
     justify-content: center;
     align-items: center;
-    background: var(--nav-bg);
+    background: var(--mobile-nav-bg);
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
-    border-top: 1px solid var(--border-color);
-    border-radius: 16px 16px 0 0;
-    padding: 12px 28px;
+    border-radius: 22px;
+    padding: 8px 24px;
     gap: 24px;
     z-index: 1000;
     width: auto;
-    min-width: 180px;
 }
 
 .mobile-nav-button {
@@ -236,7 +237,7 @@ body {
     height: 22px;
 }
 
-/* Nav button SVG icon colors */
+/* Nav button SVG icon colors (inline SVGs) */
 .nav-button svg, .nav-button svg path,
 .mobile-nav-button svg, .mobile-nav-button svg path {
     fill: var(--nav-icon-fill) !important;
@@ -249,6 +250,23 @@ body {
 .mobile-nav-button:hover svg path, .mobile-nav-button:hover svg * {
     fill: var(--accent) !important;
     stroke: var(--accent) !important;
+}
+
+/* Nav button img icon colors (external SVG files) */
+.nav-button .nav-icon,
+.mobile-nav-button .nav-icon {
+    filter: brightness(0);
+    transition: filter var(--transition);
+}
+
+body.dark-mode .nav-button .nav-icon,
+body.dark-mode .mobile-nav-button .nav-icon {
+    filter: brightness(0) invert(1);
+}
+
+.nav-button:hover .nav-icon,
+.mobile-nav-button:hover .nav-icon {
+    filter: brightness(0) saturate(100%) invert(62%) sepia(93%) saturate(1377%) hue-rotate(360deg) brightness(101%) contrast(94%);
 }
 
 /* Pending icon animation */

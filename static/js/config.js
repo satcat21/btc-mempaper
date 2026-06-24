@@ -1991,7 +1991,7 @@ function createWifiSection() {
     const rebootBtn = document.createElement('button');
     rebootBtn.type = 'button';
     rebootBtn.className = 'device-control-btn device-control-btn-danger';
-    rebootBtn.innerHTML = `<span class="device-control-icon">⏻</span> ${t.reboot_device || 'Reboot Device'}`;
+    rebootBtn.innerHTML = `<span class="device-control-icon"><svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960" width="18px" fill="currentColor"><path d="M324-111.5Q251-143 197-197t-85.5-127Q80-397 80-480t31.5-156Q143-709 197-763t127-85.5Q397-880 480-880t156 31.5Q709-817 763-763t85.5 127Q880-563 880-480t-31.5 156Q817-251 763-197t-127 85.5Q563-80 480-80t-156-31.5ZM707-253q93-93 93-227t-93-227q-93-93-227-93t-227 93q-93 93-93 227t93 227q93 93 227 93t227-93Zm-57-57q70-70 70-170 0-51-19-94.5T650-650l-57 57q22 22 34.5 51t12.5 62q0 66-47 113t-113 47q-66 0-113-47t-47-113q0-33 12.5-62t34.5-51l-57-57q-32 32-51 75.5T240-480q0 100 70 170t170 70q100 0 170-70ZM440-480h80v-240h-80v240Zm40 0Z"/></svg></span> ${t.reboot_device || 'Reboot Device'}`;
     rebootBtn.addEventListener('click', async () => {
         const ok = await showConfirmModal({
             title: t.reboot_device || 'Reboot Device',
@@ -1999,6 +1999,7 @@ function createWifiSection() {
             confirmText: t.reboot || 'Reboot',
             cancelText: t.cancel || 'Cancel',
             danger: true,
+            icon: '/static/icons/reboot.svg',
         });
         if (!ok) return;
         _performSystemAction('/api/system/reboot', t.reboot_device || 'Reboot Device', 81);
@@ -2751,7 +2752,7 @@ async function _performUpdate(tag, updateBtn) {
             // Start countdown + polling (reuse shared logic)
             let remaining = estimatedSeconds;
             let polling = false;
-            const earlyPollStart = 5;
+            const earlyPollStart = 10;
             const interval = setInterval(() => {
                 remaining--;
                 if (remaining >= 0) {
@@ -3051,7 +3052,7 @@ function createDeviceControlSection() {
     const restartBtn = document.createElement('button');
     restartBtn.type = 'button';
     restartBtn.className = 'device-control-btn';
-    restartBtn.innerHTML = `<span class="device-control-icon">↻</span> ${t.restart_service || 'Restart Service'}`;
+    restartBtn.innerHTML = `<span class="device-control-icon"><svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960" width="18px" fill="currentColor"><path d="M480-160q-134 0-227-93t-93-227q0-134 93-227t227-93q69 0 132 28.5T720-690v-110h80v280H520v-80h168q-32-56-87.5-88T480-720q-100 0-170 70t-70 170q0 100 70 170t170 70q77 0 139-44t87-116h84q-28 106-114 173t-196 67Z"/></svg></span> ${t.restart_service || 'Restart Service'}`;
 
     restartBtn.addEventListener('click', async () => {
         const ok = await showConfirmModal({
@@ -3059,6 +3060,7 @@ function createDeviceControlSection() {
             message: t.restart_service_confirm || 'Restart the mempaper service? The page will reload when the service is back.',
             confirmText: t.restart || 'Restart',
             cancelText: t.cancel || 'Cancel',
+            icon: '/static/icons/restart.svg',
         });
         if (!ok) return;
         _performSystemAction('/api/system/restart-service', t.restart_service || 'Restart Service', 25);
@@ -3068,7 +3070,7 @@ function createDeviceControlSection() {
     const rebootBtn = document.createElement('button');
     rebootBtn.type = 'button';
     rebootBtn.className = 'device-control-btn device-control-btn-danger';
-    rebootBtn.innerHTML = `<span class="device-control-icon">⏻</span> ${t.reboot_device || 'Reboot Device'}`;
+    rebootBtn.innerHTML = `<span class="device-control-icon"><svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960" width="18px" fill="currentColor"><path d="M324-111.5Q251-143 197-197t-85.5-127Q80-397 80-480t31.5-156Q143-709 197-763t127-85.5Q397-880 480-880t156 31.5Q709-817 763-763t85.5 127Q880-563 880-480t-31.5 156Q817-251 763-197t-127 85.5Q563-80 480-80t-156-31.5ZM707-253q93-93 93-227t-93-227q-93-93-227-93t-227 93q-93 93-93 227t93 227q93 93 227 93t227-93Zm-57-57q70-70 70-170 0-51-19-94.5T650-650l-57 57q22 22 34.5 51t12.5 62q0 66-47 113t-113 47q-66 0-113-47t-47-113q0-33 12.5-62t34.5-51l-57-57q-32 32-51 75.5T240-480q0 100 70 170t170 70q100 0 170-70ZM440-480h80v-240h-80v240Zm40 0Z"/></svg></span> ${t.reboot_device || 'Reboot Device'}`;
 
     rebootBtn.addEventListener('click', async () => {
         const ok = await showConfirmModal({
@@ -3077,6 +3079,7 @@ function createDeviceControlSection() {
             confirmText: t.reboot || 'Reboot',
             cancelText: t.cancel || 'Cancel',
             danger: true,
+            icon: '/static/icons/reboot.svg',
         });
         if (!ok) return;
         _performSystemAction('/api/system/reboot', t.reboot_device || 'Reboot Device', 81);
@@ -3166,7 +3169,7 @@ function _showRestartCountdown(title, estimatedSeconds, updateTag, rollbackTag, 
 
     let remaining = estimatedSeconds;
     let polling = false;
-    const earlyPollStart = 5; // start polling N seconds before countdown ends
+    const earlyPollStart = 10; // start polling N seconds before countdown ends
 
     const interval = setInterval(() => {
         remaining--;
@@ -3204,15 +3207,15 @@ function _pollForService(overlay, countdownNumber, countdownLabel, progressFill,
                 // For update restarts: ensure this is a NEW process
                 if (oldStarted && hData.started && hData.started <= oldStarted) return;
 
-                // For update restarts: verify the new version (soft check — accept after 30s even if tag differs)
-                if (updateTag && attempts <= 30) {
+                // For update restarts: verify the new version (best-effort — skip on error, accept after 10 attempts)
+                if (updateTag && attempts <= 10) {
                     try {
                         const vResp = await fetch('/api/update/current', { cache: 'no-store' });
                         if (vResp.ok) {
                             const vData = await vResp.json();
-                            if (vData.current_tag !== updateTag) return; // not yet on new version
+                            if (vData.current_tag !== updateTag) return;
                         }
-                    } catch (_) { return; }
+                    } catch (_) { /* version endpoint not ready yet — accept health as sufficient */ }
                 }
 
                 clearInterval(pollInterval);
@@ -3225,7 +3228,7 @@ function _pollForService(overlay, countdownNumber, countdownLabel, progressFill,
                 var _sy = document.documentElement.style.getPropertyValue('--scroll-y');
                 document.documentElement.style.removeProperty('--scroll-y');
                 window.scrollTo(0, parseInt(_sy || '0') * -1);
-                setTimeout(() => location.reload(), 1500);
+                setTimeout(() => location.reload(), 500);
                 return;
             }
         } catch (_) {}
@@ -3265,7 +3268,7 @@ function _pollForService(overlay, countdownNumber, countdownLabel, progressFill,
             });
             dialogEl.appendChild(dismissBtn);
         }
-    }, 2000);
+    }, 1000);
 }
 
 function _startSystemUpdate(btn) {

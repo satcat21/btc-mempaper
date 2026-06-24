@@ -22,7 +22,7 @@ function connectSocket() {
 
 function setupSocketHandlers() {
     socket.on('connect', () => {
-        console.log("✅ Connected to Mempaper WebSocket");
+        console.log("✅ Connected to mempaper WebSocket");
         reconnectAttempts = 0;
         reconnecting = false;
         if (reconnectBtn) reconnectBtn.style.display = "none";
@@ -36,7 +36,7 @@ function setupSocketHandlers() {
     });
 
     socket.on('disconnect', (reason) => {
-        console.log("❌ Disconnected from Mempaper WebSocket:", reason);
+        console.log("❌ Disconnected from mempaper WebSocket:", reason);
         attemptReconnect();
     });
 

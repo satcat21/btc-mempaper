@@ -299,7 +299,7 @@ body.dark-mode .section-nav-pill:not(.active) .section-nav-icon {
 }
 
 .config-section:hover {
-    border-color: #3a3a44;
+    border-color: var(--border-color);
 }
 
 /* Meme management: no special grid-column needed in single-column layout */

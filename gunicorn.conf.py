@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Gunicorn configuration for Mempaper Bitcoin Dashboard
+Gunicorn configuration for mempaper Bitcoin Dashboard
 
-Production-ready settings for running the Mempaper application
+Production-ready settings for running the mempaper application
 with Gunicorn WSGI server on Raspberry Pi Zero WH.
 """
 

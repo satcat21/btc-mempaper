@@ -1,5 +1,5 @@
 /**
- * Session Management for Mempaper Config Page
+ * Session Management for mempaper Config Page
  * Handles automatic session renewal and provides better UX for session expiration
  */
 

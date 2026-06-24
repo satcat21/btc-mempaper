@@ -9,7 +9,7 @@ import sys
 
 def main():
     """Start the mempaper app with fast startup optimizations."""
-    print("🚀 Starting Mempaper App with PC Optimizations...")
+    print("🚀 Starting mempaper App with PC Optimizations...")
     print("   - E-ink display: DISABLED (PC testing mode)")
     print("   - Initial image generation: ENABLED") 
     print("   - WebSocket: ENABLED")
@@ -28,7 +28,7 @@ def main():
         # Import and start the app
         from mempaper_app import MempaperApp
 
-        print("📱 Initializing Mempaper application...")
+        print("📱 Initializing mempaper application...")
         app_instance = MempaperApp()
 
         print("🌐 Starting Flask web server...")

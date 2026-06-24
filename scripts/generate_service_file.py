@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generate systemd service file for Mempaper Bitcoin Dashboard.
+Generate systemd service file for mempaper Bitcoin Dashboard.
 
 This script automatically creates a systemd service file with the correct
 paths and user settings based on the current installation directory and user.
@@ -56,7 +56,7 @@ def generate_service_file():
 # Generated automatically by scripts/generate_service_file.py
 
 [Unit]
-Description=Mempaper Bitcoin Dashboard
+Description=mempaper Bitcoin Dashboard
 Documentation=https://github.com/satcat21/btc-mempaper
 After=network-online.target
 Wants=network-online.target
@@ -103,7 +103,7 @@ WantedBy=multi-user.target
 
 def main():
     """Main function to generate and save the service file."""
-    print("🔧 Generating systemd service file for Mempaper...")
+    print("🔧 Generating systemd service file for mempaper...")
     print()
     
     user = get_current_user()

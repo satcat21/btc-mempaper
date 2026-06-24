@@ -8,45 +8,50 @@
     <link rel="stylesheet" href="static/css/theme.css">
     <link rel="stylesheet" href="static/css/config.css">
     <script src="static/js/socket.io.min.js"></script>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <link rel="preload" href="static/icons/back.svg" as="image">
+    <link rel="preload" href="static/icons/save.svg" as="image">
+    <link rel="preload" href="static/icons/logout.svg" as="image">
+    <link rel="preload" href="static/icons/settings.svg" as="image">
+    <link rel="preload" href="static/icons/bottom_drawer.svg" as="image">
+    <link rel="preload" href="static/icons/photo_frame.svg" as="image">
+    <link rel="preload" href="static/icons/price.svg" as="image">
+    <link rel="preload" href="static/icons/countdown.svg" as="image">
+    <link rel="preload" href="static/icons/halving.svg" as="image">
+    <link rel="preload" href="static/icons/network.svg" as="image">
+    <link rel="preload" href="static/icons/wallet.svg" as="image">
+    <link rel="preload" href="static/icons/bitaxe.svg" as="image">
+    <link rel="preload" href="static/icons/donation.svg" as="image">
+    <link rel="preload" href="static/icons/mood.svg" as="image">
+    <link rel="preload" href="static/icons/opsec.svg" as="image">
+    <link rel="preload" href="static/icons/wifi.svg" as="image">
+    <link rel="preload" href="static/icons/update.svg" as="image">
 </head>
 
 <body{% if dark_mode %} class="dark-mode"{% endif %}>
     <!-- Desktop Navigation Buttons (left side) -->
     <div class="desktop-nav-buttons">
         <button id="desktop-back-button" class="nav-button icon-only" onclick="window.location.href='/'" title="{{ translations.back_to_dashboard }}">
-            <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px">
-                <path d="m274-450 248 248-42 42L140-500l340-340 42 42-248 248h526v60H274Z"/>
-            </svg>
+            <img src="/static/icons/back.svg" alt="" width="20" height="20" class="nav-icon">
         </button>
         <button id="desktop-save-button" class="nav-button icon-only" title="{{ translations.save_configuration }}">
-            <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px">
-                <path d="M840-680v480q0 33-23.5 56.5T760-120H200q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h480l160 160Zm-80 34L646-760H200v560h560v-446ZM480-240q50 0 85-35t35-85q0-50-35-85t-85-35q-50 0-85 35t-35 85q0 50 35 85t85 35ZM240-560h360v-160H240v160Zm-40-86v446-560 114Z"/>
-            </svg>
+            <img src="/static/icons/save.svg" alt="" width="20" height="20" class="nav-icon">
         </button>
         <button id="desktop-logout-button" class="nav-button icon-only" title="{{ translations.logout }}">
-            <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px">
-                <path d="M206.78-100.78q-44.3 0-75.15-30.85-30.85-30.85-30.85-75.15v-546.44q0-44.3 30.85-75.15 30.85-30.85 75.15-30.85h277.74v106H206.78v546.44h277.74v106H206.78Zm425.87-152.09L559-328.39 657.61-427H355.48v-106h302.13L559-631.61l73.65-75.52L859.22-480 632.65-252.87Z"/>
-            </svg>
+            <img src="/static/icons/logout.svg" alt="" width="20" height="20" class="nav-icon">
         </button>
     </div>
 
     <!-- Mobile Navigation Buttons (bottom) -->
     <div class="mobile-nav-buttons">
         <button id="mobile-back-button" class="mobile-nav-button icon-only" onclick="window.location.href='/'" title="{{ translations.back_to_dashboard }}">
-            <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px">
-                <path d="m274-450 248 248-42 42L140-500l340-340 42 42-248 248h526v60H274Z"/>
-            </svg>
+            <img src="/static/icons/back.svg" alt="" width="24" height="24" class="nav-icon">
         </button>
         <button id="mobile-save-button" class="mobile-nav-button icon-only" title="{{ translations.save_configuration }}">
-            <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px">
-                <path d="M840-680v480q0 33-23.5 56.5T760-120H200q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h480l160 160Zm-80 34L646-760H200v560h560v-446ZM480-240q50 0 85-35t35-85q0-50-35-85t-85-35q-50 0-85 35t-35 85q0 50 35 85t85 35ZM240-560h360v-160H240v160Zm-40-86v446-560 114Z"/>
-            </svg>
+            <img src="/static/icons/save.svg" alt="" width="24" height="24" class="nav-icon">
         </button>
         <button id="mobile-logout-button" class="mobile-nav-button icon-only" title="{{ translations.logout }}">
-            <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px">
-                <path d="M206.78-100.78q-44.3 0-75.15-30.85-30.85-30.85-30.85-75.15v-546.44q0-44.3 30.85-75.15 30.85-30.85 75.15-30.85h277.74v106H206.78v546.44h277.74v106H206.78Zm425.87-152.09L559-328.39 657.61-427H355.48v-106h302.13L559-631.61l73.65-75.52L859.22-480 632.65-252.87Z"/>
-            </svg>
+            <img src="/static/icons/logout.svg" alt="" width="24" height="24" class="nav-icon">
         </button>
     </div>
 

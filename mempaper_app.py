@@ -1,5 +1,5 @@
 """
-Main Application Module - Mempaper Bitcoin Dashboard
+Main Application Module - mempaper Bitcoin Dashboard
 
 This is the main Flask application that coordinates all components:
 - Web server and SocketIO for real-time updates
@@ -60,7 +60,7 @@ class MempaperApp:
     
     def __init__(self, config_path="config/config.json"):
         """
-        Initialize the Mempaper application.
+        Initialize the mempaper application.
         
         Args:
             config_path (str): Path to configuration file
@@ -79,6 +79,7 @@ class MempaperApp:
         self._wifi_last_reconnect_try = 0
         self._wifi_reconnect_attempts = 0
         self._wifi_last_setup_probe_try = 0
+        self._wifi_setup_probe_failures = 0
         self._wifi_recovery_thread_started = False
         # Set to True after user submits credentials so recovery monitor probes immediately
         self._wifi_connect_pending = False
@@ -336,7 +337,7 @@ class MempaperApp:
         if os.name == 'nt':
             self.config_manager._reload_config_from_file()
             self.config_manager._notify_change_callbacks(self.config_manager.config)
-        print("✅ Mempaper application initialized successfully")
+        print("✅ mempaper application initialized successfully")
 
     def _has_saved_wifi_connections(self):
         """Return True if NetworkManager has at least one saved Wi-Fi connection."""
@@ -1134,6 +1135,88 @@ class MempaperApp:
         except Exception as e:
             print(f'⚠️ Could not generate fresh image after onboarding: {e}')
 
+    def _run_dependency_health_check(self):
+        """Verify that all required apt and pip packages are installed.
+
+        Runs at startup in a background thread.  The check itself is fast
+        (dpkg-query for apt, pip list for pip); only triggers an install
+        when something is actually missing.
+        """
+        if os.name == 'nt':
+            return
+
+        project_dir = os.path.dirname(os.path.abspath(__file__))
+
+        # ── apt packages ──
+        apt_req_file = os.path.join(project_dir, 'apt-requirements.txt')
+        if os.path.exists(apt_req_file):
+            try:
+                with open(apt_req_file) as f:
+                    apt_pkgs = [
+                        line.strip() for line in f
+                        if line.strip() and not line.strip().startswith('#')
+                    ]
+                if apt_pkgs:
+                    result = subprocess.run(
+                        ['dpkg-query', '-W', '-f=${Package}\\n'] + apt_pkgs,
+                        capture_output=True, text=True, timeout=10
+                    )
+                    installed = set(result.stdout.strip().splitlines()) if result.stdout else set()
+                    missing_apt = [p for p in apt_pkgs if p not in installed]
+                    if missing_apt:
+                        print(f'📦 Dependency check: missing apt packages: {", ".join(missing_apt)}')
+                        subprocess.run(['sudo', 'mount', '-o', 'remount,rw', '/'], timeout=10, capture_output=True)
+                        subprocess.run(
+                            ['sudo', 'apt-get', 'install', '-y', '--no-upgrade'] + missing_apt,
+                            capture_output=True, timeout=300
+                        )
+                        print(f'📦 Dependency check: apt packages installed')
+                    else:
+                        print('✅ Dependency check: all apt packages present')
+            except Exception as e:
+                print(f'⚠️ Dependency check (apt): {e}')
+
+        # ── pip packages ──
+        requirements_file = os.path.join(project_dir, 'requirements.txt')
+        venv_pip = os.path.join(project_dir, '.venv', 'bin', 'pip')
+        if os.path.exists(venv_pip) and os.path.exists(requirements_file):
+            try:
+                result = subprocess.run(
+                    [venv_pip, 'list', '--format=freeze'],
+                    capture_output=True, text=True, timeout=30
+                )
+                installed_pip = {}
+                if result.returncode == 0:
+                    for line in result.stdout.strip().splitlines():
+                        if '==' in line:
+                            name, ver = line.split('==', 1)
+                            installed_pip[name.lower().replace('-', '_')] = ver
+
+                missing_pip = []
+                with open(requirements_file) as f:
+                    for line in f:
+                        line = line.split('#')[0].strip()
+                        if not line:
+                            continue
+                        pkg_name = line.split('==')[0].split('>=')[0].split('[')[0].strip().lower().replace('-', '_')
+                        if pkg_name and pkg_name not in installed_pip:
+                            missing_pip.append(line)
+
+                if missing_pip:
+                    print(f'📦 Dependency check: missing pip packages: {", ".join(missing_pip)}')
+                    result = subprocess.run(
+                        [venv_pip, 'install'] + missing_pip,
+                        capture_output=True, timeout=600
+                    )
+                    if result.returncode == 0:
+                        print('📦 Dependency check: pip packages installed — restart recommended')
+                    else:
+                        print(f'⚠️ Dependency check: pip install failed')
+                else:
+                    print('✅ Dependency check: all pip packages present')
+            except Exception as e:
+                print(f'⚠️ Dependency check (pip): {e}')
+
     def _start_wifi_recovery_monitor(self):
         if self._wifi_recovery_thread_started:
             return
@@ -1177,6 +1260,7 @@ class MempaperApp:
                         self._wifi_disconnect_since = None
                         self._wifi_reconnect_attempts = 0
                         self._wifi_last_setup_probe_try = 0
+                        self._wifi_setup_probe_failures = 0
 
                         if self._is_setup_mode_enabled():
                             print(f"✅ Wi-Fi recovered on {active_connection}; disabling setup hotspot")
@@ -1232,39 +1316,51 @@ class MempaperApp:
                         # There is nothing to connect to, so probing only disrupts the hotspot.
                         has_saved_networks = self._has_saved_wifi_connections()
 
+                        # Progressive backoff: probe quickly at first (WiFi blip),
+                        # then slow down (device moved, user needs stable hotspot).
+                        # 0-2 failures: 90s, 3-5: 180s, 6-9: 300s, 10+: 600s
+                        failures = self._wifi_setup_probe_failures
+                        if failures <= 2:
+                            probe_interval = 90
+                        elif failures <= 5:
+                            probe_interval = 180
+                        elif failures <= 9:
+                            probe_interval = 300
+                        else:
+                            probe_interval = 600
+
                         if pending or (
                             has_saved_networks
                             and not has_ap_client
                             and not recently_had_client
-                            and now - self._wifi_last_setup_probe_try >= setup_probe_interval_seconds
+                            and now - self._wifi_last_setup_probe_try >= probe_interval
                         ):
                             self._wifi_last_setup_probe_try = now
                             self._nmcli(['connection', 'down', 'mempaper-setup'])
-                            # Give NM a moment to free the radio before trying to connect
-                            time.sleep(2)
+                            # After switching from AP back to station mode the radio
+                            # needs a fresh scan to discover available networks.
+                            time.sleep(3)
+                            self._nmcli(['device', 'wifi', 'rescan', 'ifname', interface], timeout=10)
+                            time.sleep(8)
                             reconnect = self._nmcli(['device', 'connect', interface], timeout=40)
                             if reconnect is not None and reconnect.returncode == 0:
-                                # NM accepted the command — give it up to 15s to fully connect
                                 for _ in range(5):
                                     time.sleep(3)
                                     probe_status = self._current_wifi_status(interface)
                                     if probe_status.get('connected'):
                                         print('✅ Wi-Fi recovered during setup mode probe; disabling setup hotspot')
                                         self._bring_down_setup_hotspot()
-                                        # Wait for DHCP/DNS to fully settle before the app
-                                        # starts using the network (WebSocket, API calls).
                                         print('⏳ Waiting 15s for DHCP/DNS to settle…')
                                         time.sleep(15)
                                         time.sleep(max(5, poll_seconds))
                                         break
                                 else:
+                                    self._wifi_setup_probe_failures += 1
                                     self._bring_up_setup_hotspot(interface)
-                                    self._wifi_last_setup_probe_try = now - setup_probe_interval_seconds + 30
                                 continue
                             else:
-                                # Back off shorter than full interval so we retry sooner
+                                self._wifi_setup_probe_failures += 1
                                 self._bring_up_setup_hotspot(interface)
-                                self._wifi_last_setup_probe_try = now - setup_probe_interval_seconds + 20
 
                         time.sleep(max(5, poll_seconds))
                         continue
@@ -1272,6 +1368,8 @@ class MempaperApp:
                     # Keep trying normal reconnection before entering setup mode.
                     if now - self._wifi_last_reconnect_try >= reconnect_interval_seconds:
                         self._wifi_last_reconnect_try = now
+                        self._nmcli(['device', 'wifi', 'rescan', 'ifname', interface], timeout=10)
+                        time.sleep(8)
                         reconnect = self._nmcli(['device', 'connect', interface], timeout=20)
                         self._wifi_reconnect_attempts += 1
                         if reconnect is not None and reconnect.returncode == 0:
@@ -2292,6 +2390,9 @@ class MempaperApp:
         """Run heavy startup operations in background."""
         try:
             print("⚙️ Starting background initialization...")
+
+            # Verify all dependencies are present (fast check, installs only if missing).
+            threading.Thread(target=self._run_dependency_health_check, name='dep-health-check', daemon=True).start()
 
             # Wi-Fi check already started in _setup_instant_startup() thread.
             # Start Wi-Fi recovery monitor early so network failures can self-heal.
@@ -3582,6 +3683,31 @@ class MempaperApp:
     _last_emitted_bitaxe = {}   # {ip: {'best_diff': ..., 'online': ...}}
     _last_emitted_blocks = {}   # {address: count}
 
+    def _seed_bitaxe_emission_state(self):
+        """Pre-fill _last_emitted_bitaxe with current values so the next
+        emit does not treat existing data as new (avoids false toasts)."""
+        try:
+            config = self.config_manager.get_current_config()
+            miner_table = config.get('bitaxe_miner_table', [])
+            if not miner_table:
+                return
+            from lib.bitaxe_api import BitaxeAPI
+            bitaxe_api = getattr(self.image_renderer, 'bitaxe_api', None) or BitaxeAPI()
+            for entry in miner_table:
+                ip = entry.get('address', '').strip() if isinstance(entry, dict) else ''
+                if not ip:
+                    continue
+                try:
+                    info = bitaxe_api.get_miner_info(ip)
+                    self._last_emitted_bitaxe[ip] = {
+                        'best_diff': info.get('best_diff', 0),
+                        'online': info.get('online', False),
+                    }
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
     def _emit_config_page_updates(self):
         """Push live updates to the config page via Socket.IO (bitaxe stats & found blocks)."""
         if not hasattr(self, 'socketio') or not self.socketio:
@@ -3717,6 +3843,8 @@ class MempaperApp:
                     if startup_mode:
                         emit_data['startup_refresh'] = True
                     self.socketio.emit('wallet_balance_updated', emit_data, room='authenticated')
+                    if startup_mode:
+                        self._seed_bitaxe_emission_state()
                     self._emit_config_page_updates()
                 
                 # Get pre-cached data for fast rendering
@@ -5647,7 +5775,9 @@ class MempaperApp:
                     # Reinitialize components if needed
                     self._reinitialize_after_config_change(old_config)
 
-                    # Push updated dynamic data (bitaxe, found blocks) to config page immediately
+                    # Seed change-detection state so the first post-save emit
+                    # does not appear as "new" data on the dashboard.
+                    self._seed_bitaxe_emission_state()
                     self._emit_config_page_updates()
 
                     # Fetch fresh wallet balances in background and push when ready
@@ -7067,7 +7197,9 @@ class MempaperApp:
 
                     # Install apt dependencies if changed
                     apt_req_file = os.path.join(project_dir, 'apt-requirements.txt')
-                    if apt_deps_changed and os.path.exists(apt_req_file):
+                    if not apt_deps_changed:
+                        _emit('update_output', {'line': self.translations.get('system_deps_unchanged', 'System dependencies unchanged — skipping apt install'), 'phase': 'apt', 'header': True})
+                    elif os.path.exists(apt_req_file):
                         _emit('update_output', {'line': self.translations.get('installing_system_deps', 'Installing system dependencies...'), 'phase': 'apt', 'header': True})
                         try:
                             # Ensure root filesystem is writable (may be read-only after unclean shutdown)
@@ -7093,11 +7225,13 @@ class MempaperApp:
                         except Exception as apt_err:
                             _emit('update_output', {'line': f'Warning: {apt_err}', 'phase': 'apt'})
 
-                    # Install pip dependencies
+                    # Install pip dependencies (only when requirements.txt changed)
                     venv_pip = os.path.join(project_dir, '.venv', 'bin', 'pip')
                     requirements_file = os.path.join(project_dir, 'requirements.txt')
 
-                    if os.path.exists(venv_pip) and os.path.exists(requirements_file):
+                    if not deps_changed:
+                        _emit('update_output', {'line': self.translations.get('python_deps_unchanged', 'Python dependencies unchanged — skipping pip install'), 'phase': 'pip', 'header': True})
+                    elif os.path.exists(venv_pip) and os.path.exists(requirements_file):
                         _emit('update_output', {'line': self.translations.get('installing_python_deps', 'Installing Python dependencies...'), 'phase': 'pip', 'header': True})
                         try:
                             proc = subprocess.Popen(
@@ -7142,7 +7276,9 @@ class MempaperApp:
                         except Exception:
                             pass
 
-                    # Done — notify frontend, then restart
+                    # Emit restart message before update_done (frontend unsubscribes from update_output on done)
+                    _emit('update_output', {'line': self.translations.get('restarting_service', 'Restarting mempaper service...'), 'phase': 'restart', 'header': True})
+
                     _emit('update_done', {
                         'success': True,
                         'tag': tag,
@@ -7151,7 +7287,6 @@ class MempaperApp:
                     })
 
                     # Wait for any ongoing e-ink display refresh to finish before restarting
-                    _emit('update_output', {'line': 'Waiting for e-ink display to finish...', 'phase': 'restart', 'header': True})
                     acquired = self._display_worker_lock.acquire(timeout=150)
                     if acquired:
                         self._display_worker_lock.release()
@@ -7587,7 +7722,7 @@ class MempaperApp:
                     except Exception as e:
                         print(f"⚠️ Auto-update: apt failed: {e}")
 
-                    # Phase 2: Mempaper software update — only if a newer release exists
+                    # Phase 2: mempaper software update — only if a newer release exists
                     try:
                         subprocess.run(
                             ['git', 'fetch', '--tags', '--force'],
@@ -7665,10 +7800,10 @@ class MempaperApp:
                                                 capture_output=True, timeout=300
                                             )
 
-                                # Install pip deps
+                                # Install pip deps (only when requirements.txt changed)
                                 venv_pip = os.path.join(project_dir, '.venv', 'bin', 'pip')
                                 requirements_file = os.path.join(project_dir, 'requirements.txt')
-                                if os.path.exists(venv_pip) and os.path.exists(requirements_file):
+                                if deps_changed and os.path.exists(venv_pip) and os.path.exists(requirements_file):
                                     result = subprocess.run(
                                         [venv_pip, 'install', '-r', requirements_file],
                                         cwd=project_dir, capture_output=True, timeout=600
@@ -7729,7 +7864,7 @@ class MempaperApp:
             port (int): Port to listen on
             debug (bool): Enable debug mode
         """
-        print(f"🚀 Starting Mempaper server on {host}:{port}")
+        print(f"🚀 Starting mempaper server on {host}:{port}")
 
         # Run Flask app
         if self.socketio:
@@ -7743,7 +7878,7 @@ class MempaperApp:
 _app_instance = None
 
 def get_app_instance():
-    """Get or create the global MempaperApp instance (singleton)."""
+    """Get or create the global mempaperApp instance (singleton)."""
     global _app_instance
     if _app_instance is None:
         _app_instance = MempaperApp()
@@ -7763,7 +7898,7 @@ def get_socketio():
 
 if __name__ == '__main__':
     # Create and run the application directly
-    print("🚀 Starting Mempaper Bitcoin Dashboard (Direct Mode)")
+    print("🚀 Starting mempaper Bitcoin Dashboard (Direct Mode)")
     print("=" * 60)
     mempaper_app = MempaperApp()
     mempaper_app.run(debug=False)

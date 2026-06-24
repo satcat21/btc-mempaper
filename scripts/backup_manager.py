@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 """
-Backup Management Utility for Mempaper
+Backup Management Utility for mempaper
 
 This script helps manage mempool connections during scheduled backup windows.
 Use this to prepare for known maintenance periods.

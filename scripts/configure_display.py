@@ -295,7 +295,7 @@ def set_device(config, device_id):
 
 
 def main():
-    print("Mempaper Display Device Configurator")
+    print("mempaper Display Device Configurator")
     print("=" * 45)
 
     config = load_config()

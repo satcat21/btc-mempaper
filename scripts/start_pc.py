@@ -22,7 +22,7 @@ def main():
         # Import and start the app
         from mempaper_app import MempaperApp
         
-        print("📱 Initializing Mempaper application...")
+        print("📱 Initializing mempaper application...")
         app_instance = MempaperApp()
         
         print("🌐 Starting Flask web server with full functionality...")

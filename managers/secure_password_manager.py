@@ -1,5 +1,5 @@
 """
-Secure Password Manager for BTC Mempaper Application
+Secure Password Manager for BTC mempaper Application
 
 This module provides secure password hashing and verification using Argon2id,
 the current gold standard for password hashing. It handles first-time setup

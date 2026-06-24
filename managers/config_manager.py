@@ -2,7 +2,7 @@
 Configuration Manager Module
 
 Handles loading, saving, and validation of configuration settings
-for the Mempaper application with web interface support, dynamic reloading,
+for the mempaper application with web interface support, dynamic reloading,
 and optional encryption for sensitive data.
 
 Version: 2.1 - Added secure configuration support

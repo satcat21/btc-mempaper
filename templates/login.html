@@ -7,24 +7,21 @@
     <link rel="stylesheet" href="static/css/theme.css">
     <link rel="stylesheet" href="static/css/login.css">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="preload" href="static/icons/back.svg" as="image">
 </head>
 <body{% if dark_mode %} class="dark-mode"{% endif %}>
     {% if public_dashboard %}
     <!-- Desktop Navigation Buttons (left side) -->
     <div class="desktop-nav-buttons">
         <button id="desktop-back-button" class="nav-button icon-only" onclick="window.location.href='/'" title="{{ translations.back_to_dashboard }}">
-            <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px">
-                <path d="m274-450 248 248-42 42L140-500l340-340 42 42-248 248h526v60H274Z"/>
-            </svg>
+            <img src="/static/icons/back.svg" alt="" width="20" height="20" class="nav-icon">
         </button>
     </div>
 
     <!-- Mobile Navigation Buttons (bottom) -->
     <div class="mobile-nav-buttons">
         <button id="mobile-back-button" class="mobile-nav-button icon-only" onclick="window.location.href='/'" title="{{ translations.back_to_dashboard }}">
-            <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px">
-                <path d="m274-450 248 248-42 42L140-500l340-340 42 42-248 248h526v60H274Z"/>
-            </svg>
+            <img src="/static/icons/back.svg" alt="" width="24" height="24" class="nav-icon">
         </button>
     </div>
     {% endif %}
