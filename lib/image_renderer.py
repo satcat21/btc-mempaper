@@ -314,6 +314,16 @@ class ImageRenderer:
         self.color_sets = {k: v.copy() for k, v in COLOR_SETS.items()}
         
         # Override with configured colors
+        # Date / hash-frame gradient (start → end)
+        if "color_date_start_light" in config:
+            self.color_sets["light"]["hash_start"] = config["color_date_start_light"]
+        if "color_date_end_light" in config:
+            self.color_sets["light"]["hash_end"] = config["color_date_end_light"]
+        if "color_date_start_dark" in config:
+            self.color_sets["dark"]["hash_start"] = config["color_date_start_dark"]
+        if "color_date_end_dark" in config:
+            self.color_sets["dark"]["hash_end"] = config["color_date_end_dark"]
+
         # Holidays (gradient: start → end)
         if "color_holiday_light" in config:
             self.color_sets["light"]["holiday_start"] = config["color_holiday_light"]
@@ -1311,9 +1321,9 @@ class ImageRenderer:
 
         return info_block_y + INFO_BLOCK_HEIGHT + ELEMENT_MARGIN
 
-    def _build_donation_header_text(self, amount_sats: int, timestamp: str) -> str:
+    def _build_donation_header_text(self, amount_sats: int, timestamp: str, mode: str = None) -> str:
         """Build localized donation header text used for measure + render passes."""
-        display_mode = self.config.get("donation_display_mode", "latest")
+        display_mode = mode if mode is not None else self.config.get("donation_display_mode", "latest")
         lang = self.config.get("language", "en")
         t = _TRANSLATIONS.get(lang, _TRANSLATIONS["en"])
 
@@ -3988,8 +3998,13 @@ class ImageRenderer:
         padding = self._scale_px(40, min_value=16)
         # On wide screens increase interior breathing room so fee text stays inside the frame.
         extra_space = self._scale_px(11, min_value=3) if self.width >= 1000 else self._scale_px(8, min_value=3)
-        start_color = self.get_color("hash_start", web_quality)  # #4FC3F7
-        end_color   = self.get_color("hash_end", web_quality)    # #BA68C8
+        # On holidays use the holiday gradient so hashframe matches the holiday date text
+        if self.get_today_btc_holiday():
+            start_color = self.get_color("holiday_start", web_quality)
+            end_color   = self.get_color("holiday_end",   web_quality)
+        else:
+            start_color = self.get_color("hash_start", web_quality)
+            end_color   = self.get_color("hash_end",   web_quality)
 
         total_chars = len(block_hash)
         block_hash_colors = [self.interpolate_color(start_color, end_color, i / max(total_chars - 1, 1)) for i in range(total_chars)]

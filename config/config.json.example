@@ -13,6 +13,11 @@
   "prioritize_large_scaled_meme": true,
   "color_mode_dark": true,
 
+  "color_date_start_light": "#1c82c0",
+  "color_date_end_light": "#c040a8",
+  "color_date_start_dark": "#4FC3F7",
+  "color_date_end_dark": "#BA68C8",
+
   "color_holiday_light": "#F7931A",
   "color_holiday_end_light": "#C62828",
   "color_holiday_dark": "#F7931A",

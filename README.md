@@ -376,6 +376,26 @@ pip install -r requirements.txt
   - User connects to `mempaper-XXXX`, opens `http://192.168.12.1:5000`, enters Wi-Fi credentials
   - On successful connection, setup hotspot is disabled and normal operation resumes automatically
 
+6. **Disable Wi-Fi Power Saving (Raspberry Pi Zero W)**
+
+  The BCM43430 Wi-Fi chip on the Pi Zero W has power management **enabled by default**. This causes the chip to miss router beacons during idle periods, leading to the router deauthenticating the Pi and dropping the connection. Disabling it prevents intermittent disconnects.
+
+  ```bash
+  sudo tee /etc/NetworkManager/conf.d/99-disable-powersave.conf << 'EOF'
+  [connection]
+  wifi.powersave = 2
+  EOF
+  sudo systemctl restart NetworkManager
+  ```
+
+  Verify it took effect:
+  ```bash
+  iwconfig wlan0 | grep Power
+  # Should show: Power Management:off
+  ```
+
+  > `wifi.powersave = 2` means "disabled" in NetworkManager's enum (0 = default, 1 = ignore, 2 = disable, 3 = enable). The file is placed in the NM drop-in directory `/etc/NetworkManager/conf.d/` and survives reboots and NM restarts.
+
 ### Display Setup (Raspberry Pi)
 
 mempaper supports Waveshare e-Paper displays. The **Waveshare 7.3inch F (7-color)** is the primary target.

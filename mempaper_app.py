@@ -81,6 +81,10 @@ class MempaperApp:
         self._wifi_last_setup_probe_try = 0
         self._wifi_setup_probe_failures = 0
         self._wifi_recovery_thread_started = False
+        # Last known result of _has_saved_wifi_connections(); updated on every
+        # successful nmcli read.  Avoids falsely treating a busy/transitioning NM
+        # as "no saved networks" during a disconnect event.
+        self._saved_wifi_known = None
         # Set to True after user submits credentials so recovery monitor probes immediately
         self._wifi_connect_pending = False
         # Set to True once the hotspot onboarding screen has been shown; prevents re-renders
@@ -340,11 +344,24 @@ class MempaperApp:
         print("✅ mempaper application initialized successfully")
 
     def _has_saved_wifi_connections(self):
-        """Return True if NetworkManager has at least one saved Wi-Fi connection."""
+        """Return True if NetworkManager has at least one saved Wi-Fi connection.
+
+        Caches the last successful result so a transient nmcli timeout or error
+        while NM is busy reconnecting does not falsely appear as 'no saved
+        networks' and trigger an immediate hotspot switch.
+        """
         result = self._nmcli_read(['-t', '-f', 'TYPE', 'connection', 'show'])
         if result is None or result.returncode != 0:
+            # nmcli can time out while NM is busy with a rescan/reconnect.
+            # Use the cached value rather than defaulting to False.
+            if self._saved_wifi_known is not None:
+                print('⚠️ nmcli connection query failed — using cached saved-networks result: '
+                      + str(self._saved_wifi_known))
+                return self._saved_wifi_known
             return False
-        return any(line.strip() == 'wifi' for line in result.stdout.splitlines())
+        has = any(line.strip() == 'wifi' for line in result.stdout.splitlines())
+        self._saved_wifi_known = has
+        return has
 
     def _startup_wifi_check(self):
         """Called once at startup.
@@ -719,7 +736,10 @@ class MempaperApp:
     def _current_wifi_status(self, interface):
         result = self._nmcli_read(['-t', '-f', 'DEVICE,TYPE,STATE,CONNECTION', 'device', 'status'])
         if result is None or result.returncode != 0:
-            return {'connected': False, 'connection': ''}
+            # nmcli can time out while NM is busy reconnecting.  Return
+            # status_known=False so the caller doesn't treat this as a
+            # confirmed disconnect and start the outage timer prematurely.
+            return {'connected': False, 'connection': '', 'status_known': False}
 
         for line in result.stdout.splitlines():
             parts = line.split(':')
@@ -728,9 +748,9 @@ class MempaperApp:
             dev, dev_type, state, connection = parts[0], parts[1], parts[2], parts[3]
             if dev == interface and dev_type == 'wifi':
                 connected = state.startswith('connected') and not self._is_setup_hotspot_connection(connection)
-                return {'connected': connected, 'connection': connection}
+                return {'connected': connected, 'connection': connection, 'status_known': True}
 
-        return {'connected': False, 'connection': ''}
+        return {'connected': False, 'connection': '', 'status_known': True}
 
     def _mac_digest(self, interface):
         """Return the hex SHA-256 digest of the interface MAC address."""
@@ -949,6 +969,21 @@ class MempaperApp:
                     print(f'⚠️ DNS iptables redirect failed: {(result.stderr or result.stdout).strip()}')
             except Exception as e:
                 print(f'⚠️ DNS iptables redirect error: {e}')
+
+            # Reject DNS-over-TLS (TCP 853) so Android 9+ falls back to plain
+            # UDP DNS immediately instead of timing out waiting for a TLS server
+            # that doesn't exist on the hotspot.
+            try:
+                result = subprocess.run(
+                    ['sudo', 'iptables', '-t', 'filter', '-I', 'FORWARD',
+                     '-i', interface, '-p', 'tcp', '--dport', '853',
+                     '-j', 'REJECT'],
+                    capture_output=True, text=True, timeout=10,
+                )
+                if result.returncode != 0:
+                    print(f'⚠️ DoT block failed: {(result.stderr or result.stdout).strip()}')
+            except Exception as e:
+                print(f'⚠️ DoT block error: {e}')
         else:
             print('⚠️ iptables not installed — DNS redirect unavailable')
 
@@ -957,13 +992,26 @@ class MempaperApp:
 
     def _stop_captive_dns(self):
         """Stop the captive-portal dnsmasq and remove iptables DNS redirect."""
-        # Remove iptables DNS redirect
+        # Remove iptables DNS redirect (UDP 53)
         for _ in range(5):
             try:
                 result = subprocess.run(
                     ['sudo', 'iptables', '-t', 'nat', '-D', 'PREROUTING',
                      '-p', 'udp', '--dport', '53',
                      '-j', 'REDIRECT', '--to-port', str(self._CAPTIVE_DNS_PORT)],
+                    capture_output=True, timeout=10,
+                )
+                if result.returncode != 0:
+                    break
+            except Exception:
+                break
+
+        # Remove DNS-over-TLS block (TCP 853)
+        for _ in range(5):
+            try:
+                result = subprocess.run(
+                    ['sudo', 'iptables', '-t', 'filter', '-D', 'FORWARD',
+                     '-p', 'tcp', '--dport', '853', '-j', 'REJECT'],
                     capture_output=True, timeout=10,
                 )
                 if result.returncode != 0:
@@ -1254,7 +1302,14 @@ class MempaperApp:
                     now = time.time()
                     status = self._current_wifi_status(interface)
                     connected = bool(status.get('connected'))
+                    status_known = status.get('status_known', True)
                     active_connection = status.get('connection', '')
+
+                    # nmcli timed out (NM busy reconnecting) — skip this tick
+                    # rather than treating the unknown state as a disconnect.
+                    if not status_known:
+                        time.sleep(max(5, poll_seconds))
+                        continue
 
                     if connected:
                         self._wifi_disconnect_since = None
@@ -1391,6 +1446,17 @@ class MempaperApp:
                             )
                         )
                     ):
+                        # Final re-check: NM may have just reconnected between our
+                        # reconnect attempt above and this trigger (race condition).
+                        # Bringing up the hotspot calls `nmcli device disconnect`
+                        # which would rip out a freshly-recovered connection.
+                        recheck = self._current_wifi_status(interface)
+                        if recheck.get('connected'):
+                            print('📡 Wi-Fi recovered before hotspot trigger — aborting hotspot switch')
+                            self._wifi_disconnect_since = None
+                            self._wifi_reconnect_attempts = 0
+                            time.sleep(max(5, poll_seconds))
+                            continue
                         reason = 'no saved networks' if no_saved else f'offline {int(disconnected_for)}s, attempts {self._wifi_reconnect_attempts}'
                         print(f'📶 Wi-Fi recovery threshold reached; switching to setup hotspot ({reason})')
                         self._bring_up_setup_hotspot(interface)
@@ -3140,6 +3206,10 @@ class MempaperApp:
                     if current_date != last_date:
                         print(f"📅 Date changed ({last_date} → {current_date}) — refreshing displayed image")
                         last_date = current_date
+                        if hasattr(self, 'socketio') and self.socketio:
+                            self.socketio.emit('date_changed', {
+                                'date': current_date.isoformat()
+                            }, room='authenticated')
                         self._invalidate_prerender()
                         if (self.current_block_height and self.current_block_hash
                                 and hasattr(self, 'current_meme_path')
@@ -3211,6 +3281,12 @@ class MempaperApp:
                             print(f"💰 Pre-cache updated: Price {price:,.0f} {currency}")
                             self._precache['last_price_value'] = price
                             data_changed = True
+                            if hasattr(self, 'socketio') and self.socketio:
+                                self.socketio.emit('price_stats_updated', {
+                                    'price': price,
+                                    'currency': currency,
+                                    'moscow_time': price_data.get('moscow_time', 0),
+                                }, room='authenticated')
                 except Exception as e:
                     print(f"⚠️ Failed to pre-cache price: {e}")
             
@@ -3256,6 +3332,11 @@ class MempaperApp:
                             print(f"🌐 Pre-cache updated: Hashrate {hashrate/1e18:.2f} EH/s")
                             self._precache['last_hashrate'] = hashrate
                             data_changed = True
+                            if hasattr(self, 'socketio') and self.socketio:
+                                self.socketio.emit('network_stats_updated', {
+                                    'hashrate': network_data['currentHashrate'],
+                                    'difficulty': network_data['currentDifficulty'],
+                                }, room='authenticated')
                 except Exception as e:
                     print(f"⚠️ Failed to pre-cache network stats: {e}")
 
@@ -3744,7 +3825,12 @@ class MempaperApp:
                     except Exception:
                         miners[ip] = {'best_diff': 0, 'online': False, 'label': label or ip, 'prev_best_diff': 0, 'prev_online': False}
                 if miners:
-                    self.socketio.emit('bitaxe_stats_updated', {'miners': miners}, room='authenticated')
+                    bitaxe_cache = self._precache.get('bitaxe_data', {}) if hasattr(self, '_precache') else {}
+                    self.socketio.emit('bitaxe_stats_updated', {
+                        'miners': miners,
+                        'hashrate_ths': bitaxe_cache.get('total_hashrate_ths', 0),
+                        'valid_blocks': bitaxe_cache.get('valid_blocks', 0),
+                    }, room='authenticated')
 
             # Found blocks for all configured addresses (with labels)
             block_reward_table = config.get('block_reward_addresses_table', [])
@@ -4355,7 +4441,28 @@ class MempaperApp:
                     for client_id in self.block_notification_subscribers.copy():
                         self.socketio.emit('new_block_notification', notification_data, room=client_id)
                     print(f"📡 Instant notification sent to {len(self.block_notification_subscribers)} clients")
-            
+
+                # Push updated countdown/halving data to config page preview cards
+                try:
+                    from lib.image_renderer import ImageRenderer as _IR
+                    bh = block_height
+                    sup = _IR._compute_supply_stats(bh)
+                    hal = _IR._compute_halving_stats(bh)
+                    self.socketio.emit('countdown_updated', {
+                        'countdown': {
+                            'remaining_btc': round(sup['remaining_btc'], 2),
+                            'pct_mined': sup['pct_mined'],
+                            'block_height': int(bh),
+                        },
+                        'halving': {
+                            'days_remaining': hal['days_remaining'],
+                            'hours_remaining': hal['hours_remaining'],
+                            'estimated_date': hal['estimated_date'].isoformat() if hal.get('estimated_date') else None,
+                        },
+                    }, room='authenticated')
+                except Exception:
+                    pass
+
             # 🔄 Enrich notification data in background (non-blocking)
             def enrich_notification():
                 try:
@@ -4875,8 +4982,15 @@ class MempaperApp:
             local_hosts = {'192.168.12.1', '10.42.0.1', 'localhost', '127.0.0.1'}
             if host in local_hosts:
                 return None
-            # Everything else (including captive-portal probes via external
-            # domains) → redirect to setup page
+            # Let /setup and /api/setup through even when the Host header is
+            # still an external domain (e.g. connectivitycheck.gstatic.com).
+            # Captive-portal browsers follow our 302 redirect but keep the
+            # external host, so blocking them here creates a redirect loop.
+            if request.path == '/setup' or request.path.startswith('/setup/') \
+                    or request.path.startswith('/api/setup'):
+                return None
+            # Everything else (captive-portal probes via external domains) →
+            # redirect to setup page
             return redirect(url_for('setup_wifi_page'), code=302)
 
         @self.app.route('/api/setup/wifi/scan', methods=['GET'])
@@ -5679,12 +5793,23 @@ class MempaperApp:
                             pass  # Continue without cached balances if there's an error
                 
                 from flask import session as _session
+                # Compact holiday dict for config-page preview widgets.
+                # Shape: {"MM-DD": {"en": "Title", "de": "...", ...}, ...}
+                try:
+                    from lib.btc_holidays import btc_holidays as _btc_h
+                    btc_h_compact = {
+                        k: {lng: entry[lng]['title'] for lng in entry}
+                        for k, v in _btc_h.items() if v for entry in [v[0]]
+                    }
+                except Exception:
+                    btc_h_compact = {}
                 return jsonify({
                     'config': config_data,
                     'schema': self.config_manager.get_config_schema(current_translations),
                     'categories': self.config_manager.get_categories(current_translations),
                     'color_options': self.config_manager.get_color_options(),
-                    'current_user': _session.get('username', '')
+                    'current_user': _session.get('username', ''),
+                    'btc_holidays': btc_h_compact,
                 })
             except Exception as e:
                 print(f"Error in get_config: {e}")
@@ -5705,6 +5830,161 @@ class MempaperApp:
             except Exception as e:
                 return jsonify({'success': False, 'error': str(e)}), 500
         
+        @self.app.route('/api/config/preview-data', methods=['GET'])
+        @require_auth(self.auth_manager)
+        def get_config_preview_data():
+            """Return live data for config-page preview cards (price, bitaxe, wallet)."""
+            try:
+                cfg = self.config_manager.get_current_config()
+                currency_symbols = {'USD':'$','EUR':'€','GBP':'£','CAD':'C$','CHF':'CHF','AUD':'A$','JPY':'¥'}
+
+                # Price
+                price_data = self._precache.get('price_data') if hasattr(self, '_precache') else None
+                price_payload = None
+                if price_data and not price_data.get('error'):
+                    currency = price_data.get('currency', 'USD')
+                    price_val = price_data.get('price_in_selected_currency', price_data.get('currency_price', 0))
+                    moscow = price_data.get('moscow_time', 0)
+                    price_payload = {
+                        'price': price_val,
+                        'currency': currency,
+                        'symbol': currency_symbols.get(currency, currency),
+                        'moscow_time': moscow,
+                    }
+
+                # Bitaxe — aggregate from pre-cache or live fetch
+                bitaxe_payload = None
+                bitaxe_data = self._precache.get('bitaxe_data') if hasattr(self, '_precache') else None
+                if bitaxe_data and not bitaxe_data.get('error'):
+                    ths = bitaxe_data.get('total_hashrate_ths', 0)
+                    online = bitaxe_data.get('miners_online', 0)
+                    total = bitaxe_data.get('miners_total', 0)
+                    best_diff = bitaxe_data.get('best_difficulty', 0)
+                    valid_blocks = bitaxe_data.get('valid_blocks', 0)
+                    bitaxe_payload = {
+                        'hashrate_ths': ths,
+                        'miners_online': online,
+                        'miners_total': total,
+                        'best_difficulty': best_diff,
+                        'valid_blocks': valid_blocks,
+                        'display_mode': cfg.get('bitaxe_display_mode', 'blocks'),
+                    }
+
+                # Wallet — from cache
+                wallet_payload = None
+                try:
+                    cached_wallet = self.image_renderer.wallet_api.get_cached_wallet_balances()
+                    if cached_wallet:
+                        total_btc = cached_wallet.get('total_btc', 0)
+                        wallet_currency = cfg.get('wallet_balance_currency', 'EUR')
+                        # Compute fiat value using cached price if currencies match
+                        fiat_value = None
+                        if price_payload:
+                            if price_payload['currency'] == wallet_currency:
+                                fiat_value = total_btc * price_payload['price']
+                            elif hasattr(self.image_renderer, 'btc_price_api'):
+                                try:
+                                    wp = self.image_renderer.btc_price_api.fetch_btc_price(
+                                        override_currency=wallet_currency)
+                                    if wp and not wp.get('error'):
+                                        wp_val = wp.get('price_in_selected_currency', wp.get('currency_price', 0))
+                                        fiat_value = total_btc * wp_val
+                                except Exception:
+                                    pass
+                        wallet_payload = {
+                            'total_btc': total_btc,
+                            'fiat_value': fiat_value,
+                            'currency': wallet_currency,
+                            'symbol': currency_symbols.get(wallet_currency, wallet_currency),
+                            'has_wallets': bool(cfg.get('wallet_balance_addresses_with_comments')),
+                        }
+                except Exception:
+                    pass
+
+                # Donation — return both latest and largest so the JS preview can
+                # switch modes without a save/refresh cycle.
+                donation_payload = None
+                try:
+                    def _don_to_payload(d, mode=None):
+                        if not d or not d.get('amount_sats'):
+                            return None
+                        hdr = ''
+                        if hasattr(self.image_renderer, '_build_donation_header_text'):
+                            hdr = self.image_renderer._build_donation_header_text(
+                                d.get('amount_sats', 0), d.get('timestamp', ''), mode=mode)
+                        return {
+                            'amount_sats': d.get('amount_sats', 0),
+                            'message': d.get('message', ''),
+                            'timestamp': d.get('timestamp', ''),
+                            'header_text': hdr,
+                        }
+                    p_latest  = _don_to_payload(self._latest_donation,       mode='latest')
+                    p_highest = _don_to_payload(self._highest_donation,      mode='highest')
+                    p_auto    = _don_to_payload(self._get_active_donation(),  mode='auto')
+                    if p_latest or p_highest or p_auto:
+                        donation_payload = {
+                            'latest':  p_latest,
+                            'highest': p_highest,
+                            'auto':    p_auto,
+                        }
+                except Exception:
+                    pass
+
+                # Countdown + Halving — computed from current block height
+                countdown_payload = None
+                halving_payload = None
+                try:
+                    from lib.image_renderer import ImageRenderer as _IR
+                    bh = self.current_block_height
+                    if bh:
+                        sup = _IR._compute_supply_stats(bh)
+                        countdown_payload = {
+                            'remaining_btc': round(sup['remaining_btc'], 2),
+                            'pct_mined': sup['pct_mined'],
+                        }
+                        hal = _IR._compute_halving_stats(bh)
+                        countdown_payload['block_height'] = int(bh)
+                        halving_payload = {
+                            'days_remaining': hal['days_remaining'],
+                            'hours_remaining': hal['hours_remaining'],
+                            'estimated_date': hal['estimated_date'].isoformat() if hal.get('estimated_date') else None,
+                        }
+                except Exception:
+                    pass
+
+                # Network stats — from precache; fetch synchronously if not cached yet.
+                network_payload = None
+                try:
+                    net = self._precache.get('network_data') if hasattr(self, '_precache') else None
+                    if not net or net.get('error'):
+                        hd = self.mempool_api.get_hashrate_and_difficulty()
+                        if hd and not hd.get('error'):
+                            net = hd
+                            if hasattr(self, '_precache'):
+                                import time as _time
+                                self._precache['network_data'] = net
+                                self._precache['network_last_update'] = _time.time()
+                    if net and not net.get('error'):
+                        network_payload = {
+                            'hashrate': net.get('currentHashrate', 0),
+                            'difficulty': net.get('currentDifficulty', 0),
+                        }
+                except Exception:
+                    pass
+
+                return jsonify({
+                    'price': price_payload,
+                    'bitaxe': bitaxe_payload,
+                    'wallet': wallet_payload,
+                    'donation': donation_payload,
+                    'countdown': countdown_payload,
+                    'halving': halving_payload,
+                    'network': network_payload,
+                    'block_hash': self.current_block_hash,
+                })
+            except Exception as e:
+                return jsonify({'error': str(e)}), 500
+
         @self.app.route('/api/config', methods=['POST'])
         @require_auth(self.auth_manager)
         def save_config():

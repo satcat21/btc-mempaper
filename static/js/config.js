@@ -1711,6 +1711,7 @@ async function loadConfiguration() {
         configSchema = data.schema;
         categories = data.categories;
         colorOptions = data.color_options || [];
+        window.btcHolidays = data.btc_holidays || {};
         configCurrentUser = data.current_user || '';
         
         // Check wallet configuration data
@@ -1985,27 +1986,6 @@ function createWifiSection() {
     scanResults.style.display = 'none';
     section.appendChild(scanResults);
 
-    // Reboot button
-    const rebootRow = document.createElement('div');
-    rebootRow.className = 'wifi-reboot-row';
-    const rebootBtn = document.createElement('button');
-    rebootBtn.type = 'button';
-    rebootBtn.className = 'device-control-btn device-control-btn-danger';
-    rebootBtn.innerHTML = `<span class="device-control-icon"><svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960" width="18px" fill="currentColor"><path d="M324-111.5Q251-143 197-197t-85.5-127Q80-397 80-480t31.5-156Q143-709 197-763t127-85.5Q397-880 480-880t156 31.5Q709-817 763-763t85.5 127Q880-563 880-480t-31.5 156Q817-251 763-197t-127 85.5Q563-80 480-80t-156-31.5ZM707-253q93-93 93-227t-93-227q-93-93-227-93t-227 93q-93 93-93 227t93 227q93 93 227 93t227-93Zm-57-57q70-70 70-170 0-51-19-94.5T650-650l-57 57q22 22 34.5 51t12.5 62q0 66-47 113t-113 47q-66 0-113-47t-47-113q0-33 12.5-62t34.5-51l-57-57q-32 32-51 75.5T240-480q0 100 70 170t170 70q100 0 170-70ZM440-480h80v-240h-80v240Zm40 0Z"/></svg></span> ${t.reboot_device || 'Reboot Device'}`;
-    rebootBtn.addEventListener('click', async () => {
-        const ok = await showConfirmModal({
-            title: t.reboot_device || 'Reboot Device',
-            message: t.reboot_device_confirm || 'Reboot the entire device? This takes about 1 min 21 sec. The page will reload when the service is back.',
-            confirmText: t.reboot || 'Reboot',
-            cancelText: t.cancel || 'Cancel',
-            danger: true,
-            icon: '/static/icons/reboot.svg',
-        });
-        if (!ok) return;
-        _performSystemAction('/api/system/reboot', t.reboot_device || 'Reboot Device', 81);
-    });
-    rebootRow.appendChild(rebootBtn);
-    section.appendChild(rebootRow);
 
     // Wire up events after a tick (elements need to be in DOM)
     setTimeout(() => _initWifiEvents(), 0);
@@ -3612,6 +3592,7 @@ function buildSectionNav(grid) {
 }
 
 function renderConfigurationForm() {
+    window._pendingConfigOverrides = {}; // reset on every re-render
     const container = document.getElementById('config-container');
     container.innerHTML = ''; // Clear any existing content
     const grid = document.createElement('div');
@@ -3723,7 +3704,18 @@ function renderConfigurationForm() {
         }
         
         section.appendChild(title);
-        
+
+        const _previewCategories = ['price_stats', 'countdown', 'halving', 'network_stats', 'bitaxe_stats', 'wallet_monitoring', 'donation'];
+        const _sectionColorKeys = {
+            price_stats:       ['color_btc_price_light',   'color_btc_price_dark'],
+            countdown:         ['color_countdown_light',   'color_countdown_dark'],
+            halving:           ['color_halving_light',     'color_halving_dark'],
+            network_stats:     ['color_network_light',     'color_network_dark'],
+            bitaxe_stats:      ['color_bitaxe_stats_light','color_bitaxe_stats_dark'],
+            wallet_monitoring: ['color_wallets_light',     'color_wallets_dark'],
+            donation:          ['color_donation_light',    'color_donation_dark'],
+        };
+
         let fieldsAdded = 0;
         let advancedContainer = null;
         let hasAdvancedFields = false;
@@ -3771,11 +3763,6 @@ function renderConfigurationForm() {
                 }
         });
 
-        // Append advanced container after all regular fields so it appears at the bottom
-        if (advancedContainer && !advancedContainer.parentElement) {
-            section.appendChild(advancedContainer);
-        }
-
         // Append user credential fields (username + password) to the General advanced section
         if (category.id === 'general' && configCurrentUser) {
             if (!advancedContainer) {
@@ -3817,6 +3804,118 @@ function renderConfigurationForm() {
 
         //console.log(`Category ${category.id} has ${fieldsAdded} fields`);
 
+        // Build side-by-side [color picker | preview card] rows for info sections.
+        // Color form-group elements are physically moved into the rows so the
+        // layout matches createDateColorGroup / createHolidayColorGroup.
+        if (_previewCategories.includes(category.id)) {
+            const _previewWrapper = document.createElement('div');
+            _previewWrapper.dataset.previewSection = category.id;
+            _previewWrapper.style.width = '100%';
+            section.appendChild(_previewWrapper);
+
+            const colorKeys = _sectionColorKeys[category.id];
+            const _tr = window.translations || {};
+
+            const _reorganize = () => {
+                // Detach color form-groups from wherever they live now (section subtree).
+                // Since _previewWrapper is a child of section, a single section query covers both.
+                let lightFG = null, darkFG = null;
+                if (colorKeys) {
+                    const lel = section.querySelector(`[data-config-key="${colorKeys[0]}"]`);
+                    const del = section.querySelector(`[data-config-key="${colorKeys[1]}"]`);
+                    lightFG = lel?.closest('.form-group') ?? null;
+                    darkFG  = del?.closest('.form-group') ?? null;
+                    if (lightFG) lightFG.remove();
+                    if (darkFG)  darkFG.remove();
+                }
+
+                // Build fresh preview cards; also updates window._refreshXxxPreview closures.
+                const built = _buildSectionPreview(category.id, section);
+                const lightCard = built?.querySelector('.preview-theme-light');
+                const darkCard  = built?.querySelector('.preview-theme-dark');
+
+                _previewWrapper.innerHTML = '';
+
+                if (colorKeys && lightFG && darkFG && lightCard && darkCard) {
+                    [
+                        [_tr.holiday_color_light_theme || 'Light Theme', lightFG, lightCard, 'rgba(255,255,255,.04)', 'preview-card-light'],
+                        [_tr.holiday_color_dark_theme  || 'Dark Theme',  darkFG,  darkCard,  'rgba(0,0,0,.04)',       'preview-card-dark'],
+                    ].forEach(([themeLabel, fg, card, rowBg, cardClass]) => {
+                        // Merge theme name into the form-group's own label, no separate header row.
+                        const formLabel = fg.querySelector('.form-label');
+                        if (formLabel) {
+                            if (!fg.dataset.origLabel) fg.dataset.origLabel = formLabel.textContent;
+                            formLabel.textContent = `${fg.dataset.origLabel} (${themeLabel})`;
+                        }
+                        const row = document.createElement('div');
+                        // Desktop: 50/50 flex row. Mobile (<600px): stack vertically via class.
+                        row.className = 'preview-color-row';
+                        row.style.cssText = `margin-bottom:10px;padding:12px 14px;border-radius:8px;background:${rowBg};`;
+                        fg.style.cssText  += ';flex:1 1 0;min-width:0;';
+                        card.style.cssText += ';flex:1 1 0;min-width:0;';
+                        card.classList.add(cardClass);
+                        row.appendChild(fg);
+                        row.appendChild(card);
+                        _previewWrapper.appendChild(row);
+                    });
+                } else if (built) {
+                    _previewWrapper.appendChild(built);
+                }
+
+                // Re-apply live data (closures updated by _buildSectionPreview above).
+                const pd = window._previewData;
+                const refreshMap = {
+                    price_stats:       [pd.price,     window._refreshPricePreview],
+                    bitaxe_stats:      [pd.bitaxe,    window._refreshBitaxePreview],
+                    wallet_monitoring: [pd.wallet,    window._refreshWalletPreview],
+                    donation:          [pd.donation,  window._refreshDonationPreview],
+                    countdown:         [pd.countdown, window._refreshCountdownPreview],
+                    halving:           [pd.halving,   window._refreshHalvingPreview],
+                    network_stats:     [pd.network,   window._refreshNetworkPreview],
+                };
+                const entry = refreshMap[category.id];
+                if (entry && entry[0] && entry[1]) entry[1](entry[0]);
+            };
+
+            _reorganize();
+
+            let _previewDebounce = null;
+            // Structural changes (selects, toggles) → immediate rebuild.
+            // Walk up from e.target in case the event fires on an inner element
+            // (e.g. the hidden <input> inside a custom select container).
+            section.addEventListener('change', (e) => {
+                const keyEl = e.target?.dataset?.configKey
+                    ? e.target
+                    : e.target?.closest('[data-config-key]');
+                const key = keyEl?.dataset?.configKey;
+                if (!key) return;
+                const val = keyEl.getValue ? keyEl.getValue()
+                          : keyEl.type === 'checkbox' ? keyEl.checked
+                          : keyEl.type === 'number'   ? (parseInt(keyEl.value) || 0)
+                          : keyEl.value;
+                window._pendingConfigOverrides[key] = val;
+                clearTimeout(_previewDebounce);
+                _reorganize();
+            }, true);
+
+            // Color drag → debounced rebuild to avoid excessive repaints.
+            section.addEventListener('input', (e) => {
+                const keyEl = e.target?.dataset?.configKey
+                    ? e.target
+                    : e.target?.closest('[data-config-key]');
+                const key = keyEl?.dataset?.configKey;
+                if (!key || !key.startsWith('color_')) return;
+                window._pendingConfigOverrides[key] = keyEl.getValue ? keyEl.getValue() : keyEl.value;
+                clearTimeout(_previewDebounce);
+                _previewDebounce = setTimeout(_reorganize, 60);
+            }, true);
+        }
+
+        // Append advanced container at the very end — after preview rows and all other content
+        if (advancedContainer && !advancedContainer.parentElement) {
+            section.appendChild(advancedContainer);
+        }
+
         // Add section if it has fields OR if it has a toggle (like sections that only contain a toggle)
         if (fieldsAdded > 0 || enableToggleKey) {
             grid.appendChild(section);
@@ -3843,6 +3942,28 @@ function renderConfigurationForm() {
     setTimeout(() => {
         diagnoseBooleanElements();
     }, 200); // Ensure everything is fully loaded
+
+    // Fetch live preview data and populate section preview cards
+    fetch('/api/config/preview-data')
+        .then(r => r.ok ? r.json() : null)
+        .then(d => {
+            if (!d) return;
+            const fields = ['price','bitaxe','wallet','donation','countdown','halving','network'];
+            fields.forEach(k => { if (d[k]) window._previewData[k] = d[k]; });
+            if (d.block_hash) {
+                window._previewData.latestBlockHash = d.block_hash;
+                if (window._refreshDateHashPreview)    window._refreshDateHashPreview(d.block_hash);
+                if (window._refreshHolidayHashPreview) window._refreshHolidayHashPreview(d.block_hash);
+            }
+            if (d.price      && window._refreshPricePreview)      window._refreshPricePreview(d.price);
+            if (d.bitaxe     && window._refreshBitaxePreview)     window._refreshBitaxePreview(d.bitaxe);
+            if (d.wallet     && window._refreshWalletPreview)     window._refreshWalletPreview(d.wallet);
+            if (d.donation   && window._refreshDonationPreview)   window._refreshDonationPreview(d.donation);
+            if (d.countdown  && window._refreshCountdownPreview)  window._refreshCountdownPreview(d.countdown);
+            if (d.halving    && window._refreshHalvingPreview)    window._refreshHalvingPreview(d.halving);
+            if (d.network    && window._refreshNetworkPreview)    window._refreshNetworkPreview(d.network);
+        })
+        .catch(() => {});
 }
 
 function createFormField(key, field, value) {
@@ -3984,7 +4105,7 @@ function createFormField(key, field, value) {
             if (key === 'language') {
                 input.addEventListener('change', (e) => {
                     const newLanguage = e.target.value;
-                    
+
                     if (newLanguage !== currentConfig.language) {
                         // Store the language change but don't update currentConfig yet
                         pendingLanguageChange = newLanguage;
@@ -3992,6 +4113,9 @@ function createFormField(key, field, value) {
                         // Reset if user changes back to original
                         pendingLanguageChange = null;
                     }
+                    // Refresh holiday preview and date color group text live
+                    window._pendingLanguage = newLanguage;
+                    if (window._refreshHolidayPreview) window._refreshHolidayPreview(newLanguage);
                 });
             }
             break;
@@ -4002,6 +4126,10 @@ function createFormField(key, field, value) {
             
         case 'color':
             input = createColorInput(value);
+            break;
+
+        case 'date_color_group':
+            input = createDateColorGroup();
             break;
 
         case 'holiday_color_group':
@@ -4121,7 +4249,7 @@ function createFormField(key, field, value) {
     if (input) {
         // Ensure the input has the data-config-key attribute for form collection
         // (skip for composite widgets and hidden_boolean fields managed inline by another field)
-        if (field.type !== 'holiday_color_group' && field.type !== 'hidden_boolean') {
+        if (field.type !== 'date_color_group' && field.type !== 'holiday_color_group' && field.type !== 'hidden_boolean') {
             if (input.dataset) {
                 input.dataset.configKey = key;
             } else {
@@ -4200,6 +4328,498 @@ function createColorInput(value) {
 }
 
 
+function _formatSpecificDate(date, lang) {
+    try {
+        if (lang === 'en') {
+            const day = date.getDate();
+            const v = day % 100;
+            const suffix = (v >= 11 && v <= 13) ? 'th' : (['th','st','nd','rd'][day % 10] || 'th');
+            const month = date.toLocaleString('en-US', { month: 'long' });
+            return `${month} ${day}${suffix}, ${date.getFullYear()}`;
+        }
+        const localeMap = { de: 'de', es: 'es', fr: 'fr', it: 'it' };
+        const locale = localeMap[lang] || 'en';
+        return new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'long', year: 'numeric' }).format(date);
+    } catch (e) {
+        return date.toISOString().slice(0, 10);
+    }
+}
+
+function _formatDateForPreview(lang) {
+    return _formatSpecificDate(new Date(), lang);
+}
+
+// Returns {dateStr, title} for today's holiday, or Bitcoin Whitepaper Day (Oct 31, current year) as fallback.
+// btcHolidays shape from backend: {"MM-DD": {"en": "Title", "de": "...", ...}, ...}
+function _getHolidayPreview(lang) {
+    const today = new Date();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+    const key = mm + '-' + dd;
+    const holidays = window.btcHolidays || {};
+    if (holidays[key]) {
+        const entry = holidays[key];
+        const title = entry[lang] || entry['en'] || Object.values(entry)[0] || '';
+        return { dateStr: _formatSpecificDate(today, lang), title, isToday: true };
+    }
+    const fb = holidays['10-31'] || {};
+    return {
+        dateStr: _formatSpecificDate(new Date(new Date().getFullYear(), 9, 31), lang),
+        title: fb[lang] || fb['en'] || 'Bitcoin Whitepaper Day',
+        isToday: false,
+    };
+}
+
+// ── Section preview cards ──────────────────────────────────────────────────
+// Cached preview data fetched from /api/config/preview-data after page load.
+window._previewData = {};
+// Live unsaved form values that affect preview structure (selects, toggles, etc.)
+// Reset on each form render; accumulated as user edits without saving.
+window._pendingConfigOverrides = {};
+
+// Build a single-theme info card matching the e-ink info block layout:
+// two columns, each centered (label on top, large value below) with spacing.
+// Uses the same Roboto font as the e-ink renderer (Regular for labels, Bold for values).
+function _buildSingleThemeCard(leftLabel, leftVal, rightLabel, rightVal, dataColor, bg, labelColor) {
+    const card = document.createElement('div');
+    card.style.cssText = `flex:1;min-width:0;border:1px solid rgba(128,128,128,.2);border-radius:8px;background:${bg};display:grid;grid-template-columns:1fr 1fr;font-family:'Roboto',Arial,sans-serif;`;
+    const mkCell = (label, val) => {
+        const cell = document.createElement('div');
+        cell.style.cssText = 'display:flex;flex-direction:column;align-items:center;text-align:center;padding:12px 6px;';
+        const lbl = document.createElement('div');
+        lbl.style.cssText = `font-size:.72em;font-weight:400;color:${labelColor};margin-bottom:10px;line-height:1.3;`;
+        lbl.textContent = label;
+        const v = document.createElement('div');
+        v.style.cssText = `font-size:1.12em;font-weight:700;color:${dataColor};`;
+        v.className = 'preview-value';
+        v.textContent = val || '—';
+        cell.appendChild(lbl);
+        cell.appendChild(v);
+        return cell;
+    };
+    card.appendChild(mkCell(leftLabel, leftVal));
+    card.appendChild(mkCell(rightLabel, rightVal));
+    return card;
+}
+
+function _fmtNum(n) {
+    if (n == null || isNaN(n)) return '—';
+    return Math.round(n).toLocaleString();
+}
+
+function _buildSectionPreview(categoryId, sectionEl) {
+    const cfg = { ...(window.currentConfig || {}), ...(window._pendingConfigOverrides || {}) };
+    const t = window.translations || {};
+
+    // Returns a wrapper whose first two children are the light and dark theme
+    // cards, tagged with .preview-theme-light / .preview-theme-dark.
+    // Refresh functions close over the card elements directly so they survive
+    // DOM reorganisation in renderConfigurationForm.
+    function mkWrapper(lightCard, darkCard) {
+        lightCard.classList.add('preview-theme-light');
+        darkCard.classList.add('preview-theme-dark');
+        const w = document.createElement('div');
+        w.appendChild(lightCard);
+        w.appendChild(darkCard);
+        return w;
+    }
+
+    // ── Price Stats ───────────────────────────────────────────────────────
+    if (categoryId === 'price_stats') {
+        const moscowUnit = cfg['moscow_time_unit'] || 'sats';
+        const currency   = cfg['btc_price_currency'] || 'USD';
+        const symbols = {'USD':'$','EUR':'€','GBP':'£','CAD':'C$','CHF':'CHF','AUD':'A$','JPY':'¥'};
+        const sym = symbols[currency] || currency;
+        const rl = moscowUnit === 'hour' ? (t.moscow_time || 'Moscow time') : `1 ${currency} =`;
+        const clLight = cfg['color_btc_price_light'] || '#17805B';
+        const clDark  = cfg['color_btc_price_dark']  || '#00c896';
+        const ll = t.btc_price || 'BTC price';
+
+        function fmtPrice(p) { return p == null ? '…' : `${sym} ${_fmtNum(p)}`; }
+        function fmtMoscow(m) {
+            if (m == null) return '…';
+            if (moscowUnit === 'hour') {
+                const h = Math.floor(m / 100), min = m % 100;
+                return `${String(h).padStart(2,'0')}:${String(min).padStart(2,'0')}`;
+            }
+            return `${_fmtNum(m)} sats`;
+        }
+
+        const pd = window._previewData.price;
+        const lightCard = _buildSingleThemeCard(ll, fmtPrice(pd?.price), rl, fmtMoscow(pd?.moscow_time), clLight, '#fff', '#888');
+        const darkCard  = _buildSingleThemeCard(ll, fmtPrice(pd?.price), rl, fmtMoscow(pd?.moscow_time), clDark,  '#111827', '#aaa');
+
+        window._refreshPricePreview = (data) => {
+            const pv = fmtPrice(data?.price);
+            const mv = fmtMoscow(data?.moscow_time);
+            [lightCard, darkCard].forEach(card => {
+                const cells = card.querySelectorAll('.preview-value');
+                if (cells.length >= 2) { cells[0].textContent = pv; cells[1].textContent = mv; }
+            });
+        };
+        return mkWrapper(lightCard, darkCard);
+    }
+
+    // ── Bitaxe Stats ──────────────────────────────────────────────────────
+    if (categoryId === 'bitaxe_stats') {
+        const mode    = cfg['bitaxe_display_mode'] || 'blocks';
+        const clLight = cfg['color_bitaxe_stats_light'] || '#F7931A';
+        const clDark  = cfg['color_bitaxe_stats_dark']  || '#F7931A';
+        const rl = mode === 'difficulty' ? (t.best_difficulty || 'Best diff') : (t.valid_blocks || 'Found blocks');
+
+        function fmtHashrate(ths) {
+            if (ths == null) return '…';
+            if (ths >= 1000) return `${(ths/1000).toFixed(2)} PH/s`;
+            if (ths >= 1)    return `${ths.toFixed(2)} TH/s`;
+            return `${(ths*1000).toFixed(1)} GH/s`;
+        }
+        function fmtRight(val) { return val == null ? '…' : (mode === 'difficulty' ? formatBitaxeDifficulty(val) : String(val)); }
+
+        const bd  = window._previewData.bitaxe;
+        const onl = bd?.miners_online ?? '?';
+        const tot = bd?.miners_total  ?? '?';
+        const ll  = `${t.total_hashrate || 'Bitaxe Hashrate'} (${onl}/${tot})`;
+        const lv  = fmtHashrate(bd?.hashrate_ths);
+        const rv  = fmtRight(mode === 'difficulty' ? bd?.best_difficulty : bd?.valid_blocks);
+
+        const lightCard = _buildSingleThemeCard(ll, lv, rl, rv, clLight, '#fff', '#888');
+        const darkCard  = _buildSingleThemeCard(ll, lv, rl, rv, clDark,  '#111827', '#aaa');
+
+        window._refreshBitaxePreview = (data) => {
+            const lv2 = fmtHashrate(data?.hashrate_ths);
+            const rv2 = fmtRight(mode === 'difficulty' ? data?.best_difficulty : data?.valid_blocks);
+            const ll2 = `${t.total_hashrate || 'Bitaxe Hashrate'} (${data?.miners_online ?? '?'}/${data?.miners_total ?? '?'})`;
+            [lightCard, darkCard].forEach(card => {
+                const cells = card.querySelectorAll('.preview-value');
+                const lbls  = card.querySelectorAll('[style*="font-size:.72em"]');
+                if (cells.length >= 2) { cells[0].textContent = lv2; cells[1].textContent = rv2; }
+                if (lbls.length >= 1)  lbls[0].textContent = ll2;
+            });
+        };
+        return mkWrapper(lightCard, darkCard);
+    }
+
+    // ── Wallet Monitoring ─────────────────────────────────────────────────
+    if (categoryId === 'wallet_monitoring') {
+        const walletCurrency = cfg['wallet_balance_currency'] || 'EUR';
+        const unit = cfg['wallet_balance_unit'] || 'btc';
+        const symbols = {'USD':'$','EUR':'€','GBP':'£','CAD':'C$','CHF':'CHF','AUD':'A$','JPY':'¥'};
+        const sym = symbols[walletCurrency] || walletCurrency;
+        const hasWallets = (cfg['wallet_balance_addresses_with_comments'] || []).some(a => a.address?.trim());
+        const clLight = cfg['color_wallets_light'] || '#1565C0';
+        const clDark  = cfg['color_wallets_dark']  || '#09a3ba';
+        const ll = unit === 'sats' ? (t.wallet_balance_sats || 'Total (Sats)') : (t.total_balance || 'Total Balance');
+        const rl = t.fiat_value || 'Fiat value';
+
+        function fmtBtc(v) {
+            if (v == null) return hasWallets ? '…' : (unit === 'sats' ? '123,456' : '0.00123456');
+            return unit === 'sats' ? Math.round(v * 1e8).toLocaleString() : v.toFixed(8);
+        }
+        function fmtFiat(fv, btcAmt) {
+            if (fv != null) return `${Math.round(fv).toLocaleString()} ${sym}`;
+            // Fallback: compute from BTC price when backend fiat_value is null (currency mismatch)
+            const btcPrice = window._previewData.price?.price;
+            if (btcPrice && btcAmt != null) {
+                return `${Math.round(btcAmt * btcPrice).toLocaleString()} ${sym}`;
+            }
+            return '—';
+        }
+
+        const wd = window._previewData.wallet;
+        const lv = fmtBtc(wd?.total_btc ?? (hasWallets ? null : 0.00123456));
+        const rv = fmtFiat(wd?.fiat_value, wd?.total_btc ?? 0.00123456);
+
+        const lightCard = _buildSingleThemeCard(ll, lv, rl, rv, clLight, '#fff', '#888');
+        const darkCard  = _buildSingleThemeCard(ll, lv, rl, rv, clDark,  '#111827', '#aaa');
+
+        window._refreshWalletPreview = (data) => {
+            const lv2 = fmtBtc(data?.total_btc);
+            const rv2 = fmtFiat(data?.fiat_value, data?.total_btc);
+            [lightCard, darkCard].forEach(card => {
+                const cells = card.querySelectorAll('.preview-value');
+                if (cells.length >= 2) { cells[0].textContent = lv2; cells[1].textContent = rv2; }
+            });
+        };
+        return mkWrapper(lightCard, darkCard);
+    }
+
+    // ── Donation ──────────────────────────────────────────────────────────
+    if (categoryId === 'donation') {
+        const clLight = cfg['color_donation_light'] || '#F7931A';
+        const clDark  = cfg['color_donation_dark']  || '#F7931A';
+        const mode    = cfg['donation_display_mode'] || 'latest';
+
+        function mkDonCard(bg, dataColor) {
+            const card = document.createElement('div');
+            card.style.cssText = `flex:1;min-width:0;border:1px solid rgba(128,128,128,.2);border-radius:8px;background:${bg};display:flex;flex-direction:column;align-items:center;text-align:center;padding:12px 8px;gap:10px;font-family:'Roboto',Arial,sans-serif;`;
+            const hdr = document.createElement('div');
+            hdr.style.cssText = `font-size:.72em;font-weight:400;color:${bg === '#fff' ? '#888' : '#aaa'};line-height:1.3;`;
+            hdr.className = 'don-header';
+            const msg = document.createElement('div');
+            msg.style.cssText = `font-size:1.05em;font-weight:700;color:${dataColor};`;
+            msg.className = 'don-msg';
+            card.appendChild(hdr);
+            card.appendChild(msg);
+            return card;
+        }
+
+        const lightCard = mkDonCard('#fff', clLight);
+        const darkCard  = mkDonCard('#111827', clDark);
+
+        function pickDon(donData) {
+            if (!donData) return null;
+            // donData may be {latest, highest, auto} or a legacy single object
+            if (donData.latest !== undefined || donData.highest !== undefined) {
+                return donData[mode] || donData.auto || donData.latest || donData.highest || null;
+            }
+            return donData;
+        }
+
+        function refreshDonation(data) {
+            const don    = pickDon(data);
+            const header = don?.header_text || (t.donation_no_donations || 'No donations yet');
+            const msg    = don?.message || '—';
+            [lightCard, darkCard].forEach(card => {
+                card.querySelector('.don-header').textContent = header;
+                card.querySelector('.don-msg').textContent    = msg;
+            });
+        }
+        refreshDonation(window._previewData.donation);
+
+        window._refreshDonationPreview = refreshDonation;
+        return mkWrapper(lightCard, darkCard);
+    }
+
+    // ── Countdown (BTC Supply) ────────────────────────────────────────────
+    if (categoryId === 'countdown') {
+        const clLight = cfg['color_countdown_light'] || '#C55A00';
+        const clDark  = cfg['color_countdown_dark']  || '#FF9E40';
+        const ll = t.btc_remaining || 'BTC Remaining';
+        const rl = t.pct_mined || '% Mined';
+
+        function fmtRemaining(r) {
+            if (r == null) return '…';
+            return `${r.toLocaleString(undefined, {minimumFractionDigits:2,maximumFractionDigits:2})} BTC`;
+        }
+        function fmtPct(p) {
+            if (p == null) return '…';
+            for (let d = 2; d < 11; d++) {
+                const s = p.toFixed(d);
+                if (s !== (100).toFixed(d)) return `${s}%`;
+            }
+            return `${p.toFixed(10)}%`;
+        }
+
+        const cd = window._previewData.countdown;
+        const lightCard = _buildSingleThemeCard(ll, fmtRemaining(cd?.remaining_btc), rl, fmtPct(cd?.pct_mined), clLight, '#fff', '#888');
+        const darkCard  = _buildSingleThemeCard(ll, fmtRemaining(cd?.remaining_btc), rl, fmtPct(cd?.pct_mined), clDark,  '#111827', '#aaa');
+
+        window._refreshCountdownPreview = (data) => {
+            const lv2 = fmtRemaining(data?.remaining_btc);
+            const rv2 = fmtPct(data?.pct_mined);
+            [lightCard, darkCard].forEach(card => {
+                const cells = card.querySelectorAll('.preview-value');
+                if (cells.length >= 2) { cells[0].textContent = lv2; cells[1].textContent = rv2; }
+            });
+        };
+        return mkWrapper(lightCard, darkCard);
+    }
+
+    // ── Halving ───────────────────────────────────────────────────────────
+    if (categoryId === 'halving') {
+        const clLight = cfg['color_halving_light'] || '#1565C0';
+        const clDark  = cfg['color_halving_dark']  || '#4FC3F7';
+        const lang = window._pendingLanguage || cfg['language'] || 'en';
+        const ll = t.halving_date || 'Next Halving';
+
+        function fmtHalvingDate(isoStr) {
+            if (!isoStr) return '…';
+            try { return _formatSpecificDate(new Date(isoStr), lang); } catch (e) { return '…'; }
+        }
+        function fmtCountdown(hd) {
+            if (!hd) return '…';
+            return (hd.hours_remaining ?? 0) < 24
+                ? `${(hd.hours_remaining || 0).toFixed(1)}h`
+                : `${Math.round(hd.days_remaining || 0)}d`;
+        }
+
+        const hd = window._previewData.halving;
+        const rl = hd && (hd.hours_remaining ?? 999) < 24
+            ? (t.halving_hours_left || 'Hours Until Halving')
+            : (t.halving_days_left  || 'Days Until Halving');
+
+        const lightCard = _buildSingleThemeCard(ll, fmtHalvingDate(hd?.estimated_date), rl, fmtCountdown(hd), clLight, '#fff', '#888');
+        const darkCard  = _buildSingleThemeCard(ll, fmtHalvingDate(hd?.estimated_date), rl, fmtCountdown(hd), clDark,  '#111827', '#aaa');
+
+        window._refreshHalvingPreview = (data) => {
+            const lv2 = fmtHalvingDate(data?.estimated_date);
+            const rv2 = fmtCountdown(data);
+            [lightCard, darkCard].forEach(card => {
+                const cells = card.querySelectorAll('.preview-value');
+                if (cells.length >= 2) { cells[0].textContent = lv2; cells[1].textContent = rv2; }
+            });
+        };
+        return mkWrapper(lightCard, darkCard);
+    }
+
+    // ── Network Stats ─────────────────────────────────────────────────────
+    if (categoryId === 'network_stats') {
+        const clLight = cfg['color_network_light'] || '#6A1B9A';
+        const clDark  = cfg['color_network_dark']  || '#CE93D8';
+        const ll = t.network_hashrate || 'Network Hashrate';
+        const rl = t.network_difficulty || 'Difficulty';
+
+        function fmtHashrate(hs) {
+            if (hs == null) return '…';
+            if (hs >= 1e18) return `${(hs/1e18).toFixed(2)} EH/s`;
+            if (hs >= 1e15) return `${(hs/1e15).toFixed(2)} PH/s`;
+            if (hs >= 1e12) return `${(hs/1e12).toFixed(2)} TH/s`;
+            if (hs >= 1e9)  return `${(hs/1e9).toFixed(2)} GH/s`;
+            return `${Math.round(hs)} H/s`;
+        }
+        function fmtDifficulty(d) {
+            if (d == null) return '…';
+            if (d >= 1e12) return `${(d/1e12).toFixed(2)} T`;
+            if (d >= 1e9)  return `${(d/1e9).toFixed(2)} G`;
+            if (d >= 1e6)  return `${(d/1e6).toFixed(2)} M`;
+            return `${Math.round(d)}`;
+        }
+
+        const nd = window._previewData.network;
+        const lightCard = _buildSingleThemeCard(ll, fmtHashrate(nd?.hashrate), rl, fmtDifficulty(nd?.difficulty), clLight, '#fff', '#888');
+        const darkCard  = _buildSingleThemeCard(ll, fmtHashrate(nd?.hashrate), rl, fmtDifficulty(nd?.difficulty), clDark,  '#111827', '#aaa');
+
+        window._refreshNetworkPreview = (data) => {
+            const lv2 = fmtHashrate(data?.hashrate);
+            const rv2 = fmtDifficulty(data?.difficulty);
+            [lightCard, darkCard].forEach(card => {
+                const cells = card.querySelectorAll('.preview-value');
+                if (cells.length >= 2) { cells[0].textContent = lv2; cells[1].textContent = rv2; }
+            });
+        };
+        return mkWrapper(lightCard, darkCard);
+    }
+
+    return null;
+}
+
+
+function createDateColorGroup() {
+    const t = window.translations || {};
+    const cfg = window.currentConfig || {};
+    const lang = cfg['language'] || 'en';
+
+    const lightStart = cfg['color_date_start_light'] || '#1c82c0';
+    const lightEnd   = cfg['color_date_end_light']   || '#c040a8';
+    const darkStart  = cfg['color_date_start_dark']  || '#4FC3F7';
+    const darkEnd    = cfg['color_date_end_dark']    || '#BA68C8';
+
+    const previewText = _formatDateForPreview(lang);
+
+    const wrapper = document.createElement('div');
+    wrapper.style.width = '100%';
+
+    // Genesis block hash — fallback when no live block hash is available yet
+    const SAMPLE_HASH = '000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f';
+
+    function getDateHashChars() {
+        return window._previewData?.latestBlockHash || SAMPLE_HASH;
+    }
+
+    function buildHashPreview(startVal, endVal) {
+        const span = document.createElement('span');
+        span.style.cssText = `font-family:'IBMPlexMono',monospace; font-size:0.58em; letter-spacing:0.02em; background:linear-gradient(90deg,${startVal},${endVal}); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; margin-top:6px; display:block; word-break:break-all;`;
+        span.textContent = getDateHashChars();
+        return span;
+    }
+
+    function buildRow(themeLabel, startKey, endKey, startVal, endVal, bgColor, previewBg, previewShadow) {
+        const row = document.createElement('div');
+        row.className = 'date-color-row';
+        row.style.background = bgColor;
+
+        const label = document.createElement('div');
+        label.style.cssText = 'width:100%; font-weight:600; font-size:0.95em; margin-bottom:4px; color:var(--text-primary)';
+        label.textContent = themeLabel;
+        row.appendChild(label);
+
+        const startGroup = document.createElement('div');
+        startGroup.style.cssText = 'display:flex; flex-direction:column; gap:4px;';
+        const startLabel = document.createElement('span');
+        startLabel.style.cssText = 'font-size:0.8em; color:var(--text-secondary)';
+        startLabel.textContent = t.holiday_color_start || 'Start Color';
+        startGroup.appendChild(startLabel);
+        const startInput = createColorInput(startVal);
+        startInput.dataset.configKey = startKey;
+        startGroup.appendChild(startInput);
+        row.appendChild(startGroup);
+
+        const endGroup = document.createElement('div');
+        endGroup.style.cssText = 'display:flex; flex-direction:column; gap:4px;';
+        const endLabel = document.createElement('span');
+        endLabel.style.cssText = 'font-size:0.8em; color:var(--text-secondary)';
+        endLabel.textContent = t.holiday_color_end || 'End Color';
+        endGroup.appendChild(endLabel);
+        const endInput = createColorInput(endVal);
+        endInput.dataset.configKey = endKey;
+        endGroup.appendChild(endInput);
+        row.appendChild(endGroup);
+
+        const preview = document.createElement('div');
+        preview.className = 'date-color-preview';
+        preview.style.cssText = `flex:1; min-width:160px; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:10px 16px; border-radius:6px; background:${previewBg};`;
+        if (previewShadow) preview.classList.add(previewShadow);
+        const previewSpan = document.createElement('span');
+        previewSpan.style.cssText = 'font-size:1.05em; font-weight:700; background:linear-gradient(90deg,' + startVal + ',' + endVal + '); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;';
+        previewSpan.textContent = previewText;
+        preview.appendChild(previewSpan);
+        const hashSpan = buildHashPreview(startVal, endVal);
+        preview.appendChild(hashSpan);
+        row.appendChild(preview);
+
+        function updatePreview() {
+            const s = startInput.getValue ? startInput.getValue() : startVal;
+            const e = endInput.getValue ? endInput.getValue() : endVal;
+            const grad = `linear-gradient(90deg,${s},${e})`;
+            previewSpan.style.background = grad;
+            previewSpan.style.webkitBackgroundClip = 'text';
+            previewSpan.style.backgroundClip = 'text';
+            hashSpan.style.background = grad;
+            hashSpan.style.webkitBackgroundClip = 'text';
+            hashSpan.style.backgroundClip = 'text';
+        }
+        startInput.addEventListener('input', updatePreview);
+        endInput.addEventListener('input', updatePreview);
+
+        return { row, hashSpan };
+    }
+
+    const { row: lightRow, hashSpan: lightDateHashSpan } = buildRow(
+        t.holiday_color_light_theme || 'Light Theme',
+        'color_date_start_light', 'color_date_end_light',
+        lightStart, lightEnd,
+        'rgba(255,255,255,.04)', '#ffffff', 'preview-card-light'
+    );
+    wrapper.appendChild(lightRow);
+
+    const { row: darkRow, hashSpan: darkDateHashSpan } = buildRow(
+        t.holiday_color_dark_theme || 'Dark Theme',
+        'color_date_start_dark', 'color_date_end_dark',
+        darkStart, darkEnd,
+        'rgba(0,0,0,.04)', '#1a1a2e', 'preview-card-dark'
+    );
+    wrapper.appendChild(darkRow);
+
+    window._refreshDateHashPreview = (blockHash) => {
+        const chars = blockHash || getDateHashChars();
+        lightDateHashSpan.textContent = chars;
+        darkDateHashSpan.textContent  = chars;
+    };
+
+    return wrapper;
+}
+
+
 function createHolidayColorGroup() {
     const t = window.translations || {};
     const wrapper = document.createElement('div');
@@ -4212,11 +4832,28 @@ function createHolidayColorGroup() {
     const darkStart  = cfg['color_holiday_dark'] || '#F7931A';
     const darkEnd    = cfg['color_holiday_end_dark'] || '#FF6F6F';
 
-    const previewText = 'Bitcoin Pizza Day';
+    const _hLang = (window.currentConfig || {})['language'] || 'en';
+    const { dateStr: _hDateStr, title: _hTitle, isToday: _todayIsHoliday } = _getHolidayPreview(_hLang);
+    const previewText = `${_hDateStr}  ${_hTitle}`;
 
-    function buildRow(themeLabel, startKey, endKey, startVal, endVal, bgColor, previewBg) {
+    // Genesis block hash — fallback when no live block hash is available yet
+    const GENESIS_HASH = '000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f';
+
+    function getHashChars() {
+        return window._previewData?.latestBlockHash || GENESIS_HASH;
+    }
+
+    function buildHashPreviewH(startVal, endVal) {
+        const span = document.createElement('span');
+        span.style.cssText = `font-family:'IBMPlexMono',monospace; font-size:0.58em; letter-spacing:0.02em; background:linear-gradient(90deg,${startVal},${endVal}); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; margin-top:6px; display:block; word-break:break-all;`;
+        span.textContent = getHashChars();
+        return span;
+    }
+
+    function buildRow(themeLabel, startKey, endKey, startVal, endVal, bgColor, previewBg, previewShadow) {
         const row = document.createElement('div');
-        row.style.cssText = 'display:flex; flex-wrap:wrap; align-items:flex-start; gap:12px; margin-bottom:14px; padding:12px; border-radius:8px; background:' + bgColor;
+        row.className = 'date-color-row';
+        row.style.background = bgColor;
 
         // Theme label spanning full width
         const label = document.createElement('div');
@@ -4248,44 +4885,70 @@ function createHolidayColorGroup() {
         endGroup.appendChild(endInput);
         row.appendChild(endGroup);
 
-        // Gradient preview
+        // Gradient preview (date/holiday text + hash sample line)
         const preview = document.createElement('div');
-        preview.style.cssText = 'flex:1; min-width:160px; display:flex; align-items:center; justify-content:center; padding:10px 16px; border-radius:6px; background:' + previewBg;
+        preview.className = 'date-color-preview';
+        preview.style.cssText = `flex:1; min-width:160px; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:10px 16px; border-radius:6px; background:${previewBg};`;
+        if (previewShadow) preview.classList.add(previewShadow);
         const previewSpan = document.createElement('span');
         previewSpan.style.cssText = 'font-size:1.1em; font-weight:700; background:linear-gradient(90deg,' + startVal + ',' + endVal + '); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;';
         previewSpan.textContent = previewText;
         preview.appendChild(previewSpan);
+        const hashSpan = buildHashPreviewH(startVal, endVal);
+        preview.appendChild(hashSpan);
         row.appendChild(preview);
 
         // Live-update the gradient preview when colors change
         function updatePreview() {
             const s = startInput.getValue ? startInput.getValue() : startVal;
             const e = endInput.getValue ? endInput.getValue() : endVal;
-            previewSpan.style.background = 'linear-gradient(90deg,' + s + ',' + e + ')';
+            const grad = `linear-gradient(90deg,${s},${e})`;
+            previewSpan.style.background = grad;
             previewSpan.style.webkitBackgroundClip = 'text';
             previewSpan.style.backgroundClip = 'text';
+            hashSpan.style.background = grad;
+            hashSpan.style.webkitBackgroundClip = 'text';
+            hashSpan.style.backgroundClip = 'text';
         }
         startInput.addEventListener('input', updatePreview);
         endInput.addEventListener('input', updatePreview);
 
-        return row;
+        return { row, previewSpan, hashSpan };
     }
 
     // Light theme row (first)
-    wrapper.appendChild(buildRow(
+    const { row: lightRow, previewSpan: lightSpan, hashSpan: lightHashSpan } = buildRow(
         t.holiday_color_light_theme || 'Light Theme',
         'color_holiday_light', 'color_holiday_end_light',
         lightStart, lightEnd,
-        'rgba(255,255,255,0.06)', '#ffffff'
-    ));
+        'rgba(255,255,255,.04)', '#ffffff', 'preview-card-light'
+    );
+    wrapper.appendChild(lightRow);
 
     // Dark theme row (second)
-    wrapper.appendChild(buildRow(
+    const { row: darkRow, previewSpan: darkSpan, hashSpan: darkHashSpan } = buildRow(
         t.holiday_color_dark_theme || 'Dark Theme',
         'color_holiday_dark', 'color_holiday_end_dark',
         darkStart, darkEnd,
-        'rgba(255,255,255,0.06)', '#1a1a2e'
-    ));
+        'rgba(0,0,0,.04)', '#1a1a2e', 'preview-card-dark'
+    );
+    wrapper.appendChild(darkRow);
+
+
+    // Hook language-change refresh so preview text stays in sync
+    window._refreshHolidayPreview = (overrideLang) => {
+        const l = overrideLang || window._pendingLanguage || (window.currentConfig || {})['language'] || 'en';
+        const { dateStr, title } = _getHolidayPreview(l);
+        const text = `${dateStr}  ${title}`;
+        lightSpan.textContent = text;
+        darkSpan.textContent  = text;
+    };
+
+    window._refreshHolidayHashPreview = (blockHash) => {
+        const chars = blockHash || getHashChars();
+        lightHashSpan.textContent = chars;
+        darkHashSpan.textContent  = chars;
+    };
 
     return wrapper;
 }
@@ -6392,7 +7055,7 @@ function _markClean() {
 
 function _initDirtyTracking() {
     _savedSnapshot = _collectFormSnapshot();
-    const form = document.getElementById('config-form') || document.querySelector('.config-container');
+    const form = document.getElementById('config-form') || document.getElementById('config-container');
     if (form) {
         form.addEventListener('input', _checkDirty);
         form.addEventListener('change', _checkDirty);
@@ -7415,11 +8078,103 @@ function setupConfigSocketHandlers() {
         if (window._suppressWalletUpdates) return;
         console.log('💾 Received wallet balance update:', data ? Object.keys(data).length + ' addresses (data masked for privacy)' : 'no data');
         updateWalletBalancesFromWebSocket(data);
+        // Update wallet preview card with new totals
+        if (data && data.total_btc != null) {
+            window._previewData.wallet = window._previewData.wallet || {};
+            window._previewData.wallet.total_btc = data.total_btc;
+            const price = window._previewData.price?.price;
+            if (price) window._previewData.wallet.fiat_value = data.total_btc * price;
+            if (window._refreshWalletPreview) window._refreshWalletPreview(window._previewData.wallet);
+        }
+    });
+
+    // Listen for live price updates
+    configSocket.on('price_stats_updated', (data) => {
+        if (!data) return;
+        window._previewData.price = { ...window._previewData.price, ...data };
+        // Also update wallet fiat with fresh price
+        if (window._previewData.wallet?.total_btc != null && data.price) {
+            window._previewData.wallet.fiat_value = window._previewData.wallet.total_btc * data.price;
+            if (window._refreshWalletPreview) window._refreshWalletPreview(window._previewData.wallet);
+        }
+        if (window._refreshPricePreview) window._refreshPricePreview(window._previewData.price);
+    });
+
+    // Listen for date rollover (midnight, holiday change)
+    configSocket.on('date_changed', (data) => {
+        if (window._refreshHolidayPreview) window._refreshHolidayPreview();
+    });
+
+    // Listen for countdown/halving updates (triggered by new blocks)
+    configSocket.on('countdown_updated', (data) => {
+        if (!data) return;
+        if (data.countdown) {
+            window._previewData.countdown = { ...window._previewData.countdown, ...data.countdown };
+            if (window._refreshCountdownPreview) window._refreshCountdownPreview(window._previewData.countdown);
+        }
+        if (data.halving) {
+            window._previewData.halving = { ...window._previewData.halving, ...data.halving };
+            if (window._refreshHalvingPreview) window._refreshHalvingPreview(window._previewData.halving);
+        }
+    });
+
+    // Listen for network hashrate/difficulty updates
+    configSocket.on('network_stats_updated', (data) => {
+        if (!data) return;
+        window._previewData.network = { ...window._previewData.network, ...data };
+        if (window._refreshNetworkPreview) window._refreshNetworkPreview(window._previewData.network);
+    });
+
+    // Listen for Bitaxe stats updates — aggregate miners for preview card
+    configSocket.on('bitaxe_stats_updated', (data) => {
+        if (!data?.miners) return;
+        const miners = Object.values(data.miners);
+        const online = miners.filter(m => m.online).length;
+        const total  = miners.length;
+        let bestDiff = 0;
+        for (const m of miners) {
+            if (m.best_diff > bestDiff) bestDiff = m.best_diff;
+        }
+        const agg = {
+            hashrate_ths: data.hashrate_ths ?? (window._previewData.bitaxe?.hashrate_ths ?? 0),
+            miners_online: online,
+            miners_total: total,
+            best_difficulty: bestDiff,
+            valid_blocks: data.valid_blocks ?? (window._previewData.bitaxe?.valid_blocks ?? 0),
+        };
+        window._previewData.bitaxe = { ...window._previewData.bitaxe, ...agg };
+        if (window._refreshBitaxePreview) window._refreshBitaxePreview(window._previewData.bitaxe);
+    });
+
+    // Listen for donation updates
+    configSocket.on('donation_received', (data) => {
+        if (!data) return;
+        if (!data.header_text) {
+            const cfg2 = window.currentConfig || {};
+            const mode = cfg2['donation_display_mode'] || 'latest';
+            const t2 = window.translations || {};
+            const modeLabel = mode === 'highest' ? (t2.donation_mode_highest || 'Largest donation') : (t2.donation_mode_latest || 'Latest donation');
+            const sats = data.amount_sats || 0;
+            const amtFmt = sats.toLocaleString();
+            const satLabel = sats === 1 ? 'Sat' : 'Sats';
+            let ts = '';
+            try { ts = data.timestamp ? new Date(data.timestamp).toLocaleString() : ''; } catch (e) {}
+            data = { ...data, header_text: `${modeLabel}: ${amtFmt} ${satLabel}${ts ? ` (${ts})` : ''}` };
+        }
+        window._previewData.donation = data;
+        if (window._refreshDonationPreview) window._refreshDonationPreview(data);
     });
 
     // Listen for block notifications
     configSocket.on('new_block_notification', (data) => {
-        console.log("👁️ New block notification received:", data && data.height ? 'block ' + data.height + ' (details masked for privacy)' : 'notification data');
+        console.log("👁️ New block notification received:", data && data.block_height ? 'block ' + data.block_height + ' (details masked for privacy)' : 'notification data');
+        // Store latest block hash so holiday color preview can show it
+        if (data?.block_hash) {
+            window._previewData = window._previewData || {};
+            window._previewData.latestBlockHash = data.block_hash;
+            if (window._refreshDateHashPreview)    window._refreshDateHashPreview(data.block_hash);
+            if (window._refreshHolidayHashPreview) window._refreshHolidayHashPreview(data.block_hash);
+        }
         
         const state = getNotificationState();
         const now = Date.now();

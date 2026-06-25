@@ -20,7 +20,7 @@
 @media (min-width: 1000px) {
     .container {
         padding: 32px 24px;
-        padding-bottom: 32px;
+        padding-bottom: 0px;
     }
 }
 
@@ -2746,12 +2746,60 @@ body.dark-mode .modal-title-icon {
     }
 }
 
+/* ── Color picker + preview card row ───────────────────────── */
+.preview-color-row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 16px;
+}
+
+@media (max-width: 599px) {
+    .preview-color-row {
+        flex-direction: column;
+        align-items: stretch;
+    }
+}
+
+/* Date/holiday rows break earlier (more content) */
+.date-color-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 14px;
+    padding: 12px;
+    border-radius: 8px;
+}
+
+@media (max-width: 800px) {
+    .date-color-preview {
+        flex: 1 1 100% !important;
+        min-width: 0 !important;
+    }
+}
+
+/* ── Preview card shadows (light / dark config-page theme) ─── */
+.preview-card-light {
+    box-shadow: 0 4px 22px rgba(0,0,0,.45), 0 0 10px rgba(255,255,255,.10);
+}
+.preview-card-dark {
+    box-shadow: 0 4px 22px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.14);
+}
+
+body.dark-mode .preview-card-light {
+    box-shadow: 0 4px 22px rgba(0,0,0,.60), 0 0 18px rgba(255,255,255,.22);
+}
+body.dark-mode .preview-card-dark {
+    box-shadow: 0 4px 22px rgba(0,0,0,.70), 0 0 18px rgba(255,255,255,.28), 0 0 0 1px rgba(255,255,255,.18);
+}
+
 /* ── Easter Egg: Sneaky Pepe Mole ──────────────────────────── */
 .pepe-mole {
     position: fixed;
     width: 120px;
     height: 120px;
-    z-index: 10;
+    z-index: 10002;
     pointer-events: none;
     display: none;
 }
@@ -2843,7 +2891,7 @@ body.dark-mode .modal-title-icon {
     border-radius: 10px;
     pointer-events: none;
     opacity: 0;
-    z-index: 9999;
+    z-index: 10003;
     animation: speech-pop 3.5s ease-out forwards;
     font-family: var(--font-mono);
     letter-spacing: 0.02em;

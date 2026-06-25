@@ -1094,7 +1094,7 @@ class ConfigManager:
                 ],
                 "default": "vertical",
                 "category": "general",
-                "order": 6,
+                "order": 7,
                 "advanced": True
             },
             "eink_orientation": {
@@ -1215,11 +1215,42 @@ class ConfigManager:
                 "category": "general",
                 "order": 4
             },
+            "date_color_group": {
+                "type": "date_color_group",
+                "label": t.get("date_color_group_label", "Date Gradient Colors"),
+                "category": "general",
+                "order": 5,
+                "advanced": True
+            },
+            "color_date_start_light": {
+                "type": "color",
+                "label": t.get("color_date_start_light", "Start Color"),
+                "default": "#1c82c0",
+                "category": "_date_color"
+            },
+            "color_date_end_light": {
+                "type": "color",
+                "label": t.get("color_date_end_light", "End Color"),
+                "default": "#c040a8",
+                "category": "_date_color"
+            },
+            "color_date_start_dark": {
+                "type": "color",
+                "label": t.get("color_date_start_dark", "Start Color"),
+                "default": "#4FC3F7",
+                "category": "_date_color"
+            },
+            "color_date_end_dark": {
+                "type": "color",
+                "label": t.get("color_date_end_dark", "End Color"),
+                "default": "#BA68C8",
+                "category": "_date_color"
+            },
             "holiday_color_group": {
                 "type": "holiday_color_group",
                 "label": t.get("holiday_color_group_label", "Holiday Text Gradient Colors"),
                 "category": "general",
-                "order": 5,
+                "order": 6,
                 "advanced": True
             },
             "color_holiday_light": {
