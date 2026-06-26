@@ -59,6 +59,7 @@
     --nav-btn-shadow: 0 2px 8px rgba(0,0,0,0.06);
     --nav-icon-fill: #4a4a58;
     --modal-overlay: rgba(0,0,0,0.35);
+    --toggle-icon-inactive-filter: brightness(0) invert(0.6);
 }
 
 /* ── Dark Mode ─────────────────────────────────────────────── */
@@ -89,6 +90,7 @@ body.dark-mode {
     --nav-btn-shadow: 0 2px 8px rgba(0,0,0,0.3);
     --nav-icon-fill: #e8e8ec;
     --modal-overlay: rgba(0,0,0,0.6);
+    --toggle-icon-inactive-filter: brightness(0) invert(0.42);
 }
 
 /* ── Base Reset ─────────────────────────────────────────────── */

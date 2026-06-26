@@ -30,6 +30,9 @@ class BitcoinPriceAPI:
         self._price_cache = None
         self._price_cache_timestamp = 0
         self._price_cache_ttl = 300  # 5-minute cache TTL
+        # Raw multi-currency cache — stores the full /v1/prices response
+        self._raw_prices: dict = {}
+        self._raw_prices_timestamp: float = 0
     
     def _build_base_url(self) -> str:
         """Build the base URL for price API from configuration."""
@@ -39,61 +42,65 @@ class BitcoinPriceAPI:
             self.config.get("mempool_use_https", False)
         )
     
-    def fetch_btc_price(self) -> Optional[Dict[str, Union[str, float, int]]]:
+    def _build_result(self, raw_prices: dict, currency: str) -> Dict:
+        """Build a price result dict from the raw /v1/prices response for a given currency."""
+        price = raw_prices.get(currency, 0)
+        if not price:
+            return {"error": f"Currency {currency} not available in price data"}
+        usd_price = raw_prices.get("USD", 0)
+        moscow_time = int(100_000_000 / price) if price > 0 else 0
+        return {
+            "usd_price": usd_price,
+            "price_in_selected_currency": price,
+            "moscow_time": moscow_time,
+            "currency": currency,
+            "all_prices": raw_prices,
+        }
+
+    def fetch_btc_price(self, override_currency: str = None) -> Optional[Dict[str, Union[str, float, int]]]:
         """
         Fetch Bitcoin price data with Moscow time calculation.
-        Uses 5-minute cache to prevent duplicate API calls.
-        
-        Returns:
-            Dict containing:
-            - usd_price: Current USD price
-            - moscow_time: 1 USD in sats (moscow time)
-            - currency: Selected currency
-            - currency_price: Price in selected currency (if not USD)
-            - error: Error message if fetch failed
+        Uses 5-minute cache. The /v1/prices endpoint returns all currencies at
+        once, so override_currency costs no extra network round-trip.
+
+        Returns dict with: usd_price, price_in_selected_currency, moscow_time,
+        currency, all_prices (raw dict of all currencies), or error.
         """
-        # Check cache first
         current_time = time.time()
-        if self._price_cache and (current_time - self._price_cache_timestamp) < self._price_cache_ttl:
-            return self._price_cache
-        
+        selected_currency = override_currency or self.config.get("btc_price_currency", "USD")
+
+        # Serve from raw cache if still fresh — zero extra API calls for alt currencies
+        if self._raw_prices and (current_time - self._raw_prices_timestamp) < self._price_cache_ttl:
+            return self._build_result(self._raw_prices, selected_currency)
+
         try:
-            # Get Bitcoin price in USD
             response = requests.get(f"{self.base_url}/v1/prices", timeout=10, verify=self.mempool_verify_ssl)
             response.raise_for_status()
-            price_data = response.json()
-            
-            # Get configured currency
-            selected_currency = self.config.get("btc_price_currency", "USD")
+            raw_prices = response.json()
 
-            price_in_selected_currency = price_data.get(selected_currency, 0)
-            if not price_in_selected_currency:
-                return {"error": f"Unable to fetch {selected_currency} price"}
-
-            usd_price = price_data.get("USD", 0)
-            if not usd_price:
+            if not raw_prices.get("USD"):
                 return {"error": "Unable to fetch USD price"}
-            
-            # Calculate Moscow time (1 USD in sats)
-            moscow_time = int(100_000_000 / price_in_selected_currency) if price_in_selected_currency > 0 else 0
-            
-            result = {
-                "usd_price": usd_price,
-                "price_in_selected_currency": price_in_selected_currency,
-                "moscow_time": moscow_time,
-                "currency": selected_currency
-            }
-            
-            # Cache the result
+
+            # Cache the full raw response once — all currency lookups reuse it
+            self._raw_prices = raw_prices
+            self._raw_prices_timestamp = current_time
+
+            result = self._build_result(raw_prices, selected_currency)
+
+            # Keep single-currency cache in sync for callers that relied on it
             self._price_cache = result
             self._price_cache_timestamp = current_time
-            
+
             return result
-            
+
         except requests.RequestException as e:
             return {"error": f"Network error: {e}"}
         except Exception as e:
             return {"error": f"Failed to fetch Bitcoin price: {e}"}
+
+    def get_all_prices(self) -> dict:
+        """Return the cached raw multi-currency price dict, or {} if not yet fetched."""
+        return self._raw_prices or {}
     
     def get_formatted_price(self, price_data: Dict, precision: int = 0) -> str:
         """

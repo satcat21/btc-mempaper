@@ -1653,6 +1653,7 @@ class MempaperApp:
             "amount_sats": amount_sats,
             "message": message,
             "timestamp": _dt.utcnow().isoformat(),
+            "block_height": self.current_block_height,
         }
         self._latest_donation = donation
         self._donation_history.insert(0, donation)
@@ -3273,6 +3274,8 @@ class MempaperApp:
                     if price_data:
                         self._precache['price_data'] = price_data
                         self._precache['price_last_update'] = now
+                        if price_data.get('all_prices'):
+                            self._precache['all_prices'] = price_data['all_prices']
                         
                         # Only log if price actually changed
                         currency = price_data.get('currency', 'USD')
@@ -4881,6 +4884,23 @@ class MempaperApp:
 
             return response
 
+        # Cache static icons (SVG, etc.) for 7 days — they never change at runtime
+        @self.app.route('/static/icons/<filename>')
+        def serve_icon_with_cache(filename):
+            import os
+            file_path = os.path.join('static', 'icons', filename)
+            if not os.path.exists(file_path):
+                return "File not found", 404
+            file_stat = os.stat(file_path)
+            etag = f'"{file_stat.st_mtime}-{file_stat.st_size}"'
+            if request.headers.get('If-None-Match') == etag:
+                from flask import Response
+                return Response(status=304)
+            response = send_file(file_path)
+            response.headers['Cache-Control'] = 'public, max-age=604800, immutable'
+            response.headers['ETag'] = etag
+            return response
+
         # Add optimized static file serving with cache headers for memes
         @self.app.route('/static/memes/<filename>')
         def serve_meme_with_cache(filename):
@@ -5441,6 +5461,156 @@ class MempaperApp:
             self._process_donation_payload(data)
             return jsonify({'success': True}), 200
 
+        @self.app.route('/api/mempool/validate', methods=['GET'])
+        @require_auth(self.auth_manager)
+        def validate_mempool_connection():
+            """Check each mempool API endpoint and return per-check status."""
+            import time as _time
+            import concurrent.futures
+            from requests.auth import HTTPBasicAuth as _Auth
+            import requests as _req
+
+            cfg = self.config_manager.get_current_config()
+            host       = cfg.get('mempool_host', '127.0.0.1')
+            rest_port  = cfg.get('mempool_rest_port', 4081)
+            ws_port    = cfg.get('mempool_ws_port', 8999)
+            ws_path    = cfg.get('mempool_ws_path', '/api/v1/ws')
+            use_https  = cfg.get('mempool_use_https', False)
+            verify_ssl = cfg.get('mempool_verify_ssl', True)
+            username   = cfg.get('mempool_username', '')
+            password   = cfg.get('mempool_password', '')
+
+            from utils.technical_config import build_mempool_api_url
+            base_url = build_mempool_api_url(host, rest_port, use_https)
+            auth = _Auth(username, password) if username and password else None
+            ws_scheme = 'wss' if use_https else 'ws'
+
+            checks_def = [
+                ('Block height',  f'{base_url}/blocks/tip/height'),
+                ('Price API',     f'{base_url}/v1/prices'),
+                ('Fee data',      f'{base_url}/v1/fees/recommended'),
+                ('Network stats', f'{base_url}/v1/mining/hashrate/1m'),
+                ('Wallet API',    f'{base_url}/v1/validate-address/1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa'),
+            ]
+
+            ws_url = f'{ws_scheme}://{host}:{ws_port}{ws_path}'
+
+            def _check(name, url):
+                t0 = _time.time()
+                try:
+                    r = _req.get(url, timeout=(3, 5), verify=verify_ssl, auth=auth)
+                    latency = round((_time.time() - t0) * 1000)
+                    if not r.ok:
+                        snippet = r.text[:200].strip() if r.text else ''
+                        hint = ''
+                        if r.status_code == 401:
+                            hint = 'Authentication required — check username/password in Advanced settings.'
+                        elif r.status_code == 403:
+                            hint = 'Access forbidden — your mempool may require auth or IP whitelisting.'
+                        elif r.status_code == 404:
+                            hint = 'Endpoint not found — this feature may not be supported by your mempool backend (Electrs vs full Mempool.space).'
+                        elif r.status_code == 502:
+                            hint = 'Bad gateway — mempool backend may be down or Electrum connection is broken.'
+                        elif r.status_code == 503:
+                            hint = 'Service unavailable — mempool service may still be starting up.'
+                        error = f'HTTP {r.status_code}'
+                        if hint:
+                            error += f' — {hint}'
+                        if snippet:
+                            error += f'\nResponse: {snippet}'
+                        return {'name': name, 'url': url, 'ok': False,
+                                'latency_ms': latency, 'detail': f'HTTP {r.status_code}',
+                                'error': error}
+                    return {'name': name, 'url': url, 'ok': True,
+                            'latency_ms': latency,
+                            'detail': f'HTTP {r.status_code}'}
+                except _req.exceptions.ConnectTimeout:
+                    return {'name': name, 'url': url, 'ok': False,
+                            'error': f'Connection timed out (3 s) — check host/port and firewall rules.'}
+                except _req.exceptions.ReadTimeout:
+                    return {'name': name, 'url': url, 'ok': False,
+                            'error': f'Server connected but response timed out (5 s) — mempool may be overloaded.'}
+                except _req.exceptions.SSLError as e:
+                    return {'name': name, 'url': url, 'ok': False,
+                            'error': f'SSL error: {str(e)[:150]} — try disabling "Verify SSL" in Advanced settings.'}
+                except _req.exceptions.ConnectionError as e:
+                    return {'name': name, 'url': url, 'ok': False,
+                            'error': f'Connection refused — is mempool running at {host}:{rest_port}? ({str(e)[:80]})'}
+                except Exception as e:
+                    return {'name': name, 'url': url, 'ok': False, 'error': str(e)[:200]}
+
+            def _check_ws():
+                import socket as _socket
+                import ssl as _ssl
+                import base64 as _b64
+                import os as _os
+                from urllib.parse import urlparse as _urlparse
+
+                t0 = _time.time()
+                try:
+                    p = _urlparse(ws_url)
+                    h = p.hostname
+                    port = p.port or (443 if ws_scheme == 'wss' else 80)
+                    path_str = p.path or '/api/v1/ws'
+
+                    sock = _socket.create_connection((h, port), timeout=3)
+
+                    if ws_scheme == 'wss':
+                        ctx = _ssl.create_default_context()
+                        if not verify_ssl:
+                            ctx.check_hostname = False
+                            ctx.verify_mode = _ssl.CERT_NONE
+                        sock = ctx.wrap_socket(sock, server_hostname=h)
+
+                    key = _b64.b64encode(_os.urandom(16)).decode()
+                    hdrs = [
+                        f'GET {path_str} HTTP/1.1',
+                        f'Host: {p.netloc}',
+                        'Upgrade: websocket',
+                        'Connection: Upgrade',
+                        f'Sec-WebSocket-Key: {key}',
+                        'Sec-WebSocket-Version: 13',
+                    ]
+                    if username and password:
+                        creds = _b64.b64encode(f'{username}:{password}'.encode()).decode()
+                        hdrs.append(f'Authorization: Basic {creds}')
+
+                    sock.sendall(('\r\n'.join(hdrs) + '\r\n\r\n').encode())
+                    sock.settimeout(5)
+
+                    resp = b''
+                    while b'\r\n\r\n' not in resp:
+                        chunk = sock.recv(2048)
+                        if not chunk:
+                            break
+                        resp += chunk
+                    try:
+                        sock.close()
+                    except Exception:
+                        pass
+
+                    first_line = resp.decode('utf-8', errors='replace').split('\r\n')[0]
+                    if ' 101 ' in first_line:
+                        return {'name': 'WebSocket', 'url': ws_url, 'ok': True,
+                                'latency_ms': round((_time.time() - t0) * 1000),
+                                'detail': '101 Switching Protocols'}
+                    else:
+                        return {'name': 'WebSocket', 'url': ws_url, 'ok': False,
+                                'error': first_line or 'No response from server'}
+                except Exception as e:
+                    return {'name': 'WebSocket', 'url': ws_url, 'ok': False, 'error': str(e)[:120]}
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
+                futures = [pool.submit(_check, n, u) for n, u in checks_def]
+                ws_future = pool.submit(_check_ws)
+                results = [f.result() for f in concurrent.futures.as_completed(futures + [ws_future])]
+
+            order = {n: i for i, (n, _) in enumerate(checks_def)}
+            order['WebSocket'] = len(checks_def)
+            results.sort(key=lambda r: order.get(r['name'], 99))
+
+            return jsonify({'checks': results, 'ws_url': ws_url})
+
         @self.app.route('/api/donations', methods=['GET'])
         @require_auth(self.auth_manager)
         def get_donations():
@@ -5837,24 +6007,50 @@ class MempaperApp:
             try:
                 cfg = self.config_manager.get_current_config()
                 currency_symbols = {'USD':'$','EUR':'€','GBP':'£','CAD':'C$','CHF':'CHF','AUD':'A$','JPY':'¥'}
+                price_currency_override = request.args.get('price_currency')
+                wallet_currency_override = request.args.get('wallet_currency')
 
                 # Price
                 price_data = self._precache.get('price_data') if hasattr(self, '_precache') else None
                 price_payload = None
-                if price_data and not price_data.get('error'):
+                # Resolve the effective currency for the price preview
+                effective_price_currency = price_currency_override or (
+                    price_data.get('currency', 'USD') if price_data else 'USD')
+
+                # Use the cached all_prices dict so any currency costs zero extra API calls
+                all_prices = (
+                    self._precache.get('all_prices')
+                    or (price_data.get('all_prices') if price_data else None)
+                    or self.image_renderer.btc_price_api.get_all_prices()
+                )
+                if all_prices and effective_price_currency in all_prices:
+                    pv = all_prices[effective_price_currency]
+                    price_payload = {
+                        'price': pv,
+                        'currency': effective_price_currency,
+                        'symbol': currency_symbols.get(effective_price_currency, effective_price_currency),
+                        'moscow_time': int(100_000_000 / pv) if pv > 0 else 0,
+                    }
+                elif price_data and not price_data.get('error'):
                     currency = price_data.get('currency', 'USD')
                     price_val = price_data.get('price_in_selected_currency', price_data.get('currency_price', 0))
-                    moscow = price_data.get('moscow_time', 0)
                     price_payload = {
                         'price': price_val,
                         'currency': currency,
                         'symbol': currency_symbols.get(currency, currency),
-                        'moscow_time': moscow,
+                        'moscow_time': price_data.get('moscow_time', 0),
                     }
 
                 # Bitaxe — aggregate from pre-cache or live fetch
                 bitaxe_payload = None
                 bitaxe_data = self._precache.get('bitaxe_data') if hasattr(self, '_precache') else None
+                if not bitaxe_data and hasattr(self.image_renderer, 'bitaxe_api'):
+                    try:
+                        bitaxe_data = self.image_renderer.bitaxe_api.fetch_bitaxe_stats()
+                        if bitaxe_data and hasattr(self, '_precache'):
+                            self._precache['bitaxe_data'] = bitaxe_data
+                    except Exception:
+                        pass
                 if bitaxe_data and not bitaxe_data.get('error'):
                     ths = bitaxe_data.get('total_hashrate_ths', 0)
                     online = bitaxe_data.get('miners_online', 0)
@@ -5876,21 +6072,14 @@ class MempaperApp:
                     cached_wallet = self.image_renderer.wallet_api.get_cached_wallet_balances()
                     if cached_wallet:
                         total_btc = cached_wallet.get('total_btc', 0)
-                        wallet_currency = cfg.get('wallet_balance_currency', 'EUR')
-                        # Compute fiat value using cached price if currencies match
+                        wallet_currency = wallet_currency_override or cfg.get('wallet_balance_currency', 'EUR')
+                        # Compute fiat value from all_prices cache — zero extra API calls
                         fiat_value = None
-                        if price_payload:
-                            if price_payload['currency'] == wallet_currency:
-                                fiat_value = total_btc * price_payload['price']
-                            elif hasattr(self.image_renderer, 'btc_price_api'):
-                                try:
-                                    wp = self.image_renderer.btc_price_api.fetch_btc_price(
-                                        override_currency=wallet_currency)
-                                    if wp and not wp.get('error'):
-                                        wp_val = wp.get('price_in_selected_currency', wp.get('currency_price', 0))
-                                        fiat_value = total_btc * wp_val
-                                except Exception:
-                                    pass
+                        wp_price = (all_prices or {}).get(wallet_currency)
+                        if wp_price:
+                            fiat_value = total_btc * wp_price
+                        elif price_payload and price_payload['currency'] == wallet_currency:
+                            fiat_value = total_btc * price_payload['price']
                         wallet_payload = {
                             'total_btc': total_btc,
                             'fiat_value': fiat_value,
@@ -5920,7 +6109,9 @@ class MempaperApp:
                         }
                     p_latest  = _don_to_payload(self._latest_donation,       mode='latest')
                     p_highest = _don_to_payload(self._highest_donation,      mode='highest')
-                    p_auto    = _don_to_payload(self._get_active_donation(),  mode='auto')
+                    _active_don = self._get_active_donation()
+                    _eff_mode = _active_don.get('_effective_mode', 'latest') if _active_don else 'latest'
+                    p_auto    = _don_to_payload(_active_don, mode=_eff_mode)
                     if p_latest or p_highest or p_auto:
                         donation_payload = {
                             'latest':  p_latest,

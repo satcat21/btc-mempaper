@@ -1098,15 +1098,24 @@ class ConfigManager:
                 "advanced": True
             },
             "eink_orientation": {
-                "type": "toggle",
-                "label": t.get("eink_orientation", "E-ink Orientation"),
-                "description": t.get("eink_orientation_desc", "Orientation for the E-ink display"),
-                "options": [
-                    {"value": "vertical", "label": t.get("vertical", "Portrait"), "icon": "/static/icons/vertical.svg"},
-                    {"value": "horizontal", "label": t.get("horizontal", "Landscape"), "icon": "/static/icons/horizontal.svg"}
-                ],
+                "type": "hidden",
+                "label": "",
                 "default": "vertical",
                 "category": "eink_display"
+            },
+            "fee_parameter": {
+                "type": "select",
+                "label": t.get("fee_parameter", "Fee Parameter for Block Height Color"),
+                "description": t.get("fee_parameter_desc", "Which fee level to use for determining block height color"),
+                "default": "minimumFee",
+                "options": [
+                    {"value": "fastestFee", "label": t.get("fastest", "Fastest (~1 block)")},
+                    {"value": "halfHourFee", "label": t.get("half_hour", "Half Hour (~3 blocks)")},
+                    {"value": "hourFee", "label": t.get("hour", "Hour (~6 blocks)")},
+                    {"value": "economyFee", "label": t.get("economy", "Economy (~1 day)")},
+                    {"value": "minimumFee", "label": t.get("minimum", "Minimum")}
+                ],
+                "category": "mempool"
             },
             "mempool_host": {
                 "type": "text",
@@ -1140,19 +1149,12 @@ class ConfigManager:
                 "advanced": True,
                 "order": 2
             },
-            "fee_parameter": {
-                "type": "select",
-                "label": t.get("fee_parameter", "Fee Parameter for Block Height Color"),
-                "description": t.get("fee_parameter_desc", "Which fee level to use for determining block height color"),
-                "default": "minimumFee",
-                "options": [
-                    {"value": "fastestFee", "label": t.get("fastest", "Fastest (~1 block)")},
-                    {"value": "halfHourFee", "label": t.get("half_hour", "Half Hour (~3 blocks)")},
-                    {"value": "hourFee", "label": t.get("hour", "Hour (~6 blocks)")},
-                    {"value": "economyFee", "label": t.get("economy", "Economy (~1 day)")},
-                    {"value": "minimumFee", "label": t.get("minimum", "Minimum")}
-                ],
-                "category": "mempool"
+            "_mempool_actions": {
+                "type": "mempool_actions",
+                "label_check": t.get("check_connection", "Check Connection"),
+                "label_open": t.get("open_mempool", "Open Mempool"),
+                "category": "mempool",
+                "order": 1000
             },
             "mempool_use_https": {
                 "type": "boolean",
@@ -1282,70 +1284,19 @@ class ConfigManager:
                 "label": t.get("display_type", "Display Device Type"),
                 "description": t.get("display_type_desc", "Select your specific e-paper display model"),
                 "options": [
-                    # Native Waveshare Displays (recommended - best performance)
-                    {"value": "epd13in3E", "label": "★ Waveshare 13.3\" 6-Color (Spectra 6) - Native Driver"},
-                    {"value": "epd7in3f", "label": "★ Waveshare 7.3\" 7-Color - Native Driver"},
-                    {"value": "epd13in3k", "label": "★ Waveshare 13.3\" B/W - Native Driver"},
-                    
-                    # Inky Displays
-                    {"value": "inky.auto", "label": "Inky AutoDetect"},
-                    {"value": "inky.impression", "label": "Inky Impression 7 Color"},
-                    {"value": "inky.phat_red", "label": "Inky pHAT Red/Black/White - 212x104"},
-                    {"value": "inky.phat_yellow", "label": "Inky pHAT Yellow/Black/White - 212x104"},
-                    {"value": "inky.phat_black", "label": "Inky pHAT Black/White - 212x104"},
-                    {"value": "inky.phat1608_red", "label": "Inky pHAT Red/Black/White - 250x122"},
-                    {"value": "inky.phat1608_yellow", "label": "Inky pHAT Yellow/Black/White - 250x122"},
-                    {"value": "inky.phat1608_black", "label": "Inky pHAT Black/White - 250x122"},
-                    {"value": "inky.what_red", "label": "Inky wHAT Red/Black/White"},
-                    {"value": "inky.what_yellow", "label": "Inky wHAT Yellow/Black/White"},
-                    {"value": "inky.what_black", "label": "Inky wHAT Black/White"},
-                    
-                    # Mock Display
-                    {"value": "omni_epd.mock", "label": "Mock Display (Testing - No Hardware)"},
-                    
-                    # Waveshare 4 inch Displays
-                    {"value": "waveshare_epd.epd4in01f", "label": "Waveshare 4.01\" 7-Color HAT"},
-                    {"value": "waveshare_epd.epd4in2", "label": "Waveshare 4.2\" E-Paper"},
-                    {"value": "waveshare_epd.epd4in2b", "label": "Waveshare 4.2\" B (Red)"},
-                    {"value": "waveshare_epd.epd4in2b_V2", "label": "Waveshare 4.2\" B V2 (Red)"},
-                    {"value": "waveshare_epd.epd4in2c", "label": "Waveshare 4.2\" C (Yellow)"},
-                    {"value": "waveshare_epd.epd4in37g", "label": "Waveshare 4.37\" G (4-Color)"},
-                    
-                    # Waveshare 5 inch Displays
-                    {"value": "waveshare_epd.epd5in65f", "label": "Waveshare 5.65\" F (7-Color)"},
-                    {"value": "waveshare_epd.epd5in83", "label": "Waveshare 5.83\" E-Paper HAT"},
-                    {"value": "waveshare_epd.epd5in83_V2", "label": "Waveshare 5.83\" V2"},
-                    {"value": "waveshare_epd.epd5in83b", "label": "Waveshare 5.83\" B (Red)"},
-                    {"value": "waveshare_epd.epd5in83b_V2", "label": "Waveshare 5.83\" B V2 (Red)"},
-                    {"value": "waveshare_epd.epd5in83c", "label": "Waveshare 5.83\" C (Yellow)"},
-                    
-                    # Waveshare Large IT8951 Displays
-                    {"value": "waveshare_epd.it8951", "label": "Waveshare 6\" E-Ink (IT8951)"},
-                    
-                    # Waveshare 7 inch Displays
-                    {"value": "waveshare_epd.epd7in3e", "label": "Waveshare 7.3\" E (Color)"},
-                    {"value": "waveshare_epd.epd7in3f", "label": "Waveshare 7.3\" F (7-Color) ⭐"},
-                    {"value": "waveshare_epd.epd7in3g", "label": "Waveshare 7.3\" G (4-Color)"},
-                    {"value": "waveshare_epd.epd7in5", "label": "Waveshare 7.5\" E-Paper HAT"},
-                    {"value": "waveshare_epd.epd7in5_V2", "label": "Waveshare 7.5\" V2"},
-                    {"value": "waveshare_epd.epd7in5_HD", "label": "Waveshare 7.5\" HD"},
-                    {"value": "waveshare_epd.epd7in5b", "label": "Waveshare 7.5\" B (Red)"},
-                    {"value": "waveshare_epd.epd7in5b_V2", "label": "Waveshare 7.5\" B V2 (Red)"},
-                    {"value": "waveshare_epd.epd7in5b_HD", "label": "Waveshare 7.5\" HD B (Red)"},
-                    {"value": "waveshare_epd.epd7in5c", "label": "Waveshare 7.5\" C (Yellow)"},
-
-                    # Waveshare Large Displays (10"+)
-                    {"value": "waveshare_epd.epd10in2", "label": "Waveshare 10.2\" E-Paper - 960x640"},
-                    {"value": "waveshare_epd.epd12in48", "label": "Waveshare 12.48\" E-Paper - 1304x984"},
-                    {"value": "waveshare_epd.epd13in3E", "label": "Waveshare 13.3\" E (Spectra 6 E6) 6-Color - 1600x1200 ⭐"},
-                    {"value": "waveshare_epd.epd13in3k", "label": "Waveshare 13.3\" K (Black & White) - 1600x1200"}
+                    {"value": "epd13in3E", "label": "Waveshare 13.3\" 6-Color (Spectra 6) - 1600x1200"},
+                    {"value": "epd7in3f",  "label": "Waveshare 7.3\" 7-Color - 800x480"},
                 ],
                 "category": "eink_display"
             },
             "eink_dark_mode": {
-                "type": "boolean",
-                "label": t.get("eink_dark_mode", "Dark Mode E-Ink"),
+                "type": "toggle",
+                "label": t.get("eink_dark_mode", "E-Ink Theme"),
                 "description": t.get("eink_dark_mode_desc", "Enable dark mode for the e-ink display."),
+                "options": [
+                    {"value": False, "label": t.get("theme_light", "Light"), "icon": "/static/icons/light.svg"},
+                    {"value": True,  "label": t.get("theme_dark",  "Dark"),  "icon": "/static/icons/dark.svg"},
+                ],
                 "default": False,
                 "category": "eink_display"
             },
@@ -1358,9 +1309,13 @@ class ConfigManager:
                 "order": 2
             },
             "color_mode_dark": {
-                "type": "boolean",
-                "label":  t.get("color_mode_dark", "Dark Mode"),
+                "type": "toggle",
+                "label":  t.get("color_mode_dark", "Web Theme"),
                 "description":  t.get("color_mode_dark_desc", "Enable dark mode for the webinterface."),
+                "options": [
+                    {"value": False, "label": t.get("theme_light", "Light"), "icon": "/static/icons/light.svg"},
+                    {"value": True,  "label": t.get("theme_dark",  "Dark"),  "icon": "/static/icons/dark.svg"},
+                ],
                 "default": True,
                 "category": "general",
                 "order": 3

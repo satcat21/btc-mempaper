@@ -182,7 +182,9 @@ translations = {
         # Orientations
         "vertical": "Vertical",
         "horizontal": "Horizontal",
-        
+        "theme_light": "Light",
+        "theme_dark": "Dark",
+
         # Boolean Values
         "enabled": "Enabled",
         "disabled": "Disabled",
@@ -260,6 +262,8 @@ translations = {
         "hour": "Hour (~6 blocks)",
         "economy": "Economy (~1 day)",
         "minimum": "Minimum",
+        "check_connection": "Check Connection",
+        "open_mempool": "Open Mempool",
 
         "date_color_group_label": "Date & Block Hash Gradient Colors",
         "holiday_color_group_label": "Holiday & Block Hash Gradient Colors",
@@ -293,10 +297,11 @@ translations = {
         # Missing UI translations
         "configure_dashboard": "Configure your mempaper dashboard",
         "colors_design": "Colors & Design",
+        "color_mode_dark": "Web Theme",
         "color_mode_dark_desc": "Enable dark mode for the webinterface.",
         "public_dashboard": "Public Dashboard",
         "public_dashboard_desc": "Allow unauthenticated users to view the dashboard. Admin login is still required to access settings.",
-        "eink_dark_mode": "Dark Mode E-Ink",
+        "eink_dark_mode": "E-Ink Theme",
         "eink_dark_mode_desc": "Enable dark mode for the e-ink display.",
         "bitaxe_stats": "Bitaxe Stats",
         "bitaxe_table_address": "IP Address",
@@ -406,6 +411,7 @@ translations = {
         "webhook_option_b_step3": "Set the LNbits Webhook URL to the hook URL, then paste the WebSocket URL in the field below.",
         "recent_donations": "Recent Donations",
         "donation_col_time": "Time",
+        "donation_col_block": "Block",
         "donation_col_message": "Message",
         "no_donations_yet": "No donations yet.",
         "could_not_load_donations": "Could not load donations.",
@@ -784,7 +790,9 @@ translations = {
         # Orientations
         "vertical": "Vertikal",
         "horizontal": "Horizontal",
-        
+        "theme_light": "Hell",
+        "theme_dark": "Dunkel",
+
         # Boolean Values
         "enabled": "Aktiviert",
         "disabled": "Deaktiviert",
@@ -862,6 +870,8 @@ translations = {
         "hour": "Stunde (~6 Blöcke)",
         "economy": "Sparsam (~1 Tag)",
         "minimum": "Minimum",
+        "check_connection": "Verbindung prüfen",
+        "open_mempool": "Mempool öffnen",
         "vertical": "Hochformat",
         "horizontal": "Querformat",
         "english": "Englisch",
@@ -901,9 +911,12 @@ translations = {
         # Missing UI translations
         "configure_dashboard": "Konfigurieren Sie Ihr mempaper-Dashboard",
         "colors_design": "Farben & Design",
+        "color_mode_dark": "Web-Thema",
         "color_mode_dark_desc": "Dunklen Modus für die Weboberfläche aktivieren.",
         "public_dashboard": "Öffentliches Dashboard",
         "public_dashboard_desc": "Nicht angemeldeten Benutzern den Zugriff auf das Dashboard erlauben. Zum Ändern der Einstellungen ist weiterhin eine Admin-Anmeldung erforderlich.",
+        "eink_dark_mode": "E-Ink Thema",
+        "eink_dark_mode_desc": "Dunklen Modus für das E-Ink Display aktivieren.",
         "bitaxe_stats": "Bitaxe-Statistiken",
         "bitaxe_table_add": "Miner hinzufügen",
         "bitaxe_table_remove": "Entfernen",
@@ -1010,6 +1023,7 @@ translations = {
         "webhook_option_b_step3": "Die Webhook-URL in LNbits als Webhook-URL eintragen, dann die WebSocket-URL unten einfügen.",
         "recent_donations": "Letzte Spenden",
         "donation_col_time": "Zeit",
+        "donation_col_block": "Block",
         "donation_col_message": "Nachricht",
         "no_donations_yet": "Noch keine Spenden.",
         "could_not_load_donations": "Spenden konnten nicht geladen werden.",
@@ -1383,7 +1397,9 @@ translations = {
         # Orientations
         "vertical": "Vertical",
         "horizontal": "Horizontal",
-        
+        "theme_light": "Claro",
+        "theme_dark": "Oscuro",
+
         # Boolean Values
         "enabled": "Habilitado",
         "disabled": "Deshabilitado",
@@ -1431,6 +1447,8 @@ translations = {
         "hour": "Hora (~6 bloques)",
         "economy": "Económico (~1 día)",
         "minimum": "Mínimo",
+        "check_connection": "Verificar Conexión",
+        "open_mempool": "Abrir Mempool",
         "show_btc_price_block": "Mostrar Bloque de Precio BTC",
         "show_btc_price_block_desc": "Mostrar el bloque de información del precio actual de Bitcoin si el espacio lo permite",
         "btc_price_currency": "Moneda del Precio BTC",
@@ -1501,8 +1519,11 @@ translations = {
         # Missing UI translations
         "configure_dashboard": "Configure su panel de mempaper",
         "colors_design": "Colores y Diseño",
+        "color_mode_dark": "Tema Web",
         "color_mode_dark_desc": "Habilitar modo oscuro para la interfaz web.",
         "public_dashboard": "Dashboard Público",
+        "eink_dark_mode": "Tema E-Ink",
+        "eink_dark_mode_desc": "Habilitar modo oscuro para la pantalla e-ink.",
         "public_dashboard_desc": "Permitir que usuarios no autenticados vean el dashboard. Se requiere inicio de sesión de administrador para acceder a la configuración.",
         "bitaxe_stats": "Estadísticas de Bitaxe",
         "bitaxe_table_placeholder_comment": "Ingrese descripción o etiqueta",
@@ -1599,6 +1620,7 @@ translations = {
         "webhook_option_b_step3": "Introduce la URL de webhook en LNbits como URL de webhook y pega la URL de WebSocket en el campo de abajo.",
         "recent_donations": "Donaciones recientes",
         "donation_col_time": "Hora",
+        "donation_col_block": "Bloque",
         "donation_col_message": "Mensaje",
         "no_donations_yet": "Aún no hay donaciones.",
         "could_not_load_donations": "No se pudieron cargar las donaciones.",
@@ -1972,7 +1994,9 @@ translations = {
         # Orientations
         "vertical": "Vertical",
         "horizontal": "Horizontal",
-        
+        "theme_light": "Clair",
+        "theme_dark": "Sombre",
+
         # Boolean Values
         "enabled": "Activé",
         "disabled": "Désactivé",
@@ -2020,6 +2044,8 @@ translations = {
         "hour": "Heure (~6 blocs)",
         "economy": "Économique (~1 jour)",
         "minimum": "Minimum",
+        "check_connection": "Vérifier la Connexion",
+        "open_mempool": "Ouvrir Mempool",
         "show_btc_price_block": "Afficher le Bloc Prix BTC",
         "show_btc_price_block_desc": "Afficher le bloc d'information du prix Bitcoin actuel si l'espace le permet",
         "btc_price_currency": "Devise du Prix BTC",
@@ -2090,8 +2116,11 @@ translations = {
         # Missing UI translations
         "configure_dashboard": "Configurez votre tableau de bord mempaper",
         "colors_design": "Couleurs et Design",
+        "color_mode_dark": "Thème Web",
         "color_mode_dark_desc": "Activer le mode sombre pour l'interface web.",
         "public_dashboard": "Dashboard Public",
+        "eink_dark_mode": "Thème E-Ink",
+        "eink_dark_mode_desc": "Activer le mode sombre pour l'affichage e-ink.",
         "public_dashboard_desc": "Autoriser les utilisateurs non authentifiés à voir le dashboard. La connexion administrateur est toujours requise pour accéder aux paramètres.",
         "bitaxe_stats": "Statistiques Bitaxe",
         "bitaxe_table_placeholder_comment": "Entrez une description ou étiquette",
@@ -2189,6 +2218,7 @@ translations = {
         "webhook_option_b_step3": "Renseignez l'URL webhook dans LNbits comme URL de webhook, puis collez l'URL WebSocket dans le champ ci-dessous.",
         "recent_donations": "Dons récents",
         "donation_col_time": "Heure",
+        "donation_col_block": "Bloc",
         "donation_col_message": "Message",
         "no_donations_yet": "Aucun don pour l'instant.",
         "could_not_load_donations": "Impossible de charger les dons.",
@@ -2567,7 +2597,9 @@ translations = {
         # Orientations
         "vertical": "Verticale",
         "horizontal": "Orizzontale",
-        
+        "theme_light": "Chiaro",
+        "theme_dark": "Scuro",
+
         # Boolean Values
         "enabled": "Abilitato",
         "disabled": "Disabilitato",
@@ -2645,6 +2677,8 @@ translations = {
         "hour": "Un'ora (~6 blocchi)",
         "economy": "Economica (~1 giorno)",
         "minimum": "Minima",
+        "check_connection": "Verifica Connessione",
+        "open_mempool": "Apri Mempool",
 
         "date_color_group_label": "Colori Sfumatura Data e Hash Blocco",
         "holiday_color_group_label": "Colori Sfumatura Festività e Hash Blocco",
@@ -2678,10 +2712,11 @@ translations = {
         # Missing UI translations
         "configure_dashboard": "Configura la tua dashboard mempaper",
         "colors_design": "Colori e Design",
+        "color_mode_dark": "Tema Web",
         "color_mode_dark_desc": "Abilita la modalità scura per l'interfaccia web.",
         "public_dashboard": "Dashboard Pubblico",
         "public_dashboard_desc": "Consenti agli utenti non autenticati di visualizzare il dashboard. L'accesso amministratore è comunque necessario per le impostazioni.",
-        "eink_dark_mode": "Modalità Scura E-Ink",
+        "eink_dark_mode": "Tema E-Ink",
         "eink_dark_mode_desc": "Abilita la modalità scura per il display e-ink.",
         "bitaxe_stats": "Statistiche Bitaxe",
         "bitaxe_table_placeholder_comment": "Inserisci descrizione o etichetta",
@@ -2766,6 +2801,7 @@ translations = {
         "webhook_option_b_step3": "Inserisci l'URL webhook in LNbits come URL webhook, poi incolla l'URL WebSocket nel campo sottostante.",
         "recent_donations": "Donazioni recenti",
         "donation_col_time": "Ora",
+        "donation_col_block": "Blocco",
         "donation_col_message": "Messaggio",
         "no_donations_yet": "Nessuna donazione ancora.",
         "could_not_load_donations": "Impossibile caricare le donazioni.",

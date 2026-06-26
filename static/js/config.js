@@ -159,6 +159,7 @@ function closeMemeModal() {
                     }
                     const ts = donation.timestamp
                         ? new Date(donation.timestamp + 'Z').toLocaleString() : '—';
+                    const bh = donation.block_height != null ? donation.block_height.toLocaleString() : '—';
                     const sats = (donation.amount_sats || 0).toLocaleString();
                     const msg = donation.message
                         ? escapeHtml(donation.message) : '<em style="color:#888">—</em>';
@@ -166,6 +167,7 @@ function closeMemeModal() {
                     tr.style.cssText = 'border-bottom:1px solid var(--border-color);';
                     tr.innerHTML = `
                         <td style="padding:5px 8px; white-space:nowrap;">${ts}</td>
+                        <td style="padding:5px 8px; text-align:right; font-family:var(--font-mono); color:var(--text-secondary);">${bh}</td>
                         <td style="padding:5px 8px; text-align:right; font-weight:bold; color:var(--accent); font-family:var(--font-mono);">${sats}</td>
                         <td style="padding:5px 8px;">${msg}</td>`;
                     tbody.insertBefore(tr, tbody.firstChild);
@@ -1974,7 +1976,7 @@ function createWifiSection() {
     const actions = document.createElement('div');
     actions.className = 'wifi-actions';
     actions.innerHTML = `
-        <button type="button" class="wifi-btn wifi-btn-add" id="wifi-btn-add">+ ${t.wifi_add_network || 'Add Network'}</button>
+        <button type="button" class="wifi-btn wifi-btn-add" id="wifi-btn-add">${t.wifi_add_network || 'Add Network'}</button>
         <button type="button" class="wifi-btn wifi-btn-scan" id="wifi-btn-scan">${t.wifi_scan || 'Scan Nearby'}</button>
     `;
     section.appendChild(actions);
@@ -3895,6 +3897,21 @@ function renderConfigurationForm() {
                           : keyEl.value;
                 window._pendingConfigOverrides[key] = val;
                 clearTimeout(_previewDebounce);
+                if (key === 'btc_price_currency' || key === 'wallet_balance_currency') {
+                    const _cfg2 = { ...(window.currentConfig || {}), ...(window._pendingConfigOverrides || {}) };
+                    const _params = new URLSearchParams();
+                    _params.set('price_currency', _cfg2['btc_price_currency'] || 'USD');
+                    _params.set('wallet_currency', _cfg2['wallet_balance_currency'] || 'EUR');
+                    fetch('/api/config/preview-data?' + _params)
+                        .then(r => r.ok ? r.json() : null)
+                        .then(d => {
+                            if (d?.price) window._previewData.price = d.price;
+                            if (d?.wallet) window._previewData.wallet = d.wallet;
+                            _reorganize();
+                        })
+                        .catch(() => { _reorganize(); });
+                    return;
+                }
                 _reorganize();
             }, true);
 
@@ -3943,27 +3960,135 @@ function renderConfigurationForm() {
         diagnoseBooleanElements();
     }, 200); // Ensure everything is fully loaded
 
-    // Fetch live preview data and populate section preview cards
-    fetch('/api/config/preview-data')
-        .then(r => r.ok ? r.json() : null)
-        .then(d => {
-            if (!d) return;
-            const fields = ['price','bitaxe','wallet','donation','countdown','halving','network'];
-            fields.forEach(k => { if (d[k]) window._previewData[k] = d[k]; });
-            if (d.block_hash) {
-                window._previewData.latestBlockHash = d.block_hash;
-                if (window._refreshDateHashPreview)    window._refreshDateHashPreview(d.block_hash);
-                if (window._refreshHolidayHashPreview) window._refreshHolidayHashPreview(d.block_hash);
-            }
-            if (d.price      && window._refreshPricePreview)      window._refreshPricePreview(d.price);
-            if (d.bitaxe     && window._refreshBitaxePreview)     window._refreshBitaxePreview(d.bitaxe);
-            if (d.wallet     && window._refreshWalletPreview)     window._refreshWalletPreview(d.wallet);
-            if (d.donation   && window._refreshDonationPreview)   window._refreshDonationPreview(d.donation);
-            if (d.countdown  && window._refreshCountdownPreview)  window._refreshCountdownPreview(d.countdown);
-            if (d.halving    && window._refreshHalvingPreview)    window._refreshHalvingPreview(d.halving);
-            if (d.network    && window._refreshNetworkPreview)    window._refreshNetworkPreview(d.network);
-        })
+    // Fetch live preview data — retry with backoff if the server hasn't cached data yet
+    // (e.g. freshly started, BTC price not fetched yet). Stops once price + network are filled
+    // or after 6 attempts (~62s total).
+    (function _fetchPreviewData(attempt) {
+        fetch('/api/config/preview-data')
+            .then(r => r.ok ? r.json() : null)
+            .then(d => {
+                if (!d) return;
+                const fields = ['price','bitaxe','wallet','donation','countdown','halving','network'];
+                fields.forEach(k => { if (d[k]) window._previewData[k] = d[k]; });
+                if (d.block_hash) {
+                    window._previewData.latestBlockHash = d.block_hash;
+                    if (window._refreshDateHashPreview)    window._refreshDateHashPreview(d.block_hash);
+                    if (window._refreshHolidayHashPreview) window._refreshHolidayHashPreview(d.block_hash);
+                }
+                if (d.price      && window._refreshPricePreview)      window._refreshPricePreview(d.price);
+                if (d.bitaxe     && window._refreshBitaxePreview)     window._refreshBitaxePreview(d.bitaxe);
+                if (d.wallet     && window._refreshWalletPreview)     window._refreshWalletPreview(d.wallet);
+                if (d.donation   && window._refreshDonationPreview)   window._refreshDonationPreview(d.donation);
+                if (d.countdown  && window._refreshCountdownPreview)  window._refreshCountdownPreview(d.countdown);
+                if (d.halving    && window._refreshHalvingPreview)    window._refreshHalvingPreview(d.halving);
+                if (d.network    && window._refreshNetworkPreview)    window._refreshNetworkPreview(d.network);
+                const pd = window._previewData;
+                if ((!pd.price || !pd.network) && attempt < 6) {
+                    setTimeout(() => _fetchPreviewData(attempt + 1), Math.min(1500 * attempt, 10000));
+                }
+            })
+            .catch(() => {
+                if (attempt < 6) setTimeout(() => _fetchPreviewData(attempt + 1), 3000);
+            });
+    })(1);
+}
+
+// Cache and helper for loading SVG icons with a specific fill colour
+const _mpaIconCache = {};
+['check', 'error'].forEach(name => {
+    fetch(`/static/icons/${name}.svg`)
+        .then(r => r.text())
+        .then(svg => { _mpaIconCache[name] = svg; })
         .catch(() => {});
+});
+
+function _mpaIcon(name, color, size) {
+    const cached = _mpaIconCache[name];
+    if (!cached) return '';
+    return cached
+        .replace(/fill="[^"]*"/, `fill="${color}"`)
+        .replace('<svg ', `<svg style="width:${size}px;height:${size}px;flex-shrink:0;vertical-align:middle;" `);
+}
+
+function _mpaShowLogModal(checks) {
+    const dark = document.body.classList.contains('dark-mode');
+    const C = dark ? {
+        bg:          'rgba(22, 22, 28, 0.97)',
+        shadow:      '0 24px 64px rgba(0,0,0,0.5)',
+        overlay:     'rgba(0,0,0,0.6)',
+        border:      'rgba(255,255,255,0.09)',
+        text:        '#e8e8ec',
+        muted:       'rgba(232,232,236,0.72)',
+        badge:       'rgba(255,255,255,0.07)',
+        badgeBorder: 'rgba(255,255,255,0.12)',
+        errBg:       'rgba(239,68,68,0.1)',
+        errBorder:   'rgba(239,68,68,0.25)',
+        errText:     '#f87171',
+    } : {
+        bg:          'rgba(255,255,255,0.98)',
+        shadow:      '0 24px 64px rgba(0,0,0,0.18)',
+        overlay:     'rgba(0,0,0,0.35)',
+        border:      'rgba(0,0,0,0.1)',
+        text:        '#1a1a1e',
+        muted:       'rgba(30,30,40,0.58)',
+        badge:       'rgba(0,0,0,0.05)',
+        badgeBorder: 'rgba(0,0,0,0.12)',
+        errBg:       'rgba(220,38,38,0.07)',
+        errBorder:   'rgba(220,38,38,0.2)',
+        errText:     '#b91c1c',
+    };
+
+    const overlay = document.createElement('div');
+    overlay.style.cssText = `position:fixed;inset:0;z-index:200000;background:${C.overlay};display:flex;align-items:center;justify-content:center;padding:20px;`;
+
+    const box = document.createElement('div');
+    box.style.cssText = `background:${C.bg};backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border:1px solid ${C.border};border-radius:14px;padding:24px;max-width:540px;width:100%;max-height:75vh;overflow-y:auto;box-shadow:${C.shadow};color:${C.text};`;
+
+    const title = document.createElement('div');
+    title.style.cssText = `font-weight:700;font-size:15px;margin-bottom:18px;color:${C.text};`;
+    title.textContent = 'Mempool Connection Log';
+    box.appendChild(title);
+
+    checks.forEach(c => {
+        const row = document.createElement('div');
+        row.style.cssText = `margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid ${C.border};`;
+
+        const header = document.createElement('div');
+        header.style.cssText = `display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:${c.ok ? '#22c55e' : '#ef4444'};`;
+        const detailBadge = c.detail
+            ? `<span style="margin-left:auto;font-weight:400;font-size:10px;color:${C.muted};background:${C.badge};padding:2px 7px;border-radius:4px;border:1px solid ${C.badgeBorder};white-space:nowrap;">${escapeHtml(c.detail)}</span>`
+            : '';
+        const icon = c.ok ? _mpaIcon('check', '#22c55e', 14) : _mpaIcon('error', '#ef4444', 14);
+        header.innerHTML = `${icon}${escapeHtml(c.name)}${detailBadge}`;
+        row.appendChild(header);
+
+        if (c.url) {
+            const urlEl = document.createElement('div');
+            urlEl.style.cssText = `font-size:10px;color:${C.muted};margin-top:4px;word-break:break-all;padding-left:22px;font-family:monospace;`;
+            urlEl.textContent = c.url;
+            row.appendChild(urlEl);
+        }
+
+        if (!c.ok && c.error) {
+            const errBox = document.createElement('div');
+            errBox.style.cssText = `margin-top:7px;padding:8px 10px;background:${C.errBg};border-radius:6px;font-family:monospace;font-size:11px;white-space:pre-wrap;word-break:break-all;color:${C.errText};border:1px solid ${C.errBorder};line-height:1.5;`;
+            errBox.textContent = c.error;
+            row.appendChild(errBox);
+        }
+        box.appendChild(row);
+    });
+
+    const closeBtn = document.createElement('button');
+    closeBtn.textContent = 'Close';
+    closeBtn.style.cssText = `margin-top:16px;width:100%;padding:10px;background:transparent;border:1px solid ${C.border};border-radius:8px;color:${C.muted};cursor:pointer;font-size:13px;font-family:inherit;transition:border-color 0.15s,color 0.15s;`;
+    closeBtn.addEventListener('mouseenter', () => { closeBtn.style.borderColor = 'var(--accent)'; closeBtn.style.color = 'var(--accent)'; });
+    closeBtn.addEventListener('mouseleave', () => { closeBtn.style.borderColor = C.border; closeBtn.style.color = C.muted; });
+    closeBtn.addEventListener('click', () => overlay.remove());
+    box.appendChild(closeBtn);
+
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
 }
 
 function createFormField(key, field, value) {
@@ -3976,7 +4101,7 @@ function createFormField(key, field, value) {
     }
     
     // Skip adding label for self-managed interfaces and pure info boxes
-    if (field.type !== 'meme_management' && field.type !== 'donation_history' && field.type !== 'info_text') {
+    if (field.type !== 'meme_management' && field.type !== 'donation_history' && field.type !== 'info_text' && field.type !== 'open_url_button' && field.type !== 'connection_check' && field.type !== 'mempool_actions') {
         const label = document.createElement('label');
         label.className = 'form-label';
         label.textContent = field.label;
@@ -4155,6 +4280,13 @@ function createFormField(key, field, value) {
             
         case 'toggle':
             input = createToggleGroup(field.options, value);
+            if (key === 'color_mode_dark') {
+                input.querySelectorAll('.toggle-option').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        setTimeout(() => { applyDarkMode(input.getValue()); }, 10);
+                    });
+                });
+            }
             break;
             
         case 'tags':
@@ -4189,6 +4321,83 @@ function createFormField(key, field, value) {
         case 'donation_history':
             input = createDonationHistoryInterface();
             break;
+
+        case 'mempool_actions':
+        case 'connection_check':
+        case 'open_url_button': {
+            const row = document.createElement('div');
+            row.className = 'mempool-action-row';
+
+            // Check Connection button
+            const checkBtn = document.createElement('button');
+            checkBtn.type = 'button';
+            checkBtn.className = 'mempool-action-btn';
+            checkBtn.textContent = field.label_check || field.label || 'Check Connection';
+            checkBtn.addEventListener('click', () => {
+                const originalLabel = checkBtn.textContent;
+                checkBtn.style.width = checkBtn.offsetWidth + 'px';
+                checkBtn.disabled = true;
+                checkBtn.innerHTML = `Checking<span class="mpa-dots"></span>`;
+
+                const svgCheck = _mpaIcon('check', '#22c55e', 13);
+                const svgError = _mpaIcon('error', '#ef4444', 13);
+
+                fetch('/api/mempool/validate')
+                    .then(r => r.ok ? r.json() : Promise.reject(r.status))
+                    .then(data => {
+                        const allOk = data.checks.every(c => c.ok);
+                        const accentColor = allOk ? '#22c55e' : '#ef4444';
+                        const titleIcon = allOk
+                            ? _mpaIcon('check', '#22c55e', 15)
+                            : _mpaIcon('error', '#ef4444', 15);
+
+                        const rows = data.checks.map(c =>
+                            `<div style="display:flex;gap:8px;align-items:center;padding:2px 0;">` +
+                            `${c.ok ? svgCheck : svgError}` +
+                            `<span style="font-size:11px;">${escapeHtml(c.name)}</span>` +
+                            `</div>`
+                        );
+
+                        window._mpaOpenLog = () => _mpaShowLogModal(data.checks);
+                        const logBtnHoverColor = allOk ? '#22c55e' : '#ef4444';
+                        rows.push(`<button onclick="event.stopPropagation();window._mpaOpenLog();" ` +
+                                  `style="margin-top:8px;width:100%;padding:5px 10px;background:transparent;border:1px solid rgba(128,128,128,0.3);border-radius:6px;color:inherit;cursor:pointer;font-size:11px;font-family:inherit;" ` +
+                                  `onmouseenter="this.style.borderColor='${logBtnHoverColor}';this.style.color='${logBtnHoverColor}';" ` +
+                                  `onmouseleave="this.style.borderColor='rgba(128,128,128,0.3)';this.style.color='inherit';">` +
+                                  `Open Log</button>`);
+
+                        _buildLiveToast(`${titleIcon}${allOk ? 'Mempool — All OK' : 'Mempool — Issues Found'}`, rows.join(''), accentColor, 15000);
+                    })
+                    .catch(() => { _buildLiveToast('Mempool Check Failed', 'Could not reach the server.', '#ef4444', 30000); })
+                    .finally(() => {
+                        checkBtn.disabled = false;
+                        checkBtn.textContent = originalLabel;
+                        checkBtn.style.width = '';
+                    });
+            });
+
+            // Open Mempool link
+            const openBtn = document.createElement('a');
+            openBtn.className = 'mempool-action-btn';
+            openBtn.target = '_blank';
+            openBtn.rel = 'noopener noreferrer';
+            openBtn.textContent = field.label_open || field.label || 'Open Mempool';
+            openBtn.addEventListener('click', () => {
+                const hostEl = document.querySelector('[data-config-key="mempool_host"]');
+                const httpsEl = document.querySelector('[data-config-key="mempool_use_https"]');
+                const host = (hostEl && hostEl.value.trim()) || (window.currentConfig || {})['mempool_host'] || '127.0.0.1';
+                const useHttps = httpsEl && typeof httpsEl.getValue === 'function'
+                    ? httpsEl.getValue()
+                    : !!(window.currentConfig || {})['mempool_use_https'];
+                openBtn.href = `${useHttps ? 'https' : 'http'}://${host}`;
+            });
+
+            row.appendChild(checkBtn);
+            row.appendChild(openBtn);
+            row.getValue = () => null;
+            input = row;
+            break;
+        }
 
         case 'info_text': {
             const infoBox = document.createElement('div');
@@ -4249,7 +4458,7 @@ function createFormField(key, field, value) {
     if (input) {
         // Ensure the input has the data-config-key attribute for form collection
         // (skip for composite widgets and hidden_boolean fields managed inline by another field)
-        if (field.type !== 'date_color_group' && field.type !== 'holiday_color_group' && field.type !== 'hidden_boolean') {
+        if (field.type !== 'date_color_group' && field.type !== 'holiday_color_group' && field.type !== 'hidden_boolean' && field.type !== 'open_url_button' && field.type !== 'info_text' && field.type !== 'connection_check' && field.type !== 'mempool_actions') {
             if (input.dataset) {
                 input.dataset.configKey = key;
             } else {
@@ -4377,6 +4586,15 @@ window._previewData = {};
 // Reset on each form render; accumulated as user edits without saving.
 window._pendingConfigOverrides = {};
 
+// Sets a preview-value element: animated dots when value is '…', plain text otherwise.
+function _setPreviewValue(el, val) {
+    if (val === '\u2026') {
+        el.innerHTML = '<span class="mpa-dots"></span>';
+    } else {
+        el.textContent = val;
+    }
+}
+
 // Build a single-theme info card matching the e-ink info block layout:
 // two columns, each centered (label on top, large value below) with spacing.
 // Uses the same Roboto font as the e-ink renderer (Regular for labels, Bold for values).
@@ -4392,7 +4610,7 @@ function _buildSingleThemeCard(leftLabel, leftVal, rightLabel, rightVal, dataCol
         const v = document.createElement('div');
         v.style.cssText = `font-size:1.12em;font-weight:700;color:${dataColor};`;
         v.className = 'preview-value';
-        v.textContent = val || '—';
+        _setPreviewValue(v, val || '\u2014');
         cell.appendChild(lbl);
         cell.appendChild(v);
         return cell;
@@ -4454,7 +4672,7 @@ function _buildSectionPreview(categoryId, sectionEl) {
             const mv = fmtMoscow(data?.moscow_time);
             [lightCard, darkCard].forEach(card => {
                 const cells = card.querySelectorAll('.preview-value');
-                if (cells.length >= 2) { cells[0].textContent = pv; cells[1].textContent = mv; }
+                if (cells.length >= 2) { _setPreviewValue(cells[0], pv); _setPreviewValue(cells[1], mv); }
             });
         };
         return mkWrapper(lightCard, darkCard);
@@ -4478,7 +4696,7 @@ function _buildSectionPreview(categoryId, sectionEl) {
         const bd  = window._previewData.bitaxe;
         const onl = bd?.miners_online ?? '?';
         const tot = bd?.miners_total  ?? '?';
-        const ll  = `${t.total_hashrate || 'Bitaxe Hashrate'} (${onl}/${tot})`;
+        const ll  = t.total_hashrate || 'Bitaxe Hashrate';
         const lv  = fmtHashrate(bd?.hashrate_ths);
         const rv  = fmtRight(mode === 'difficulty' ? bd?.best_difficulty : bd?.valid_blocks);
 
@@ -4488,11 +4706,11 @@ function _buildSectionPreview(categoryId, sectionEl) {
         window._refreshBitaxePreview = (data) => {
             const lv2 = fmtHashrate(data?.hashrate_ths);
             const rv2 = fmtRight(mode === 'difficulty' ? data?.best_difficulty : data?.valid_blocks);
-            const ll2 = `${t.total_hashrate || 'Bitaxe Hashrate'} (${data?.miners_online ?? '?'}/${data?.miners_total ?? '?'})`;
+            const ll2 = t.total_hashrate || 'Bitaxe Hashrate';
             [lightCard, darkCard].forEach(card => {
                 const cells = card.querySelectorAll('.preview-value');
                 const lbls  = card.querySelectorAll('[style*="font-size:.72em"]');
-                if (cells.length >= 2) { cells[0].textContent = lv2; cells[1].textContent = rv2; }
+                if (cells.length >= 2) { _setPreviewValue(cells[0], lv2); _setPreviewValue(cells[1], rv2); }
                 if (lbls.length >= 1)  lbls[0].textContent = ll2;
             });
         };
@@ -4522,7 +4740,7 @@ function _buildSectionPreview(categoryId, sectionEl) {
             if (btcPrice && btcAmt != null) {
                 return `${Math.round(btcAmt * btcPrice).toLocaleString()} ${sym}`;
             }
-            return '—';
+            return '…';
         }
 
         const wd = window._previewData.wallet;
@@ -4537,7 +4755,7 @@ function _buildSectionPreview(categoryId, sectionEl) {
             const rv2 = fmtFiat(data?.fiat_value, data?.total_btc);
             [lightCard, darkCard].forEach(card => {
                 const cells = card.querySelectorAll('.preview-value');
-                if (cells.length >= 2) { cells[0].textContent = lv2; cells[1].textContent = rv2; }
+                if (cells.length >= 2) { _setPreviewValue(cells[0], lv2); _setPreviewValue(cells[1], rv2); }
             });
         };
         return mkWrapper(lightCard, darkCard);
@@ -4619,7 +4837,7 @@ function _buildSectionPreview(categoryId, sectionEl) {
             const rv2 = fmtPct(data?.pct_mined);
             [lightCard, darkCard].forEach(card => {
                 const cells = card.querySelectorAll('.preview-value');
-                if (cells.length >= 2) { cells[0].textContent = lv2; cells[1].textContent = rv2; }
+                if (cells.length >= 2) { _setPreviewValue(cells[0], lv2); _setPreviewValue(cells[1], rv2); }
             });
         };
         return mkWrapper(lightCard, darkCard);
@@ -4656,7 +4874,7 @@ function _buildSectionPreview(categoryId, sectionEl) {
             const rv2 = fmtCountdown(data);
             [lightCard, darkCard].forEach(card => {
                 const cells = card.querySelectorAll('.preview-value');
-                if (cells.length >= 2) { cells[0].textContent = lv2; cells[1].textContent = rv2; }
+                if (cells.length >= 2) { _setPreviewValue(cells[0], lv2); _setPreviewValue(cells[1], rv2); }
             });
         };
         return mkWrapper(lightCard, darkCard);
@@ -4694,7 +4912,7 @@ function _buildSectionPreview(categoryId, sectionEl) {
             const rv2 = fmtDifficulty(data?.difficulty);
             [lightCard, darkCard].forEach(card => {
                 const cells = card.querySelectorAll('.preview-value');
-                if (cells.length >= 2) { cells[0].textContent = lv2; cells[1].textContent = rv2; }
+                if (cells.length >= 2) { _setPreviewValue(cells[0], lv2); _setPreviewValue(cells[1], rv2); }
             });
         };
         return mkWrapper(lightCard, darkCard);
@@ -5226,7 +5444,7 @@ function createBooleanSwitch(value) {
 function createToggleGroup(options, value) {
     const container = document.createElement('div');
     container.className = 'toggle-group';
-    
+
     options.forEach(option => {
         const button = document.createElement('button');
         button.type = 'button';
@@ -5237,10 +5455,6 @@ function createToggleGroup(options, value) {
             const iconImg = document.createElement('img');
             iconImg.src = option.icon;
             iconImg.alt = option.label;
-            iconImg.style.width = '16px';
-            iconImg.style.height = '16px';
-            iconImg.style.marginRight = '8px';
-            iconImg.style.filter = 'brightness(0) invert(1)'; // Make icons white for dark theme
             
             button.appendChild(iconImg);
             button.appendChild(document.createTextNode(option.label));
@@ -6139,7 +6353,8 @@ function createBlockRewardTableInput(values, field) {
     addButton.type = 'button';
     addButton.className = 'btn btn-outline-success block-reward-add-btn';
     addButton.textContent = window.translations?.block_reward_table_add || 'Add Address';
-    
+    addButton.style.marginRight = '10px';
+
     addButton.addEventListener('click', async () => {
         // Privacy gate: warn when adding addresses with public mempool
         if (_isPublicMempool()) {
@@ -6804,11 +7019,12 @@ function createDonationHistoryInterface() {
         <thead>
             <tr style="border-bottom: 1px solid var(--border-color);">
                 <th style="text-align:left; padding: 6px 8px; position: sticky; top: 0; background: var(--bg-card); z-index: 1; color: var(--text-secondary);">${t.donation_col_time || 'Time'}</th>
+                <th style="text-align:right; padding: 6px 8px; position: sticky; top: 0; background: var(--bg-card); z-index: 1; color: var(--text-secondary); white-space:nowrap;">${t.donation_col_block || 'Block'}</th>
                 <th style="text-align:right; padding: 6px 8px; position: sticky; top: 0; background: var(--bg-card); z-index: 1; color: var(--text-secondary);">Sats</th>
                 <th style="text-align:left; padding: 6px 8px; position: sticky; top: 0; background: var(--bg-card); z-index: 1; color: var(--text-secondary);">${t.donation_col_message || 'Message'}</th>
             </tr>
         </thead>
-        <tbody id="donation-history-tbody"><tr><td colspan="3" style="padding:8px; color: var(--text-muted);">${t.loading || 'Loading…'}</td></tr></tbody>
+        <tbody id="donation-history-tbody"><tr><td colspan="4" style="padding:8px; color: var(--text-muted);">${t.loading || 'Loading…'}</td></tr></tbody>
     `;
     tableWrapper.appendChild(table);
     container.appendChild(tableWrapper);
@@ -6827,15 +7043,17 @@ function createDonationHistoryInterface() {
             const tbody = table.querySelector('#donation-history-tbody');
             const donations = data.donations || [];
             if (donations.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="3" style="padding:8px; color: var(--text-muted);">${t.no_donations_yet || 'No donations yet.'}</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="4" style="padding:8px; color: var(--text-muted);">${t.no_donations_yet || 'No donations yet.'}</td></tr>`;
                 return;
             }
             tbody.innerHTML = donations.map(d => {
                 const ts = d.timestamp ? new Date(d.timestamp + 'Z').toLocaleString() : '—';
+                const bh = d.block_height != null ? d.block_height.toLocaleString() : '—';
                 const sats = (d.amount_sats || 0).toLocaleString();
                 const msg = d.message ? escapeHtml(d.message) : '<em style="color: var(--text-muted);">—</em>';
                 return `<tr style="border-bottom:1px solid var(--border-color);">
                     <td style="padding:5px 8px; white-space:nowrap;">${ts}</td>
+                    <td style="padding:5px 8px; text-align:right; font-family:var(--font-mono); color:var(--text-secondary);">${bh}</td>
                     <td style="padding:5px 8px; text-align:right; font-weight:bold; color:var(--accent); font-family:var(--font-mono);">${sats}</td>
                     <td style="padding:5px 8px;">${msg}</td>
                 </tr>`;
@@ -6849,7 +7067,7 @@ function createDonationHistoryInterface() {
         })
         .catch(() => {
             const tbody = table.querySelector('#donation-history-tbody');
-            tbody.innerHTML = `<tr><td colspan="3" style="padding:8px; color: var(--text-muted);">${t.could_not_load_donations || 'Could not load donations.'}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="4" style="padding:8px; color: var(--text-muted);">${t.could_not_load_donations || 'Could not load donations.'}</td></tr>`;
         });
 
     container.getValue = () => null;

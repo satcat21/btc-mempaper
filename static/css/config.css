@@ -647,7 +647,7 @@ body.dark-mode .form-input[type="date"] {
 .toggle-option img {
     width: 18px;
     height: 18px;
-    filter: brightness(0) invert(0.4);
+    filter: var(--toggle-icon-inactive-filter);
     transition: filter var(--transition);
 }
 
@@ -991,7 +991,6 @@ body.dark-mode .table-delete-icon {
     font-size: 0.82rem;
     font-weight: 600;
     transition: all var(--transition);
-    margin-right: 8px;
     text-shadow: none;
 }
 
@@ -1000,10 +999,6 @@ body.dark-mode .table-delete-icon {
 .block-reward-add-btn:hover {
     background: rgba(247, 147, 26, 0.2);
     border-color: var(--accent);
-}
-
-.block-reward-add-btn {
-    margin-top: 10px;
 }
 
 .wallet-clear-cache-btn {
@@ -1015,6 +1010,7 @@ body.dark-mode .table-delete-icon {
     cursor: pointer;
     font-size: 0.82rem;
     font-weight: 600;
+    white-space: nowrap;
     transition: all var(--transition);
     text-shadow: none;
 }
@@ -1919,12 +1915,29 @@ body.dark-mode .upload-icon {
     color: var(--text-primary);
     font-size: 0.8rem;
     cursor: pointer;
-    transition: border-color var(--transition), background var(--transition);
+    transition: border-color var(--transition), background var(--transition), color var(--transition);
 }
 
 .wifi-btn:hover {
     border-color: var(--accent);
     color: var(--accent);
+}
+
+.wifi-btn-add {
+    background: var(--accent-dim);
+    border-color: var(--accent-border);
+    color: var(--accent);
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+.wifi-btn-add:hover {
+    background: rgba(247, 147, 26, 0.2);
+    border-color: var(--accent);
+    color: var(--accent);
+}
+.wifi-btn-svg-icon {
+    transition: color 0.2s;
 }
 
 .wifi-btn-save {
@@ -2173,6 +2186,7 @@ body.dark-mode .upload-icon {
     border-color: var(--accent);
 }
 
+/* Updates section small bordered button */
 .check-updates-btn {
     margin-left: 8px;
     display: inline-flex;
@@ -2187,14 +2201,66 @@ body.dark-mode .upload-icon {
     cursor: pointer;
     transition: color 0.2s, border-color 0.2s;
     white-space: nowrap;
+    text-decoration: none;
+    font-family: inherit;
 }
-.check-updates-btn:hover {
-    color: var(--accent);
+.check-updates-btn:hover { color: var(--accent); border-color: var(--accent); }
+.check-updates-btn:disabled { opacity: 0.5; cursor: default; }
+
+/* Mempool action buttons */
+.mempool-action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    background: var(--bg-elevated);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    white-space: nowrap;
+    text-decoration: none;
+    font-family: inherit;
+    transition: all var(--transition);
+    text-shadow: none;
+}
+.mempool-action-btn:hover {
+    background: rgba(247, 147, 26, 0.1);
     border-color: var(--accent);
+    color: var(--accent);
 }
-.check-updates-btn:disabled {
-    opacity: 0.5;
-    cursor: default;
+.mempool-action-btn:disabled { opacity: 0.5; cursor: default; }
+
+/* Animated "..." on the Check Connection button while loading */
+.mpa-dots {
+    display: inline-block;
+    overflow: hidden;
+    vertical-align: bottom;
+    width: 0;
+    animation: mpa-dot-expand 1.2s steps(4, end) infinite;
+}
+.mpa-dots::before {
+    content: '...';
+}
+@keyframes mpa-dot-expand {
+    0%   { width: 0; }
+    100% { width: 1.4em; }
+}
+
+/* Mempool action row */
+.mempool-action-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+/* Inline SVG icon inside wifi buttons */
+.wifi-btn-svg-icon {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
 }
 .check-updates-icon {
     width: 14px;
