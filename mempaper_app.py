@@ -3526,6 +3526,39 @@ class MempaperApp:
                 config_changed = True
                 changed_settings.append(setting)
 
+        # Color settings: only trigger refresh when the affected block is currently displayed.
+        # 'always'  → date text and hash frame, always visible
+        # 'holiday' → hash frame + holiday text, only when today is a BTC holiday
+        # <block>   → only when that block name is in self.displayed_info_blocks
+        color_affecting_settings = {
+            'color_date_start_light': 'always', 'color_date_end_light': 'always',
+            'color_date_start_dark':  'always', 'color_date_end_dark':  'always',
+            'color_holiday_start_light': 'holiday', 'color_holiday_end_light': 'holiday',
+            'color_holiday_start_dark':  'holiday', 'color_holiday_end_dark':  'holiday',
+            'color_btc_price_light':  'price',   'color_btc_price_dark':   'price',
+            'color_countdown_light':  'countdown','color_countdown_dark':   'countdown',
+            'color_halving_light':    'halving',  'color_halving_dark':     'halving',
+            'color_network_light':    'network',  'color_network_dark':     'network',
+            'color_bitaxe_stats_light':'bitaxe',  'color_bitaxe_stats_dark':'bitaxe',
+            'color_wallets_light':    'wallet',   'color_wallets_dark':     'wallet',
+            'color_donation_light':   'donation', 'color_donation_dark':    'donation',
+        }
+        displayed_blocks = getattr(self, 'displayed_info_blocks', []) or []
+        today_is_holiday = bool(
+            hasattr(self, 'image_renderer') and self.image_renderer and
+            self.image_renderer.get_today_btc_holiday()
+        )
+        for setting, visibility in color_affecting_settings.items():
+            old_value = old_config.get(setting)
+            new_value = new_config.get(setting)
+            if old_value == new_value or (old_value is not None and new_value is None):
+                continue
+            if (visibility == 'always' or
+                    (visibility == 'holiday' and today_is_holiday) or
+                    visibility in displayed_blocks):
+                config_changed = True
+                changed_settings.append(setting)
+
         if config_changed:
             print(f"⚙️ Settings changed ({', '.join(changed_settings)}) — triggering image refresh")
 
@@ -4429,6 +4462,7 @@ class MempaperApp:
             notification_data = {
                 'block_height': block_height,
                 'block_hash': self._format_block_hash_for_display(block_hash),
+                'block_hash_full': block_hash,
                 'timestamp': int(time.time()),  # Use current time as approximate
                 'pool_name': 'Loading...',  # Will be updated in background
                 'total_reward_btc': 3.125,  # Current default subsidy
@@ -4488,6 +4522,7 @@ class MempaperApp:
                         enriched_data = {
                             'block_height': block_height,
                             'block_hash': self._format_block_hash_for_display(block_hash),
+                            'block_hash_full': block_hash,
                             'timestamp': timestamp,
                             'pool_name': pool_name,
                             'total_reward_btc': (subsidy + total_fees) / 100000000,
@@ -7101,12 +7136,16 @@ class MempaperApp:
 
                 best_diff = miner_info.get('best_diff', 0)
                 online = miner_info.get('online', False)
+                hashrate_avg_ghs = miner_info.get('hashrate_avg_ghs', miner_info.get('hashrate_ghs', 0))
+                hashrate_avg_label = miner_info.get('hashrate_avg_label', 'current')
 
                 return jsonify({
                     'success': True,
                     'ip': ip,
                     'best_diff': best_diff,
-                    'online': online
+                    'online': online,
+                    'hashrate_avg_ghs': hashrate_avg_ghs,
+                    'hashrate_avg_label': hashrate_avg_label,
                 })
 
             except Exception as e:

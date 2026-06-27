@@ -1439,7 +1439,7 @@ class MemeLoader {
     }
     
     async loadImageForElement(imgElement) {
-        if (imgElement.src && !imgElement.src.includes('data:image')) {
+        if (imgElement.classList.contains('loaded')) {
             return; // Already loaded
         }
         
@@ -1543,7 +1543,7 @@ async function loadMemes(search = '') {
                 img.title = 'Click to inspect';
                 img.onclick = () => openMemeModal(meme.filename, meme.url, meme.tags || [], meme.api_tags || []);
                 // Add placeholder until loaded
-                img.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100%" height="100%" fill="%23222228"/><text x="50%" y="50%" text-anchor="middle" dy=".3em" fill="%23999">📷</text></svg>';
+                img.src = '/static/icons/image.svg';
                 img.classList.add('meme-lazy');
                 // Set up lazy loading observer
                 memeLoader.observer.observe(img);
@@ -1631,7 +1631,7 @@ async function loadMoreMemes(page, sentinel) {
             img.style.cursor = 'pointer';
             img.title = 'Click to inspect';
             img.onclick = () => openMemeModal(meme.filename, meme.url, meme.tags || [], meme.api_tags || []);
-            img.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100%" height="100%" fill="%23222228"/><text x="50%" y="50%" text-anchor="middle" dy=".3em" fill="%23999">📷</text></svg>';
+            img.src = '/static/icons/image.svg';
             img.classList.add('meme-lazy');
 
             memeLoader.observer.observe(img);
@@ -2704,7 +2704,6 @@ async function _performUpdate(tag, updateBtn) {
         if (data.success) {
             // Integrate countdown into existing modal (keep log visible)
             const t = window.translations || {};
-            heading.innerHTML = `<img src="/static/icons/update.svg" alt="" class="modal-title-icon"> ${t.service_restarting || 'Service restarting...'}`;
             phaseBar.textContent = '';
             statusBar.textContent = '';
 
@@ -3525,6 +3524,29 @@ function buildSectionNav(grid) {
     });
     nav.appendChild(toggle);
 
+    // Forward horizontal touch drags on the non-scrollable parts of the nav
+    // (e.g. the toggle button row) to the scrollable track.
+    let _ntX = null, _ntY = null, _ntRelaying = false;
+    nav.addEventListener('touchstart', (e) => {
+        if (track.contains(e.target)) return; // track handles its own scroll
+        _ntX = e.touches[0].clientX;
+        _ntY = e.touches[0].clientY;
+        _ntRelaying = true;
+    }, { passive: true });
+    nav.addEventListener('touchmove', (e) => {
+        if (!_ntRelaying || _ntX === null) return;
+        const dx = e.touches[0].clientX - _ntX;
+        const dy = e.touches[0].clientY - _ntY;
+        if (Math.abs(dx) > Math.abs(dy)) {
+            track.scrollLeft -= dx;
+            e.preventDefault(); // block page scroll for horizontal gesture
+        }
+        _ntX = e.touches[0].clientX;
+        _ntY = e.touches[0].clientY;
+    }, { passive: false });
+    nav.addEventListener('touchend', () => { _ntRelaying = false; _ntX = null; }, { passive: true });
+    nav.addEventListener('touchcancel', () => { _ntRelaying = false; _ntX = null; }, { passive: true });
+
     // Insert before config-container
     const container = document.getElementById('config-container');
     container.parentNode.insertBefore(nav, container);
@@ -4055,8 +4077,9 @@ function _mpaShowLogModal(checks) {
 
         const header = document.createElement('div');
         header.style.cssText = `display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:${c.ok ? '#22c55e' : '#ef4444'};`;
-        const detailBadge = c.detail
-            ? `<span style="margin-left:auto;font-weight:400;font-size:10px;color:${C.muted};background:${C.badge};padding:2px 7px;border-radius:4px;border:1px solid ${C.badgeBorder};white-space:nowrap;">${escapeHtml(c.detail)}</span>`
+        const detailText = [c.detail, c.latency_ms != null ? `${c.latency_ms} ms` : null].filter(Boolean).join(' · ');
+        const detailBadge = detailText
+            ? `<span style="margin-left:auto;font-weight:400;font-size:10px;color:${C.muted};background:${C.badge};padding:2px 7px;border-radius:4px;border:1px solid ${C.badgeBorder};white-space:nowrap;">${escapeHtml(detailText)}</span>`
             : '';
         const icon = c.ok ? _mpaIcon('check', '#22c55e', 14) : _mpaIcon('error', '#ef4444', 14);
         header.innerHTML = `${icon}${escapeHtml(c.name)}${detailBadge}`;
@@ -4922,6 +4945,58 @@ function _buildSectionPreview(categoryId, sectionEl) {
 }
 
 
+// Fit a hash string into `span` without wrapping.
+// Truncates symmetrically from the middle, inserting "…", using all available
+// width inside the parent's padding.  Accounts for CSS letter-spacing.
+function _fitHashSpan(span, fullHash) {
+    if (!fullHash) return;
+    span._fullHash = fullHash;
+    const container = span.parentElement;
+    if (!container) { span.textContent = fullHash; return; }
+
+    // Subtract container padding so the hash stays within the visible frame
+    const ccs = window.getComputedStyle(container);
+    const hPad = parseFloat(ccs.paddingLeft || 0) + parseFloat(ccs.paddingRight || 0);
+    const availWidth = container.clientWidth - hPad - 4; // 4px breathing room
+    if (availWidth <= 0) { span.textContent = fullHash; return; }
+
+    const canvas = (_fitHashSpan._cv = _fitHashSpan._cv || document.createElement('canvas'));
+    const ctx = canvas.getContext('2d');
+    const cs = window.getComputedStyle(span);
+    ctx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+
+    // Mirror letter-spacing so canvas measureText matches the rendered width.
+    // ctx.letterSpacing is supported in Chrome 99+/Firefox 104+; fall back to
+    // manual addition of per-character spacing for older engines.
+    const letterSpacingPx = parseFloat(cs.letterSpacing) || 0;
+    if ('letterSpacing' in ctx) {
+        ctx.letterSpacing = cs.letterSpacing;
+    }
+    const measure = (text) => {
+        const w = ctx.measureText(text).width;
+        return ('letterSpacing' in ctx) ? w : w + letterSpacingPx * Math.max(text.length - 1, 0);
+    };
+
+    if (measure(fullHash) <= availWidth) {
+        span.textContent = fullHash;
+        return;
+    }
+    const ellipsis = '…';
+    const budget = availWidth - measure(ellipsis);
+    let lo = 0, hi = Math.floor(fullHash.length / 2);
+    while (lo < hi) {
+        const mid = Math.ceil((lo + hi) / 2);
+        if (measure(fullHash.slice(0, mid) + fullHash.slice(-mid)) <= budget) {
+            lo = mid;
+        } else {
+            hi = mid - 1;
+        }
+    }
+    span.textContent = lo > 0
+        ? fullHash.slice(0, lo) + ellipsis + fullHash.slice(-lo)
+        : ellipsis;
+}
+
 function createDateColorGroup() {
     const t = window.translations || {};
     const cfg = window.currentConfig || {};
@@ -4946,8 +5021,12 @@ function createDateColorGroup() {
 
     function buildHashPreview(startVal, endVal) {
         const span = document.createElement('span');
-        span.style.cssText = `font-family:'IBMPlexMono',monospace; font-size:0.58em; letter-spacing:0.02em; background:linear-gradient(90deg,${startVal},${endVal}); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; margin-top:6px; display:block; word-break:break-all;`;
-        span.textContent = getDateHashChars();
+        span.style.cssText = `font-family:'IBMPlexMono',monospace; font-size:0.58em; letter-spacing:0.02em; background:linear-gradient(90deg,${startVal},${endVal}); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; margin-top:6px; display:block; white-space:nowrap; overflow:hidden;`;
+        requestAnimationFrame(() => _fitHashSpan(span, getDateHashChars()));
+        if (typeof ResizeObserver !== 'undefined') {
+            const ro = new ResizeObserver(() => _fitHashSpan(span, span._fullHash || getDateHashChars()));
+            requestAnimationFrame(() => { if (span.parentElement) ro.observe(span.parentElement); });
+        }
         return span;
     }
 
@@ -5030,8 +5109,8 @@ function createDateColorGroup() {
 
     window._refreshDateHashPreview = (blockHash) => {
         const chars = blockHash || getDateHashChars();
-        lightDateHashSpan.textContent = chars;
-        darkDateHashSpan.textContent  = chars;
+        _fitHashSpan(lightDateHashSpan, chars);
+        _fitHashSpan(darkDateHashSpan,  chars);
     };
 
     return wrapper;
@@ -5045,9 +5124,9 @@ function createHolidayColorGroup() {
 
     // Read current values from the already-loaded config
     const cfg = window.currentConfig || {};
-    const lightStart = cfg['color_holiday_light'] || '#F7931A';
+    const lightStart = cfg['color_holiday_start_light'] || '#F7931A';
     const lightEnd   = cfg['color_holiday_end_light'] || '#C62828';
-    const darkStart  = cfg['color_holiday_dark'] || '#F7931A';
+    const darkStart  = cfg['color_holiday_start_dark'] || '#F7931A';
     const darkEnd    = cfg['color_holiday_end_dark'] || '#FF6F6F';
 
     const _hLang = (window.currentConfig || {})['language'] || 'en';
@@ -5063,8 +5142,12 @@ function createHolidayColorGroup() {
 
     function buildHashPreviewH(startVal, endVal) {
         const span = document.createElement('span');
-        span.style.cssText = `font-family:'IBMPlexMono',monospace; font-size:0.58em; letter-spacing:0.02em; background:linear-gradient(90deg,${startVal},${endVal}); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; margin-top:6px; display:block; word-break:break-all;`;
-        span.textContent = getHashChars();
+        span.style.cssText = `font-family:'IBMPlexMono',monospace; font-size:0.58em; letter-spacing:0.02em; background:linear-gradient(90deg,${startVal},${endVal}); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; margin-top:6px; display:block; white-space:nowrap; overflow:hidden;`;
+        requestAnimationFrame(() => _fitHashSpan(span, getHashChars()));
+        if (typeof ResizeObserver !== 'undefined') {
+            const ro = new ResizeObserver(() => _fitHashSpan(span, span._fullHash || getHashChars()));
+            requestAnimationFrame(() => { if (span.parentElement) ro.observe(span.parentElement); });
+        }
         return span;
     }
 
@@ -5137,7 +5220,7 @@ function createHolidayColorGroup() {
     // Light theme row (first)
     const { row: lightRow, previewSpan: lightSpan, hashSpan: lightHashSpan } = buildRow(
         t.holiday_color_light_theme || 'Light Theme',
-        'color_holiday_light', 'color_holiday_end_light',
+        'color_holiday_start_light', 'color_holiday_end_light',
         lightStart, lightEnd,
         'rgba(255,255,255,.04)', '#ffffff', 'preview-card-light'
     );
@@ -5146,7 +5229,7 @@ function createHolidayColorGroup() {
     // Dark theme row (second)
     const { row: darkRow, previewSpan: darkSpan, hashSpan: darkHashSpan } = buildRow(
         t.holiday_color_dark_theme || 'Dark Theme',
-        'color_holiday_dark', 'color_holiday_end_dark',
+        'color_holiday_start_dark', 'color_holiday_end_dark',
         darkStart, darkEnd,
         'rgba(0,0,0,.04)', '#1a1a2e', 'preview-card-dark'
     );
@@ -5164,8 +5247,8 @@ function createHolidayColorGroup() {
 
     window._refreshHolidayHashPreview = (blockHash) => {
         const chars = blockHash || getHashChars();
-        lightHashSpan.textContent = chars;
-        darkHashSpan.textContent  = chars;
+        _fitHashSpan(lightHashSpan, chars);
+        _fitHashSpan(darkHashSpan,  chars);
     };
 
     return wrapper;
@@ -6016,7 +6099,14 @@ function createBitaxeTableInput(values, field) {
     addressHeader.style.border = '1px solid var(--border-subtle)';
     addressHeader.style.backgroundColor = '#2a2d3e';
     addressHeader.style.color = '#ffffff';
-    addressHeader.style.width = '35%';
+    addressHeader.style.width = '28%';
+
+    const linkHeader = document.createElement('th');
+    linkHeader.textContent = '';
+    linkHeader.style.padding = '10px';
+    linkHeader.style.border = '1px solid var(--border-subtle)';
+    linkHeader.style.backgroundColor = '#2a2d3e';
+    linkHeader.style.width = '4%';
 
     const commentHeader = document.createElement('th');
     commentHeader.innerHTML = (window.translations?.bitaxe_table_comment || 'Comment/Label').replace('/', '/<br>');
@@ -6024,7 +6114,17 @@ function createBitaxeTableInput(values, field) {
     commentHeader.style.border = '1px solid var(--border-subtle)';
     commentHeader.style.backgroundColor = '#2a2d3e';
     commentHeader.style.color = '#ffffff';
-    commentHeader.style.width = '30%';
+    commentHeader.style.width = '22%';
+
+    const hashrateHeader = document.createElement('th');
+    hashrateHeader.className = 'bitaxe-hashrate-header';
+    hashrateHeader.textContent = window.translations?.bitaxe_table_hashrate || 'Hashrate';
+    hashrateHeader.style.padding = '10px';
+    hashrateHeader.style.border = '1px solid var(--border-subtle)';
+    hashrateHeader.style.backgroundColor = '#2a2d3e';
+    hashrateHeader.style.color = '#ffffff';
+    hashrateHeader.style.width = '20%';
+    hashrateHeader.style.textAlign = 'center';
 
     const bestDiffHeader = document.createElement('th');
     bestDiffHeader.textContent = window.translations?.bitaxe_table_best_diff || 'Best Difficulty';
@@ -6032,7 +6132,7 @@ function createBitaxeTableInput(values, field) {
     bestDiffHeader.style.border = '1px solid var(--border-subtle)';
     bestDiffHeader.style.backgroundColor = '#2a2d3e';
     bestDiffHeader.style.color = '#ffffff';
-    bestDiffHeader.style.width = '25%';
+    bestDiffHeader.style.width = '18%';
     bestDiffHeader.style.textAlign = 'center';
 
     const actionsHeader = document.createElement('th');
@@ -6041,10 +6141,12 @@ function createBitaxeTableInput(values, field) {
     actionsHeader.style.border = '1px solid var(--border-subtle)';
     actionsHeader.style.backgroundColor = '#2a2d3e';
     actionsHeader.style.color = '#ffffff';
-    actionsHeader.style.width = '10%';
+    actionsHeader.style.width = '8%';
 
     headerRow.appendChild(addressHeader);
+    headerRow.appendChild(linkHeader);
     headerRow.appendChild(commentHeader);
+    headerRow.appendChild(hashrateHeader);
     headerRow.appendChild(bestDiffHeader);
     headerRow.appendChild(actionsHeader);
     thead.appendChild(headerRow);
@@ -6149,9 +6251,46 @@ function addBitaxeTableRow(tbody, entry) {
     addressInput.style.color = '#ffffff !important';
     addressInput.style.fontSize = '0.9em';
     addressInput.style.borderRadius = '4px !important';
-    
+
     addressCell.appendChild(addressInput);
-    
+
+    // Link cell — icon linking to http://[ip] in a new tab
+    const linkCell = document.createElement('td');
+    linkCell.style.padding = '8px';
+    linkCell.style.border = '1px solid var(--border-subtle)';
+    linkCell.style.textAlign = 'center';
+    linkCell.style.verticalAlign = 'middle';
+
+    const linkAnchor = document.createElement('a');
+    linkAnchor.target = '_blank';
+    linkAnchor.rel = 'noopener noreferrer';
+    linkAnchor.style.display = 'inline-flex';
+    linkAnchor.style.opacity = entry.address ? '1' : '0.3';
+    linkAnchor.style.pointerEvents = entry.address ? 'auto' : 'none';
+    if (entry.address) linkAnchor.href = `http://${entry.address}`;
+    const linkIcon = document.createElement('img');
+    linkIcon.src = '/static/icons/open.svg';
+    linkIcon.alt = 'Open';
+    linkIcon.style.width = '16px';
+    linkIcon.style.height = '16px';
+    linkIcon.style.filter = 'invert(1) opacity(0.7)';
+    linkAnchor.appendChild(linkIcon);
+    linkCell.appendChild(linkAnchor);
+
+    // Keep link href in sync as the user types
+    addressInput.addEventListener('input', () => {
+        const ip = addressInput.value.trim();
+        if (ip) {
+            linkAnchor.href = `http://${ip}`;
+            linkAnchor.style.opacity = '1';
+            linkAnchor.style.pointerEvents = 'auto';
+        } else {
+            linkAnchor.removeAttribute('href');
+            linkAnchor.style.opacity = '0.3';
+            linkAnchor.style.pointerEvents = 'none';
+        }
+    });
+
     // Comment cell
     const commentCell = document.createElement('td');
     commentCell.style.padding = '8px';
@@ -6172,6 +6311,21 @@ function addBitaxeTableRow(tbody, entry) {
     
     commentCell.appendChild(commentInput);
 
+    // Hashrate cell
+    const hashrateCell = document.createElement('td');
+    hashrateCell.style.padding = '8px';
+    hashrateCell.style.border = '1px solid var(--border-subtle)';
+    hashrateCell.style.textAlign = 'center';
+
+    const hashrateDisplay = document.createElement('span');
+    hashrateDisplay.className = 'bitaxe-hashrate-display';
+    hashrateDisplay.textContent = '-';
+    hashrateDisplay.style.fontFamily = 'var(--font-mono)';
+    hashrateDisplay.style.fontSize = '0.9em';
+    hashrateDisplay.style.fontWeight = 'bold';
+    hashrateDisplay.style.color = 'var(--text-muted)';
+    hashrateCell.appendChild(hashrateDisplay);
+
     // Best Difficulty cell
     const bestDiffCell = document.createElement('td');
     bestDiffCell.style.padding = '8px';
@@ -6187,7 +6341,7 @@ function addBitaxeTableRow(tbody, entry) {
     bestDiffDisplay.style.color = 'var(--text-muted)';
     bestDiffCell.appendChild(bestDiffDisplay);
 
-    // Update best diff when IP changes — debounced so we only fetch once typing stops
+    // Fetch both hashrate and best diff together; debounced on IP input
     let _bitaxeIpDebounce = null;
     addressInput.addEventListener('input', () => {
         clearTimeout(_bitaxeIpDebounce);
@@ -6195,6 +6349,8 @@ function addBitaxeTableRow(tbody, entry) {
         if (!newIp) {
             bestDiffDisplay.textContent = '-';
             bestDiffDisplay.style.color = 'var(--text-muted)';
+            hashrateDisplay.textContent = '-';
+            hashrateDisplay.style.color = 'var(--text-muted)';
             return;
         }
         // Wait until the field looks like a complete IPv4 address before fetching
@@ -6203,16 +6359,20 @@ function addBitaxeTableRow(tbody, entry) {
             if (/^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) {
                 bestDiffDisplay.textContent = '...';
                 bestDiffDisplay.style.color = 'var(--text-muted)';
-                fetchBitaxeBestDiff(ip, bestDiffDisplay);
+                hashrateDisplay.textContent = '...';
+                hashrateDisplay.style.color = 'var(--text-muted)';
+                fetchBitaxeMinerInfo(ip, bestDiffDisplay, hashrateDisplay);
             }
         }, 1000);
     });
 
-    // Load initial best diff if IP is set
+    // Load initial values if IP is set
     if (entry.address) {
         bestDiffDisplay.textContent = '...';
         bestDiffDisplay.style.color = 'var(--text-muted)';
-        fetchBitaxeBestDiff(entry.address, bestDiffDisplay);
+        hashrateDisplay.textContent = '...';
+        hashrateDisplay.style.color = 'var(--text-muted)';
+        fetchBitaxeMinerInfo(entry.address, bestDiffDisplay, hashrateDisplay);
     }
 
     // Actions cell
@@ -6260,7 +6420,9 @@ function addBitaxeTableRow(tbody, entry) {
 
     // Assemble row
     row.appendChild(addressCell);
+    row.appendChild(linkCell);
     row.appendChild(commentCell);
+    row.appendChild(hashrateCell);
     row.appendChild(bestDiffCell);
     row.appendChild(actionsCell);
     tbody.appendChild(row);
@@ -6617,27 +6779,50 @@ function formatBitaxeDifficulty(value) {
     return `${Math.round(value)}`;
 }
 
-async function fetchBitaxeBestDiff(ip, cell) {
+function formatBitaxeHashrate(ghs) {
+    if (!ghs || ghs === 0) return '-';
+    if (ghs >= 1000) return `${(ghs / 1000).toFixed(2)} TH/s`;
+    if (ghs >= 1)    return `${ghs.toFixed(2)} GH/s`;
+    return `${(ghs * 1000).toFixed(2)} MH/s`;
+}
+
+async function fetchBitaxeMinerInfo(ip, bestDiffCell, hashrateCell) {
     try {
         const response = await fetch(`/api/bitaxe/${encodeURIComponent(ip)}/best-diff`);
         if (response.ok) {
             const data = await response.json();
             if (data.online) {
-                cell.textContent = formatBitaxeDifficulty(data.best_diff);
-                cell.style.color = 'var(--accent)';
+                if (bestDiffCell) {
+                    bestDiffCell.textContent = formatBitaxeDifficulty(data.best_diff);
+                    bestDiffCell.style.color = 'var(--accent)';
+                }
+                if (hashrateCell) {
+                    hashrateCell.textContent = formatBitaxeHashrate(data.hashrate_avg_ghs);
+                    hashrateCell.style.color = 'var(--accent)';
+                    // Update column header with the timeframe label (e.g. "Hashrate (5m avg)")
+                    if (data.hashrate_avg_label && data.hashrate_avg_label !== 'current') {
+                        const th = hashrateCell.closest('table')?.querySelector('.bitaxe-hashrate-header');
+                        if (th) th.textContent = `${window.translations?.bitaxe_table_hashrate || 'Hashrate'} (${data.hashrate_avg_label})`;
+                    }
+                }
             } else {
-                cell.textContent = 'Offline';
-                cell.style.color = '#ff6b6b';
+                if (bestDiffCell)  { bestDiffCell.textContent  = 'Offline'; bestDiffCell.style.color  = '#ff6b6b'; }
+                if (hashrateCell)  { hashrateCell.textContent  = 'Offline'; hashrateCell.style.color  = '#ff6b6b'; }
             }
         } else {
-            cell.textContent = 'Error';
-            cell.style.color = '#ff6b6b';
+            if (bestDiffCell)  { bestDiffCell.textContent  = 'Error'; bestDiffCell.style.color  = '#ff6b6b'; }
+            if (hashrateCell)  { hashrateCell.textContent  = 'Error'; hashrateCell.style.color  = '#ff6b6b'; }
         }
     } catch (error) {
-        console.error('Error fetching Bitaxe best difficulty:', error);
-        cell.textContent = 'Error';
-        cell.style.color = '#ff6b6b';
+        console.error('Error fetching Bitaxe miner info:', error);
+        if (bestDiffCell)  { bestDiffCell.textContent  = 'Error'; bestDiffCell.style.color  = '#ff6b6b'; }
+        if (hashrateCell)  { hashrateCell.textContent  = 'Error'; hashrateCell.style.color  = '#ff6b6b'; }
     }
+}
+
+// Keep old name as alias so any callers outside this file continue to work
+async function fetchBitaxeBestDiff(ip, cell) {
+    return fetchBitaxeMinerInfo(ip, cell, null);
 }
 
 function createMemeManagementInterface(field) {
@@ -8387,11 +8572,12 @@ function setupConfigSocketHandlers() {
     configSocket.on('new_block_notification', (data) => {
         console.log("👁️ New block notification received:", data && data.block_height ? 'block ' + data.block_height + ' (details masked for privacy)' : 'notification data');
         // Store latest block hash so holiday color preview can show it
-        if (data?.block_hash) {
+        if (data?.block_hash_full || data?.block_hash) {
             window._previewData = window._previewData || {};
-            window._previewData.latestBlockHash = data.block_hash;
-            if (window._refreshDateHashPreview)    window._refreshDateHashPreview(data.block_hash);
-            if (window._refreshHolidayHashPreview) window._refreshHolidayHashPreview(data.block_hash);
+            const _fullHash = data.block_hash_full || data.block_hash;
+            window._previewData.latestBlockHash = _fullHash;
+            if (window._refreshDateHashPreview)    window._refreshDateHashPreview(_fullHash);
+            if (window._refreshHolidayHashPreview) window._refreshHolidayHashPreview(_fullHash);
         }
         
         const state = getNotificationState();

@@ -37,22 +37,32 @@ def _parse_diff_value(raw) -> float:
 class BitaxeAPI:
     """API client for Bitaxe miner monitoring and hashrate aggregation."""
 
+    # Class-level cache: persists across ImageRenderer re-instantiations.
+    # Keyed by miner IP; stores last known best_diff when the device was online.
+    _best_diff_cache: Dict[str, float] = {}
+
     def __init__(self, config: Dict = None):
         """
         Initialize Bitaxe API client.
-        
+
         Args:
             config: Application configuration dictionary
         """
         self.config = config or {}
-        
+
         # Load miner configuration from table format
         bitaxe_table = self.config.get("bitaxe_miner_table", [])
-        self.miner_ips = [entry.get("address", "").strip() for entry in bitaxe_table 
+        self.miner_ips = [entry.get("address", "").strip() for entry in bitaxe_table
                         if isinstance(entry, dict) and entry.get("address", "").strip()]
-        self.miner_comments = {entry.get("address", "").strip(): entry.get("comment", "Bitaxe Miner") 
-                             for entry in bitaxe_table 
+        self.miner_comments = {entry.get("address", "").strip(): entry.get("comment", "Bitaxe Miner")
+                             for entry in bitaxe_table
                              if isinstance(entry, dict) and entry.get("address", "").strip()}
+
+        # Remove cached entries for IPs no longer in the miner table
+        active = set(self.miner_ips)
+        for ip in list(BitaxeAPI._best_diff_cache.keys()):
+            if ip not in active:
+                del BitaxeAPI._best_diff_cache[ip]
     
     def get_miner_hashrate(self, ip: str, timeout: int = 5) -> float:
         """
@@ -90,15 +100,40 @@ class BitaxeAPI:
             response.raise_for_status()
             data = response.json()
             
+            best_diff = _parse_diff_value(data.get("bestDiff") or data.get("bestSessionDiff", 0))
+            if best_diff > 0:
+                BitaxeAPI._best_diff_cache[ip] = best_diff
+
+            # Prefer a time-averaged hashrate over the instantaneous value.
+            # AxOS exposes different field names depending on firmware version.
+            hashrate_avg_ghs = None
+            hashrate_avg_label = None
+            for field, label in (
+                ("hashRate_5min", "5m avg"), ("hashRate_5m", "5m avg"),
+                ("hashRate_10min", "10m avg"), ("hashRate_10m", "10m avg"),
+                ("hashRate_15min", "15m avg"), ("hashRate_15m", "15m avg"),
+                ("avgHashRate", "avg"),
+            ):
+                val = data.get(field)
+                if val is not None and float(val) > 0:
+                    hashrate_avg_ghs = float(val)
+                    hashrate_avg_label = label
+                    break
+            if hashrate_avg_ghs is None:
+                hashrate_avg_ghs = float(data.get("hashRate", 0))
+                hashrate_avg_label = "current"
+
             return {
                 "ip": ip,
                 "hashrate_ghs": data.get("hashRate", 0),
+                "hashrate_avg_ghs": hashrate_avg_ghs,
+                "hashrate_avg_label": hashrate_avg_label,
                 "power": data.get("power", 0),
                 "temp": data.get("temp", 0),
                 "fan_speed": data.get("fanSpeed", 0),
                 "frequency": data.get("frequency", 0),
                 "voltage": data.get("voltage", 0),
-                "best_diff": _parse_diff_value(data.get("bestDiff") or data.get("bestSessionDiff", 0)),
+                "best_diff": best_diff,
                 "online": True
             }
         except Exception as e:
@@ -111,7 +146,7 @@ class BitaxeAPI:
                 "fan_speed": 0,
                 "frequency": 0,
                 "voltage": 0,
-                "best_diff": 0,
+                "best_diff": BitaxeAPI._best_diff_cache.get(ip, 0),
                 "online": False,
                 "error": str(e)
             }

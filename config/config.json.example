@@ -18,9 +18,9 @@
   "color_date_start_dark": "#4FC3F7",
   "color_date_end_dark": "#BA68C8",
 
-  "color_holiday_light": "#F7931A",
+  "color_holiday_start_light": "#F7931A",
   "color_holiday_end_light": "#C62828",
-  "color_holiday_dark": "#F7931A",
+  "color_holiday_start_dark": "#F7931A",
   "color_holiday_end_dark": "#FF6F6F",
   "color_btc_price_light": "#17805B",
   "color_btc_price_dark": "#00C896",

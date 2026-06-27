@@ -325,12 +325,12 @@ class ImageRenderer:
             self.color_sets["dark"]["hash_end"] = config["color_date_end_dark"]
 
         # Holidays (gradient: start → end)
-        if "color_holiday_light" in config:
-            self.color_sets["light"]["holiday_start"] = config["color_holiday_light"]
+        if "color_holiday_start_light" in config:
+            self.color_sets["light"]["holiday_start"] = config["color_holiday_start_light"]
         if "color_holiday_end_light" in config:
             self.color_sets["light"]["holiday_end"] = config["color_holiday_end_light"]
-        if "color_holiday_dark" in config:
-            self.color_sets["dark"]["holiday_start"] = config["color_holiday_dark"]
+        if "color_holiday_start_dark" in config:
+            self.color_sets["dark"]["holiday_start"] = config["color_holiday_start_dark"]
         if "color_holiday_end_dark" in config:
             self.color_sets["dark"]["holiday_end"] = config["color_holiday_end_dark"]
 

@@ -115,6 +115,7 @@
     gap: 4px;
     opacity: 0.6;
     transition: opacity 0.2s ease;
+    touch-action: pan-x;
 }
 
 .section-nav-toggle:hover {
@@ -990,6 +991,7 @@ body.dark-mode .table-delete-icon {
     cursor: pointer;
     font-size: 0.82rem;
     font-weight: 600;
+    white-space: nowrap;
     transition: all var(--transition);
     text-shadow: none;
 }
@@ -1413,7 +1415,7 @@ body.dark-mode .upload-icon {
     left: 0;
     right: 0;
     background: rgba(0,0,0,0.75);
-    color: var(--text-primary);
+    color: #ffffff;
     padding: 4px 6px;
     font-size: 0.65rem;
     text-align: center;
@@ -1534,8 +1536,24 @@ body.dark-mode .upload-icon {
     opacity: 0.6;
 }
 
+/* Placeholder state: show the image.svg icon centered */
+.meme-lazy:not(.loaded) {
+    object-fit: contain;
+    padding: 22%;
+    /* Light mode: black icon on light card — reduce opacity so it's subtle */
+    filter: opacity(0.2);
+}
+
+/* Dark mode: invert black to white, then reduce opacity */
+body.dark-mode .meme-lazy:not(.loaded) {
+    filter: invert(1) opacity(0.3);
+}
+
 .meme-lazy.loaded {
     opacity: 1;
+    object-fit: cover;
+    padding: 0;
+    filter: none;
 }
 
 .meme-lazy.error {

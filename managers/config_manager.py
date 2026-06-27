@@ -754,8 +754,10 @@ class ConfigManager:
         passthrough_settings = [
             "language", "web_orientation", "eink_orientation", "fee_parameter",
             "moscow_time_unit", "bitaxe_display_mode",
-            "color_holiday_light", "color_holiday_end_light",
-            "color_holiday_dark", "color_holiday_end_dark",
+            "color_date_start_light", "color_date_end_light",
+            "color_date_start_dark", "color_date_end_dark",
+            "color_holiday_start_light", "color_holiday_end_light",
+            "color_holiday_start_dark", "color_holiday_end_dark",
             "color_btc_price_light", "color_btc_price_dark",
             "color_bitaxe_stats_light", "color_bitaxe_stats_dark",
             "color_wallets_light", "color_wallets_dark",
@@ -1255,9 +1257,9 @@ class ConfigManager:
                 "order": 6,
                 "advanced": True
             },
-            "color_holiday_light": {
+            "color_holiday_start_light": {
                 "type": "color",
-                "label": t.get("color_holiday_light", "Start Color"),
+                "label": t.get("color_holiday_start_light", "Start Color"),
                 "default": "#F7931A",
                 "category": "_holiday_color"
             },
@@ -1267,9 +1269,9 @@ class ConfigManager:
                 "default": "#C62828",
                 "category": "_holiday_color"
             },
-            "color_holiday_dark": {
+            "color_holiday_start_dark": {
                 "type": "color",
-                "label": t.get("color_holiday_dark", "Start Color"),
+                "label": t.get("color_holiday_start_dark", "Start Color"),
                 "default": "#F7931A",
                 "category": "_holiday_color"
             },
