@@ -1674,15 +1674,8 @@ function clearMemeCache() {
 // Logout functionality
 const logoutButton = document.getElementById('logout-button');
 if (logoutButton) {
-    logoutButton.addEventListener('click', async () => {
-        try {
-            const response = await fetch('/api/logout', { method: 'POST' });
-            const result = await response.json();
-            window.location.href = result.public_dashboard ? '/' : '/login';
-        } catch (error) {
-            console.error('Logout failed:', error);
-            window.location.href = '/login';
-        }
+    logoutButton.addEventListener('click', () => {
+        window.location.href = '/logout';
     });
 } else if (isConfigPage) {
     console.warn('Logout button not found in DOM - expected on config page');
@@ -3819,57 +3812,70 @@ function _renderCategorySection(category, section) {
             _previewWrapper.style.width = '100%';
             section.appendChild(_previewWrapper);
 
+            // ── One-time layout setup ────────────────────────────────────────────
+            // Move the two colour-picker form-groups into _previewWrapper ONCE,
+            // next to fixed slot divs that will hold the preview cards.
+            // Doing this here (not inside _reorganize) means form-groups are never
+            // detached during user interaction → no focus loss on mobile.
             const colorKeys = _sectionColorKeys[category.id];
             const _tr = window.translations || {};
+            if (colorKeys) {
+                const lel = section.querySelector(`[data-config-key="${colorKeys[0]}"]`);
+                const del = section.querySelector(`[data-config-key="${colorKeys[1]}"]`);
+                const lightFG = lel?.closest('.form-group') ?? null;
+                const darkFG  = del?.closest('.form-group') ?? null;
+                [
+                    [lightFG, 'rgba(255,255,255,.04)', _tr.holiday_color_light_theme || 'Light Theme', 'preview-card-light'],
+                    [darkFG,  'rgba(0,0,0,.04)',        _tr.holiday_color_dark_theme  || 'Dark Theme',  'preview-card-dark'],
+                ].forEach(([fg, rowBg, themeLabel, slotClass]) => {
+                    if (!fg) return;
+                    const formLabel = fg.querySelector('.form-label');
+                    if (formLabel) {
+                        // Store the schema base text on the label element so the suffix
+                        // can be reliably applied even if this block runs more than once.
+                        if (!formLabel.dataset.baseLabel) {
+                            formLabel.dataset.baseLabel = formLabel.textContent.trim();
+                        }
+                        formLabel.textContent = `${formLabel.dataset.baseLabel} (${themeLabel})`;
+                    }
+                    fg.style.cssText += ';flex:1 1 0;min-width:0;';
+                    const slot = document.createElement('div');
+                    slot.className = slotClass;
+                    slot.style.cssText = 'flex:1 1 0;min-width:0;';
+                    const row = document.createElement('div');
+                    row.className = 'preview-color-row';
+                    row.style.cssText = `margin-bottom:10px;padding:12px 14px;border-radius:8px;background:${rowBg};`;
+                    row.appendChild(fg);    // moved once — never touched again by _reorganize
+                    row.appendChild(slot);
+                    _previewWrapper.appendChild(row);
+                });
+            }
 
+            // ── _reorganize: only refreshes preview card content ─────────────────
+            // Fills (or replaces the inner content of) the slot divs above.
+            // Never removes or re-inserts form-groups → safe while typing.
             const _reorganize = () => {
-                // Detach color form-groups from wherever they live now (section subtree).
-                // Since _previewWrapper is a child of section, a single section query covers both.
-                let lightFG = null, darkFG = null;
-                if (colorKeys) {
-                    const lel = section.querySelector(`[data-config-key="${colorKeys[0]}"]`);
-                    const del = section.querySelector(`[data-config-key="${colorKeys[1]}"]`);
-                    lightFG = lel?.closest('.form-group') ?? null;
-                    darkFG  = del?.closest('.form-group') ?? null;
-                    if (lightFG) lightFG.remove();
-                    if (darkFG)  darkFG.remove();
-                }
-
-                // Build fresh preview cards; also updates window._refreshXxxPreview closures.
-                const built = _buildSectionPreview(category.id, section);
+                let built = null;
+                try { built = _buildSectionPreview(category.id, section); } catch(err) {}
                 const lightCard = built?.querySelector('.preview-theme-light');
                 const darkCard  = built?.querySelector('.preview-theme-dark');
 
-                _previewWrapper.innerHTML = '';
-
-                if (colorKeys && lightFG && darkFG && lightCard && darkCard) {
-                    [
-                        [_tr.holiday_color_light_theme || 'Light Theme', lightFG, lightCard, 'rgba(255,255,255,.04)', 'preview-card-light'],
-                        [_tr.holiday_color_dark_theme  || 'Dark Theme',  darkFG,  darkCard,  'rgba(0,0,0,.04)',       'preview-card-dark'],
-                    ].forEach(([themeLabel, fg, card, rowBg, cardClass]) => {
-                        // Merge theme name into the form-group's own label, no separate header row.
-                        const formLabel = fg.querySelector('.form-label');
-                        if (formLabel) {
-                            if (!fg.dataset.origLabel) fg.dataset.origLabel = formLabel.textContent;
-                            formLabel.textContent = `${fg.dataset.origLabel} (${themeLabel})`;
-                        }
-                        const row = document.createElement('div');
-                        // Desktop: 50/50 flex row. Mobile (<600px): stack vertically via class.
-                        row.className = 'preview-color-row';
-                        row.style.cssText = `margin-bottom:10px;padding:12px 14px;border-radius:8px;background:${rowBg};`;
-                        fg.style.cssText  += ';flex:1 1 0;min-width:0;';
-                        card.style.cssText += ';flex:1 1 0;min-width:0;';
-                        card.classList.add(cardClass);
-                        row.appendChild(fg);
-                        row.appendChild(card);
-                        _previewWrapper.appendChild(row);
+                if (lightCard || darkCard) {
+                    [['preview-card-light', lightCard], ['preview-card-dark', darkCard]].forEach(([cls, card]) => {
+                        if (!card) return;
+                        const slot = _previewWrapper.querySelector('.' + cls);
+                        if (slot) { slot.innerHTML = ''; slot.appendChild(card); }
                     });
                 } else if (built) {
+                    // Fallback (no colorKeys): show preview without side-by-side layout.
+                    _previewWrapper.innerHTML = '';
+                    built.style.cssText = 'display:flex;gap:16px;margin:10px 0;flex-wrap:wrap;';
                     _previewWrapper.appendChild(built);
                 }
 
                 // Re-apply live data (closures updated by _buildSectionPreview above).
                 const pd = window._previewData;
+                if (!pd) return;
                 const refreshMap = {
                     price_stats:       [pd.price,     window._refreshPricePreview],
                     bitaxe_stats:      [pd.bitaxe,    window._refreshBitaxePreview],
@@ -3900,6 +3906,10 @@ function _renderCategorySection(category, section) {
                           : keyEl.type === 'number'   ? (parseInt(keyEl.value) || 0)
                           : keyEl.value;
                 window._pendingConfigOverrides[key] = val;
+                // Text field blur in a colour picker: skip _reorganize (same logic as input
+                // listener). The input listener already updated _pendingConfigOverrides live;
+                // _reorganize will run on the next swatch interaction or section change.
+                if (e.target.type === 'text' && e.target.closest('.color-input-container')) return;
                 clearTimeout(_previewDebounce);
                 if (key === 'btc_price_currency' || key === 'wallet_balance_currency') {
                     const _cfg2 = { ...(window.currentConfig || {}), ...(window._pendingConfigOverrides || {}) };
@@ -3927,10 +3937,16 @@ function _renderCategorySection(category, section) {
                 const key = keyEl?.dataset?.configKey;
                 if (!key || !key.startsWith('color_')) return;
                 window._pendingConfigOverrides[key] = keyEl.getValue ? keyEl.getValue() : keyEl.value;
-                // Typing in the hex text field: updatePreview() inside the color picker
-                // already handles the gradient update live. Skip _reorganize here to avoid
-                // removing the focused input from the DOM (which dismisses the mobile keyboard).
-                if (e.target.type === 'text' && e.target.closest('.color-input-container')) return;
+                // Skip _reorganize while the user is actively typing in the hex text field.
+                // Also skip when the native colour swatch fires an input event caused by the
+                // text↔swatch sync (some mobile browsers fire a synthetic input on the colour
+                // input when its value is set programmatically while the text field has focus).
+                const container = e.target.closest('.color-input-container');
+                if (container) {
+                    if (e.target.type === 'text') return;
+                    const textEl = container.querySelector('input[type="text"]');
+                    if (textEl && document.activeElement === textEl) return;
+                }
                 clearTimeout(_previewDebounce);
                 _previewDebounce = setTimeout(_reorganize, 60);
             }, true);
@@ -8954,14 +8970,11 @@ function setupNavigationButtons() {
                     icon: '/static/icons/logout.svg'
                 });
                 if (confirmed) {
-                    try {
-                        const response = await fetch('/api/logout', { method: 'POST' });
-                        const result = await response.json();
-                        window.location.href = result.public_dashboard ? '/' : '/login';
-                    } catch (error) {
-                        console.error('Logout failed:', error);
-                        window.location.href = '/login';
-                    }
+                    // Navigate to /logout directly so the server clears the session
+                    // cookie and issues the redirect in one atomic response.
+                    // Using fetch() + window.location can race on mobile browsers
+                    // where the Set-Cookie isn't applied before the next navigation.
+                    window.location.href = '/logout';
                 }
             });
         }
@@ -9218,11 +9231,22 @@ window.addEventListener('pagehide', () => {
 });
 window.addEventListener('pageshow', (event) => {
     if (event.persisted) {
-        if (window.configSocket && window.configSocket.disconnected) {
-            window.configSocket.connect();
-        } else if (!window.configSocket) {
-            initializeWebSocket();
-        }
+        // Verify the session is still valid before using the bfcache-restored page.
+        // This handles the case where the user logged out then navigated back here.
+        fetch('/api/auth-check', { credentials: 'same-origin' })
+            .then(r => r.json())
+            .then(d => {
+                if (!d.authenticated) {
+                    window.location.replace('/login');
+                    return;
+                }
+                if (window.configSocket && window.configSocket.disconnected) {
+                    window.configSocket.connect();
+                } else if (!window.configSocket) {
+                    initializeWebSocket();
+                }
+            })
+            .catch(() => { window.location.replace('/login'); });
     }
 });
 

@@ -13,7 +13,7 @@ import logging
 from functools import wraps
 from collections import defaultdict, deque
 from typing import Dict, Tuple
-from flask import request, jsonify, session
+from flask import request, jsonify, session, make_response
 from managers.secure_password_manager import SecurePasswordManager
 from utils.security_config import SecurityConfig
 
@@ -313,13 +313,17 @@ def require_web_auth(auth_manager: AuthManager):
                 # Redirect to login page for web requests
                 from flask import redirect, url_for
                 return redirect(url_for('login_page'))
-            
+
             # Automatically refresh session on any authenticated activity
             auth_manager.refresh_session()
-            
-            # If authenticated, skip rate limiting for web pages
-            # (Rate limiting still applies to login attempts)
-            return f(*args, **kwargs)
+
+            # Prevent browsers from caching authenticated pages.
+            # Without no-store, mobile browsers may serve a stale cached copy of
+            # the config page after logout, bypassing this auth check entirely.
+            response = make_response(f(*args, **kwargs))
+            response.headers['Cache-Control'] = 'no-store, private'
+            response.headers['Pragma'] = 'no-cache'
+            return response
         return decorated_function
     return decorator
 

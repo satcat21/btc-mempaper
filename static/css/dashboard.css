@@ -24,8 +24,8 @@ body {
     background-color: var(--bg-card);
 }
 
-body.orientation-vertical #dashboard { aspect-ratio: 3 / 5; }
-body.orientation-horizontal #dashboard { aspect-ratio: 5 / 3; }
+/* Aspect ratio is derived from the width/height HTML attributes set by the server,
+   which reflect the actual configured display resolution. No fixed ratio here. */
 
 body.dark-mode #dashboard {
     box-shadow: 0 0 0 1px rgba(255,255,255,0.06),

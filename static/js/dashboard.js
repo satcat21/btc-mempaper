@@ -26,10 +26,12 @@ function setupSocketHandlers() {
         reconnectAttempts = 0;
         reconnecting = false;
         if (reconnectBtn) reconnectBtn.style.display = "none";
-        // Only request latest image if we don't have one loaded yet
+        // Request latest image if: no image yet, OR we disconnected while hidden
+        // (pendingImageRefresh means we may have missed a server-side update)
         const dashboardImg = document.getElementById("dashboard");
-        if (!dashboardImg.src || dashboardImg.src.includes('placeholder') || dashboardImg.src === window.location.href) {
+        if (pendingImageRefresh || !dashboardImg.src || dashboardImg.src.includes('placeholder') || dashboardImg.src === window.location.href) {
             socket.emit('request_latest_image');
+            pendingImageRefresh = false;
         }
         // Subscribe to block notifications (always enabled)
         subscribeToBlockNotifications();
@@ -239,13 +241,17 @@ const reconnectBtn = document.getElementById('reconnect-button');
 let reconnectAttempts = 0;
 let lastImageUpdate = null;
 let imageUpdateTimeout = null;
+let pendingImageRefresh = false;
 
 // Initial connection
 connectSocket();
 
 // Allow bfcache by closing the socket when the page is hidden and restoring on return
 window.addEventListener('pagehide', () => {
-    if (socket) socket.disconnect();
+    if (socket) {
+        socket.disconnect();
+        pendingImageRefresh = true; // image may be stale after we come back
+    }
 });
 window.addEventListener('pageshow', (event) => {
     if (event.persisted) {

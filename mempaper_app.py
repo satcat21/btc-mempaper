@@ -5312,13 +5312,24 @@ class MempaperApp:
             # Use web_orientation for the dashboard view
             orientation = self.config.get("web_orientation", "vertical")
             current_translations = translations.get(lang, translations["en"])
-            
+
             # Get current block height for cache-busting
             block_height = self.current_block_height if self.current_block_height else 0
-            
+
             # Check if user is authenticated (for showing/hiding logout button)
             is_authenticated = self.auth_manager.is_authenticated()
-            
+
+            # Compute actual web-image pixel dimensions for the img width/height hint.
+            # display_width/height are the physical display resolution (e.g. 960×680 for
+            # 13.3E, 800×480 for 7.3F). In vertical orientation the shorter side becomes
+            # the width; in horizontal the longer side is the width.
+            _dw = self.config.get("display_width", 800)
+            _dh = self.config.get("display_height", 480)
+            if orientation == "vertical":
+                img_w, img_h = min(_dw, _dh), max(_dw, _dh)
+            else:
+                img_w, img_h = max(_dw, _dh), min(_dw, _dh)
+
             return render_template('dashboard.html',
                                  translations=current_translations,
                                  display_icon=display_icon,
@@ -5331,7 +5342,9 @@ class MempaperApp:
                                  show_wallet=self.config.get('show_wallet_balances_block', False),
                                  show_bitaxe=self.config.get('show_bitaxe_block', False),
                                  show_donations=self.config.get('show_donation_block', False),
-                                 dark_mode=self.config.get('color_mode_dark', True))
+                                 dark_mode=self.config.get('color_mode_dark', True),
+                                 img_width=img_w,
+                                 img_height=img_h)
         
         @self.app.route('/config')
         @require_web_auth(self.auth_manager)
@@ -5439,6 +5452,22 @@ class MempaperApp:
                 'message': 'Logout successful',
                 'public_dashboard': public_dashboard
             })
+
+        @self.app.route('/logout', methods=['GET'])
+        def logout_redirect():
+            """Server-side logout: clears session and redirects atomically.
+            Avoids mobile browser race where fetch() Set-Cookie isn't applied
+            before the subsequent client-side window.location navigation."""
+            public_dashboard = self.config.get('public_dashboard', False)
+            self.auth_manager.logout()
+            resp = redirect('/' if public_dashboard else '/login')
+            resp.headers['Cache-Control'] = 'no-store, private'
+            return resp
+
+        @self.app.route('/api/auth-check', methods=['GET'])
+        def auth_check():
+            """Lightweight session validity check (no redirect) used by bfcache restore."""
+            return jsonify({'authenticated': self.auth_manager.is_authenticated()})
 
         # User management endpoints
         @self.app.route('/api/users', methods=['GET'])
