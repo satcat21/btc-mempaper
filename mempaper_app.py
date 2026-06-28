@@ -30,6 +30,7 @@ from datetime import datetime
 from werkzeug.utils import secure_filename
 from flask import Flask, send_file, render_template, request, jsonify, session, redirect, url_for
 from flask_socketio import SocketIO, join_room, leave_room
+from flask_compress import Compress
 
 # Import custom modules
 from lib.mempool_api import MempoolAPI
@@ -114,6 +115,7 @@ class MempaperApp:
         """Initialize Flask application and configure it."""
         # Initialize Flask app
         self.app = Flask(__name__, static_folder="static")
+        Compress(self.app)
         self.app.secret_key = SecurityConfig.get_secret_key_from_env_or_generate()  # For session management
         
         # Configure session settings for longer-lived sessions
@@ -129,7 +131,20 @@ class MempaperApp:
         # Ensure JSON responses are properly formatted
         self.app.config['JSONIFY_PRETTYPRINT_REGULAR'] = False
         self.app.config['JSON_SORT_KEYS'] = False
-    
+
+        @self.app.template_filter('inline_css')
+        def inline_css_filter(filename):
+            """Read a CSS file (from dist/ if available) and return content safe to inline.
+            Font paths are rewritten from '../fonts/' to 'static/fonts/' for inline use."""
+            dist = os.path.join('static', 'css', 'dist', filename)
+            src  = os.path.join('static', 'css', filename)
+            path = dist if os.path.exists(dist) else src
+            try:
+                with open(path, 'r', encoding='utf-8') as f:
+                    return f.read().replace("url('../fonts/", "url('static/fonts/")
+            except OSError:
+                return ''
+
     def _init_socketio(self):
         """Initialize SocketIO with proper configuration."""
         # Configure SocketIO with extended timeouts for 48-hour sessions
@@ -183,7 +198,7 @@ class MempaperApp:
         """Initialize the main application components."""
         # Initialize Flask app first
         self._init_flask_app()
-        
+
         # Initialize SocketIO
         self._init_socketio()
         
@@ -232,6 +247,7 @@ class MempaperApp:
         
         # Image caching variables
         self.current_image_path = "cache/current.png"  # High-quality web image
+        self.current_webp_image_path = "cache/current.webp"  # WebP version for efficient browser serving
         self.current_eink_image_path = "cache/current_eink.png"  # E-ink optimized image
         self.cache_metadata_path = "cache/cache.json"  # Persistent cache state
         
@@ -652,7 +668,7 @@ class MempaperApp:
             return None
         # Use 'sudo nmcli' on Linux so the service user (non-root) can manage
         # NM connections.  The passwordless sudoers rule is installed by
-        # scripts/install_wifi_permissions.sh.
+        # tools/install_wifi_permissions.sh.
         cmd = (['sudo', 'nmcli'] if os.name != 'nt' else ['nmcli']) + args
         try:
             return subprocess.run(
@@ -1151,7 +1167,7 @@ class MempaperApp:
                 web_img, _ = render_connected_screen(access_url, self.config, timeout_seconds=60,
                                                      eink=False, translations=self.translations)
                 if web_img:
-                    web_img.save(self.current_image_path)
+                    self._save_images_to_disk(web_img, None)
                     self._cache_web_image(web_img)
                     print('📺 Connected screen also set as web dashboard image')
             except Exception:
@@ -2266,7 +2282,7 @@ class MempaperApp:
             # 3. Render the delivery-state image and push via the app's display worker
             print('🎨 Factory reset: rendering delivery state image...')
             try:
-                import scripts.delivery_state as ds
+                import tools.delivery_state as ds
                 config = self.config_manager.get_current_config()
                 image_path = ds.render_delivery_image(config)
                 # Use the app's own display worker (not ds.show_on_eink) to avoid
@@ -2567,7 +2583,7 @@ class MempaperApp:
                     device_name = self.config.get("omni_device_name", "unknown")
                     print(f"❌ E-paper display timed out after 120s")
                     print(f"   The selected display driver '{device_name}' may be incorrect.")
-                    print(f"   Run: python scripts/configure_display.py")
+                    print(f"   Run: python tools/configure_display.py")
                     self._display_worker = None  # worker may be stuck; restart next time
                     self._emit_display_error(
                         f'Display timed out after 120s. The driver "{device_name}" may be incorrect. '
@@ -2591,7 +2607,7 @@ class MempaperApp:
                     device_name = self.config.get("omni_device_name", "unknown")
                     print(f"⚠️ Display refresh took {display_duration:.0f}s — this is unusually slow.")
                     print(f"   The selected display driver '{device_name}' may be incorrect.")
-                    print(f"   Run: python scripts/configure_display.py")
+                    print(f"   Run: python tools/configure_display.py")
                     if hasattr(self, 'socketio') and self.socketio:
                         self.socketio.emit('display_update', {
                             'status': 'warning',
@@ -4078,6 +4094,10 @@ class MempaperApp:
             try:
                 if web_img is not None:
                     web_img.save(self.current_image_path, compress_level=1)
+                    try:
+                        web_img.save(self.current_webp_image_path, format='WEBP', quality=82, method=4)
+                    except Exception:
+                        pass
                 if eink_img is not None:
                     eink_img.save(self.current_eink_image_path, compress_level=1)
             except Exception as e:
@@ -4329,12 +4349,9 @@ class MempaperApp:
             # E-ink display subprocess needs file on disk — save synchronously
             if eink_img is not None:
                 eink_img.save(self.current_eink_image_path, compress_level=1)
-            # Web image only needed on disk for crash recovery — save in background
+            # Web image only needed on disk for crash recovery — save in background (PNG + WebP)
             if web_img is not None:
-                threading.Thread(
-                    target=lambda: web_img.save(self.current_image_path, compress_level=1),
-                    daemon=True
-                ).start()
+                self._save_images_to_disk(web_img, None)
             print(f"💾 Images cached for block {block_height}")
         except Exception as e:
             print(f"❌ Failed to save images: {e}")
@@ -4932,9 +4949,29 @@ class MempaperApp:
                 from flask import Response
                 return Response(status=304)
             response = send_file(file_path)
-            response.headers['Cache-Control'] = 'public, max-age=604800, immutable'
+            response.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
             response.headers['ETag'] = etag
             return response
+
+        # Serve JS from static/js/dist/ if minified copy exists, else fall back to static/js/
+        @self.app.route('/static/js/<path:filename>')
+        def serve_js_with_dist_fallback(filename):
+            dist_path = os.path.join('static', 'js', 'dist', filename)
+            src_path = os.path.join('static', 'js', filename)
+            serve_path = dist_path if os.path.exists(dist_path) else src_path
+            if not os.path.exists(serve_path):
+                return 'Not found', 404
+            return send_file(serve_path, mimetype='application/javascript')
+
+        # Serve CSS from static/css/dist/ if minified copy exists, else fall back to static/css/
+        @self.app.route('/static/css/<path:filename>')
+        def serve_css_with_dist_fallback(filename):
+            dist_path = os.path.join('static', 'css', 'dist', filename)
+            src_path = os.path.join('static', 'css', filename)
+            serve_path = dist_path if os.path.exists(dist_path) else src_path
+            if not os.path.exists(serve_path):
+                return 'Not found', 404
+            return send_file(serve_path, mimetype='text/css')
 
         # Add optimized static file serving with cache headers for memes
         @self.app.route('/static/memes/<filename>')
@@ -5219,22 +5256,25 @@ class MempaperApp:
                         print(f"📷 Serving up-to-date cached image (client: {client_ip})")
                         self._last_image_serve_log[client_ip] = now
                 
-                # Serve file with proper cache headers
-                response = send_file(self.current_image_path, mimetype='image/png')
-                
-                # Set cache headers to reduce unnecessary requests (5 minute cache)
-                response.headers['Cache-Control'] = 'public, max-age=300'
-                
-                # Add ETag for conditional requests
-                if os.path.exists(self.current_image_path):
-                    file_mtime = os.path.getmtime(self.current_image_path)
-                    etag = f'"{int(file_mtime)}"'
-                    response.headers['ETag'] = etag
-                    
-                    # Check if client has valid cached version
+                # Serve WebP if the client accepts it and a WebP copy exists
+                accept = request.headers.get('Accept', '')
+                use_webp = 'image/webp' in accept and os.path.exists(self.current_webp_image_path)
+                served_path = self.current_webp_image_path if use_webp else self.current_image_path
+                served_mime = 'image/webp' if use_webp else 'image/png'
+
+                # ETag + conditional request check before sending body
+                if os.path.exists(served_path):
+                    file_mtime = os.path.getmtime(served_path)
+                    etag = f'"{int(file_mtime)}-{served_mime}"'
                     if request.headers.get('If-None-Match') == etag:
-                        return '', 304  # Not Modified - no need to send data
-                
+                        return '', 304
+
+                response = send_file(served_path, mimetype=served_mime)
+                # URL already carries ?v=block_height for cache-busting — safe to cache long-term
+                response.headers['Cache-Control'] = 'public, max-age=86400, immutable'
+                if os.path.exists(served_path):
+                    response.headers['ETag'] = etag
+
                 return response
             
             # No cached image at all - generate minimal placeholder and start background generation
@@ -5287,6 +5327,7 @@ class MempaperApp:
                                  orientation=orientation,
                                  block_height=block_height,
                                  is_authenticated=is_authenticated,
+                                 lang=lang,
                                  show_wallet=self.config.get('show_wallet_balances_block', False),
                                  show_bitaxe=self.config.get('show_bitaxe_block', False),
                                  show_donations=self.config.get('show_donation_block', False),
@@ -5300,8 +5341,9 @@ class MempaperApp:
             lang = self.config.get("language", "en")
             current_translations = translations.get(lang, translations["en"])
             
-            return render_template('config.html', 
+            return render_template('config.html',
                                  translations=current_translations,
+                                 lang=lang,
                                  dark_mode=self.config.get('color_mode_dark', True))
         
         @self.app.route('/login')
@@ -5316,6 +5358,7 @@ class MempaperApp:
             current_translations = translations.get(lang, translations["en"])
             
             return render_template('login.html', translations=current_translations,
+                                 lang=lang,
                                  dark_mode=self.config.get('color_mode_dark', True),
                                  public_dashboard=self.config.get('public_dashboard', False))
         
@@ -7786,6 +7829,32 @@ class MempaperApp:
                         except Exception:
                             pass
 
+                    # Re-minify JS+CSS if dist/ exists (user previously opted into minification)
+                    js_dist_dir  = os.path.join(project_dir, 'static', 'js', 'dist')
+                    css_dist_dir = os.path.join(project_dir, 'static', 'css', 'dist')
+                    minify_script = os.path.join(project_dir, 'tools', 'minify.py')
+                    has_js_dist  = os.path.isdir(js_dist_dir)  and bool(os.listdir(js_dist_dir))
+                    has_css_dist = os.path.isdir(css_dist_dir) and bool(os.listdir(css_dist_dir))
+                    dist_dir = js_dist_dir  # keep variable for compat
+                    if (has_js_dist or has_css_dist) and os.path.exists(minify_script):
+                        _emit('update_output', {'line': 'Re-minifying JavaScript and CSS...', 'phase': 'pip', 'header': True})
+                        try:
+                            import sys as _sys
+                            proc = subprocess.Popen(
+                                [_sys.executable, minify_script],
+                                cwd=project_dir, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                text=True, bufsize=1
+                            )
+                            for line in proc.stdout:
+                                _emit('update_output', {'line': line.rstrip('\n'), 'phase': 'pip'})
+                            proc.wait()
+                            if proc.returncode == 0:
+                                _emit('update_output', {'line': 'JavaScript and CSS minified successfully', 'phase': 'pip', 'header': True})
+                            else:
+                                _emit('update_output', {'line': 'Minification failed — app will use source files', 'phase': 'pip', 'header': True})
+                        except Exception as minify_err:
+                            _emit('update_output', {'line': f'JS minification skipped: {minify_err}', 'phase': 'pip'})
+
                     # Emit restart message before update_done (frontend unsubscribes from update_output on done)
                     _emit('update_output', {'line': self.translations.get('restarting_service', 'Restarting mempaper service...'), 'phase': 'restart', 'header': True})
 
@@ -7835,7 +7904,7 @@ class MempaperApp:
                 if not device_id:
                     return jsonify({'success': False, 'message': 'No device_id specified'}), 400
 
-                from scripts.configure_display import (
+                from tools.configure_display import (
                     DEVICE_CONFIGS, DRIVER_DOWNLOADS, _drivers_missing, install_drivers
                 )
 
@@ -8054,19 +8123,10 @@ class MempaperApp:
             def handle_subscribe_block_notifications(data):
                 """Handle client request to subscribe to live block notifications."""
                 try:
-                    # Check if user is authenticated
-                    if not self.auth_manager.is_authenticated():
-                        print("⚠️ Unauthorized attempt to subscribe to block notifications")
-                        self.socketio.emit('block_notification_error', {'error': 'Authentication required'})
-                        return
-                    
-                    # Add client to subscribers
+                    # Block heights are public info — allow any connected client to subscribe
                     client_id = request.sid
-                    if client_id not in self.block_notification_subscribers:
-                        self.block_notification_subscribers.add(client_id)
-                        print(f"📡 Client subscribed to block notifications ({len(self.block_notification_subscribers)} total)")
-                    else:
-                        self.block_notification_subscribers.add(client_id)
+                    self.block_notification_subscribers.add(client_id)
+                    print(f"📡 Client subscribed to block notifications ({len(self.block_notification_subscribers)} total)")
                     self.socketio.emit('block_notification_status', {'status': 'subscribed', 'message': 'Subscribed to live block notifications'})
                         
                 except Exception as e:

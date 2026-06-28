@@ -5,9 +5,9 @@ setup_user.py
 Create or update admin users for the mempaper application.
 
 Usage:
-    python scripts/setup_user.py              # interactive: list users, add/update one
-    python scripts/setup_user.py --list       # list existing users and exit
-    python scripts/setup_user.py --delete <username>  # remove a user
+    python tools/setup_user.py              # interactive: list users, add/update one
+    python tools/setup_user.py --list       # list existing users and exit
+    python tools/setup_user.py --delete <username>  # remove a user
 """
 
 from __future__ import annotations

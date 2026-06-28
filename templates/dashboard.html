@@ -1,17 +1,20 @@
 <!DOCTYPE html>
-<html>
+<html lang="{{ lang }}">
 <head>
     <title>{{ translations.dashboard_title }}</title>
     <link rel="icon" type="image/svg+xml" href="static/favicon.svg">
     <link rel="icon" type="image/png" href="static/favicon.png">
+    <link rel="preload" href="/image?v={{ block_height }}" as="image" fetchpriority="high">
     <link rel="stylesheet" href="static/css/theme.css">
     <link rel="stylesheet" href="static/css/dashboard.css">
+    <link rel="preload" href="static/fonts/Roboto-Regular.ttf" as="font" crossorigin>
+    <link rel="preload" href="static/fonts/IBMPlexMono-Medium.ttf" as="font" crossorigin>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="preload" href="static/icons/settings.svg" as="image">
     <link rel="preload" href="static/icons/logout.svg" as="image">
-    <script src="static/js/socket.io.min.js"></script>
-    <script src="static/js/confirm-modal.js"></script>
-    <script src="static/js/toast.js"></script>
+    <script defer src="static/js/socket.io.min.js"></script>
+    <script defer src="static/js/confirm-modal.js"></script>
+    <script defer src="static/js/toast.js"></script>
 </head>
 <body class="orientation-{{ orientation }}{% if dark_mode %} dark-mode{% endif %}">
     <!-- Desktop Navigation - Left Side -->
@@ -26,11 +29,19 @@
         {% endif %}
     </div>
 
-    <img id="dashboard" src="/image?v={{ block_height }}" alt="{{ translations.dashboard_title }}" />
+    <main>
+    <img id="dashboard"
+         src="/image?v={{ block_height }}"
+         alt="{{ translations.dashboard_title }}"
+         width="{{ 480 if orientation == 'vertical' else 800 }}"
+         height="{{ 800 if orientation == 'vertical' else 480 }}"
+         fetchpriority="high"
+         loading="eager" />
+    </main>
     
     <!-- Mobile Navigation Toggle Button -->
-    <button id="mobile-nav-toggle" class="mobile-nav-toggle" onclick="toggleMobileNav()" title="{{ translations.menu }}">
-        <svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960" width="18px" fill="#b0b0b0">
+    <button id="mobile-nav-toggle" class="mobile-nav-toggle" onclick="toggleMobileNav()" title="{{ translations.menu }}" aria-label="{{ translations.menu }}">
+        <svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960" width="18px" fill="#b0b0b0" aria-hidden="true">
             <path d="M256-405.91 181.91-480 480-778.09 778.09-480 704-405.91l-224-223-224 223Z"/>
         </svg>
     </button>
@@ -161,6 +172,6 @@
             }
         });
     </script>
-    <script src="static/js/dashboard.js"></script>
+    <script defer src="static/js/dashboard.js"></script>
 </body>
 </html>

@@ -610,6 +610,7 @@ translations = {
         "day_sunday": "Sun",
         "auto_update_log": "Auto-update: {action}",
         "view_on_platform": "View on {platform}",
+        "menu": "Menu",
     },
     "de": {
         # Dashboard UI
@@ -1224,6 +1225,7 @@ translations = {
         "day_sunday": "So",
         "auto_update_log": "Auto-Update: {action}",
         "view_on_platform": "Anzeigen auf {platform}",
+        "menu": "Menü",
     },
     "es": {
         # Dashboard UI
@@ -1822,6 +1824,7 @@ translations = {
         "day_sunday": "Dom",
         "auto_update_log": "Actualización automática: {action}",
         "view_on_platform": "Ver en {platform}",
+        "menu": "Menú",
     },
     "fr": {
         # Dashboard UI
@@ -2421,6 +2424,7 @@ translations = {
         "day_sunday": "Dim",
         "auto_update_log": "Mise à jour automatique : {action}",
         "view_on_platform": "Voir sur {platform}",
+        "menu": "Menu",
     },
     "it": {
         # Dashboard UI
@@ -3005,5 +3009,6 @@ translations = {
         "day_sunday": "Dom",
         "auto_update_log": "Aggiornamento automatico: {action}",
         "view_on_platform": "Vedi su {platform}",
+        "menu": "Menu",
     }
 }

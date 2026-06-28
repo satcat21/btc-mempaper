@@ -2,6 +2,19 @@
    MEMPAPER CONFIG – Themed (inherits from theme.css)
    ============================================================ */
 
+/* ── Accessibility utilities ────────────────────────────────── */
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
 /* ── Container ──────────────────────────────────────────────── */
 .container {
     max-width: 900px;
@@ -407,7 +420,7 @@ body.dark-mode .section-nav-pill:not(.active) .section-nav-icon {
 
 .form-description {
     font-size: 0.8rem;
-    color: var(--text-muted);
+    color: var(--text-secondary);
     margin-top: 4px;
     line-height: 1.45;
 }
@@ -641,8 +654,12 @@ body.dark-mode .form-input[type="date"] {
     align-items: center;
     justify-content: center;
     gap: 6px;
-    color: var(--text-muted);
+    color: #636370; /* 4.9:1 on --bg-input (#f0f0f3) in light mode */
     font-weight: 500;
+}
+
+body.dark-mode .toggle-option:not(.active) {
+    color: var(--text-secondary); /* #9a9aaa — 5.5:1 on --bg-input (#222228) */
 }
 
 .toggle-option img {
@@ -654,12 +671,16 @@ body.dark-mode .form-input[type="date"] {
 
 .toggle-option.active {
     background: var(--accent);
-    color: #fff;
+    color: #000000;
     box-shadow: 0 1px 4px rgba(247, 147, 26, 0.3);
 }
 
+body.dark-mode .toggle-option.active {
+    color: #000000; /* prevent dark-mode text-primary (#e8e8ec) from bleeding in */
+}
+
 .toggle-option.active img {
-    filter: brightness(0) invert(1);
+    filter: brightness(0); /* maps icon to #000000, matching text */
 }
 
 /* ── Boolean Switch ─────────────────────────────────────────── */
@@ -1539,14 +1560,15 @@ body.dark-mode .upload-icon {
 /* Placeholder state: show the image.svg icon centered */
 .meme-lazy:not(.loaded) {
     object-fit: contain;
-    padding: 22%;
-    /* Light mode: black icon on light card — reduce opacity so it's subtle */
-    filter: opacity(0.2);
+    padding: 30%;         /* shrinks icon to ~40% of thumbnail width */
+    opacity: 1;           /* cancel .meme-lazy opacity:0.6 to avoid double-dimming */
+    filter: opacity(0.2); /* light mode: subtle dark icon on light card */
 }
 
-/* Dark mode: invert black to white, then reduce opacity */
+/* Dark mode: invert black SVG to white, show at visible opacity */
 body.dark-mode .meme-lazy:not(.loaded) {
-    filter: invert(1) opacity(0.3);
+    filter: invert(1);
+    opacity: 0.45;
 }
 
 .meme-lazy.loaded {
@@ -1873,7 +1895,16 @@ body.dark-mode .meme-lazy:not(.loaded) {
 
 .wifi-badge-connected {
     background: rgba(40, 167, 69, 0.15);
-    color: #28a745;
+    color: #1d6b2c; /* 5.9:1 on light green badge background */
+}
+
+body.dark-mode .wifi-badge-connected {
+    background: rgba(40, 167, 69, 0.12);
+    color: #4abe65; /* 5.9:1 on dark green badge background */
+}
+
+body.dark-mode .wifi-badge-saved {
+    color: var(--text-secondary); /* #9a9aaa — passes on dark badge background */
 }
 
 .wifi-badge-preferred {
@@ -2139,8 +2170,10 @@ body.dark-mode .meme-lazy:not(.loaded) {
     height: 100%;
     background: var(--accent);
     border-radius: 2px;
-    width: 0;
-    transition: width 1s linear;
+    width: 100%;
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 1s linear;
 }
 
 .restart-progress-fill.restart-progress-error {
@@ -2311,7 +2344,7 @@ body.dark-mode .meme-lazy:not(.loaded) {
 
 .update-install-btn {
     background: var(--accent);
-    color: #fff;
+    color: #0a0a0a;
     border: none;
     border-radius: var(--radius-md);
     padding: 10px 20px;
@@ -2519,18 +2552,23 @@ body.dark-mode .modal-title-icon {
     height: 100%;
     background: var(--accent);
     border-radius: 2px;
-    transition: width 0.3s;
+    width: 100%;
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 0.3s;
 }
 .update-progress-bar-indeterminate {
     width: 30%;
+    transform: none;
     animation: update-progress-slide 1.5s ease-in-out infinite;
 }
 @keyframes update-progress-slide {
-    0%   { margin-left: -30%; }
-    100% { margin-left: 100%; }
+    0%   { transform: translateX(-100%); }
+    100% { transform: translateX(333%); }
 }
 .update-progress-bar-done {
     width: 100%;
+    transform: scaleX(1);
     animation: none;
 }
 
@@ -2607,7 +2645,10 @@ body.dark-mode .modal-title-icon {
     height: 100%;
     background: var(--accent);
     border-radius: 3px;
-    transition: width 1s linear;
+    width: 100%;
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 1s linear;
 }
 
 .update-toast-hint {

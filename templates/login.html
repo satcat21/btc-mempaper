@@ -1,12 +1,13 @@
 <!DOCTYPE html>
-<html>
+<html lang="{{ lang }}">
 <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ translations.dashboard_title }} - {{ translations.login }}</title>
     <link rel="icon" type="image/svg+xml" href="static/favicon.svg">
     <link rel="icon" type="image/png" href="static/favicon.png">
-    <link rel="stylesheet" href="static/css/theme.css">
-    <link rel="stylesheet" href="static/css/login.css">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>{{ 'theme.css'|inline_css|safe }}{{ 'login.css'|inline_css|safe }}</style>
+    <link rel="preload" href="static/fonts/Roboto-Regular.ttf" as="font" crossorigin>
+    <link rel="preload" href="static/fonts/IBMPlexMono-Medium.ttf" as="font" crossorigin>
     <link rel="preload" href="static/icons/back.svg" as="image">
 </head>
 <body{% if dark_mode %} class="dark-mode"{% endif %}>
@@ -26,6 +27,7 @@
     </div>
     {% endif %}
 
+    <main>
     <div class="login-container">
         <div class="login-header">
             <h1>mem<span class="brand-accent">paper</span></h1>
@@ -54,7 +56,8 @@
         </div>
 
     </div>
-    
-    <script src="static/js/login.js"></script>
+    </main>
+
+    <script defer src="static/js/login.js"></script>
 </body>
 </html>

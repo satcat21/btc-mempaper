@@ -8,6 +8,7 @@
     src: url('../fonts/Roboto-Regular.ttf') format('truetype');
     font-weight: 400;
     font-style: normal;
+    font-display: optional;
 }
 
 @font-face {
@@ -15,6 +16,7 @@
     src: url('../fonts/Roboto-Bold.ttf') format('truetype');
     font-weight: 700;
     font-style: normal;
+    font-display: optional;
 }
 
 @font-face {
@@ -22,6 +24,7 @@
     src: url('../fonts/IBMPlexMono-Medium.ttf') format('truetype');
     font-weight: 500;
     font-style: normal;
+    font-display: optional;
 }
 
 /* ── Light Mode (default) ──────────────────────────────────── */
@@ -59,7 +62,7 @@
     --nav-btn-shadow: 0 2px 8px rgba(0,0,0,0.06);
     --nav-icon-fill: #4a4a58;
     --modal-overlay: rgba(0,0,0,0.35);
-    --toggle-icon-inactive-filter: brightness(0) invert(0.6);
+    --toggle-icon-inactive-filter: brightness(0) invert(0.4); /* ~#666 matches #636370 inactive text */
 }
 
 /* ── Dark Mode ─────────────────────────────────────────────── */
@@ -90,7 +93,7 @@ body.dark-mode {
     --nav-btn-shadow: 0 2px 8px rgba(0,0,0,0.3);
     --nav-icon-fill: #e8e8ec;
     --modal-overlay: rgba(0,0,0,0.6);
-    --toggle-icon-inactive-filter: brightness(0) invert(0.42);
+    --toggle-icon-inactive-filter: brightness(0) invert(0.6); /* ~#999 matches #9a9aaa inactive text */
 }
 
 /* ── Base Reset ─────────────────────────────────────────────── */

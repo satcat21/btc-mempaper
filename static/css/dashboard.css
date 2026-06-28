@@ -24,6 +24,9 @@ body {
     background-color: var(--bg-card);
 }
 
+body.orientation-vertical #dashboard { aspect-ratio: 3 / 5; }
+body.orientation-horizontal #dashboard { aspect-ratio: 5 / 3; }
+
 body.dark-mode #dashboard {
     box-shadow: 0 0 0 1px rgba(255,255,255,0.06),
                 0 4px 24px rgba(0,0,0,0.5),

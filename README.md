@@ -307,7 +307,7 @@ pip install -r requirements.txt
 2. **Create the first admin user**
 
    ```bash
-   python scripts/setup_user.py
+   python tools/setup_user.py
    ```
 
    You will be prompted for a username and password. The password is hashed with Argon2id and stored in the config -- the plain text is never saved.
@@ -331,7 +331,7 @@ pip install -r requirements.txt
    **Generate the service file** (automatically configures paths and user):
 
    ```bash
-   python scripts/generate_service_file.py
+   python tools/generate_service_file.py
    cat mempaper.service
    sudo cp mempaper.service /etc/systemd/system/
    sudo systemctl daemon-reload
@@ -355,10 +355,10 @@ pip install -r requirements.txt
   This installs the required permissions for NetworkManager operations used by `mempaper.service`.
 
   ```bash
-  sudo bash scripts/install_wifi_permissions.sh
+  sudo bash tools/install_wifi_permissions.sh
   ```
 
-  > If you updated scripts in this repository later, run the command again to refresh installed rules.
+  > If you update mempaper later, run the command again to refresh installed rules.
 
   This also installs the sudoers rule for **software self-update** from the web UI (allows `systemctl restart mempaper.service` without a password).
 
@@ -411,7 +411,7 @@ sudo raspi-config
 Run the configuration tool to select your display. It automatically downloads and installs the required driver files:
 
 ```bash
-python scripts/configure_display.py
+python tools/configure_display.py
 ```
 
 Supported native displays:
@@ -437,9 +437,9 @@ pip3 install --prefer-binary .
 Multiple admin users are supported. Users are stored as Argon2id hashes in `config/config.json` under the `admin_users` key.
 
 ```bash
-python scripts/setup_user.py                # Create or update a user
-python scripts/setup_user.py --list         # List all configured users
-python scripts/setup_user.py --delete alice # Delete a user
+python tools/setup_user.py                # Create or update a user
+python tools/setup_user.py --list         # List all configured users
+python tools/setup_user.py --delete alice # Delete a user
 ```
 
 > The script refuses to delete the last remaining user to prevent lockout.
@@ -453,7 +453,7 @@ python scripts/setup_user.py --delete alice # Delete a user
 Prepare a reset device for shipment:
 
 ```bash
-python scripts/delivery_state.py
+python tools/delivery_state.py
 ```
 
 What this does:
@@ -646,6 +646,7 @@ sudo chmod 0440 /etc/sudoers.d/mempaper-update
 
 - [Configuration Reference](docs/CONFIG_REFERENCE.md) -- Complete guide to all settings
 - [Security Guide](docs/SECURITY_GUIDE.md) -- Encryption and password protection
+- [Self-Hosting Guide](docs/SELF_HOSTING_GUIDE.md) -- Expose mempaper to the internet via Traefik, OIDC login, and TLS
 - [Cache System Documentation](docs/UNIFIED_CACHE_DOCUMENTATION.md) -- Technical cache implementation details
 
 ### Project Structure
@@ -692,14 +693,17 @@ btc-mempaper/
 |   |-- security_config.py       Security constants & settings
 |   +-- technical_config.py      Technical constants & defaults
 |
-|-- scripts/                     Administration & Setup
+|-- tools/                       Developer & maintenance tools
+|   |-- minify.py                JS minifier (generates static/js/dist/)
 |   |-- configure_display.py     Display configuration wizard
 |   |-- setup_user.py            Create / update / delete admin users
 |   |-- delivery_state.py        Prepare device for delivery
 |   |-- diagnose_mempool_api.py  Mempool API diagnostics
 |   |-- generate_service_file.py Generate systemd service config
 |   |-- backup_manager.py        Backup & maintenance utility
-|   +-- reset_cache_rpi.sh       Cache reset for Raspberry Pi
+|   |-- reset_cache_rpi.sh       Cache reset for Raspberry Pi
+|   |-- install_wifi_permissions.sh  Polkit + sudoers rules for Wi-Fi hotspot
+|   +-- 90-mempaper-wifi.rules       Polkit rule for NetworkManager
 |
 |-- display/                     Display Drivers & Config
 |   |-- waveshare_display.py     Native Waveshare driver integration
@@ -721,7 +725,7 @@ btc-mempaper/
 - **Entry Points** load configuration, initialize **lib/** APIs, render via **display/**
 - **managers/** handle security, authentication, and configuration
 - **utils/** provide shared functionality across the application
-- **scripts/** are standalone tools for setup and maintenance
+- **tools/** contains developer and maintenance utilities (setup, diagnostics, deployment helpers)
 
 <br/>
 

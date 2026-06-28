@@ -120,6 +120,21 @@ if [ "$ARCH" = "armv6l" ]; then
     ok "Pillow rebuilt from source"
 fi
 
+# ── Optional: Minify JavaScript ───────────────────────────────────────────
+echo ""
+echo -e "  ${CYAN}Minify JavaScript for better performance?${NC}"
+echo "  Strips comments & whitespace from JS files into static/js/dist/"
+echo "  The app serves minified files when they exist, originals otherwise."
+echo ""
+read -rp "  Minify JavaScript? [Y/n]: " MINIFY_CHOICE
+MINIFY_CHOICE="${MINIFY_CHOICE:-Y}"
+if [[ "$MINIFY_CHOICE" =~ ^[Yy]$ ]]; then
+    "$VENV_DIR/bin/python" tools/minify.py
+    ok "JavaScript minified — served from static/js/dist/"
+else
+    ok "Skipping JS minification (app will use unminified source files)"
+fi
+
 # ── Step 4: Configuration ─────────────────────────────────────────────────
 step "Step 4/9 — Setting up configuration"
 
@@ -164,7 +179,7 @@ done
 
 if [ "$DISPLAY_CHOICE" != "s" ] && [ "$DISPLAY_CHOICE" != "S" ]; then
     echo ""
-    "$VENV_DIR/bin/python" scripts/configure_display.py "$DISPLAY_CHOICE"
+    "$VENV_DIR/bin/python" tools/configure_display.py "$DISPLAY_CHOICE"
     ok "Display configured"
 
     # Enable SPI interface (required for e-ink displays)
@@ -188,7 +203,7 @@ fi
 # ── Step 6: Systemd service ───────────────────────────────────────────────
 step "Step 6/9 — Installing systemd service"
 
-python scripts/generate_service_file.py
+python tools/generate_service_file.py
 sudo cp mempaper.service /etc/systemd/system/mempaper.service
 sudo systemctl daemon-reload
 sudo systemctl enable mempaper.service
@@ -197,7 +212,7 @@ ok "mempaper.service installed and enabled"
 # ── Step 7: WiFi/hotspot permissions ───────────────────────────────────────
 step "Step 7/9 — Installing WiFi hotspot permissions"
 
-sudo bash scripts/install_wifi_permissions.sh "$SERVICE_USER"
+sudo bash tools/install_wifi_permissions.sh "$SERVICE_USER"
 ok "WiFi permissions installed"
 
 # ── Done ──────────────────────────────────────────────────────────────────
@@ -254,10 +269,10 @@ echo "    sudo systemctl restart mempaper.service   # restart"
 echo "    sudo systemctl status mempaper.service    # status"
 echo ""
 echo "  To reconfigure the display later:"
-echo "    python scripts/configure_display.py"
+echo "    python tools/configure_display.py"
 echo ""
 echo "  To prepare for delivery (factory reset):"
-echo "    python scripts/delivery_state.py"
+echo "    python tools/delivery_state.py"
 echo ""
 
 # ── Step 8: Disable WiFi power management ────────────────────────────────

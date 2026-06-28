@@ -7,7 +7,7 @@
  *   - share Wi-Fi as a protected (WPA) hotspot
  *
  * Install:
- *   sudo cp /home/pi/btc-mempaper/scripts/90-mempaper-wifi.rules \
+ *   sudo cp /home/pi/btc-mempaper/tools/90-mempaper-wifi.rules \
  *           /etc/polkit-1/rules.d/90-mempaper-wifi.rules
  *   sudo systemctl restart polkit
  *

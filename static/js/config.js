@@ -899,11 +899,11 @@ async function uploadFiles(files) {
     // Show progress
     if (progressDiv && progressBar && statusText) {
         progressDiv.style.display = 'block';
-        progressBar.style.width = '0%';
+        progressBar.style.transform = 'scaleX(0)';
         statusText.textContent = t?.upload_checking_duplicates || 'Checking for duplicates...';
         statusText.style.color = '#F7931A';
     }
-    
+
     // Get existing hashes
     const existingHashes = await getExistingMemeHashes();
 
@@ -995,12 +995,12 @@ async function uploadFiles(files) {
             }
             
             if (progressBar) {
-                progressBar.style.width = `${((i) / filesToUpload.length) * 100}%`;
+                progressBar.style.transform = `scaleX(${i / filesToUpload.length})`;
             }
-            
+
             const formData = new FormData();
             formData.append('file', file);
-            
+
             try {
                 const response = await fetch('/api/upload-meme', {
                     method: 'POST',
@@ -1023,9 +1023,9 @@ async function uploadFiles(files) {
         }
         
         if (progressBar) {
-            progressBar.style.width = '100%';
+            progressBar.style.transform = 'scaleX(1)';
         }
-        
+
         // Show final status
         if (statusText) {
             const parts = [];
@@ -2385,6 +2385,12 @@ function createSoftwareUpdateSection() {
     const selectorRow = document.createElement('div');
     selectorRow.className = 'update-selector-row';
 
+    const releaseLabel = document.createElement('label');
+    releaseLabel.htmlFor = 'update-release-select';
+    releaseLabel.textContent = window.translations?.select_version || 'Select version';
+    releaseLabel.className = 'sr-only';
+    selectorRow.appendChild(releaseLabel);
+
     const select = document.createElement('select');
     select.className = 'form-select update-release-select';
     select.id = 'update-release-select';
@@ -2738,7 +2744,7 @@ async function _performUpdate(tag, updateBtn) {
                 remaining--;
                 if (remaining >= 0) {
                     countdownNumber.textContent = _fmtCountdown(remaining);
-                    progressFill.style.width = ((1 - remaining / estimatedSeconds) * 100) + '%';
+                    progressFill.style.transform = 'scaleX(' + (1 - remaining / estimatedSeconds) + ')';
                 }
                 if (remaining <= earlyPollStart && !polling) {
                     polling = true;
@@ -2878,7 +2884,7 @@ async function _installDisplayDrivers(deviceId) {
         <div class="update-toast-title">${window.translations?.installing_display_drivers || 'Installing display drivers'}...</div>
         <div class="update-toast-status" id="update-toast-status">${window.translations?.downloading_drivers || 'Downloading drivers for'} ${deviceId}</div>
         <div class="update-toast-progress">
-            <div class="update-toast-progress-bar" style="width:30%;transition:width 10s linear"></div>
+            <div class="update-toast-progress-bar" style="width:100%;transform:scaleX(0.3);transition:transform 10s linear;transform-origin:left"></div>
         </div>
         <div class="update-toast-hint">${window.translations?.please_wait || 'Please wait'}</div>
     `;
@@ -2887,7 +2893,7 @@ async function _installDisplayDrivers(deviceId) {
     // Animate progress bar while waiting
     requestAnimationFrame(() => {
         const bar = toast.querySelector('.update-toast-progress-bar');
-        if (bar) bar.style.width = '80%';
+        if (bar) bar.style.transform = 'scaleX(0.8)';
     });
 
     try {
@@ -2902,7 +2908,7 @@ async function _installDisplayDrivers(deviceId) {
         const bar = toast.querySelector('.update-toast-progress-bar');
 
         if (data.success) {
-            if (bar) bar.style.width = '100%';
+            if (bar) bar.style.transform = 'scaleX(1)';
 
             if (data.restart_required) {
                 if (statusEl) statusEl.innerHTML = '<span class="update-spinner"></span> ' + (window.translations?.drivers_installed_restarting || 'Drivers installed! Service restarting...');
@@ -2915,7 +2921,7 @@ async function _installDisplayDrivers(deviceId) {
                 setTimeout(() => toast.remove(), 3000);
             }
         } else {
-            if (bar) bar.style.width = '100%';
+            if (bar) bar.style.transform = 'scaleX(1)';
             if (statusEl) statusEl.textContent = data.message || 'Driver installation failed';
             toast.classList.add('update-toast-error');
             toast.innerHTML += `
@@ -3156,7 +3162,7 @@ function _showRestartCountdown(title, estimatedSeconds, updateTag, rollbackTag, 
         remaining--;
         if (remaining >= 0) {
             countdownNumber.textContent = _fmtCountdown(remaining);
-            progressFill.style.width = ((1 - remaining / estimatedSeconds) * 100) + '%';
+            progressFill.style.transform = 'scaleX(' + (1 - remaining / estimatedSeconds) + ')';
         }
 
         // Start early background polling before countdown finishes
@@ -3204,7 +3210,7 @@ function _pollForService(overlay, countdownNumber, countdownLabel, progressFill,
                 countdownNumber.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="restart-check-icon" viewBox="0 -960 960 960" fill="#28a745"><path d="M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z"/></svg>';
                 countdownNumber.classList.add('restart-countdown-success');
                 countdownLabel.textContent = t.service_back_online || 'Service is back online!';
-                progressFill.style.width = '100%';
+                progressFill.style.transform = 'scaleX(1)';
                 document.body.classList.remove('modal-open');
                 var _sy = document.documentElement.style.getPropertyValue('--scroll-y');
                 document.documentElement.style.removeProperty('--scroll-y');
@@ -3220,7 +3226,7 @@ function _pollForService(overlay, countdownNumber, countdownLabel, progressFill,
             countdownNumber.textContent = '\u2715';
             countdownNumber.classList.add('restart-countdown-error');
             countdownLabel.textContent = t.service_not_responding || 'Service not responding. Try refreshing manually.';
-            progressFill.style.width = '100%';
+            progressFill.style.transform = 'scaleX(1)';
             progressFill.classList.add('restart-progress-error');
 
             const dialogEl = overlay.querySelector('.confirm-modal-dialog');
@@ -3493,6 +3499,7 @@ function buildSectionNav(grid) {
         }
 
         pill.dataset.tooltip = cat.label;
+        pill.setAttribute('aria-label', cat.label);
 
         const label = document.createElement('span');
         label.className = 'section-nav-label';
@@ -3503,6 +3510,11 @@ function buildSectionNav(grid) {
         pill.addEventListener('click', () => {
             const target = document.getElementById(sec.id);
             if (!target) return;
+            // Force-render section immediately if still a lazy placeholder
+            if (target.dataset.lazy === 'true' && window._lazySectionRenderMap) {
+                const renderFn = window._lazySectionRenderMap.get(catId);
+                if (renderFn) renderFn();
+            }
             // Scroll so section top is just above the nav bottom (ensures it becomes active)
             const navHeight = nav.offsetHeight - 2;
             const top = target.getBoundingClientRect().top + window.pageYOffset - navHeight;
@@ -3557,12 +3569,13 @@ function buildSectionNav(grid) {
 
     function setActive(pill) {
         if (activePill === pill) return;
+        // Read geometry BEFORE any classList writes to avoid forced reflow
+        const trackRect = track.getBoundingClientRect();
+        const pillRect = pill.getBoundingClientRect();
         if (activePill) activePill.classList.remove('active');
         pill.classList.add('active');
         activePill = pill;
         // Scroll pill into view within the track (without affecting page scroll)
-        const trackRect = track.getBoundingClientRect();
-        const pillRect = pill.getBoundingClientRect();
         const offset = pillRect.left - trackRect.left - (trackRect.width / 2) + (pillRect.width / 2);
         track.scrollBy({ left: offset, behavior: 'smooth' });
     }
@@ -3615,45 +3628,14 @@ function buildSectionNav(grid) {
     stickyObs.observe(sentinel);
 }
 
-function renderConfigurationForm() {
-    window._pendingConfigOverrides = {}; // reset on every re-render
-    const container = document.getElementById('config-container');
-    container.innerHTML = ''; // Clear any existing content
-    const grid = document.createElement('div');
-    grid.className = 'config-grid';
-    
-    // console.log('Rendering configuration form...');
-    // console.log('Categories:', categories);
-    // console.log('Schema:', configSchema);
-    // console.log('Current config:', currentConfig);
-    
-    if (!categories || categories.length === 0) {
-        console.error('No categories found!');
-        container.innerHTML = '<p style="color: red;">Error: No configuration categories found</p>';
-        return;
-    }
-    
-    if (!configSchema || Object.keys(configSchema).length === 0) {
-        console.error('No schema found!');
-        container.innerHTML = '<p style="color: red;">Error: No configuration schema found</p>';
-        return;
-    }
-    
-    categories.forEach(category => {
-        //console.log(`Processing category: ${category.id} - ${category.label}`);
-        
-        const section = document.createElement('div');
-        section.className = 'config-section';
-        section.id = 'section-' + category.id;
+function _renderCategorySection(category, section) {
+    if (!section || section.dataset.lazy !== 'true') return;
+    delete section.dataset.lazy;
+    window._lazySectionRenderMap?.delete(category.id);
 
-        // Add special class for meme/opsec management sections (spans 2 columns on desktop)
-        if (category.id === 'meme_management' || category.id === 'opsec') {
-            section.classList.add('meme-management-section');
-        }
-        
         const title = document.createElement('div');
         title.className = 'section-title';
-        
+
         // Handle icon: if it's a path (starts with /), create an img tag, otherwise use as text
         let iconHtml;
         if (category.icon && category.icon.startsWith('/')) {
@@ -3661,18 +3643,18 @@ function renderConfigurationForm() {
         } else {
             iconHtml = category.icon || '';
         }
-        
+
         // Create title span for the text content
         const titleText = document.createElement('span');
         titleText.innerHTML = `${iconHtml} ${category.label}`;
         title.appendChild(titleText);
-        
+
         // Add section toggle for categories that have enable/disable functionality
         const enableToggleKey = getSectionToggleKey(category.id);
         if (enableToggleKey) {
             const toggleContainer = document.createElement('div');
             toggleContainer.className = 'section-toggle';
-            
+
             const toggleSwitch = document.createElement('div');
             toggleSwitch.className = 'section-toggle-switch';
             toggleSwitch.setAttribute('data-toggle-key', enableToggleKey);
@@ -3682,13 +3664,13 @@ function renderConfigurationForm() {
             toggleSwitch.getValue = function() {
                 return toggleSwitch.classList.contains('enabled');
             };
-            
+
             // Set initial state
             const isEnabled = currentConfig[enableToggleKey];
             if (isEnabled) {
                 toggleSwitch.classList.add('enabled');
             }
-            
+
             // Add click handler
             toggleSwitch.addEventListener('click', async function() {
                 const newValue = !toggleSwitch.classList.contains('enabled');
@@ -3717,16 +3699,16 @@ function renderConfigurationForm() {
                 section.classList.toggle('section-disabled', !newValue);
 
             });
-            
+
             toggleContainer.appendChild(toggleSwitch);
             title.appendChild(toggleContainer);
-            
+
             // Set initial disabled state if needed
             if (!isEnabled) {
                 section.classList.add('section-disabled');
             }
         }
-        
+
         section.appendChild(title);
 
         const _previewCategories = ['price_stats', 'countdown', 'halving', 'network_stats', 'bitaxe_stats', 'wallet_monitoring', 'donation'];
@@ -3955,18 +3937,86 @@ function renderConfigurationForm() {
             section.appendChild(advancedContainer);
         }
 
-        // Add section if it has fields OR if it has a toggle (like sections that only contain a toggle)
-        if (fieldsAdded > 0 || enableToggleKey) {
-            grid.appendChild(section);
-        } else {
-            //console.warn(`Category ${category.id} has no fields!`);
+        // Remove section (and its nav pill) if it has no fields and no toggle
+        if (fieldsAdded === 0 && !enableToggleKey) {
+            document.querySelector(`.section-nav-pill[data-target="${section.id}"]`)?.remove();
+            section.remove();
         }
+}
+
+function renderConfigurationForm() {
+    window._pendingConfigOverrides = {}; // reset on every re-render
+    const container = document.getElementById('config-container');
+    container.innerHTML = ''; // Clear any existing content
+    const grid = document.createElement('div');
+    grid.className = 'config-grid';
+    
+    // console.log('Rendering configuration form...');
+    // console.log('Categories:', categories);
+    // console.log('Schema:', configSchema);
+    // console.log('Current config:', currentConfig);
+    
+    if (!categories || categories.length === 0) {
+        console.error('No categories found!');
+        container.innerHTML = '<p style="color: red;">Error: No configuration categories found</p>';
+        return;
+    }
+    
+    if (!configSchema || Object.keys(configSchema).length === 0) {
+        console.error('No schema found!');
+        container.innerHTML = '<p style="color: red;">Error: No configuration schema found</p>';
+        return;
+    }
+    
+    // Phase 1: create lightweight skeleton sections (just empty divs with correct IDs)
+    // so scroll anchoring and nav pills work before sections are populated.
+    window._lazySectionRenderMap = new Map();
+    categories.forEach(category => {
+        const section = document.createElement('div');
+        section.className = 'config-section';
+        section.id = 'section-' + category.id;
+        if (category.id === 'meme_management' || category.id === 'opsec') {
+            section.classList.add('meme-management-section');
+        }
+        section.dataset.lazy = 'true';
+        grid.appendChild(section);
+        window._lazySectionRenderMap.set(
+            category.id,
+            () => _renderCategorySection(category, section)
+        );
     });
 
     container.appendChild(grid);
 
     // ── Section Navigation Bar ──────────────────────────────────
     buildSectionNav(grid);
+
+    // Phase 2: render the first section immediately (it's above the fold)
+    _renderCategorySection(categories[0], grid.querySelector('#section-' + categories[0].id));
+
+    // Phase 3: render remaining sections lazily during browser idle time
+    let _lazyIdx = 0;
+    const _lazyQueue = categories.slice(1);
+    function _processLazyQueue(deadline) {
+        while (_lazyIdx < _lazyQueue.length) {
+            if (deadline && deadline.timeRemaining() < 8) break;
+            const cat = _lazyQueue[_lazyIdx++];
+            const sec = document.getElementById('section-' + cat.id);
+            if (sec && sec.dataset.lazy === 'true') _renderCategorySection(cat, sec);
+        }
+        if (_lazyIdx < _lazyQueue.length) {
+            if ('requestIdleCallback' in window) {
+                requestIdleCallback(_processLazyQueue, { timeout: 3000 });
+            } else {
+                setTimeout(() => _processLazyQueue(null), 16);
+            }
+        }
+    }
+    if ('requestIdleCallback' in window) {
+        requestIdleCallback(_processLazyQueue, { timeout: 500 });
+    } else {
+        setTimeout(() => _processLazyQueue(null), 0);
+    }
 
     // Load cached balances for any existing wallet entries after form is rendered
     setTimeout(() => {
@@ -4117,20 +4167,23 @@ function _mpaShowLogModal(checks) {
 function createFormField(key, field, value) {
     const formGroup = document.createElement('div');
     formGroup.className = 'form-group';
-    
+    const fieldId = 'cfg-' + key;
+
     // Add special class for color fields to allow side-by-side layout
     if (field.type === 'color' || field.type === 'color_select') {
         formGroup.classList.add('form-group-color');
     }
-    
+
     // Skip adding label for self-managed interfaces and pure info boxes
-    if (field.type !== 'meme_management' && field.type !== 'donation_history' && field.type !== 'info_text' && field.type !== 'open_url_button' && field.type !== 'connection_check' && field.type !== 'mempool_actions') {
+    const skipLabel = field.type === 'meme_management' || field.type === 'donation_history' || field.type === 'info_text' || field.type === 'open_url_button' || field.type === 'connection_check' || field.type === 'mempool_actions';
+    if (!skipLabel) {
         const label = document.createElement('label');
         label.className = 'form-label';
         label.textContent = field.label;
+        label.htmlFor = fieldId;
         formGroup.appendChild(label);
     }
-    
+
     let input;
     
     switch (field.type) {
@@ -4498,8 +4551,19 @@ function createFormField(key, field, value) {
         input.dataset.configKey = key;
     }
     
+    // Associate the native input with the label via id
+    if (input && !skipLabel) {
+        // Always look for a native control inside first (handles color picker containers etc.)
+        const inner = input.querySelector && input.querySelector('input, select, textarea');
+        if (inner) {
+            if (!inner.id) inner.id = fieldId;
+        } else if (!input.id) {
+            input.id = fieldId;
+        }
+    }
+
     formGroup.appendChild(input);
-    
+
     if (field.description) {
         const description = document.createElement('div');
         description.className = 'form-description';
@@ -4623,7 +4687,7 @@ function _setPreviewValue(el, val) {
 // Uses the same Roboto font as the e-ink renderer (Regular for labels, Bold for values).
 function _buildSingleThemeCard(leftLabel, leftVal, rightLabel, rightVal, dataColor, bg, labelColor) {
     const card = document.createElement('div');
-    card.style.cssText = `flex:1;min-width:0;border:1px solid rgba(128,128,128,.2);border-radius:8px;background:${bg};display:grid;grid-template-columns:1fr 1fr;font-family:'Roboto',Arial,sans-serif;`;
+    card.style.cssText = `flex:1;min-width:0;border:1px solid rgba(128,128,128,.2);border-radius:8px;background:${bg};color:${bg === '#fff' ? '#1a1a1e' : '#e8e8ec'};display:grid;grid-template-columns:1fr 1fr;font-family:'Roboto',Arial,sans-serif;`;
     const mkCell = (label, val) => {
         const cell = document.createElement('div');
         cell.style.cssText = 'display:flex;flex-direction:column;align-items:center;text-align:center;padding:12px 6px;';
@@ -4660,6 +4724,7 @@ function _buildSectionPreview(categoryId, sectionEl) {
         lightCard.classList.add('preview-theme-light');
         darkCard.classList.add('preview-theme-dark');
         const w = document.createElement('div');
+        w.setAttribute('aria-hidden', 'true');
         w.appendChild(lightCard);
         w.appendChild(darkCard);
         return w;
@@ -4687,7 +4752,7 @@ function _buildSectionPreview(categoryId, sectionEl) {
         }
 
         const pd = window._previewData.price;
-        const lightCard = _buildSingleThemeCard(ll, fmtPrice(pd?.price), rl, fmtMoscow(pd?.moscow_time), clLight, '#fff', '#888');
+        const lightCard = _buildSingleThemeCard(ll, fmtPrice(pd?.price), rl, fmtMoscow(pd?.moscow_time), clLight, '#fff', '#6a6a78');
         const darkCard  = _buildSingleThemeCard(ll, fmtPrice(pd?.price), rl, fmtMoscow(pd?.moscow_time), clDark,  '#111827', '#aaa');
 
         window._refreshPricePreview = (data) => {
@@ -4723,7 +4788,7 @@ function _buildSectionPreview(categoryId, sectionEl) {
         const lv  = fmtHashrate(bd?.hashrate_ths);
         const rv  = fmtRight(mode === 'difficulty' ? bd?.best_difficulty : bd?.valid_blocks);
 
-        const lightCard = _buildSingleThemeCard(ll, lv, rl, rv, clLight, '#fff', '#888');
+        const lightCard = _buildSingleThemeCard(ll, lv, rl, rv, clLight, '#fff', '#6a6a78');
         const darkCard  = _buildSingleThemeCard(ll, lv, rl, rv, clDark,  '#111827', '#aaa');
 
         window._refreshBitaxePreview = (data) => {
@@ -4770,7 +4835,7 @@ function _buildSectionPreview(categoryId, sectionEl) {
         const lv = fmtBtc(wd?.total_btc ?? (hasWallets ? null : 0.00123456));
         const rv = fmtFiat(wd?.fiat_value, wd?.total_btc ?? 0.00123456);
 
-        const lightCard = _buildSingleThemeCard(ll, lv, rl, rv, clLight, '#fff', '#888');
+        const lightCard = _buildSingleThemeCard(ll, lv, rl, rv, clLight, '#fff', '#6a6a78');
         const darkCard  = _buildSingleThemeCard(ll, lv, rl, rv, clDark,  '#111827', '#aaa');
 
         window._refreshWalletPreview = (data) => {
@@ -4794,7 +4859,7 @@ function _buildSectionPreview(categoryId, sectionEl) {
             const card = document.createElement('div');
             card.style.cssText = `flex:1;min-width:0;border:1px solid rgba(128,128,128,.2);border-radius:8px;background:${bg};display:flex;flex-direction:column;align-items:center;text-align:center;padding:12px 8px;gap:10px;font-family:'Roboto',Arial,sans-serif;`;
             const hdr = document.createElement('div');
-            hdr.style.cssText = `font-size:.72em;font-weight:400;color:${bg === '#fff' ? '#888' : '#aaa'};line-height:1.3;`;
+            hdr.style.cssText = `font-size:.72em;font-weight:400;color:${bg === '#fff' ? '#6a6a78' : '#aaa'};line-height:1.3;`;
             hdr.className = 'don-header';
             const msg = document.createElement('div');
             msg.style.cssText = `font-size:1.05em;font-weight:700;color:${dataColor};`;
@@ -4852,7 +4917,7 @@ function _buildSectionPreview(categoryId, sectionEl) {
         }
 
         const cd = window._previewData.countdown;
-        const lightCard = _buildSingleThemeCard(ll, fmtRemaining(cd?.remaining_btc), rl, fmtPct(cd?.pct_mined), clLight, '#fff', '#888');
+        const lightCard = _buildSingleThemeCard(ll, fmtRemaining(cd?.remaining_btc), rl, fmtPct(cd?.pct_mined), clLight, '#fff', '#6a6a78');
         const darkCard  = _buildSingleThemeCard(ll, fmtRemaining(cd?.remaining_btc), rl, fmtPct(cd?.pct_mined), clDark,  '#111827', '#aaa');
 
         window._refreshCountdownPreview = (data) => {
@@ -4889,7 +4954,7 @@ function _buildSectionPreview(categoryId, sectionEl) {
             ? (t.halving_hours_left || 'Hours Until Halving')
             : (t.halving_days_left  || 'Days Until Halving');
 
-        const lightCard = _buildSingleThemeCard(ll, fmtHalvingDate(hd?.estimated_date), rl, fmtCountdown(hd), clLight, '#fff', '#888');
+        const lightCard = _buildSingleThemeCard(ll, fmtHalvingDate(hd?.estimated_date), rl, fmtCountdown(hd), clLight, '#fff', '#6a6a78');
         const darkCard  = _buildSingleThemeCard(ll, fmtHalvingDate(hd?.estimated_date), rl, fmtCountdown(hd), clDark,  '#111827', '#aaa');
 
         window._refreshHalvingPreview = (data) => {
@@ -4927,7 +4992,7 @@ function _buildSectionPreview(categoryId, sectionEl) {
         }
 
         const nd = window._previewData.network;
-        const lightCard = _buildSingleThemeCard(ll, fmtHashrate(nd?.hashrate), rl, fmtDifficulty(nd?.difficulty), clLight, '#fff', '#888');
+        const lightCard = _buildSingleThemeCard(ll, fmtHashrate(nd?.hashrate), rl, fmtDifficulty(nd?.difficulty), clLight, '#fff', '#6a6a78');
         const darkCard  = _buildSingleThemeCard(ll, fmtHashrate(nd?.hashrate), rl, fmtDifficulty(nd?.difficulty), clDark,  '#111827', '#aaa');
 
         window._refreshNetworkPreview = (data) => {
@@ -6857,7 +6922,7 @@ function createMemeManagementInterface(field) {
     uploadProgress.style.marginTop = '10px';
     uploadProgress.innerHTML = `
         <div style="background: var(--bg-input); border-radius: 10px; overflow: hidden;">
-            <div id="progress-bar" style="height: 8px; background: #F7931A; width: 0%; transition: width 0.3s;"></div>
+            <div id="progress-bar" style="height: 8px; background: #F7931A; width: 100%; transform: scaleX(0); transform-origin: left; transition: transform 0.3s;"></div>
         </div>
         <p id="upload-status" style="margin-top: 5px; font-size: 0.9rem;"></p>
     `;
@@ -6871,7 +6936,7 @@ function createMemeManagementInterface(field) {
     
     const memesLabel = document.createElement('label');
     memesLabel.className = 'form-label';
-    memesLabel.innerHTML = `${window.translations?.current_memes || 'Current Memes'} <span id="meme-image-count" style="color: var(--text-muted); font-weight: 400;"></span>`;
+    memesLabel.innerHTML = `${window.translations?.current_memes || 'Current Memes'} <span id="meme-image-count" style="color: var(--text-secondary); font-weight: 400;"></span>`;
     memesSection.appendChild(memesLabel);
 
     // Search input for filtering by tag/filename
@@ -7125,7 +7190,7 @@ function createOpsecManagementInterface(field) {
     uploadProgress.style.marginTop = '10px';
     uploadProgress.innerHTML = `
         <div style="background: var(--bg-input); border-radius: 10px; overflow: hidden;">
-            <div id="opsec-progress-bar" style="height: 8px; background: #F7931A; width: 0%; transition: width 0.3s;"></div>
+            <div id="opsec-progress-bar" style="height: 8px; background: #F7931A; width: 100%; transform: scaleX(0); transform-origin: left; transition: transform 0.3s;"></div>
         </div>
         <p id="opsec-upload-status" style="margin-top: 5px; font-size: 0.9rem;"></p>
     `;
@@ -7139,7 +7204,7 @@ function createOpsecManagementInterface(field) {
 
     const imagesLabel = document.createElement('label');
     imagesLabel.className = 'form-label';
-    imagesLabel.innerHTML = `${window.translations?.current_opsec_images || 'Current OPSec Images'} <span id="opsec-image-count" style="color: var(--text-muted); font-weight: 400;"></span>`;
+    imagesLabel.innerHTML = `${window.translations?.current_opsec_images || 'Current OPSec Images'} <span id="opsec-image-count" style="color: var(--text-secondary); font-weight: 400;"></span>`;
     imagesSection.appendChild(imagesLabel);
 
     const imagesList = document.createElement('div');
@@ -7190,7 +7255,7 @@ function createDonationHistoryInterface() {
     container.style.cssText = 'margin-top: 12px;';
 
     const t = window.translations || {};
-    const title = document.createElement('h4');
+    const title = document.createElement('h2');
     title.textContent = t.recent_donations || 'Recent Donations';
     title.style.cssText = 'margin: 0 0 10px 0; font-size: 15px;';
     container.appendChild(title);
@@ -7218,7 +7283,7 @@ function createDonationHistoryInterface() {
     const totalRow = document.createElement('div');
     totalRow.id = 'donation-total-row';
     totalRow.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding: 6px 10px; border: 1px solid var(--border-color); border-top: none; border-radius: 0 0 6px 6px; font-size:13px; background: var(--bg-card);';
-    totalRow.innerHTML = `<span style="color:var(--text-muted);">${t.donation_total || 'Total received'}</span><span id="donation-total-sats" style="font-weight:bold; color:var(--accent); font-family:var(--font-mono);">—</span>`;
+    totalRow.innerHTML = `<span style="color:var(--text-secondary);">${t.donation_total || 'Total received'}</span><span id="donation-total-sats" style="font-weight:bold; color:var(--accent); font-family:var(--font-mono);">—</span>`;
     container.appendChild(totalRow);
 
     // Load donations from API
@@ -7310,7 +7375,7 @@ async function uploadOpsecFiles(files) {
     // Show progress
     if (progressDiv && progressBar && statusText) {
         progressDiv.style.display = 'block';
-        progressBar.style.width = '0%';
+        progressBar.style.transform = 'scaleX(0)';
         statusText.textContent = t?.upload_checking_duplicates || 'Checking for duplicates...';
         statusText.style.color = '#F7931A';
     }
@@ -7385,7 +7450,7 @@ async function uploadOpsecFiles(files) {
                     .replace('{current}', i + 1).replace('{total}', filesToUpload.length).replace('{filename}', name);
             }
             if (progressBar) {
-                progressBar.style.width = `${(i / filesToUpload.length) * 100}%`;
+                progressBar.style.transform = `scaleX(${i / filesToUpload.length})`;
             }
 
             const formData = new FormData();
@@ -7402,7 +7467,7 @@ async function uploadOpsecFiles(files) {
             }
         }
 
-        if (progressBar) progressBar.style.width = '100%';
+        if (progressBar) progressBar.style.transform = 'scaleX(1)';
 
         // Final status summary
         if (statusText) {
@@ -9138,9 +9203,23 @@ function showBlockToast(blockData) {
 document.addEventListener('DOMContentLoaded', () => {
     // Setup navigation buttons
     setupNavigationButtons();
-    
+
     // Delay WebSocket initialization to ensure everything is loaded
     setTimeout(initializeWebSocket, 1000);
+});
+
+// Allow bfcache by closing the socket when the page is hidden and restoring on return
+window.addEventListener('pagehide', () => {
+    if (window.configSocket) window.configSocket.disconnect();
+});
+window.addEventListener('pageshow', (event) => {
+    if (event.persisted) {
+        if (window.configSocket && window.configSocket.disconnected) {
+            window.configSocket.connect();
+        } else if (!window.configSocket) {
+            initializeWebSocket();
+        }
+    }
 });
 
 // Testing function that can be called from browser console

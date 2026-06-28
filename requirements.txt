@@ -1,6 +1,7 @@
 # Core dependencies for mempaper Bitcoin Dashboard
 flask==3.1.3
 flask-socketio==5.6.1
+flask-compress==1.24  # gzip compression for HTML, CSS, JS responses
 pillow==11.0.0  # On Debian 13 (trixie) / Python 3.13 / Pi Zero 1 WH: build from source to avoid SIGILL: pip install --no-binary :all: pillow==11.0.0
 qrcode[pil]>=7.4  # QR code generation for e-ink onboarding screens
 babel==2.18.0
@@ -38,6 +39,8 @@ psutil==7.2.2  # System info for device fingerprinting
 # lgpio==0.2.2.0   # GPIO control (used by newer Waveshare drivers, e.g. epd13in3E separate programs)
 
 # Development dependencies (optional)
+rjsmin==1.2.2   # JS minifier used by tools/minify.py — generates static/js/dist/ for performance
+rcssmin==1.1.2  # CSS minifier used by tools/minify.py — generates static/css/dist/ for performance
 # pytest==8.3.4
 # black==24.10.0
 # flake8==7.1.1

@@ -253,7 +253,7 @@ def install_drivers(device_id):
 
     except Exception as e:
         print(f"   ❌ Driver download failed: {e}")
-        print(f"   Try again: python scripts/configure_display.py")
+        print(f"   Try again: python tools/configure_display.py")
         try:
             os.unlink(tmp_path)
         except Exception:

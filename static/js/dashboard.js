@@ -243,6 +243,20 @@ let imageUpdateTimeout = null;
 // Initial connection
 connectSocket();
 
+// Allow bfcache by closing the socket when the page is hidden and restoring on return
+window.addEventListener('pagehide', () => {
+    if (socket) socket.disconnect();
+});
+window.addEventListener('pageshow', (event) => {
+    if (event.persisted) {
+        if (socket && socket.disconnected) {
+            socket.connect();
+        } else if (!socket) {
+            connectSocket();
+        }
+    }
+});
+
 // Background processing status updates (for instant startup mode)
 socket.on('background_ready', (data) => {
     console.log("✅ Background processing completed", data);
@@ -735,8 +749,8 @@ socket.on('block_notification_status', (data) => {
     }
 });
 
-socket.on('block_notification_error', (data) => {
-    console.error('[MEMPAPER] Block notification error:', data.error);
+socket.on('block_notification_error', () => {
+    // subscription errors are non-fatal; silently ignore
 });
 
 // Global functions for enabling/disabling block notifications

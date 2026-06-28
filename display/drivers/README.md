@@ -16,7 +16,7 @@ with the mempaper project for convenience.
 Run the display configuration tool from the project root:
 
 ```bash
-python scripts/configure_display.py
+python tools/configure_display.py
 ```
 
 This downloads the official Waveshare driver files for your selected display

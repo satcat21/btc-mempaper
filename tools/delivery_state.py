@@ -7,7 +7,7 @@ the meme and zeroed-out placeholder values, then pushes it to the e-ink display.
 
 Run this before shipping a device to a customer:
 
-    python scripts/delivery_state.py
+    python tools/delivery_state.py
 
 The script stops the mempaper service first (so the display isn't locked),
 renders and shows the image, then exits.  You can then shut down the Pi safely.

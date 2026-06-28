@@ -1077,11 +1077,11 @@ class ConfigManager:
                 "type": "select",
                 "label": t.get("language", "Language"),
                 "options": [
-                    {"value": "en", "label": t.get("english", "English"), "flag": "<img src='/static/icons/en.svg' style='width:20px;height:14px;border-radius:2px;vertical-align:middle;'>"},
-                    {"value": "de", "label": t.get("german", "Deutsch"), "flag": "<img src='/static/icons/de.svg' style='width:20px;height:14px;border-radius:2px;vertical-align:middle;'>"},
-                    {"value": "es", "label": t.get("spanish", "Español"), "flag": "<img src='/static/icons/es.svg' style='width:20px;height:14px;border-radius:2px;vertical-align:middle;'>"},
-                    {"value": "fr", "label": t.get("french", "Français"), "flag": "<img src='/static/icons/fr.svg' style='width:20px;height:14px;border-radius:2px;vertical-align:middle;'>"},
-                    {"value": "it", "label": t.get("italian", "Italiano"), "flag": "<img src='/static/icons/it.svg' style='width:20px;height:14px;border-radius:2px;vertical-align:middle;'>"}
+                    {"value": "en", "label": t.get("english", "English"), "flag": "<img src='/static/icons/en.svg' alt='English' style='width:20px;height:14px;border-radius:2px;vertical-align:middle;'>"},
+                    {"value": "de", "label": t.get("german", "Deutsch"), "flag": "<img src='/static/icons/de.svg' alt='Deutsch' style='width:20px;height:14px;border-radius:2px;vertical-align:middle;'>"},
+                    {"value": "es", "label": t.get("spanish", "Español"), "flag": "<img src='/static/icons/es.svg' alt='Español' style='width:20px;height:14px;border-radius:2px;vertical-align:middle;'>"},
+                    {"value": "fr", "label": t.get("french", "Français"), "flag": "<img src='/static/icons/fr.svg' alt='Français' style='width:20px;height:14px;border-radius:2px;vertical-align:middle;'>"},
+                    {"value": "it", "label": t.get("italian", "Italiano"), "flag": "<img src='/static/icons/it.svg' alt='Italiano' style='width:20px;height:14px;border-radius:2px;vertical-align:middle;'>"}
                 ],
                 "category": "general",
                 "order": 1

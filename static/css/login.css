@@ -98,7 +98,7 @@ body {
 /* ── Login Button ───────────────────────────────────────────── */
 .login-button {
     background: var(--accent);
-    color: #fff;
+    color: #0a0a0a; /* dark text on orange → 9.5:1 contrast (WCAG AA) */
     border: none;
     border-radius: var(--radius-md);
     padding: 14px 40px;
@@ -167,7 +167,7 @@ body {
 .community-message {
     margin-top: 25px;
     padding-top: 20px;
-    color: var(--text-muted);
+    color: var(--text-secondary); /* #6a6a78 → 5.3:1 on white (WCAG AA) */
     font-size: 0.9rem;
     font-weight: 400;
     letter-spacing: 0.025em;

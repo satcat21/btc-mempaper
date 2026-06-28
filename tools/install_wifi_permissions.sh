@@ -4,7 +4,7 @@
 # NetworkManager connections (required for setup hotspot onboarding).
 #
 # Run once on the Raspberry Pi:
-#   sudo bash ~/btc-mempaper/scripts/install_wifi_permissions.sh
+#   sudo bash ~/btc-mempaper/tools/install_wifi_permissions.sh
 
 set -e
 

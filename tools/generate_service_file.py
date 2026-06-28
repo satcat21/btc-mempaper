@@ -6,7 +6,7 @@ This script automatically creates a systemd service file with the correct
 paths and user settings based on the current installation directory and user.
 
 Usage:
-    python scripts/generate_service_file.py
+    python tools/generate_service_file.py
     
 The generated file will be saved as 'mempaper.service' in the current directory.
 You can then copy it to /etc/systemd/system/ to install the service.
@@ -53,7 +53,7 @@ def generate_service_file():
         print()
     
     service_content = f"""# /etc/systemd/system/mempaper.service
-# Generated automatically by scripts/generate_service_file.py
+# Generated automatically by tools/generate_service_file.py
 
 [Unit]
 Description=mempaper Bitcoin Dashboard
