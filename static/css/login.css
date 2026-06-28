@@ -2,8 +2,14 @@
    MEMPAPER LOGIN – Themed (inherits from theme.css)
    ============================================================ */
 
+html {
+    height: 100%;
+    overflow: hidden;
+}
+
 body {
-    min-height: 100vh;
+    height: 100%;
+    overflow: hidden;
     display: flex;
     align-items: center;
     justify-content: center;

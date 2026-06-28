@@ -3927,6 +3927,10 @@ function _renderCategorySection(category, section) {
                 const key = keyEl?.dataset?.configKey;
                 if (!key || !key.startsWith('color_')) return;
                 window._pendingConfigOverrides[key] = keyEl.getValue ? keyEl.getValue() : keyEl.value;
+                // Typing in the hex text field: updatePreview() inside the color picker
+                // already handles the gradient update live. Skip _reorganize here to avoid
+                // removing the focused input from the DOM (which dismisses the mobile keyboard).
+                if (e.target.type === 'text' && e.target.closest('.color-input-container')) return;
                 clearTimeout(_previewDebounce);
                 _previewDebounce = setTimeout(_reorganize, 60);
             }, true);
