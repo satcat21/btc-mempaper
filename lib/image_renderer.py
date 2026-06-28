@@ -1775,14 +1775,6 @@ class ImageRenderer:
             if mode == "dark" and color_name == "background":
                 hex_color = "#000000"
 
-            # For e-ink dark mode, override most text to white for readability
-            # Exceptions: date colors and fee-based colors (green/yellow/orange/red/blue/black)
-            if mode == "dark" and color_name not in ["date_normal", "date_holiday", "background",
-                                                       "info_bg", "info_outline", "hash_start", "hash_end",
-                                                       "holiday_start", "holiday_end",
-                                                       "green", "yellow", "orange", "red", "blue", "black"]:
-                hex_color = "#ffffff"
-
             hex_color = hex_color.lstrip("#")
             rgb = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
             return rgb
