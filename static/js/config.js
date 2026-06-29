@@ -1,3 +1,9 @@
+// Reload after a service restart, persisting the update tag so the new page can show a toast.
+function _reloadAfterRestart(tag) {
+    if (tag) sessionStorage.setItem('mempaper_updated_to', tag);
+    location.reload();
+}
+
 // Rebuild HTML for info_text fields that contain multiple translation strings.
 // Called from setLanguage() so the HTML reflects the newly selected language.
 function _buildInfoHtml(builder, t) {
@@ -317,8 +323,9 @@ function closeMemeModal() {
             socket.on('service_restarting', function(data) {
                 console.log('🔄 Service restarting:', data);
                 const t = window.translations || {};
+                const _icon = '<img src="/static/icons/update.svg" alt="" class="modal-title-icon">';
                 const title = data.reason === 'auto_update'
-                    ? (t.auto_update_restarting || 'Auto-update complete. Restarting...')
+                    ? `${_icon} ${(t.auto_updating_to || 'Auto-updating to')} ${data.tag || ''}`
                     : (t.service_restarting || 'Service restarting...');
                 // Capture current process start time so polling can detect a fresh process
                 fetch('/api/health', { cache: 'no-store' })
@@ -3247,7 +3254,7 @@ function _showRestartCountdown(title, estimatedSeconds, updateTag, rollbackTag, 
 
     const heading = document.createElement('h3');
     heading.className = 'confirm-modal-title';
-    heading.textContent = title;
+    heading.innerHTML = title;
 
     const countdown = document.createElement('div');
     countdown.className = 'restart-countdown';
@@ -3338,7 +3345,7 @@ function _pollForService(overlay, countdownNumber, countdownLabel, progressFill,
                 var _sy = document.documentElement.style.getPropertyValue('--scroll-y');
                 document.documentElement.style.removeProperty('--scroll-y');
                 window.scrollTo(0, parseInt(_sy || '0') * -1);
-                setTimeout(() => location.reload(), 500);
+                setTimeout(() => _reloadAfterRestart(updateTag), 500);
                 return;
             }
         } catch (_) {}
@@ -8658,8 +8665,9 @@ function setupConfigSocketHandlers() {
                         ? window._restartPending.oldStarted
                         : window._pageLoadStarted;
                     if (oldStarted && h.started > oldStarted) {
+                        const _tag = window._restartPending?.tag;
                         window._restartPending = null;
-                        location.reload();
+                        _reloadAfterRestart(_tag);
                     }
                 })
                 .catch(() => {});
@@ -9339,6 +9347,22 @@ document.addEventListener('DOMContentLoaded', () => {
         .then(h => { if (h) window._pageLoadStarted = h.started; })
         .catch(() => {});
 
+    // Show success toast if we just reloaded after a software update.
+    const _updatedTag = sessionStorage.getItem('mempaper_updated_to');
+    if (_updatedTag) {
+        sessionStorage.removeItem('mempaper_updated_to');
+        setTimeout(() => {
+            const t = window.translations || {};
+            const icon = '<img src="/static/icons/update.svg" width="16" height="16" class="toast-title-icon toast-icon-success"> ';
+            _buildLiveToast(
+                icon + (t.update_success_title || 'Update successful'),
+                (t.update_success_body || 'mempaper updated to') + ' <strong>' + _updatedTag + '</strong>',
+                '#28a745',
+                8000
+            );
+        }, 800);
+    }
+
     // Setup navigation buttons
     setupNavigationButtons();
 
@@ -9358,8 +9382,9 @@ document.addEventListener('visibilitychange', () => {
         .then(r => r.ok ? r.json() : null)
         .then(h => {
             if (h && oldStarted && h.started > oldStarted) {
+                const _tag = window._restartPending?.tag;
                 window._restartPending = null;
-                location.reload();
+                _reloadAfterRestart(_tag);
             }
         })
         .catch(() => {});

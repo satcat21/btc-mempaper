@@ -11,7 +11,8 @@
     var s = document.createElement('style');
     s.textContent = '.toast-title-icon{vertical-align:middle;margin-right:4px;opacity:0.85}' +
         '.dark-mode .toast-title-icon{filter:invert(1)}' +
-        '.toast-icon-accent{filter:brightness(0) saturate(100%) invert(62%) sepia(65%) saturate(2028%) hue-rotate(6deg) brightness(100%) contrast(93%)!important}';
+        '.toast-icon-accent{filter:brightness(0) saturate(100%) invert(62%) sepia(65%) saturate(2028%) hue-rotate(6deg) brightness(100%) contrast(93%)!important}' +
+        '.toast-icon-success{filter:brightness(0) saturate(100%) invert(44%) sepia(72%) saturate(456%) hue-rotate(97deg) brightness(96%) contrast(97%)!important}';
     document.head.appendChild(s);
 
     // Return (or create) the shared upper-right toast stack container

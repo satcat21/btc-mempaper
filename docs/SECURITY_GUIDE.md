@@ -284,6 +284,62 @@ sudo ufw allow from 192.168.1.0/24 to any port 5000
 
 ---
 
+## PRIVILEGED OPERATIONS — SUDO & NETWORK MANAGEMENT
+
+### What mempaper runs as root
+
+The mempaper service runs as the `pi` user (non-root). Certain operations require elevated privileges and are executed via passwordless `sudo`:
+
+| Command | Purpose |
+|---|---|
+| `apt-get update / upgrade` | System package updates during auto-update |
+| `apt-get install` | Installing mempaper runtime dependencies |
+| `systemctl restart mempaper.service` | Restarting the service after a software update |
+| `dnsmasq`, `iptables` | WiFi hotspot / access-point management |
+
+### Risk assessment
+
+**Auto-update (apt-get as sudo)** is the most significant exposure. `apt-get` runs maintainer scripts as root and can install arbitrary packages. If the git remote or apt mirror were compromised, a malicious update could fully own the device. Mitigations already in place: updates only pull signed git tags from the project repository; apt packages come from official Debian mirrors.
+
+**WiFi / network management** (dnsmasq, iptables) means the web interface can reconfigure local network routing. A compromised or hijacked admin session could redirect traffic on your LAN. This risk is bounded when the device stays on a trusted local network and is not exposed to the internet.
+
+**Recommended sudoers hardening** — restrict to exact command paths rather than a broad `NOPASSWD: ALL` rule:
+
+```bash
+# /etc/sudoers.d/mempaper
+pi ALL=(ALL) NOPASSWD: /usr/bin/apt-get update, \
+                       /usr/bin/apt-get upgrade -y, \
+                       /usr/bin/apt-get install -y *, \
+                       /usr/bin/systemctl restart mempaper.service, \
+                       /usr/sbin/dnsmasq *, \
+                       /usr/sbin/iptables *
+```
+
+To suppress noisy PAM auth entries from the system journal when sudo is called by mempaper:
+
+```bash
+# /etc/sudoers.d/mempaper-nolog
+Defaults:pi !syslog
+```
+
+### Overall threat model
+
+mempaper is designed for a **trusted local network**. The current privilege model is acceptable under these conditions:
+
+- The config interface is **not exposed to the internet** (firewall / bind to local IP)
+- The admin password is **strong and unique**
+- The Raspberry Pi is on a **network you control**
+
+If you expose mempaper to the internet (e.g. via port forwarding), the sudo surface becomes a genuine risk. In that case, prefer access via VPN and do not use the auto-update feature over untrusted networks.
+
+### Audit checklist addition
+
+- [ ] Sudoers rules scoped to specific commands (not `NOPASSWD: ALL`)
+- [ ] Config interface not reachable from outside your local network
+- [ ] Auto-update only enabled when the Pi has a trusted internet connection
+
+---
+
 ## ADVANCED SECURITY OPTIONS
 
 ### Hardware Security Module (Future)

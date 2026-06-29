@@ -44,7 +44,9 @@ function setupSocketHandlers() {
                         ? window._restartPending.oldStarted
                         : window._pageLoadStarted;
                     if (oldStarted && h.started > oldStarted) {
+                        const _tag = window._restartPending?.tag;
                         window._restartPending = null;
+                        if (_tag) sessionStorage.setItem('mempaper_updated_to', _tag);
                         location.reload();
                     }
                 })
@@ -275,6 +277,23 @@ fetch('/api/health', { cache: 'no-store' })
     .then(h => { if (h) window._pageLoadStarted = h.started; })
     .catch(() => {});
 
+// Show success toast if we just reloaded after a software update.
+(function() {
+    const _updatedTag = sessionStorage.getItem('mempaper_updated_to');
+    if (!_updatedTag) return;
+    sessionStorage.removeItem('mempaper_updated_to');
+    setTimeout(() => {
+        const t = window.translations || {};
+        const icon = '<img src="/static/icons/update.svg" width="16" height="16" class="toast-title-icon toast-icon-success"> ';
+        _buildLiveToast(
+            icon + (t.update_success_title || 'Update successful'),
+            (t.update_success_body || 'mempaper updated to') + ' <strong>' + _updatedTag + '</strong>',
+            '#28a745',
+            8000
+        );
+    }, 800);
+}());
+
 // Initial connection
 connectSocket();
 
@@ -286,7 +305,9 @@ document.addEventListener('visibilitychange', () => {
         .then(r => r.ok ? r.json() : null)
         .then(h => {
             if (h && (!oldStarted || h.started > oldStarted)) {
+                const _tag = window._restartPending?.tag;
                 window._restartPending = null;
+                if (_tag) sessionStorage.setItem('mempaper_updated_to', _tag);
                 location.reload();
             }
         })

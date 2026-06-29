@@ -1089,13 +1089,7 @@ class ConfigManager:
                 "order": 1
             },
             "web_orientation": {
-                "type": "toggle",
-                "label": t.get("web_orientation", "Web Orientation"),
-                "description": t.get("web_orientation_desc", "Orientation for the web dashboard"),
-                "options": [
-                    {"value": "vertical",   "label": t.get("vertical",   "Portrait"),  "_lk": "vertical",   "icon": "/static/icons/vertical.svg"},
-                    {"value": "horizontal", "label": t.get("horizontal", "Landscape"), "_lk": "horizontal", "icon": "/static/icons/horizontal.svg"}
-                ],
+                "type": "hidden",
                 "default": "vertical",
                 "category": "general",
                 "order": 7,
