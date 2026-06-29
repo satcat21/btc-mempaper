@@ -111,7 +111,7 @@ main {
 /* ── Login Button ───────────────────────────────────────────── */
 .login-button {
     background: var(--accent);
-    color: #0a0a0a; /* dark text on orange → 9.5:1 contrast (WCAG AA) */
+    color: #ffffff;
     border: none;
     border-radius: var(--radius-md);
     padding: 14px 40px;

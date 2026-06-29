@@ -1,3 +1,80 @@
+// Apply a language switch without page reload — fully synchronous, no network request.
+// Uses _lk / _dk keys baked into configSchema and categories by the server to update
+// labels from window.allTranslations, then re-renders already-populated sections.
+function setLanguage(lang) {
+    const t = window.allTranslations?.[lang];
+    if (!t) return;
+    window.translations = t;
+
+    // 1. Update static HTML elements tagged with data-i18n* attributes.
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+        const v = t[el.dataset.i18n];
+        if (v !== undefined) el.textContent = v;
+    });
+    document.querySelectorAll('[data-i18n-html]').forEach(el => {
+        const v = t[el.dataset.i18nHtml];
+        if (v !== undefined) el.innerHTML = v;
+    });
+    document.querySelectorAll('[data-i18n-title]').forEach(el => {
+        const v = t[el.dataset.i18nTitle];
+        if (v !== undefined) el.title = v;
+    });
+    const titleEl = document.querySelector('[data-i18n-title-format]');
+    if (titleEl) {
+        const [k1, k2] = titleEl.dataset.i18nTitleFormat.split('|');
+        document.title = `${t[k1] || k1} - ${t[k2] || k2}`;
+    }
+    if (typeof window._refreshHolidayPreview === 'function') {
+        window._refreshHolidayPreview(lang);
+    }
+
+    // 2. Update in-memory schema labels/descriptions using the _lk/_dk keys from the server.
+    if (configSchema) {
+        Object.entries(configSchema).forEach(([, field]) => {
+            if (field._lk && t[field._lk] !== undefined) field.label = t[field._lk];
+            if (field._dk && t[field._dk] !== undefined) field.description = t[field._dk];
+            if (field.options) {
+                field.options.forEach(opt => {
+                    if (opt._lk && t[opt._lk] !== undefined) opt.label = t[opt._lk];
+                });
+            }
+        });
+    }
+
+    // 3. Update category labels and section-nav pills.
+    if (categories) {
+        categories.forEach(cat => {
+            if (cat._lk && t[cat._lk] !== undefined) cat.label = t[cat._lk];
+        });
+        document.querySelectorAll('.section-nav-pill').forEach(pill => {
+            const catId = pill.dataset.target?.replace('section-', '');
+            const cat = categories.find(c => c.id === catId);
+            if (!cat) return;
+            pill.dataset.tooltip = cat.label;
+            pill.setAttribute('aria-label', cat.label);
+            const labelEl = pill.querySelector('.section-nav-label');
+            if (labelEl) labelEl.textContent = cat.label;
+        });
+    }
+
+    // 4. Re-render all sections that have already been populated so field labels refresh.
+    //    Lazy sections (not yet visible) will use the updated schema when they are rendered.
+    const savedScrollY = window.pageYOffset;
+    currentConfig.language = lang; // so language dropdown re-renders with the pending selection
+
+    document.querySelectorAll('.config-section[id]').forEach(section => {
+        if (section.dataset.lazy === 'true') return;
+        const catId = section.id.replace('section-', '');
+        const cat = categories?.find(c => c.id === catId);
+        if (!cat) return;
+        section.innerHTML = '';
+        section.dataset.lazy = 'true';
+        _renderCategorySection(cat, section);
+    });
+
+    window.scrollTo({ top: savedScrollY, behavior: 'instant' });
+}
+
 // Fix: Define closeOpsecModal globally for HTML onclick handlers
 function closeOpsecModal() {
     const opsecModal = document.getElementById('opsec-modal');
@@ -1434,7 +1511,7 @@ class MemeLoader {
                 }
             });
         }, {
-            rootMargin: '50px' // Start loading 50px before the image comes into view
+            rootMargin: '400px'
         });
     }
     
@@ -1442,34 +1519,33 @@ class MemeLoader {
         if (imgElement.classList.contains('loaded')) {
             return; // Already loaded
         }
-        
+
         const filename = imgElement.dataset.filename;
         const url = imgElement.dataset.url;
-        
+
         if (!filename || !url) return;
-        
-        try {
-            // Check cache first
-            const cached = memeCache.get(filename);
-            if (cached && cached.url) {
-                imgElement.src = cached.url;
-                imgElement.classList.add('loaded');
-                this.observer.unobserve(imgElement);
-                return;
-            }
-            
-            // Load the image
-            imgElement.src = url;
+
+        this.observer.unobserve(imgElement);
+
+        const cached = memeCache.get(filename);
+        const actualUrl = (cached && cached.url) ? cached.url : url;
+
+        imgElement.onload = () => {
+            imgElement.style.transition = 'none';
             imgElement.classList.add('loaded');
-            
-            // Cache the successful load
-            memeCache.set(filename, { url, loaded: Date.now() });
-            
-            this.observer.unobserve(imgElement);
-        } catch (error) {
-            console.warn('Failed to load meme image:', filename, error);
+            imgElement.onload = null;
+            imgElement.onerror = null;
+            if (!cached) memeCache.set(filename, { url: actualUrl, loaded: Date.now() });
+            requestAnimationFrame(() => requestAnimationFrame(() => {
+                imgElement.style.transition = '';
+            }));
+        };
+        imgElement.onerror = () => {
             imgElement.classList.add('error');
-        }
+            imgElement.onload = null;
+            imgElement.onerror = null;
+        };
+        imgElement.src = actualUrl;
     }
     
     async loadMemePage(page = 1, search = '') {
@@ -1503,9 +1579,15 @@ const memeLoader = new MemeLoader();
 
 // Current meme search term
 let currentMemeSearch = '';
+let memeLoadGeneration = 0;
 
 async function loadMemes(search = '') {
     currentMemeSearch = search;
+    const thisGen = ++memeLoadGeneration;
+    // Cancel any in-flight scroll load so it doesn't block or corrupt the new search
+    memeLoader.isLoading = false;
+    memeScrollLoading = false;
+    if (memeScrollObserver) { memeScrollObserver.disconnect(); memeScrollObserver = null; }
     try {
         const memesList = document.getElementById('memes-list');
         if (!memesList) {
@@ -1516,6 +1598,8 @@ async function loadMemes(search = '') {
         memesList.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: var(--text-secondary);">Loading memes...</div>';
         // Load first page
         const data = await memeLoader.loadMemePage(1, search);
+        // Bail out if a newer search superseded this one while we were waiting
+        if (thisGen !== memeLoadGeneration) return;
         if (!data) {
             memesList.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: var(--danger);">Failed to load memes</div>';
             return;
@@ -1538,7 +1622,6 @@ async function loadMemes(search = '') {
                 img.dataset.filename = meme.filename;
                 img.dataset.url = meme.thumb_url || meme.url;
                 img.alt = meme.filename;
-                img.loading = 'lazy'; // Native lazy loading as fallback
                 img.style.cursor = 'pointer';
                 img.title = 'Click to inspect';
                 img.onclick = () => openMemeModal(meme.filename, meme.url, meme.tags || [], meme.api_tags || []);
@@ -1577,6 +1660,7 @@ async function loadMemes(search = '') {
         
         
     } catch (error) {
+        if (thisGen !== memeLoadGeneration) return;
         console.error('Failed to load memes:', error);
         const memesList = document.getElementById('memes-list');
         memesList.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: var(--danger);">Failed to load memes</div>';
@@ -1601,7 +1685,7 @@ function setupMemeInfiniteScroll(sentinel) {
                 loadMoreMemes(nextPage, sentinel);
             }
         }
-    }, { root: scrollContainer, rootMargin: '200px' });
+    }, { root: scrollContainer, rootMargin: '600px' });
     memeScrollObserver.observe(sentinel);
 }
 
@@ -1627,7 +1711,6 @@ async function loadMoreMemes(page, sentinel) {
             img.dataset.filename = meme.filename;
             img.dataset.url = meme.thumb_url || meme.url;
             img.alt = meme.filename;
-            img.loading = 'lazy';
             img.style.cursor = 'pointer';
             img.title = 'Click to inspect';
             img.onclick = () => openMemeModal(meme.filename, meme.url, meme.tags || [], meme.api_tags || []);
@@ -4328,15 +4411,13 @@ function createFormField(key, field, value) {
                     const newLanguage = e.target.value;
 
                     if (newLanguage !== currentConfig.language) {
-                        // Store the language change but don't update currentConfig yet
                         pendingLanguageChange = newLanguage;
                     } else {
-                        // Reset if user changes back to original
                         pendingLanguageChange = null;
                     }
-                    // Refresh holiday preview and date color group text live
+                    // Apply translations immediately — no page reload needed
                     window._pendingLanguage = newLanguage;
-                    if (window._refreshHolidayPreview) window._refreshHolidayPreview(newLanguage);
+                    setLanguage(newLanguage);
                 });
             }
             break;
@@ -7066,7 +7147,7 @@ function setupOpsecInfiniteScroll(sentinel) {
                 loadMoreOpsecImages(nextPage, sentinel);
             }
         }
-    }, { root: scrollContainer, rootMargin: '200px' });
+    }, { root: scrollContainer, rootMargin: '600px' });
     opsecScrollObserver.observe(sentinel);
 }
 
@@ -7729,28 +7810,9 @@ async function saveConfiguration() {
                 }
             }
 
-            // Handle language change with page reload
+            // Language already applied live via setLanguage() on dropdown change — just clear pending flag
             if (languageChanged) {
-                console.log('⚙️ LANGUAGE CHANGE DETECTED! (saveConfiguration) Processing language change from', oldLanguage, 'to', newLanguage);
-                
-                // Clear the pending change and reload page immediately
                 pendingLanguageChange = null;
-                setTimeout(() => {
-                    console.log('⚙️ FORCING PAGE RELOAD for language change (saveConfiguration)');
-                    window.location.reload(true); // Force reload from server
-                }, 500); // Very short timeout for immediate reload
-                
-                return true; // Return success before reload
-            } else {
-                // Fallback check: if language in formConfig is different from what was in currentConfig
-                if (formConfig.language && formConfig.language !== oldLanguage) {
-                    console.log('⚙️ FALLBACK (saveConfiguration): Language difference detected via form config!', oldLanguage, '->', formConfig.language);
-                    setTimeout(() => {
-                        console.log('⚙️ FALLBACK PAGE RELOAD for language change (saveConfiguration)');
-                        window.location.reload(true);
-                    }, 500);
-                    return true;
-                }
             }
             
             // Block notifications are always enabled - no need to update subscription
@@ -7808,20 +7870,10 @@ if (saveButton) {
                 const languageChanged = pendingLanguageChange !== null || (newLanguage && newLanguage !== oldLanguage);
                 currentConfig = { ...currentConfig, ...formConfig };
                 if (languageChanged) {
-                    showNotification('Language changed! Reloading page...', 'success');
                     pendingLanguageChange = null;
-                    setTimeout(() => {
-                        window.location.reload(true);
-                    }, 1000);
-                } else if (formConfig.language && formConfig.language !== oldLanguage) {
-                    showNotification('Language changed! Reloading page...', 'success');
-                    setTimeout(() => {
-                        window.location.reload(true);
-                    }, 1000);
-                } else {
-                    showNotification(window.translations?.configuration_saved || 'Configuration saved successfully!', 'success');
-                    _markClean();
                 }
+                showNotification(window.translations?.configuration_saved || 'Configuration saved successfully!', 'success');
+                _markClean();
             } else {
                 showNotification(result.message || window.translations?.failed_to_save_configuration || 'Failed to save configuration', 'error');
             }
@@ -8916,33 +8968,11 @@ function setupNavigationButtons() {
                         // Update current config
                         currentConfig = { ...currentConfig, ...formConfig };
                         
-                        // Handle language change with new language success message
                         if (languageChanged) {
-                            console.log('⚙️ LANGUAGE CHANGE DETECTED! (nav buttons) Processing language change from', oldLanguage, 'to', newLanguage);
-                            
-                            // Show notification and force page reload
-                            showNotification('Language changed! Reloading page...', 'success');
-                            
-                            // Clear the pending change and reload page immediately
                             pendingLanguageChange = null;
-                            setTimeout(() => {
-                                console.log('⚙️ FORCING PAGE RELOAD for language change (nav buttons)');
-                                window.location.reload(true); // Force reload from server
-                            }, 1000); // Shorter timeout
-                        } else {
-                            // Fallback check: if language in formConfig is different from what was in currentConfig
-                            if (formConfig.language && formConfig.language !== oldLanguage) {
-                                console.log('⚙️ FALLBACK (nav): Language difference detected via form config!', oldLanguage, '->', formConfig.language);
-                                showNotification('Language changed! Reloading page...', 'success');
-                                setTimeout(() => {
-                                    console.log('⚙️ FALLBACK PAGE RELOAD for language change (nav)');
-                                    window.location.reload(true);
-                                }, 1000);
-                            } else {
-                                showNotification(window.translations?.configuration_saved || 'Configuration saved successfully!', 'success');
-                                _markClean();
-                            }
                         }
+                        showNotification(window.translations?.configuration_saved || 'Configuration saved successfully!', 'success');
+                        _markClean();
                     } else {
                         showNotification(result.message || window.translations?.failed_to_save_configuration || 'Failed to save configuration', 'error');
                     }
@@ -8970,11 +9000,20 @@ function setupNavigationButtons() {
                     icon: '/static/icons/logout.svg'
                 });
                 if (confirmed) {
-                    // Navigate to /logout directly so the server clears the session
-                    // cookie and issues the redirect in one atomic response.
-                    // Using fetch() + window.location can race on mobile browsers
-                    // where the Set-Cookie isn't applied before the next navigation.
-                    window.location.href = '/logout';
+                    try {
+                        const response = await fetch('/api/logout', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' }
+                        });
+                        if (response.ok) {
+                            const result = await response.json();
+                            window.location.href = result.public_dashboard ? '/' : '/login';
+                        } else {
+                            window.location.href = '/login';
+                        }
+                    } catch {
+                        window.location.href = '/login';
+                    }
                 }
             });
         }
@@ -9230,24 +9269,24 @@ window.addEventListener('pagehide', () => {
     if (window.configSocket) window.configSocket.disconnect();
 });
 window.addEventListener('pageshow', (event) => {
-    if (event.persisted) {
-        // Verify the session is still valid before using the bfcache-restored page.
-        // This handles the case where the user logged out then navigated back here.
-        fetch('/api/auth-check', { credentials: 'same-origin' })
-            .then(r => r.json())
-            .then(d => {
-                if (!d.authenticated) {
-                    window.location.replace('/login');
-                    return;
-                }
+    // Always verify session on every page show — covers both normal loads (where a
+    // proxy may have served a cached copy) and bfcache restores.
+    fetch('/api/auth-check', { credentials: 'same-origin' })
+        .then(r => r.json())
+        .then(d => {
+            if (!d.authenticated) {
+                window.location.replace('/login');
+                return;
+            }
+            if (event.persisted) {
                 if (window.configSocket && window.configSocket.disconnected) {
                     window.configSocket.connect();
                 } else if (!window.configSocket) {
                     initializeWebSocket();
                 }
-            })
-            .catch(() => { window.location.replace('/login'); });
-    }
+            }
+        })
+        .catch(() => { window.location.replace('/login'); });
 });
 
 // Testing function that can be called from browser console

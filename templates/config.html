@@ -2,7 +2,7 @@
 <html lang="{{ lang }}">
 
 <head>
-    <title>{{ translations.dashboard_title }} - {{ translations.settings }}</title>
+    <title data-i18n-title-format="dashboard_title|settings">{{ translations.dashboard_title }} - {{ translations.settings }}</title>
     <link rel="icon" type="image/svg+xml" href="static/favicon.svg">
     <link rel="icon" type="image/png" href="static/favicon.png">
     <link rel="stylesheet" href="static/css/theme.css">
@@ -33,26 +33,26 @@
 <body{% if dark_mode %} class="dark-mode"{% endif %}>
     <!-- Desktop Navigation Buttons (left side) -->
     <div class="desktop-nav-buttons">
-        <button id="desktop-back-button" class="nav-button icon-only" onclick="window.location.href='/'" title="{{ translations.back_to_dashboard }}">
+        <button id="desktop-back-button" class="nav-button icon-only" onclick="window.location.href='/'" title="{{ translations.back_to_dashboard }}" data-i18n-title="back_to_dashboard">
             <img src="/static/icons/back.svg" alt="" width="20" height="20" class="nav-icon">
         </button>
-        <button id="desktop-save-button" class="nav-button icon-only" title="{{ translations.save_configuration }}">
+        <button id="desktop-save-button" class="nav-button icon-only" title="{{ translations.save_configuration }}" data-i18n-title="save_configuration">
             <img src="/static/icons/save.svg" alt="" width="20" height="20" class="nav-icon">
         </button>
-        <button id="desktop-logout-button" class="nav-button icon-only" title="{{ translations.logout }}">
+        <button id="desktop-logout-button" class="nav-button icon-only" title="{{ translations.logout }}" data-i18n-title="logout">
             <img src="/static/icons/logout.svg" alt="" width="20" height="20" class="nav-icon">
         </button>
     </div>
 
     <!-- Mobile Navigation Buttons (bottom) -->
     <div class="mobile-nav-buttons">
-        <button id="mobile-back-button" class="mobile-nav-button icon-only" onclick="window.location.href='/'" title="{{ translations.back_to_dashboard }}">
+        <button id="mobile-back-button" class="mobile-nav-button icon-only" onclick="window.location.href='/'" title="{{ translations.back_to_dashboard }}" data-i18n-title="back_to_dashboard">
             <img src="/static/icons/back.svg" alt="" width="24" height="24" class="nav-icon">
         </button>
-        <button id="mobile-save-button" class="mobile-nav-button icon-only" title="{{ translations.save_configuration }}">
+        <button id="mobile-save-button" class="mobile-nav-button icon-only" title="{{ translations.save_configuration }}" data-i18n-title="save_configuration">
             <img src="/static/icons/save.svg" alt="" width="24" height="24" class="nav-icon">
         </button>
-        <button id="mobile-logout-button" class="mobile-nav-button icon-only" title="{{ translations.logout }}">
+        <button id="mobile-logout-button" class="mobile-nav-button icon-only" title="{{ translations.logout }}" data-i18n-title="logout">
             <img src="/static/icons/logout.svg" alt="" width="24" height="24" class="nav-icon">
         </button>
     </div>
@@ -62,27 +62,27 @@
         <div class="header">
             <div class="header-title-row">
                 <div class="brand-title">mem<span class="brand-accent">paper</span></div>
-                <h1>{{ translations.settings }}</h1>
+                <h1 data-i18n="settings">{{ translations.settings }}</h1>
             </div>
-            <p>{{ translations.configure_dashboard }}</p>
+            <p data-i18n="configure_dashboard">{{ translations.configure_dashboard }}</p>
         </div>
 
         <div id="config-container">
             <div id="config-loading" class="config-loading">
                 <div class="config-loading-spinner"></div>
-                <p>{{ translations.loading or 'Loading...' }}</p>
+                <p data-i18n="loading">{{ translations.loading or 'Loading...' }}</p>
             </div>
         </div>
 
         <footer class="config-footer">
             <div class="footer-open-source">
-                <div class="footer-heading">{{ translations.footer_open_source_heading }}</div>
-                <p>{{ translations.footer_open_source_text | safe }}</p>
+                <div class="footer-heading" data-i18n="footer_open_source_heading">{{ translations.footer_open_source_heading }}</div>
+                <p data-i18n-html="footer_open_source_text">{{ translations.footer_open_source_text | safe }}</p>
                 <a href="https://github.com/satcat21/btc-mempaper" target="_blank" rel="noopener noreferrer">github.com/satcat21/btc-mempaper</a>
             </div>
             <div class="footer-bottom">
                 <span>mempaper &middot; GPL-3.0 &middot; satcat21</span>
-                <span>{{ translations.footer_built_with }}</span>
+                <span data-i18n="footer_built_with">{{ translations.footer_built_with }}</span>
             </div>
         </footer>
     </div>
@@ -91,11 +91,11 @@
     <!-- Delete Meme Confirmation Modal -->
     <div id="delete-modal" class="modal" style="display: none;">
         <div class="modal-content">
-            <h3><img src="{{ url_for('static', filename='icons/delete.svg') }}" alt="" class="modal-title-icon"> {{ translations.delete_confirmation_title }}</h3>
-            <p>{{ translations.delete_confirmation_message }}</p>
+            <h3><img src="{{ url_for('static', filename='icons/delete.svg') }}" alt="" class="modal-title-icon"> <span data-i18n="delete_confirmation_title">{{ translations.delete_confirmation_title }}</span></h3>
+            <p data-i18n="delete_confirmation_message">{{ translations.delete_confirmation_message }}</p>
             <div class="confirm-modal-buttons">
-                <button id="cancel-delete" class="confirm-modal-btn cancel">{{ translations.cancel or 'Cancel' }}</button>
-                <button id="confirm-delete" class="confirm-modal-btn danger">{{ translations.delete or 'Delete' }}</button>
+                <button id="cancel-delete" class="confirm-modal-btn cancel" data-i18n="cancel">{{ translations.cancel or 'Cancel' }}</button>
+                <button id="confirm-delete" class="confirm-modal-btn danger" data-i18n="delete">{{ translations.delete or 'Delete' }}</button>
             </div>
         </div>
     </div>
@@ -103,11 +103,11 @@
     <!-- OPSec Delete Confirmation Modal -->
     <div id="opsec-delete-modal" class="modal" style="display: none;">
         <div class="modal-content">
-            <h3><img src="{{ url_for('static', filename='icons/delete.svg') }}" alt="" class="modal-title-icon"> {{ translations.opsec_delete_confirmation_title }}</h3>
-            <p>{{ translations.opsec_delete_confirmation_message }}</p>
+            <h3><img src="{{ url_for('static', filename='icons/delete.svg') }}" alt="" class="modal-title-icon"> <span data-i18n="opsec_delete_confirmation_title">{{ translations.opsec_delete_confirmation_title }}</span></h3>
+            <p data-i18n="opsec_delete_confirmation_message">{{ translations.opsec_delete_confirmation_message }}</p>
             <div class="confirm-modal-buttons">
-                <button id="opsec-cancel-delete" class="confirm-modal-btn cancel">{{ translations.cancel or 'Cancel' }}</button>
-                <button id="opsec-confirm-delete" class="confirm-modal-btn danger">{{ translations.delete or 'Delete' }}</button>
+                <button id="opsec-cancel-delete" class="confirm-modal-btn cancel" data-i18n="cancel">{{ translations.cancel or 'Cancel' }}</button>
+                <button id="opsec-confirm-delete" class="confirm-modal-btn danger" data-i18n="delete">{{ translations.delete or 'Delete' }}</button>
             </div>
         </div>
     </div>
@@ -125,31 +125,31 @@
                 </div>
                 <div class="meme-info">
                     <div class="meme-info-row" style="align-items: center;">
-                        <strong>{{ translations.filename }}</strong>
+                        <strong data-i18n="filename">{{ translations.filename }}</strong>
                         <span id="opsec-modal-filename-display" style="display: inline;"></span>
                         <input type="text" id="opsec-modal-filename-input" class="form-input" style="display: none; flex: 1; margin: 0 10px; padding: 4px 8px;">
-                        <button id="opsec-modal-edit-btn" class="icon-button" onclick="startRenameInOpsecModal()" title="{{ translations.rename_opsec }}" style="padding: 4px 8px; margin-left: 8px;">
+                        <button id="opsec-modal-edit-btn" class="icon-button" onclick="startRenameInOpsecModal()" title="{{ translations.rename_opsec }}" data-i18n-title="rename_opsec" style="padding: 4px 8px; margin-left: 8px;">
                             <img src="/static/icons/edit.svg" alt="Edit" style="width: 16px; height: 16px;" />
                         </button>
-                        <button id="opsec-modal-save-btn" class="icon-button" onclick="saveRenameInOpsecModal()" title="{{ translations.save }}" style="display: none; padding: 4px 8px; margin-left: 8px; background: #F7931A;">
+                        <button id="opsec-modal-save-btn" class="icon-button" onclick="saveRenameInOpsecModal()" title="{{ translations.save }}" data-i18n-title="save" style="display: none; padding: 4px 8px; margin-left: 8px; background: #F7931A;">
                             <img src="/static/icons/save.svg" alt="Save" style="width: 16px; height: 16px; filter: brightness(0) invert(1);" />
                         </button>
-                        <button id="opsec-modal-cancel-rename-btn" class="icon-button cancel" onclick="cancelRenameInOpsecModal()" title="{{ translations.cancel }}" style="display: none; padding: 4px 8px; margin-left: 4px;">
+                        <button id="opsec-modal-cancel-rename-btn" class="icon-button cancel" onclick="cancelRenameInOpsecModal()" title="{{ translations.cancel }}" data-i18n-title="cancel" style="display: none; padding: 4px 8px; margin-left: 4px;">
                             <img src="/static/icons/cancel.svg" alt="Cancel" style="width: 16px; height: 16px;" />
                         </button>
                     </div>
                     <div class="meme-info-row">
-                        <strong>{{ translations.dimensions }}</strong> <span id="opsec-modal-dimensions">{{ translations.loading }}</span>
+                        <strong data-i18n="dimensions">{{ translations.dimensions }}</strong> <span id="opsec-modal-dimensions">{{ translations.loading }}</span>
                     </div>
                     <div class="meme-info-row">
-                        <strong>{{ translations.file_size }}</strong> <span id="opsec-modal-filesize">{{ translations.loading }}</span>
+                        <strong data-i18n="file_size">{{ translations.file_size }}</strong> <span id="opsec-modal-filesize">{{ translations.loading }}</span>
                     </div>
                 </div>
             </div>
             <div class="modal-footer confirm-modal-buttons">
-                <button class="confirm-modal-btn cancel" onclick="closeOpsecModal()">{{ translations.close or 'Close' }}</button>
-                <button class="confirm-modal-btn confirm" onclick="downloadOpsecFromModal()">{{ translations.download_meme or 'Download' }}</button>
-                <button class="confirm-modal-btn danger" onclick="deleteOpsecFromModal()">{{ translations.delete or 'Delete' }}</button>
+                <button class="confirm-modal-btn cancel" onclick="closeOpsecModal()"><img src="/static/icons/cancel.svg" alt="" class="modal-action-icon"><span class="btn-label" data-i18n="close">{{ translations.close or 'Close' }}</span></button>
+                <button class="confirm-modal-btn confirm" onclick="downloadOpsecFromModal()"><img src="/static/icons/download.svg" alt="" class="modal-action-icon"><span class="btn-label" data-i18n="download_meme">{{ translations.download_meme or 'Download' }}</span></button>
+                <button class="confirm-modal-btn danger" onclick="deleteOpsecFromModal()"><img src="/static/icons/delete.svg" alt="" class="modal-action-icon"><span class="btn-label" data-i18n="delete">{{ translations.delete or 'Delete' }}</span></button>
             </div>
         </div>
     </div>
@@ -167,39 +167,39 @@
                 </div>
                 <div class="meme-info">
                     <div class="meme-info-row" style="align-items: center;">
-                        <strong>{{ translations.filename }}</strong>
+                        <strong data-i18n="filename">{{ translations.filename }}</strong>
                         <span id="meme-modal-filename-display" style="display: inline;"></span>
                         <input type="text" id="meme-modal-filename-input" class="form-input" style="display: none; flex: 1; margin: 0 10px; padding: 4px 8px;">
-                        <button id="meme-modal-edit-btn" class="icon-button" onclick="startRenameInModal()" title="{{ translations.rename_meme }}" style="padding: 4px 8px; margin-left: 8px;">
+                        <button id="meme-modal-edit-btn" class="icon-button" onclick="startRenameInModal()" title="{{ translations.rename_meme }}" data-i18n-title="rename_meme" style="padding: 4px 8px; margin-left: 8px;">
                             <img src="/static/icons/edit.svg" alt="Edit" style="width: 16px; height: 16px;" />
                         </button>
-                        <button id="meme-modal-save-btn" class="icon-button" onclick="saveRenameInModal()" title="{{ translations.save }}" style="display: none; padding: 4px 8px; margin-left: 8px; background: #F7931A;">
+                        <button id="meme-modal-save-btn" class="icon-button" onclick="saveRenameInModal()" title="{{ translations.save }}" data-i18n-title="save" style="display: none; padding: 4px 8px; margin-left: 8px; background: #F7931A;">
                             <img src="/static/icons/save.svg" alt="Save" style="width: 16px; height: 16px; filter: brightness(0) invert(1);" />
                         </button>
-                        <button id="meme-modal-cancel-rename-btn" class="icon-button cancel" onclick="cancelRenameInModal()" title="{{ translations.cancel }}" style="display: none; padding: 4px 8px; margin-left: 4px;">
+                        <button id="meme-modal-cancel-rename-btn" class="icon-button cancel" onclick="cancelRenameInModal()" title="{{ translations.cancel }}" data-i18n-title="cancel" style="display: none; padding: 4px 8px; margin-left: 4px;">
                             <img src="/static/icons/cancel.svg" alt="Cancel" style="width: 16px; height: 16px;" />
                         </button>
                     </div>
                     <div id="meme-modal-rename-warning" style="display: none; font-size: 0.82rem; color: #dc3545; margin-top: 4px; padding-left: 4px;"></div>
                     <div class="meme-info-row" style="align-items: flex-start;">
-                        <strong style="margin-top: 4px;">{{ translations.tags }}</strong>
+                        <strong style="margin-top: 4px;" data-i18n="tags">{{ translations.tags }}</strong>
                         <div id="meme-modal-tags-container" style="flex: 1;"></div>
-                        <button id="meme-modal-save-tags-btn" class="icon-button" onclick="saveMemeTags()" title="{{ translations.tags_saved|default('Save Tags') }}" style="display: none; padding: 4px 8px; margin-left: 8px; background: #F7931A;">
+                        <button id="meme-modal-save-tags-btn" class="icon-button" onclick="saveMemeTags()" title="{{ translations.tags_saved|default('Save Tags') }}" data-i18n-title="tags_saved" style="display: none; padding: 4px 8px; margin-left: 8px; background: #F7931A;">
                             <img src="/static/icons/save.svg" alt="Save" style="width: 16px; height: 16px; filter: brightness(0) invert(1);" />
                         </button>
                     </div>
                     <div class="meme-info-row">
-                        <strong>{{ translations.dimensions }}</strong> <span id="meme-modal-dimensions">{{ translations.loading }}</span>
+                        <strong data-i18n="dimensions">{{ translations.dimensions }}</strong> <span id="meme-modal-dimensions">{{ translations.loading }}</span>
                     </div>
                     <div class="meme-info-row">
-                        <strong>{{ translations.file_size }}</strong> <span id="meme-modal-filesize">{{ translations.loading }}</span>
+                        <strong data-i18n="file_size">{{ translations.file_size }}</strong> <span id="meme-modal-filesize">{{ translations.loading }}</span>
                     </div>
                 </div>
             </div>
             <div class="modal-footer confirm-modal-buttons">
-                <button class="confirm-modal-btn cancel" onclick="closeMemeModal()">{{ translations.close or 'Close' }}</button>
-                <button class="confirm-modal-btn confirm" onclick="downloadMemeFromModal()">{{ translations.download_meme or 'Download' }}</button>
-                <button class="confirm-modal-btn danger" onclick="deleteMemeFromModal()">{{ translations.delete or 'Delete' }}</button>
+                <button class="confirm-modal-btn cancel" onclick="closeMemeModal()"><img src="/static/icons/cancel.svg" alt="" class="modal-action-icon"><span class="btn-label" data-i18n="close">{{ translations.close or 'Close' }}</span></button>
+                <button class="confirm-modal-btn confirm" onclick="downloadMemeFromModal()"><img src="/static/icons/download.svg" alt="" class="modal-action-icon"><span class="btn-label" data-i18n="download_meme">{{ translations.download_meme or 'Download' }}</span></button>
+                <button class="confirm-modal-btn danger" onclick="deleteMemeFromModal()"><img src="/static/icons/delete.svg" alt="" class="modal-action-icon"><span class="btn-label" data-i18n="delete">{{ translations.delete or 'Delete' }}</span></button>
             </div>
         </div>
     </div>
@@ -212,8 +212,8 @@
     </div>
 
     <script>
-        // Make translations available to JavaScript
         window.translations = {{ translations | tojson }};
+        window.allTranslations = {{ all_translations | tojson }};
     </script>
     <script src="static/js/confirm-modal.js"></script>
     <script src="static/js/toast.js"></script>
@@ -365,7 +365,7 @@
         }
 
         function peek() {
-            if (window.innerWidth < 1200 || document.body.classList.contains('modal-open')) return;
+            if (document.hidden || window.innerWidth < 1200 || document.body.classList.contains('modal-open')) return;
             whacked = false;
             mole.classList.remove('peek-bottom', 'peek-top', 'peek-left', 'peek-right',
                                   'flee-bottom', 'flee-top', 'flee-left', 'flee-right',
@@ -385,10 +385,29 @@
                 mole.removeEventListener('animationend', handler);
             });
         }
+        var pepeTimeoutId = null;
         function scheduleNext() {
+            if (pepeTimeoutId !== null) { clearTimeout(pepeTimeoutId); pepeTimeoutId = null; }
             var delay = 60000 + Math.floor(Math.random() * 150000);
-            setTimeout(function() { peek(); scheduleNext(); }, delay);
+            pepeTimeoutId = setTimeout(function() { pepeTimeoutId = null; peek(); scheduleNext(); }, delay);
         }
+        function hidePepeNow() {
+            if (pepeTimeoutId !== null) { clearTimeout(pepeTimeoutId); pepeTimeoutId = null; }
+            mole.classList.remove('peek-bottom', 'peek-top', 'peek-left', 'peek-right',
+                                  'flee-bottom', 'flee-top', 'flee-left', 'flee-right',
+                                  'edge-bottom', 'edge-top', 'edge-left', 'edge-right', 'whacked');
+            mole.style.display = 'none';
+            mole.style.pointerEvents = 'none';
+            currentEdge = null;
+            whacked = false;
+        }
+        document.addEventListener('visibilitychange', function() {
+            if (document.hidden) {
+                hidePepeNow();
+            } else {
+                scheduleNext();
+            }
+        });
         scheduleNext();
     })();
     </script>

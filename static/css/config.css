@@ -671,16 +671,16 @@ body.dark-mode .toggle-option:not(.active) {
 
 .toggle-option.active {
     background: var(--accent);
-    color: #000000;
+    color: #ffffff;
     box-shadow: 0 1px 4px rgba(247, 147, 26, 0.3);
 }
 
 body.dark-mode .toggle-option.active {
-    color: #000000; /* prevent dark-mode text-primary (#e8e8ec) from bleeding in */
+    color: #ffffff;
 }
 
 .toggle-option.active img {
-    filter: brightness(0); /* maps icon to #000000, matching text */
+    filter: brightness(0) invert(1); /* maps icon to #ffffff, matching text */
 }
 
 /* ── Boolean Switch ─────────────────────────────────────────── */
@@ -1435,12 +1435,17 @@ body.dark-mode .upload-icon {
     bottom: 0;
     left: 0;
     right: 0;
-    background: rgba(0,0,0,0.75);
-    color: #ffffff;
+    background: rgba(240,240,243,0.92);
+    color: var(--text-primary);
     padding: 4px 6px;
     font-size: 0.65rem;
     text-align: center;
     backdrop-filter: blur(4px);
+}
+
+body.dark-mode .meme-filename {
+    background: rgba(0,0,0,0.75);
+    color: #ffffff;
 }
 
 .meme-actions {
@@ -1557,18 +1562,27 @@ body.dark-mode .upload-icon {
     opacity: 0.6;
 }
 
-/* Placeholder state: show the image.svg icon centered */
+/* Placeholder state: small centered grey icon */
 .meme-lazy:not(.loaded) {
+    width: 32px;
+    height: 32px;
     object-fit: contain;
-    padding: 30%;         /* shrinks icon to ~40% of thumbnail width */
-    opacity: 1;           /* cancel .meme-lazy opacity:0.6 to avoid double-dimming */
-    filter: opacity(0.2); /* light mode: subtle dark icon on light card */
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    padding: 0;
+    opacity: 1;
+    filter: brightness(0) invert(0.4); /* dark grey on light background */
 }
 
-/* Dark mode: invert black SVG to white, show at visible opacity */
+.meme-lazy:not(.loaded):hover {
+    transform: translate(-50%, -50%); /* prevent scale(1.03) on placeholder */
+}
+
+/* Dark mode: light grey icon */
 body.dark-mode .meme-lazy:not(.loaded) {
-    filter: invert(1);
-    opacity: 0.45;
+    filter: brightness(0) invert(0.7);
 }
 
 .meme-lazy.loaded {

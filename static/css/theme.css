@@ -400,6 +400,32 @@ body.modal-open {
     background: #c53030;
 }
 
+.modal-action-icon {
+    width: 14px;
+    height: 14px;
+    vertical-align: middle;
+    margin-right: 6px;
+    filter: brightness(0) invert(0.42); /* matches --text-secondary #6a6a78 in light mode */
+}
+.confirm-modal-btn.confirm .modal-action-icon,
+.confirm-modal-btn.danger .modal-action-icon {
+    filter: brightness(0) invert(1);
+}
+body.dark-mode .confirm-modal-btn.cancel .modal-action-icon {
+    filter: brightness(0) invert(0.60); /* matches --text-secondary #9a9aaa in dark mode */
+}
+.confirm-modal-btn.cancel:hover .modal-action-icon {
+    filter: brightness(0) invert(0.10); /* matches --text-primary #1a1a1e on hover in light mode */
+}
+body.dark-mode .confirm-modal-btn.cancel:hover .modal-action-icon {
+    filter: brightness(0) invert(0.91); /* matches --text-primary #e8e8ec on hover in dark mode */
+}
+@media (max-width: 999px) {
+    .confirm-modal-btn .btn-label { display: none; }
+    .confirm-modal-btn .modal-action-icon { margin-right: 0; }
+    .confirm-modal-btn { padding: 10px; }
+}
+
 @keyframes spin {
     from { transform: rotate(0deg); }
     to { transform: rotate(360deg); }

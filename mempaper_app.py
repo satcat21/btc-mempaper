@@ -5356,6 +5356,7 @@ class MempaperApp:
             
             return render_template('config.html',
                                  translations=current_translations,
+                                 all_translations=translations,
                                  lang=lang,
                                  dark_mode=self.config.get('color_mode_dark', True))
         
@@ -5991,21 +5992,7 @@ class MempaperApp:
         @self.app.route('/api/session/status', methods=['GET'])
         def session_status():
             """Get current session status and remaining time."""
-            # Don't require auth since we need to check if we're authenticated
-            session_info = self.auth_manager.get_session_info()
-            
-            # Add debug information
-            debug_info = {
-                'flask_session_keys': list(session.keys()),
-                'flask_session_id': session.get('_id', 'no-id'),
-                'app_secret_key_length': len(self.app.secret_key) if self.app.secret_key else 0,
-                'current_timestamp': time.time()
-            }
-            
-            return jsonify({
-                **session_info,
-                'debug': debug_info
-            })
+            return jsonify(self.auth_manager.get_session_info())
         
         @self.app.route('/api/session/refresh', methods=['POST'])
         @require_auth(self.auth_manager)
@@ -6031,7 +6018,11 @@ class MempaperApp:
                 # Get current language and translations
                 lang = self.config.get("language", "en")
                 current_translations = translations.get(lang, translations["en"])
-                
+                # Allow ?lang= override so the client can request schema/category labels
+                # in a specific language without changing the saved config language.
+                req_lang = request.args.get('lang', lang)
+                schema_translations = translations.get(req_lang, current_translations) if req_lang in translations else current_translations
+
                 # Get the regular configuration
                 config_data = self.config_manager.get_current_config()
                 
@@ -6082,8 +6073,8 @@ class MempaperApp:
                     btc_h_compact = {}
                 return jsonify({
                     'config': config_data,
-                    'schema': self.config_manager.get_config_schema(current_translations),
-                    'categories': self.config_manager.get_categories(current_translations),
+                    'schema': self.config_manager.get_config_schema(schema_translations),
+                    'categories': self.config_manager.get_categories(schema_translations),
                     'color_options': self.config_manager.get_color_options(),
                     'current_user': _session.get('username', ''),
                     'btc_holidays': btc_h_compact,

@@ -842,7 +842,7 @@ class ConfigManager:
             '</div>'
         )
 
-        return {
+        schema = {
             # --- Info block config additions ---
             "show_btc_price_block": {
                 "type": "boolean",
@@ -873,8 +873,8 @@ class ConfigManager:
                 "description": t.get("moscow_time_unit_desc", "How to display Moscow time: as satoshis or as time format (HH:MM)"),
                 "default": "sats",
                 "options": [
-                    {"value": "sats", "label": t.get("moscow_time_unit_sats", "Satoshis (e.g., 50,000 sats)")},
-                    {"value": "hour", "label": t.get("moscow_time_unit_hour", "Time Format (e.g., 08:41)")}
+                    {"value": "sats", "label": t.get("moscow_time_unit_sats", "Satoshis (e.g., 50,000 sats)"), "_lk": "moscow_time_unit_sats"},
+                    {"value": "hour", "label": t.get("moscow_time_unit_hour", "Time Format (e.g., 08:41)"),    "_lk": "moscow_time_unit_hour"}
                 ],
                 "category": "price_stats"
             },
@@ -979,8 +979,8 @@ class ConfigManager:
                 "description": t.get("bitaxe_display_mode_desc", "Choose what to display on the right side of the Bitaxe info block"),
                 "default": "blocks",
                 "options": [
-                    {"value": "blocks", "label": t.get("bitaxe_mode_blocks", "Found Blocks")},
-                    {"value": "difficulty", "label": t.get("bitaxe_mode_difficulty", "Best Difficulty")}
+                    {"value": "blocks",     "label": t.get("bitaxe_mode_blocks",     "Found Blocks"),   "_lk": "bitaxe_mode_blocks"},
+                    {"value": "difficulty", "label": t.get("bitaxe_mode_difficulty", "Best Difficulty"), "_lk": "bitaxe_mode_difficulty"}
                 ],
                 "category": "bitaxe_stats"
             },
@@ -1077,11 +1077,11 @@ class ConfigManager:
                 "type": "select",
                 "label": t.get("language", "Language"),
                 "options": [
-                    {"value": "en", "label": t.get("english", "English"), "flag": "<img src='/static/icons/en.svg' alt='English' style='width:20px;height:14px;border-radius:2px;vertical-align:middle;'>"},
-                    {"value": "de", "label": t.get("german", "Deutsch"), "flag": "<img src='/static/icons/de.svg' alt='Deutsch' style='width:20px;height:14px;border-radius:2px;vertical-align:middle;'>"},
-                    {"value": "es", "label": t.get("spanish", "Español"), "flag": "<img src='/static/icons/es.svg' alt='Español' style='width:20px;height:14px;border-radius:2px;vertical-align:middle;'>"},
-                    {"value": "fr", "label": t.get("french", "Français"), "flag": "<img src='/static/icons/fr.svg' alt='Français' style='width:20px;height:14px;border-radius:2px;vertical-align:middle;'>"},
-                    {"value": "it", "label": t.get("italian", "Italiano"), "flag": "<img src='/static/icons/it.svg' alt='Italiano' style='width:20px;height:14px;border-radius:2px;vertical-align:middle;'>"}
+                    {"value": "en", "label": t.get("english", "English"),  "_lk": "english",  "flag": "<img src='/static/icons/en.svg' alt='English' style='width:20px;height:14px;border-radius:2px;vertical-align:middle;'>"},
+                    {"value": "de", "label": t.get("german",  "Deutsch"),  "_lk": "german",   "flag": "<img src='/static/icons/de.svg' alt='Deutsch' style='width:20px;height:14px;border-radius:2px;vertical-align:middle;'>"},
+                    {"value": "es", "label": t.get("spanish", "Español"),  "_lk": "spanish",  "flag": "<img src='/static/icons/es.svg' alt='Español' style='width:20px;height:14px;border-radius:2px;vertical-align:middle;'>"},
+                    {"value": "fr", "label": t.get("french",  "Français"), "_lk": "french",   "flag": "<img src='/static/icons/fr.svg' alt='Français' style='width:20px;height:14px;border-radius:2px;vertical-align:middle;'>"},
+                    {"value": "it", "label": t.get("italian", "Italiano"), "_lk": "italian",  "flag": "<img src='/static/icons/it.svg' alt='Italiano' style='width:20px;height:14px;border-radius:2px;vertical-align:middle;'>"}
                 ],
                 "category": "general",
                 "order": 1
@@ -1091,8 +1091,8 @@ class ConfigManager:
                 "label": t.get("web_orientation", "Web Orientation"),
                 "description": t.get("web_orientation_desc", "Orientation for the web dashboard"),
                 "options": [
-                    {"value": "vertical", "label": t.get("vertical", "Portrait"), "icon": "/static/icons/vertical.svg"},
-                    {"value": "horizontal", "label": t.get("horizontal", "Landscape"), "icon": "/static/icons/horizontal.svg"}
+                    {"value": "vertical",   "label": t.get("vertical",   "Portrait"),  "_lk": "vertical",   "icon": "/static/icons/vertical.svg"},
+                    {"value": "horizontal", "label": t.get("horizontal", "Landscape"), "_lk": "horizontal", "icon": "/static/icons/horizontal.svg"}
                 ],
                 "default": "vertical",
                 "category": "general",
@@ -1111,11 +1111,11 @@ class ConfigManager:
                 "description": t.get("fee_parameter_desc", "Which fee level to use for determining block height color"),
                 "default": "minimumFee",
                 "options": [
-                    {"value": "fastestFee", "label": t.get("fastest", "Fastest (~1 block)")},
-                    {"value": "halfHourFee", "label": t.get("half_hour", "Half Hour (~3 blocks)")},
-                    {"value": "hourFee", "label": t.get("hour", "Hour (~6 blocks)")},
-                    {"value": "economyFee", "label": t.get("economy", "Economy (~1 day)")},
-                    {"value": "minimumFee", "label": t.get("minimum", "Minimum")}
+                    {"value": "fastestFee",  "label": t.get("fastest",   "Fastest (~1 block)"),      "_lk": "fastest"},
+                    {"value": "halfHourFee", "label": t.get("half_hour", "Half Hour (~3 blocks)"),  "_lk": "half_hour"},
+                    {"value": "hourFee",     "label": t.get("hour",      "Hour (~6 blocks)"),        "_lk": "hour"},
+                    {"value": "economyFee",  "label": t.get("economy",   "Economy (~1 day)"),        "_lk": "economy"},
+                    {"value": "minimumFee",  "label": t.get("minimum",   "Minimum"),                 "_lk": "minimum"}
                 ],
                 "category": "mempool"
             },
@@ -1296,8 +1296,8 @@ class ConfigManager:
                 "label": t.get("eink_dark_mode", "E-Ink Theme"),
                 "description": t.get("eink_dark_mode_desc", "Enable dark mode for the e-ink display."),
                 "options": [
-                    {"value": False, "label": t.get("theme_light", "Light"), "icon": "/static/icons/light.svg"},
-                    {"value": True,  "label": t.get("theme_dark",  "Dark"),  "icon": "/static/icons/dark.svg"},
+                    {"value": False, "label": t.get("theme_light", "Light"), "_lk": "theme_light", "icon": "/static/icons/light.svg"},
+                    {"value": True,  "label": t.get("theme_dark",  "Dark"),  "_lk": "theme_dark",  "icon": "/static/icons/dark.svg"},
                 ],
                 "default": False,
                 "category": "eink_display"
@@ -1315,8 +1315,8 @@ class ConfigManager:
                 "label":  t.get("color_mode_dark", "Web Theme"),
                 "description":  t.get("color_mode_dark_desc", "Enable dark mode for the webinterface."),
                 "options": [
-                    {"value": False, "label": t.get("theme_light", "Light"), "icon": "/static/icons/light.svg"},
-                    {"value": True,  "label": t.get("theme_dark",  "Dark"),  "icon": "/static/icons/dark.svg"},
+                    {"value": False, "label": t.get("theme_light", "Light"), "_lk": "theme_light", "icon": "/static/icons/light.svg"},
+                    {"value": True,  "label": t.get("theme_dark",  "Dark"),  "_lk": "theme_dark",  "icon": "/static/icons/dark.svg"},
                 ],
                 "default": True,
                 "category": "general",
@@ -1352,9 +1352,9 @@ class ConfigManager:
                 "label": t.get("donation_display_mode", "Display mode"),
                 "description": t.get("donation_display_mode_desc", "Choose whether to show the most recent donation or the largest one ever received."),
                 "options": [
-                    {"value": "latest",  "label": t.get("donation_mode_latest",  "Latest donation")},
-                    {"value": "highest", "label": t.get("donation_mode_highest", "Largest donation")},
-                    {"value": "auto",    "label": t.get("donation_mode_auto",    "Auto (latest → largest after 432 blocks)")},
+                    {"value": "latest",  "label": t.get("donation_mode_latest",  "Latest donation"),                       "_lk": "donation_mode_latest"},
+                    {"value": "highest", "label": t.get("donation_mode_highest", "Largest donation"),                      "_lk": "donation_mode_highest"},
+                    {"value": "auto",    "label": t.get("donation_mode_auto",    "Auto (latest → largest after 432 blocks)"), "_lk": "donation_mode_auto"},
                 ],
                 "default": "latest",
                 "category": "donation"
@@ -1421,18 +1421,24 @@ class ConfigManager:
                 "description": t.get("auto_update_days_desc", "Days of the week to run automatic updates"),
                 "default": ["mon", "wed", "fri"],
                 "options": [
-                    {"value": "mon", "label": t.get("day_monday", "Monday")},
-                    {"value": "tue", "label": t.get("day_tuesday", "Tuesday")},
-                    {"value": "wed", "label": t.get("day_wednesday", "Wednesday")},
-                    {"value": "thu", "label": t.get("day_thursday", "Thursday")},
-                    {"value": "fri", "label": t.get("day_friday", "Friday")},
-                    {"value": "sat", "label": t.get("day_saturday", "Saturday")},
-                    {"value": "sun", "label": t.get("day_sunday", "Sunday")},
+                    {"value": "mon", "label": t.get("day_monday",   "Monday"),    "_lk": "day_monday"},
+                    {"value": "tue", "label": t.get("day_tuesday",  "Tuesday"),   "_lk": "day_tuesday"},
+                    {"value": "wed", "label": t.get("day_wednesday","Wednesday"), "_lk": "day_wednesday"},
+                    {"value": "thu", "label": t.get("day_thursday", "Thursday"),  "_lk": "day_thursday"},
+                    {"value": "fri", "label": t.get("day_friday",   "Friday"),    "_lk": "day_friday"},
+                    {"value": "sat", "label": t.get("day_saturday", "Saturday"), "_lk": "day_saturday"},
+                    {"value": "sun", "label": t.get("day_sunday", "Sunday"),     "_lk": "day_sunday"},
                 ],
                 "category": "updates",
                 "order": 2
             },
         }
+        # Add translation keys to every field so the client can update labels on language switch.
+        # Convention: field label key = field key, description key = field key + "_desc".
+        for fk, fv in schema.items():
+            fv['_lk'] = fk
+            fv['_dk'] = fk + '_desc'
+        return schema
 
     def get_categories(self, translations: Dict[str, str] = None) -> List[Dict[str, str]]:
         """
@@ -1447,20 +1453,20 @@ class ConfigManager:
         # Use English as fallback if no translations provided
         t = translations or {}
         return [
-            {"id": "general", "label": t.get("general_settings", "General Settings"), "icon": "/static/icons/settings.svg"},
-            {"id": "mempool", "label": t.get("mempool_settings", "Mempool"), "icon": "/static/icons/bottom_drawer.svg"},
-            {"id": "eink_display", "label": t.get("eink_display", "E-Ink Display"), "icon": "/static/icons/photo_frame.svg"},
-            {"id": "price_stats", "label": t.get("price_stats", "Price Stats"), "icon": "/static/icons/price.svg"},
-            {"id": "countdown", "label": t.get("countdown_settings", "Countdown"), "icon": "/static/icons/countdown.svg"},
-            {"id": "halving", "label": t.get("halving_settings", "Halving"), "icon": "/static/icons/halving.svg"},
-            {"id": "network_stats", "label": t.get("network_settings", "Network"), "icon": "/static/icons/network.svg"},
-            {"id": "wallet_monitoring", "label": t.get("wallet_monitoring", "Wallet Monitoring"), "icon": "/static/icons/wallet.svg"},
-            {"id": "bitaxe_stats", "label": t.get("bitaxe_stats", "Bitaxe Stats"), "icon": "/static/icons/bitaxe.svg"},
-            {"id": "donation", "label": t.get("donation_settings", "Lightning Donation"), "icon": "/static/icons/donation.svg"},
-            {"id": "meme_management", "label": t.get("meme_management", "Meme Management"), "icon": "/static/icons/mood.svg"},
-            {"id": "opsec", "label": t.get("opsec_settings", "OPSec"), "icon": "/static/icons/opsec.svg"},
-            {"id": "wifi", "label": t.get("wifi_settings", "WiFi"), "icon": "/static/icons/wifi.svg"},
-            {"id": "updates", "label": t.get("updates_settings", "Updates"), "icon": "/static/icons/update.svg"},
+            {"id": "general",          "_lk": "general_settings",  "label": t.get("general_settings",  "General Settings"),    "icon": "/static/icons/settings.svg"},
+            {"id": "mempool",          "_lk": "mempool_settings",  "label": t.get("mempool_settings",  "Mempool"),             "icon": "/static/icons/bottom_drawer.svg"},
+            {"id": "eink_display",     "_lk": "eink_display",      "label": t.get("eink_display",      "E-Ink Display"),       "icon": "/static/icons/photo_frame.svg"},
+            {"id": "price_stats",      "_lk": "price_stats",       "label": t.get("price_stats",       "Price Stats"),         "icon": "/static/icons/price.svg"},
+            {"id": "countdown",        "_lk": "countdown_settings","label": t.get("countdown_settings","Countdown"),           "icon": "/static/icons/countdown.svg"},
+            {"id": "halving",          "_lk": "halving_settings",  "label": t.get("halving_settings",  "Halving"),             "icon": "/static/icons/halving.svg"},
+            {"id": "network_stats",    "_lk": "network_settings",  "label": t.get("network_settings",  "Network"),             "icon": "/static/icons/network.svg"},
+            {"id": "wallet_monitoring","_lk": "wallet_monitoring", "label": t.get("wallet_monitoring", "Wallet Monitoring"),   "icon": "/static/icons/wallet.svg"},
+            {"id": "bitaxe_stats",     "_lk": "bitaxe_stats",      "label": t.get("bitaxe_stats",      "Bitaxe Stats"),        "icon": "/static/icons/bitaxe.svg"},
+            {"id": "donation",         "_lk": "donation_settings", "label": t.get("donation_settings", "Lightning Donation"),  "icon": "/static/icons/donation.svg"},
+            {"id": "meme_management",  "_lk": "meme_management",   "label": t.get("meme_management",   "Meme Management"),     "icon": "/static/icons/mood.svg"},
+            {"id": "opsec",            "_lk": "opsec_settings",    "label": t.get("opsec_settings",    "OPSec"),               "icon": "/static/icons/opsec.svg"},
+            {"id": "wifi",             "_lk": "wifi_settings",     "label": t.get("wifi_settings",     "WiFi"),                "icon": "/static/icons/wifi.svg"},
+            {"id": "updates",          "_lk": "updates_settings",  "label": t.get("updates_settings",  "Updates"),             "icon": "/static/icons/update.svg"},
         ]
     
     def get_color_options(self) -> List[Dict[str, str]]:

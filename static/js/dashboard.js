@@ -39,6 +39,7 @@ function setupSocketHandlers() {
 
     socket.on('disconnect', (reason) => {
         console.log("❌ Disconnected from mempaper WebSocket:", reason);
+        pendingImageRefresh = true;
         attemptReconnect();
     });
 
