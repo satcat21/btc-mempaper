@@ -17,7 +17,14 @@ function setLanguage(lang) {
     });
     document.querySelectorAll('[data-i18n-title]').forEach(el => {
         const v = t[el.dataset.i18nTitle];
-        if (v !== undefined) el.title = v;
+        if (v !== undefined) {
+            if ('tooltip' in el.dataset) {
+                // CSS tooltip — only update data-tooltip, never set native title (avoids double tooltip)
+                el.dataset.tooltip = v;
+            } else {
+                el.title = v;
+            }
+        }
     });
     const titleEl = document.querySelector('[data-i18n-title-format]');
     if (titleEl) {
@@ -282,8 +289,14 @@ function closeMemeModal() {
                 // Capture current process start time so polling can detect a fresh process
                 fetch('/api/health', { cache: 'no-store' })
                     .then(r => r.json())
-                    .then(h => _showRestartCountdown(title, data.estimated_seconds || 25, data.tag, null, null, h.started))
-                    .catch(() => _showRestartCountdown(title, data.estimated_seconds || 25, data.tag));
+                    .then(h => {
+                        window._restartPending = { oldStarted: h.started, tag: data.tag };
+                        _showRestartCountdown(title, data.estimated_seconds || 25, data.tag, null, null, h.started);
+                    })
+                    .catch(() => {
+                        window._restartPending = { oldStarted: null, tag: data.tag };
+                        _showRestartCountdown(title, data.estimated_seconds || 25, data.tag);
+                    });
             });
         } else {
             console.error('Socket.IO client (window.io) not found. Make sure socket.io.min.js is loaded.');
@@ -5698,13 +5711,17 @@ function createToggleGroup(options, value) {
         const button = document.createElement('button');
         button.type = 'button';
         button.className = `toggle-option ${value === option.value ? 'active' : ''}`;
-        
+
+        // Tooltip from _tk key (looked up in current translations)
+        const tooltipText = option._tk ? (window.translations?.[option._tk] || '') : '';
+        if (tooltipText) button.title = tooltipText;
+
         // Create proper icon HTML if icon is provided
         if (option.icon) {
             const iconImg = document.createElement('img');
             iconImg.src = option.icon;
             iconImg.alt = option.label;
-            
+
             button.appendChild(iconImg);
             button.appendChild(document.createTextNode(option.label));
         } else {
@@ -8596,6 +8613,19 @@ function setupConfigSocketHandlers() {
         registerPageForNotifications('config');
         // Subscribe to block notifications (always enabled)
         subscribeToBlockNotifications();
+        // If a restart was pending, verify the service is a new process and reload
+        if (window._restartPending) {
+            const { oldStarted } = window._restartPending;
+            fetch('/api/health', { cache: 'no-store' })
+                .then(r => r.ok ? r.json() : null)
+                .then(h => {
+                    if (h && (!oldStarted || h.started > oldStarted)) {
+                        window._restartPending = null;
+                        location.reload();
+                    }
+                })
+                .catch(() => {});
+        }
     });
 
     configSocket.on('disconnect', () => {
@@ -8873,8 +8903,9 @@ function setupNavigationButtons() {
             button.addEventListener('click', async () => {
                 document.querySelectorAll('#desktop-save-button, #mobile-save-button').forEach(btn => {
                     btn.classList.remove('unsaved-changes');
+                    btn.classList.add('saving');
+                    btn.disabled = true;
                 });
-                button.disabled = true;
                 // Keep original content, just disable the button
                 
                 try {
@@ -8980,12 +9011,15 @@ function setupNavigationButtons() {
                     console.error('Error saving configuration:', error);
                     showNotification(window.translations?.failed_to_save_configuration || 'Failed to save configuration', 'error');
                 } finally {
-                    button.disabled = false;
+                    document.querySelectorAll('#desktop-save-button, #mobile-save-button').forEach(btn => {
+                        btn.classList.remove('saving');
+                        btn.disabled = false;
+                    });
                 }
             });
         }
     };
-    
+
     // Logout button functionality (both desktop and mobile)
     const setupLogoutButton = (buttonId) => {
         const button = document.getElementById(buttonId);
@@ -9257,11 +9291,32 @@ function showBlockToast(blockData) {
 
 // Initialize WebSocket when page loads
 document.addEventListener('DOMContentLoaded', () => {
+    // Remove any native title attribute from elements that use data-tooltip for CSS tooltips,
+    // in case a previous setLanguage() call left one behind.
+    document.querySelectorAll('[data-tooltip][title]').forEach(el => el.removeAttribute('title'));
+
     // Setup navigation buttons
     setupNavigationButtons();
 
     // Delay WebSocket initialization to ensure everything is loaded
     setTimeout(initializeWebSocket, 1000);
+});
+
+// Reload immediately when the tab becomes visible again if a service restart was pending.
+// This handles background-tab timer throttling where setInterval in _showRestartCountdown fires too
+// infrequently to catch the service coming back online.
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden || !window._restartPending) return;
+    const { oldStarted } = window._restartPending;
+    fetch('/api/health', { cache: 'no-store' })
+        .then(r => r.ok ? r.json() : null)
+        .then(h => {
+            if (h && (!oldStarted || h.started > oldStarted)) {
+                window._restartPending = null;
+                location.reload();
+            }
+        })
+        .catch(() => {});
 });
 
 // Allow bfcache by closing the socket when the page is hidden and restoring on return

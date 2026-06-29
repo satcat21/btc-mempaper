@@ -33,26 +33,26 @@
 <body{% if dark_mode %} class="dark-mode"{% endif %}>
     <!-- Desktop Navigation Buttons (left side) -->
     <div class="desktop-nav-buttons">
-        <button id="desktop-back-button" class="nav-button icon-only" onclick="window.location.href='/'" title="{{ translations.back_to_dashboard }}" data-i18n-title="back_to_dashboard">
+        <button id="desktop-back-button" class="nav-button icon-only" onclick="window.location.href='/'" data-tooltip="{{ translations.back_to_dashboard }}" data-i18n-title="back_to_dashboard" aria-label="{{ translations.back_to_dashboard }}">
             <img src="/static/icons/back.svg" alt="" width="20" height="20" class="nav-icon">
         </button>
-        <button id="desktop-save-button" class="nav-button icon-only" title="{{ translations.save_configuration }}" data-i18n-title="save_configuration">
+        <button id="desktop-save-button" class="nav-button icon-only" data-tooltip="{{ translations.save_configuration }}" data-i18n-title="save_configuration" aria-label="{{ translations.save_configuration }}">
             <img src="/static/icons/save.svg" alt="" width="20" height="20" class="nav-icon">
         </button>
-        <button id="desktop-logout-button" class="nav-button icon-only" title="{{ translations.logout }}" data-i18n-title="logout">
+        <button id="desktop-logout-button" class="nav-button icon-only" data-tooltip="{{ translations.logout }}" data-i18n-title="logout" aria-label="{{ translations.logout }}">
             <img src="/static/icons/logout.svg" alt="" width="20" height="20" class="nav-icon">
         </button>
     </div>
 
     <!-- Mobile Navigation Buttons (bottom) -->
     <div class="mobile-nav-buttons">
-        <button id="mobile-back-button" class="mobile-nav-button icon-only" onclick="window.location.href='/'" title="{{ translations.back_to_dashboard }}" data-i18n-title="back_to_dashboard">
+        <button id="mobile-back-button" class="mobile-nav-button icon-only" onclick="window.location.href='/'" data-tooltip="{{ translations.back_to_dashboard }}" data-i18n-title="back_to_dashboard" aria-label="{{ translations.back_to_dashboard }}">
             <img src="/static/icons/back.svg" alt="" width="24" height="24" class="nav-icon">
         </button>
-        <button id="mobile-save-button" class="mobile-nav-button icon-only" title="{{ translations.save_configuration }}" data-i18n-title="save_configuration">
+        <button id="mobile-save-button" class="mobile-nav-button icon-only" data-tooltip="{{ translations.save_configuration }}" data-i18n-title="save_configuration" aria-label="{{ translations.save_configuration }}">
             <img src="/static/icons/save.svg" alt="" width="24" height="24" class="nav-icon">
         </button>
-        <button id="mobile-logout-button" class="mobile-nav-button icon-only" title="{{ translations.logout }}" data-i18n-title="logout">
+        <button id="mobile-logout-button" class="mobile-nav-button icon-only" data-tooltip="{{ translations.logout }}" data-i18n-title="logout" aria-label="{{ translations.logout }}">
             <img src="/static/icons/logout.svg" alt="" width="24" height="24" class="nav-icon">
         </button>
     </div>

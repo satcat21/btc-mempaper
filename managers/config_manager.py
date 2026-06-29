@@ -1294,10 +1294,10 @@ class ConfigManager:
             "eink_dark_mode": {
                 "type": "toggle",
                 "label": t.get("eink_dark_mode", "E-Ink Theme"),
-                "description": t.get("eink_dark_mode_desc", "Enable dark mode for the e-ink display."),
+                "description": t.get("eink_dark_mode_desc", "Select theme for the e-ink display."),
                 "options": [
-                    {"value": False, "label": t.get("theme_light", "Light"), "_lk": "theme_light", "icon": "/static/icons/light.svg"},
-                    {"value": True,  "label": t.get("theme_dark",  "Dark"),  "_lk": "theme_dark",  "icon": "/static/icons/dark.svg"},
+                    {"value": False, "label": t.get("theme_light", "Light"), "_lk": "theme_light", "_tk": "theme_light_tooltip", "icon": "/static/icons/light.svg"},
+                    {"value": True,  "label": t.get("theme_dark",  "Dark"),  "_lk": "theme_dark",  "_tk": "theme_dark_tooltip",  "icon": "/static/icons/dark.svg"},
                 ],
                 "default": False,
                 "category": "eink_display"
@@ -1313,10 +1313,10 @@ class ConfigManager:
             "color_mode_dark": {
                 "type": "toggle",
                 "label":  t.get("color_mode_dark", "Web Theme"),
-                "description":  t.get("color_mode_dark_desc", "Enable dark mode for the webinterface."),
+                "description":  t.get("color_mode_dark_desc", "Select theme for the web interface."),
                 "options": [
-                    {"value": False, "label": t.get("theme_light", "Light"), "_lk": "theme_light", "icon": "/static/icons/light.svg"},
-                    {"value": True,  "label": t.get("theme_dark",  "Dark"),  "_lk": "theme_dark",  "icon": "/static/icons/dark.svg"},
+                    {"value": False, "label": t.get("theme_light", "Light"), "_lk": "theme_light", "_tk": "theme_light_tooltip", "icon": "/static/icons/light.svg"},
+                    {"value": True,  "label": t.get("theme_dark",  "Dark"),  "_lk": "theme_dark",  "_tk": "theme_dark_tooltip",  "icon": "/static/icons/dark.svg"},
                 ],
                 "default": True,
                 "category": "general",

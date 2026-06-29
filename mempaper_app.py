@@ -5270,8 +5270,9 @@ class MempaperApp:
                         return '', 304
 
                 response = send_file(served_path, mimetype=served_mime)
-                # URL already carries ?v=block_height for cache-busting — safe to cache long-term
-                response.headers['Cache-Control'] = 'public, max-age=86400, immutable'
+                # must-revalidate (not immutable) so the browser checks ETag when the
+                # image file changes (config saves regenerate the image for the same block).
+                response.headers['Cache-Control'] = 'public, max-age=3600, must-revalidate'
                 if os.path.exists(served_path):
                     response.headers['ETag'] = etag
 
@@ -6327,47 +6328,56 @@ class MempaperApp:
                     # Get validated new config from manager
                     validated_new_config = self.config_manager.get_current_config()
 
-                    # Trigger image-affecting change detection BEFORE updating self.config,
-                    # so _on_config_change can compare old vs new correctly (opsec mode, etc.)
+                    # _on_config_change must run synchronously: it reads self.config as
+                    # old_config for comparison and may update self.config itself.
                     self._on_config_change(validated_new_config)
 
                     # Update local config reference (may already be set by _on_config_change)
                     self.config = self.config_manager.get_current_config()
-
-                    # Update auth manager config
                     self.auth_manager.config = self.config
 
-                    # Clean up cache for removed wallet addresses before reinitializing
-                    if old_config:
-                        self._cleanup_removed_wallet_caches(old_config, new_config)
+                    # Capture everything the background thread needs before returning.
+                    _old_cfg = old_config
+                    _new_cfg = new_config
+                    _show_wallet = new_config.get("show_wallet_balances_block", True)
 
-                    # Reinitialize components if needed
-                    self._reinitialize_after_config_change(old_config)
+                    def _post_save_background():
+                        try:
+                            # Clean up cache for removed wallet addresses
+                            if _old_cfg:
+                                self._cleanup_removed_wallet_caches(_old_cfg, _new_cfg)
 
-                    # Seed change-detection state so the first post-save emit
-                    # does not appear as "new" data on the dashboard.
-                    self._seed_bitaxe_emission_state()
-                    self._emit_config_page_updates()
+                            # Reinitialize components (creates new ImageRenderer + API clients)
+                            self._reinitialize_after_config_change(_old_cfg)
 
-                    # Fetch fresh wallet balances in background and push when ready
-                    if new_config.get("show_wallet_balances_block", True):
-                        def _bg_wallet_refresh_after_save():
-                            try:
-                                # Snapshot current cache BEFORE fetching fresh data so the
-                                # frontend can compare and only toast on genuine changes.
-                                cached_before = self.image_renderer.wallet_api.get_cached_wallet_balances() or {}
-                                fresh = self.image_renderer.wallet_api.fetch_wallet_balances(startup_mode=True)
-                                if fresh and not fresh.get('error'):
-                                    self.image_renderer.wallet_api.update_cache(fresh)
-                                    if hasattr(self, 'socketio') and self.socketio:
-                                        emit_data = dict(fresh)
-                                        emit_data['after_config_save'] = True
-                                        emit_data['prev_addresses'] = cached_before.get('addresses', [])
-                                        emit_data['prev_xpubs'] = cached_before.get('xpubs', [])
-                                        self.socketio.emit('wallet_balance_updated', emit_data, room='authenticated')
-                            except Exception as e:
-                                print(f"⚠️ Background wallet refresh after config save failed: {e}")
-                        threading.Thread(target=_bg_wallet_refresh_after_save, daemon=True).start()
+                            # Seed change-detection so the first post-save socket emit
+                            # does not appear as "new" data on the dashboard.
+                            self._seed_bitaxe_emission_state()
+
+                            # Push live Bitaxe/found-block data to the config page.
+                            # _emit_config_page_updates() makes HTTP calls to miner IPs —
+                            # running it here prevents it from blocking the save response.
+                            self._emit_config_page_updates()
+
+                            # Fetch fresh wallet balances and push when ready
+                            if _show_wallet:
+                                try:
+                                    cached_before = self.image_renderer.wallet_api.get_cached_wallet_balances() or {}
+                                    fresh = self.image_renderer.wallet_api.fetch_wallet_balances(startup_mode=True)
+                                    if fresh and not fresh.get('error'):
+                                        self.image_renderer.wallet_api.update_cache(fresh)
+                                        if hasattr(self, 'socketio') and self.socketio:
+                                            emit_data = dict(fresh)
+                                            emit_data['after_config_save'] = True
+                                            emit_data['prev_addresses'] = cached_before.get('addresses', [])
+                                            emit_data['prev_xpubs'] = cached_before.get('xpubs', [])
+                                            self.socketio.emit('wallet_balance_updated', emit_data, room='authenticated')
+                                except Exception as e:
+                                    print(f"⚠️ Background wallet refresh after config save failed: {e}")
+                        except Exception as e:
+                            print(f"⚠️ Post-save background task failed: {e}")
+
+                    threading.Thread(target=_post_save_background, daemon=True).start()
 
                     return jsonify({
                         'success': True,

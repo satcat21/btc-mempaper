@@ -139,6 +139,7 @@ body {
     align-items: center;
     justify-content: center;
     pointer-events: auto;
+    position: relative;
     z-index: 1001;
     min-width: auto;
     font-size: 14px;
@@ -148,7 +149,8 @@ body {
 
 .nav-button:hover {
     background: var(--bg-card-hover);
-    border-color: var(--accent-border);
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent), var(--nav-btn-shadow);
     transform: translateX(-2px);
 }
 
@@ -195,6 +197,31 @@ body {
     50%      { opacity: 0.5; transform: scale(0.75); }
 }
 
+/* Save button spinning arc — shown while saving is in progress */
+.nav-button.saving,
+.mobile-nav-button.saving {
+    cursor: wait;
+    pointer-events: none;
+}
+
+.nav-button.saving::after,
+.mobile-nav-button.saving::after {
+    content: '';
+    position: absolute;
+    inset: -4px;
+    border-radius: 50%;
+    border: 2px solid var(--accent-border);
+    border-top-color: var(--accent);
+    border-right-color: var(--accent);
+    animation: save-btn-spin 0.65s linear infinite;
+    pointer-events: none;
+    z-index: 1102;
+}
+
+@keyframes save-btn-spin {
+    to { transform: rotate(360deg); }
+}
+
 /* Mobile: bottom nav bar */
 .mobile-nav-buttons {
     position: fixed;
@@ -230,6 +257,7 @@ body {
     justify-content: center;
     flex-shrink: 0;
     pointer-events: auto;
+    position: relative;
     z-index: 1001;
     margin: 0;
     font-size: 18px;
@@ -241,7 +269,8 @@ body {
 .mobile-nav-button:hover,
 .mobile-nav-button:active {
     background: var(--bg-card-hover);
-    border-color: var(--accent-border);
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent), var(--nav-btn-shadow);
     transform: translateY(-2px);
 }
 
@@ -284,8 +313,56 @@ body.dark-mode .mobile-nav-button .nav-icon {
 }
 
 .nav-button:hover .nav-icon,
-.mobile-nav-button:hover .nav-icon {
+body.dark-mode .nav-button:hover .nav-icon,
+.mobile-nav-button:hover .nav-icon,
+body.dark-mode .mobile-nav-button:hover .nav-icon {
     filter: brightness(0) saturate(100%) invert(62%) sepia(93%) saturate(1377%) hue-rotate(360deg) brightness(101%) contrast(94%);
+}
+
+/* ── Nav button instant CSS tooltips ─────────────────────────── */
+/* Only on pointer-capable devices; ::before so ::after stays free for the unsaved-changes dot */
+@media (hover: hover) {
+    .nav-button[data-tooltip],
+    .mobile-nav-button[data-tooltip] {
+        position: relative;
+    }
+
+    .nav-button[data-tooltip]::before,
+    .mobile-nav-button[data-tooltip]::before {
+        content: attr(data-tooltip);
+        position: absolute;
+        background: var(--bg-card);
+        color: var(--text-primary);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        padding: 4px 8px;
+        font-size: 0.72rem;
+        font-weight: 500;
+        white-space: nowrap;
+        pointer-events: none;
+        opacity: 0;
+        z-index: 1100;
+        transition: none; /* appear instantly */
+    }
+
+    /* Desktop: buttons are on the left edge → tooltip opens to the right */
+    .nav-button[data-tooltip]::before {
+        left: calc(100% + 10px);
+        top: 50%;
+        transform: translateY(-50%);
+    }
+
+    /* Mobile: buttons are at the bottom → tooltip opens upward */
+    .mobile-nav-button[data-tooltip]::before {
+        bottom: calc(100% + 10px);
+        left: 50%;
+        transform: translateX(-50%);
+    }
+
+    .nav-button[data-tooltip]:hover::before,
+    .mobile-nav-button[data-tooltip]:hover::before {
+        opacity: 1;
+    }
 }
 
 /* Pending icon animation */

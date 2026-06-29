@@ -14,14 +14,14 @@
     {% if public_dashboard %}
     <!-- Desktop Navigation Buttons (left side) -->
     <div class="desktop-nav-buttons">
-        <button id="desktop-back-button" class="nav-button icon-only" onclick="window.location.href='/'" title="{{ translations.back_to_dashboard }}">
+        <button id="desktop-back-button" class="nav-button icon-only" onclick="window.location.href='/'" data-tooltip="{{ translations.back_to_dashboard }}" aria-label="{{ translations.back_to_dashboard }}">
             <img src="/static/icons/back.svg" alt="" width="20" height="20" class="nav-icon">
         </button>
     </div>
 
     <!-- Mobile Navigation Buttons (bottom) -->
     <div class="mobile-nav-buttons">
-        <button id="mobile-back-button" class="mobile-nav-button icon-only" onclick="window.location.href='/'" title="{{ translations.back_to_dashboard }}">
+        <button id="mobile-back-button" class="mobile-nav-button icon-only" onclick="window.location.href='/'" data-tooltip="{{ translations.back_to_dashboard }}" aria-label="{{ translations.back_to_dashboard }}">
             <img src="/static/icons/back.svg" alt="" width="24" height="24" class="nav-icon">
         </button>
     </div>

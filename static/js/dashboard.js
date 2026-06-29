@@ -26,15 +26,26 @@ function setupSocketHandlers() {
         reconnectAttempts = 0;
         reconnecting = false;
         if (reconnectBtn) reconnectBtn.style.display = "none";
-        // Request latest image if: no image yet, OR we disconnected while hidden
-        // (pendingImageRefresh means we may have missed a server-side update)
-        const dashboardImg = document.getElementById("dashboard");
-        if (pendingImageRefresh || !dashboardImg.src || dashboardImg.src.includes('placeholder') || dashboardImg.src === window.location.href) {
-            socket.emit('request_latest_image');
-            pendingImageRefresh = false;
-        }
+        // Always request the latest image on connect so the page never shows a
+        // stale browser-cached version. The server sends it from memory (~1–2 ms on LAN).
+        socket.emit('request_latest_image');
+        pendingImageRefresh = false;
         // Subscribe to block notifications (always enabled)
         subscribeToBlockNotifications();
+        // If a restart was pending (service_restarting received earlier), reload now that
+        // the socket is reconnected and the service is confirmed back online
+        if (window._restartPending) {
+            const { oldStarted } = window._restartPending;
+            fetch('/api/health', { cache: 'no-store' })
+                .then(r => r.ok ? r.json() : null)
+                .then(h => {
+                    if (h && (!oldStarted || h.started > oldStarted)) {
+                        window._restartPending = null;
+                        location.reload();
+                    }
+                })
+                .catch(() => {});
+        }
     });
 
     socket.on('disconnect', (reason) => {
@@ -223,6 +234,15 @@ function setupSocketHandlers() {
         );
     });
 
+    // Service restart (after auto-update or manual restart) — mark pending and poll until back
+    socket.on('service_restarting', (data) => {
+        if (!window.isAuthenticated) return;
+        fetch('/api/health', { cache: 'no-store' })
+            .then(r => r.ok ? r.json() : null)
+            .then(h => { window._restartPending = { oldStarted: h ? h.started : null, tag: data.tag }; })
+            .catch(() => { window._restartPending = { oldStarted: null, tag: data.tag }; });
+    });
+
     // ... other socket event handlers ...
 }
 
@@ -246,6 +266,21 @@ let pendingImageRefresh = false;
 
 // Initial connection
 connectSocket();
+
+// Reload immediately when the tab becomes visible again if a service restart was pending.
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden || !window._restartPending) return;
+    const { oldStarted } = window._restartPending;
+    fetch('/api/health', { cache: 'no-store' })
+        .then(r => r.ok ? r.json() : null)
+        .then(h => {
+            if (h && (!oldStarted || h.started > oldStarted)) {
+                window._restartPending = null;
+                location.reload();
+            }
+        })
+        .catch(() => {});
+});
 
 // Allow bfcache by closing the socket when the page is hidden and restoring on return
 window.addEventListener('pagehide', () => {

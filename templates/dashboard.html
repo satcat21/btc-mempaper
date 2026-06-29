@@ -19,11 +19,11 @@
 <body class="orientation-{{ orientation }}{% if dark_mode %} dark-mode{% endif %}">
     <!-- Desktop Navigation - Left Side -->
     <div class="desktop-nav-buttons">
-        <a href="/config" id="desktop-config-button" class="nav-button icon-only" title="{{ translations.settings }}">
+        <a href="/config" id="desktop-config-button" class="nav-button icon-only" data-tooltip="{{ translations.settings }}" aria-label="{{ translations.settings }}">
             <img src="/static/icons/settings.svg" alt="" width="20" height="20" class="nav-icon">
         </a>
         {% if is_authenticated %}
-        <button id="desktop-logout-button" class="nav-button icon-only" onclick="logout()" title="{{ translations.logout }}">
+        <button id="desktop-logout-button" class="nav-button icon-only" onclick="logout()" data-tooltip="{{ translations.logout }}" aria-label="{{ translations.logout }}">
             <img src="/static/icons/logout.svg" alt="" width="20" height="20" class="nav-icon">
         </button>
         {% endif %}
@@ -48,11 +48,11 @@
     
     <!-- Mobile Navigation - Hidden by default -->
     <div class="mobile-nav-buttons" id="mobile-nav-buttons">
-        <a href="/config" id="mobile-config-button" class="mobile-nav-button icon-only" title="{{ translations.settings }}">
+        <a href="/config" id="mobile-config-button" class="mobile-nav-button icon-only" data-tooltip="{{ translations.settings }}" aria-label="{{ translations.settings }}">
             <img src="/static/icons/settings.svg" alt="" width="24" height="24" class="nav-icon">
         </a>
         {% if is_authenticated %}
-        <button id="mobile-logout-button" class="mobile-nav-button icon-only" onclick="logout()" title="{{ translations.logout }}">
+        <button id="mobile-logout-button" class="mobile-nav-button icon-only" onclick="logout()" data-tooltip="{{ translations.logout }}" aria-label="{{ translations.logout }}">
             <img src="/static/icons/logout.svg" alt="" width="24" height="24" class="nav-icon">
         </button>
         {% endif %}
