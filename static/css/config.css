@@ -2259,17 +2259,17 @@ body.dark-mode .wifi-badge-saved {
     gap: 5px;
     padding: 3px 10px;
     font-size: 0.8rem;
-    background: transparent;
-    color: var(--text-secondary);
-    border: 1px solid var(--border-color);
+    background: var(--accent);
+    color: #fff;
+    border: 1px solid var(--accent);
     border-radius: var(--radius-md);
     cursor: pointer;
-    transition: color 0.2s, border-color 0.2s;
+    transition: background 0.2s, border-color 0.2s;
     white-space: nowrap;
     text-decoration: none;
     font-family: inherit;
 }
-.check-updates-btn:hover { color: var(--accent); border-color: var(--accent); }
+.check-updates-btn:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
 .check-updates-btn:disabled { opacity: 0.5; cursor: default; }
 
 /* Mempool action buttons */
@@ -2332,10 +2332,7 @@ body.dark-mode .wifi-badge-saved {
     height: 14px;
     vertical-align: middle;
     transition: transform 0.3s;
-    opacity: 0.7;
-}
-.dark-mode .check-updates-icon {
-    filter: invert(1);
+    filter: brightness(0) invert(1); /* always white to match white button text */
 }
 .check-updates-btn.checking .check-updates-icon {
     animation: spin-check 1s linear infinite;
@@ -2358,7 +2355,7 @@ body.dark-mode .wifi-badge-saved {
 
 .update-install-btn {
     background: var(--accent);
-    color: #0a0a0a;
+    color: #fff;
     border: none;
     border-radius: var(--radius-md);
     padding: 10px 20px;
@@ -2821,7 +2818,7 @@ body.dark-mode .modal-title-icon {
 .multiselect-btn.active {
     background: #f7931a;
     border-color: #f7931a;
-    color: #000;
+    color: #fff;
     font-weight: 600;
 }
 

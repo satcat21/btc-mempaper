@@ -1,3 +1,34 @@
+// Rebuild HTML for info_text fields that contain multiple translation strings.
+// Called from setLanguage() so the HTML reflects the newly selected language.
+function _buildInfoHtml(builder, t) {
+    if (builder === 'donation_webhook') {
+        const title  = t['webhook_options_title']      || 'Choose how to receive donations:';
+        const aTitle = t['webhook_option_a_title']     || 'Option A — Direct webhook';
+        const aSub   = t['webhook_option_a_subtitle']  || '(same network)';
+        const aDesc  = t['webhook_option_a_desc']      || 'In LNbits open <em>Pay Links</em> &rarr; <em>New Pay Link</em> &rarr; <em>Advanced options</em> &rarr; <em>Webhook URL</em> and enter:';
+        const aNote  = t['webhook_option_a_note']      || 'Click to copy &middot; Only works if mempaper is reachable from your wallet server.';
+        const bTitle = t['webhook_option_b_title']     || 'Option B — Self-hosted webhook-tester';
+        const bSub   = t['webhook_option_b_subtitle']  || '(works over the internet)';
+        const bStep1 = t['webhook_option_b_step1']     || 'Deploy <a href="https://github.com/satcat21/event-hub" target="_blank" style="color:inherit">event-hub</a> on a server reachable from the internet.';
+        const bStep2 = t['webhook_option_b_step2']     || 'Create a session — note the token UUID. Set the LNbits Webhook URL to <code>https://your-host/{token}</code>.';
+        const bStep3 = t['webhook_option_b_step3']     || 'Paste the full WebSocket URL (e.g. <code>wss://your-host/ws/{token}</code>) in the field below.';
+        const origin = window.location.origin;
+        return `<div style="margin-bottom:8px"><strong>${title}</strong></div>`
+            + `<div style="border:1px solid rgba(128,128,128,.3);border-radius:6px;padding:10px 12px;margin-bottom:10px">`
+            + `<div style="font-weight:600;margin-bottom:4px">${aTitle} <small style="opacity:.65;font-weight:400">${aSub}</small></div>`
+            + `<div style="margin-bottom:6px;font-size:.9em">${aDesc}</div>`
+            + `<code class="info-copyable" onclick="navigator.clipboard.writeText(this.textContent).then(()=>this.classList.add('copied'))" title="Click to copy">${origin}/api/donation-webhook</code>`
+            + `<div style="font-size:.8em;opacity:.6;margin-top:4px">${aNote}</div>`
+            + `</div>`
+            + `<div style="border:1px solid rgba(128,128,128,.3);border-radius:6px;padding:10px 12px">`
+            + `<div style="font-weight:600;margin-bottom:6px">${bTitle} <small style="opacity:.65;font-weight:400">${bSub}</small></div>`
+            + `<ol style="margin:0;padding-left:1.4em;font-size:.9em;line-height:1.7">`
+            + `<li>${bStep1}</li><li>${bStep2}</li><li>${bStep3}</li>`
+            + `</ol></div>`;
+    }
+    return '';
+}
+
 // Apply a language switch without page reload — fully synchronous, no network request.
 // Uses _lk / _dk keys baked into configSchema and categories by the server to update
 // labels from window.allTranslations, then re-renders already-populated sections.
@@ -40,6 +71,9 @@ function setLanguage(lang) {
         Object.entries(configSchema).forEach(([, field]) => {
             if (field._lk && t[field._lk] !== undefined) field.label = t[field._lk];
             if (field._dk && t[field._dk] !== undefined) field.description = t[field._dk];
+            if (field._lk_check && t[field._lk_check] !== undefined) field.label_check = t[field._lk_check];
+            if (field._lk_open && t[field._lk_open] !== undefined) field.label_open = t[field._lk_open];
+            if (field._html_builder) field.html = _buildInfoHtml(field._html_builder, t);
             if (field.options) {
                 field.options.forEach(opt => {
                     if (opt._lk && t[opt._lk] !== undefined) opt.label = t[opt._lk];
@@ -8613,13 +8647,17 @@ function setupConfigSocketHandlers() {
         registerPageForNotifications('config');
         // Subscribe to block notifications (always enabled)
         subscribeToBlockNotifications();
-        // If a restart was pending, verify the service is a new process and reload
-        if (window._restartPending) {
-            const { oldStarted } = window._restartPending;
+        // Detect any restart (auto-update or manual) by comparing the server's
+        // process start time against what was captured at page load.
+        if (window._restartPending || window._pageLoadStarted !== undefined) {
             fetch('/api/health', { cache: 'no-store' })
                 .then(r => r.ok ? r.json() : null)
                 .then(h => {
-                    if (h && (!oldStarted || h.started > oldStarted)) {
+                    if (!h) return;
+                    const oldStarted = window._restartPending
+                        ? window._restartPending.oldStarted
+                        : window._pageLoadStarted;
+                    if (oldStarted && h.started > oldStarted) {
                         window._restartPending = null;
                         location.reload();
                     }
@@ -9295,6 +9333,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // in case a previous setLanguage() call left one behind.
     document.querySelectorAll('[data-tooltip][title]').forEach(el => el.removeAttribute('title'));
 
+    // Capture server process start time so reconnect can detect any restart.
+    fetch('/api/health', { cache: 'no-store' })
+        .then(r => r.ok ? r.json() : null)
+        .then(h => { if (h) window._pageLoadStarted = h.started; })
+        .catch(() => {});
+
     // Setup navigation buttons
     setupNavigationButtons();
 
@@ -9302,16 +9346,18 @@ document.addEventListener('DOMContentLoaded', () => {
     setTimeout(initializeWebSocket, 1000);
 });
 
-// Reload immediately when the tab becomes visible again if a service restart was pending.
-// This handles background-tab timer throttling where setInterval in _showRestartCountdown fires too
-// infrequently to catch the service coming back online.
+// Reload immediately when the tab becomes visible again if a service restart was detected.
+// Covers both announced restarts (_restartPending) and silent ones (manual systemctl restart).
 document.addEventListener('visibilitychange', () => {
-    if (document.hidden || !window._restartPending) return;
-    const { oldStarted } = window._restartPending;
+    if (document.hidden) return;
+    if (!window._restartPending && window._pageLoadStarted === undefined) return;
+    const oldStarted = window._restartPending
+        ? window._restartPending.oldStarted
+        : window._pageLoadStarted;
     fetch('/api/health', { cache: 'no-store' })
         .then(r => r.ok ? r.json() : null)
         .then(h => {
-            if (h && (!oldStarted || h.started > oldStarted)) {
+            if (h && oldStarted && h.started > oldStarted) {
                 window._restartPending = null;
                 location.reload();
             }

@@ -1024,7 +1024,9 @@ class ConfigManager:
             "wallet_balance_addresses_with_comments": {
                 "type": "wallet_table",
                 "label": t.get("wallet_balance_addresses_table", "Wallet Monitoring Table"),
+                "_lk": "wallet_balance_addresses_table",
                 "description": t.get("wallet_balance_addresses_table_desc", "Manage your wallet addresses, XPUBs, and ZPUBs with comments and balance monitoring."),
+                "_dk": "wallet_balance_addresses_table_desc",
                 "category": "wallet_monitoring",
                 "order": 3
             },
@@ -1154,7 +1156,9 @@ class ConfigManager:
             "_mempool_actions": {
                 "type": "mempool_actions",
                 "label_check": t.get("check_connection", "Check Connection"),
+                "_lk_check": "check_connection",
                 "label_open": t.get("open_mempool", "Open Mempool"),
+                "_lk_open": "open_mempool",
                 "category": "mempool",
                 "order": 1000
             },
@@ -1222,6 +1226,7 @@ class ConfigManager:
             "date_color_group": {
                 "type": "date_color_group",
                 "label": t.get("date_color_group_label", "Date Gradient Colors"),
+                "_lk": "date_color_group_label",
                 "category": "general",
                 "order": 5,
                 "advanced": True
@@ -1253,6 +1258,7 @@ class ConfigManager:
             "holiday_color_group": {
                 "type": "holiday_color_group",
                 "label": t.get("holiday_color_group_label", "Holiday Text Gradient Colors"),
+                "_lk": "holiday_color_group_label",
                 "category": "general",
                 "order": 6,
                 "advanced": True
@@ -1284,7 +1290,9 @@ class ConfigManager:
             "omni_device_name": {
                 "type": "select",
                 "label": t.get("display_type", "Display Device Type"),
+                "_lk": "display_type",
                 "description": t.get("display_type_desc", "Select your specific e-paper display model"),
+                "_dk": "display_type_desc",
                 "options": [
                     {"value": "epd13in3E", "label": "Waveshare 13.3\" 6-Color (Spectra 6) - 1600x1200"},
                     {"value": "epd7in3f",  "label": "Waveshare 7.3\" 7-Color - 800x480"},
@@ -1362,6 +1370,7 @@ class ConfigManager:
             "donation_webhook_hint": {
                 "type": "info_text",
                 "html": _donation_webhook_hint_html,
+                "_html_builder": "donation_webhook",
                 "category": "donation",
                 "always_visible": True,
                 "advanced": True
@@ -1435,9 +1444,12 @@ class ConfigManager:
         }
         # Add translation keys to every field so the client can update labels on language switch.
         # Convention: field label key = field key, description key = field key + "_desc".
+        # Fields may set _lk/_dk explicitly (when the translation key differs from the schema key).
         for fk, fv in schema.items():
-            fv['_lk'] = fk
-            fv['_dk'] = fk + '_desc'
+            if '_lk' not in fv:
+                fv['_lk'] = fk
+            if '_dk' not in fv:
+                fv['_dk'] = fk + '_desc'
         return schema
 
     def get_categories(self, translations: Dict[str, str] = None) -> List[Dict[str, str]]:

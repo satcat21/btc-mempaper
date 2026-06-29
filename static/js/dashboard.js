@@ -13,7 +13,7 @@ function connectSocket() {
         reconnection: true,
         reconnectionAttempts: Infinity,
         reconnectionDelay: 1000,
-        reconnectionDelayMax: 30000,
+        reconnectionDelayMax: 3000,
         withCredentials: false,
         pollingTimeout: 30000
     });
@@ -32,14 +32,18 @@ function setupSocketHandlers() {
         pendingImageRefresh = false;
         // Subscribe to block notifications (always enabled)
         subscribeToBlockNotifications();
-        // If a restart was pending (service_restarting received earlier), reload now that
-        // the socket is reconnected and the service is confirmed back online
-        if (window._restartPending) {
-            const { oldStarted } = window._restartPending;
+        // Detect any restart (auto-update, manual systemctl restart, etc.) by comparing
+        // the server's process start time against what we saw at page load.
+        // _restartPending handles announced restarts; _pageLoadStarted handles silent ones.
+        if (window._restartPending || window._pageLoadStarted !== undefined) {
             fetch('/api/health', { cache: 'no-store' })
                 .then(r => r.ok ? r.json() : null)
                 .then(h => {
-                    if (h && (!oldStarted || h.started > oldStarted)) {
+                    if (!h) return;
+                    const oldStarted = window._restartPending
+                        ? window._restartPending.oldStarted
+                        : window._pageLoadStarted;
+                    if (oldStarted && h.started > oldStarted) {
                         window._restartPending = null;
                         location.reload();
                     }
@@ -263,6 +267,13 @@ let reconnectAttempts = 0;
 let lastImageUpdate = null;
 let imageUpdateTimeout = null;
 let pendingImageRefresh = false;
+
+// Capture the server's process start time on page load so we can detect
+// a restart (including manual systemctl restarts that send no socket event).
+fetch('/api/health', { cache: 'no-store' })
+    .then(r => r.ok ? r.json() : null)
+    .then(h => { if (h) window._pageLoadStarted = h.started; })
+    .catch(() => {});
 
 // Initial connection
 connectSocket();
