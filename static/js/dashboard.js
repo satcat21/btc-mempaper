@@ -22,7 +22,6 @@ function connectSocket() {
 
 function setupSocketHandlers() {
     socket.on('connect', () => {
-        console.log("✅ Connected to mempaper WebSocket");
         reconnectAttempts = 0;
         reconnecting = false;
         if (reconnectBtn) reconnectBtn.style.display = "none";
@@ -55,7 +54,6 @@ function setupSocketHandlers() {
     });
 
     socket.on('disconnect', (reason) => {
-        console.log("❌ Disconnected from mempaper WebSocket:", reason);
         pendingImageRefresh = true;
         attemptReconnect();
     });
@@ -70,23 +68,12 @@ function setupSocketHandlers() {
         attemptReconnect();
     });
 
-    // Log transport changes for debugging
-    socket.on('upgrade', () => {
-        console.log("⬆️ Transport upgraded to:", socket.io.engine.transport.name);
-    });
-
     socket.on('upgradeError', (error) => {
         console.warn("⚠️ Transport upgrade failed:", error);
     });
 
-    // Enhanced transport monitoring
     socket.io.on('error', (error) => {
         console.error("🚫 Socket.IO engine error:", error);
-    });
-
-    // Monitor connection state changes
-    socket.io.engine.on('upgrade', () => {
-        console.log("⚙️ Engine transport upgraded to:", socket.io.engine.transport.name);
     });
 
     socket.io.engine.on('upgradeError', (error) => {
@@ -96,8 +83,7 @@ function setupSocketHandlers() {
     // Reconnection attempt
     socket.on('reconnect_attempt', (attemptNumber) => {
         reconnectAttempts = attemptNumber;
-        console.log(`⚙️ Reconnection attempt ${attemptNumber}...`);
-        
+
         // Show manual reconnect button after several failed attempts
         if (attemptNumber > 5) {
             if (reconnectBtn) {
@@ -108,7 +94,6 @@ function setupSocketHandlers() {
 
     // Reconnection successful
     socket.on('reconnect', (attemptNumber) => {
-        console.log(`✅ Reconnected after ${attemptNumber} attempts`);
         reconnectAttempts = 0;
         if (reconnectBtn) {
             reconnectBtn.style.display = "none";
@@ -117,7 +102,6 @@ function setupSocketHandlers() {
 
     // Reconnection failed
     socket.on('reconnect_failed', () => {
-        console.log("❌ Reconnection failed permanently");
         if (reconnectBtn) {
             reconnectBtn.style.display = "inline-block";
         }
@@ -125,12 +109,6 @@ function setupSocketHandlers() {
 
     // New image received
     socket.on('new_image', (data) => {
-        console.log("📶 New dashboard image received", {
-            hasImageData: !!data.image,
-            imageLength: data.image ? data.image.length : 0,
-            timestamp: new Date().toISOString()
-        });
-        
         // Validate image data
         if (!data.image || !data.image.startsWith('data:image/png;base64,') || data.image.length < 100) {
             console.error("❌ Invalid image data received", data);
@@ -144,10 +122,8 @@ function setupSocketHandlers() {
         tempImg.onload = function() {
             dashboardImg.src = data.image;
             lastImageUpdate = new Date();
-            console.log("✅ Dashboard image updated successfully", {
-                newSrcLength: dashboardImg.src.length,
-                timestamp: lastImageUpdate.toISOString()
-            });
+            // Persist so F5 restores the latest image instead of the stale server-rendered URL
+            try { localStorage.setItem('mempaper_last_image', data.image); } catch (e) {}
         };
         
         tempImg.onerror = function() {
@@ -162,7 +138,6 @@ function setupSocketHandlers() {
         const sats = data.amount_sats ? data.amount_sats.toLocaleString() : '?';
         const satLabel = data.amount_sats === 1 ? 'sat' : 'sats';
         const msg = data.message ? ` — "${data.message}"` : '';
-        console.log(`⚡ Donation received: ${sats} ${satLabel}${msg}`);
 
         if (window.isAuthenticated && window.featureFlags && window.featureFlags.donations) {
             showDashboardToast('⚡', `Donation: ${sats} ${satLabel}${msg}`);
@@ -257,7 +232,6 @@ function attemptReconnect() {
     reconnecting = true;
     if (reconnectTimeout) clearTimeout(reconnectTimeout);
     reconnectTimeout = setTimeout(() => {
-        console.log("⚙️ Attempting WebSocket reconnect...");
         if (socket) socket.connect();
         reconnecting = false;
     }, 2000);
@@ -333,10 +307,6 @@ window.addEventListener('pageshow', (event) => {
 
 // Background processing status updates (for instant startup mode)
 socket.on('background_ready', (data) => {
-    console.log("✅ Background processing completed", data);
-    
-    // Request fresh image since background processing is done
-    console.log("📶 Requesting fresh image after background completion");
     socket.emit('request_latest_image');
     
     // Show a brief notification
@@ -573,7 +543,6 @@ function showBlockToast(blockData) {
         setTimeout(toast.closeToast, 30000);
     } else {
         // Existing toast - just updated content, add subtle flash effect
-        console.log('✅ Updated block notification with enriched data');
         contentDiv.style.transition = 'opacity 0.2s';
         contentDiv.style.opacity = '0.7';
         setTimeout(() => {
@@ -584,7 +553,6 @@ function showBlockToast(blockData) {
 
 // New block notification with toast
 socket.on('new_block_notification', (data) => {
-    console.log("👁️ New block notification received:", data);
     if (data.page && data.page !== 'dashboard') {
         // console.log('[DEBUG] Block notification for other page, ignoring.');
         return;
@@ -598,7 +566,6 @@ socket.on('new_block_notification', (data) => {
     const isDifferentBlock = !state.lastBlockHeight || state.lastBlockHeight !== data.block_height;
     
     if (!isEnrichment && !isDifferentBlock && (now - state.lastNotification) < 10000) {
-        console.log("⚠️ Duplicate block notification detected, skipping");
         return;
     }
     
@@ -625,8 +592,6 @@ socket.on('new_block_notification', (data) => {
 
 // Configuration reloaded notification
 socket.on('config_reloaded', (data) => {
-    console.log("⚙️ Configuration reloaded from file");
-    
     // Request fresh image after config change
     setTimeout(() => {
         socket.emit('request_latest_image');
@@ -638,18 +603,11 @@ socket.on('config_reloaded', (data) => {
 setInterval(() => {
     const now = new Date();
     
-    if (!socket.connected) {
-        if (reconnectAttempts > 0) {
-            console.log(`⚙️ Reconnecting... (${reconnectAttempts})`);
-        } else {
-            console.log("🔴 WebSocket disconnected");
-        }
-    } else {
+    if (socket.connected) {
         // Check for stale image data and auto-request if needed
         if (lastImageUpdate) {
             const timeSinceUpdate = Math.floor((now - lastImageUpdate) / 1000);
             if (timeSinceUpdate > 600) { // 10 minutes
-                console.log("⚙️ Auto-requesting image update (stale data)");
                 socket.emit('request_latest_image');
                 refreshCurrentImage();
             }
@@ -659,7 +617,6 @@ setInterval(() => {
 
 // Manual reconnection button (if connection completely fails)
 function forceReconnect() {
-    console.log("⚙️ Manual reconnection triggered");
     socket.disconnect();
     setTimeout(() => {
         socket.connect();
@@ -668,15 +625,13 @@ function forceReconnect() {
 
 // Force refresh current dashboard image
 function refreshCurrentImage() {
-    console.log("⚙️ Refreshing current dashboard image");
     const dashboardImg = document.getElementById("dashboard");
-    
+
     if (dashboardImg && dashboardImg.src) {
         const currentSrc = dashboardImg.src;
-        
+
         // Only refresh if src is a valid HTTP/HTTPS URL (not base64 data: or placeholder)
         if (!currentSrc.startsWith('http://') && !currentSrc.startsWith('https://')) {
-            console.log("⏭️ Skipping refresh - image is not an HTTP URL");
             return;
         }
         
@@ -688,7 +643,6 @@ function refreshCurrentImage() {
         const tempImg = new Image();
         tempImg.onload = function() {
             dashboardImg.src = newUrl;
-            console.log("✅ Current image refreshed");
         };
         tempImg.onerror = function() {
             console.warn("⚠️ Failed to refresh current image, keeping existing");
@@ -699,30 +653,29 @@ function refreshCurrentImage() {
 
 // Request initial image when page loads
 document.addEventListener('DOMContentLoaded', async function() {
-    console.log("⚙️ Page loaded.");
-    
     const dashboardImg = document.getElementById("dashboard");
-    
-    // Check if image is already loaded from server-side
-    if (dashboardImg.src && !dashboardImg.src.includes('placeholder')) {
-        console.log("📸 Image already loaded from server, skipping WebSocket request");
-        lastImageUpdate = new Date(); // Set initial timestamp
-        return;
-    }
-    
-    // Wait a bit for socket to establish connection
+
+    // Immediately restore the last known image from localStorage.
+    // The server-rendered src is a stale URL (/image?v=old_block) — the base64
+    // image stored here is always the latest one the browser has actually seen.
+    try {
+        const cached = localStorage.getItem('mempaper_last_image');
+        if (cached && cached.startsWith('data:image/png;base64,')) {
+            dashboardImg.src = cached;
+            lastImageUpdate = new Date();
+        }
+    } catch (e) {}
+
+    // Always request the latest image via WebSocket on load so we stay current
+    // (previously skipped when a server URL was present — that caused stale images)
     setTimeout(() => {
         if (socket.connected) {
-            console.log("📶 Requesting initial image via WebSocket");
             socket.emit('request_latest_image');
         } else {
-            // If not connected yet, try again when connected
-            console.log("⏳ Socket not connected, waiting...");
             const checkConnection = setInterval(() => {
                 if (socket.connected) {
                     clearInterval(checkConnection);
                     socket.emit('request_latest_image');
-                    console.log("� Initial image requested after connection");
                 }
             }, 500);
             
@@ -779,8 +732,6 @@ document.addEventListener('DOMContentLoaded', function() {
             try {
                 const notificationData = JSON.parse(e.newValue);
                 if (notificationData && notificationData.timestamp > Date.now() - 5000) {
-                    // Show notification if it's recent (within 5 seconds)
-                    console.log('⚙️ Received cross-page block notification');
                     showBlockToast(notificationData.data);
                 }
             } catch (error) {
@@ -797,14 +748,11 @@ window.addEventListener('beforeunload', function() {
 
 // Subscribe to block notifications
 function subscribeToBlockNotifications() {
-    // Always subscribe, mark page type
-    console.log('Subscribing to live block notifications for dashboard page...');
     socket.emit('subscribe_block_notifications', { page: 'dashboard' });
 }
 
 // Unsubscribe from block notifications
 function unsubscribeFromBlockNotifications() {
-    console.log('⚙️ Unsubscribing from live block notifications...');
     socket.emit('unsubscribe_block_notifications');
 }
 
@@ -812,14 +760,8 @@ function unsubscribeFromBlockNotifications() {
 socket.on('block_notification_status', (data) => {
     if (data.status === 'subscribed') {
         blockNotificationsEnabled = true;
-        if (data.message) {
-            console.log('[MEMPAPER] ' + data.message);
-        } else {
-            console.log('[MEMPAPER] Subscribed to live block notifications');
-        }
     } else if (data.status === 'unsubscribed') {
         blockNotificationsEnabled = false;
-        console.log('[MEMPAPER] Unsubscribed from live block notifications');
     }
 });
 

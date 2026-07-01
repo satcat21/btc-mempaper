@@ -521,6 +521,60 @@ body.dark-mode .confirm-modal-btn.cancel:hover .modal-action-icon {
     .mobile-nav-buttons { display: flex; }
 }
 
+/* ── Password strength checklist ─────────────────────────────────────────── */
+.pw-strength {
+    margin-top: 8px;
+    display: none;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.pw-rule {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 0.82rem;
+    color: var(--danger);
+    line-height: 1.5;
+}
+
+.pw-rule::before {
+    content: '';
+    display: inline-block;
+    flex-shrink: 0;
+    width: 14px;
+    height: 14px;
+    background-color: var(--danger);
+    mask-image: url('/static/icons/error.svg');
+    mask-size: contain;
+    mask-repeat: no-repeat;
+    mask-position: center;
+    -webkit-mask-image: url('/static/icons/error.svg');
+    -webkit-mask-size: contain;
+    -webkit-mask-repeat: no-repeat;
+    -webkit-mask-position: center;
+}
+
+.pw-rule.ok {
+    color: var(--success);
+}
+
+.pw-rule.ok::before {
+    background-color: var(--success);
+    mask-image: url('/static/icons/check.svg');
+    -webkit-mask-image: url('/static/icons/check.svg');
+}
+
+.pw-advisory {
+    margin-top: 8px;
+    font-size: 0.82rem;
+    color: var(--warning, #d97706);
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    line-height: 1.4;
+}
+
 @media (max-width: 480px) {
     .mobile-nav-button { width: 40px; height: 40px; }
     .mobile-nav-buttons { padding: 10px 20px; gap: 16px; }

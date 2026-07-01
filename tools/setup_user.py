@@ -75,13 +75,21 @@ def cmd_create(pm: SecurePasswordManager) -> None:
     # Password
     for attempt in range(3):
         try:
-            password = getpass.getpass("Password (min 8 chars): ")
+            password = getpass.getpass("Password (min 16 chars, mixed case, number, special char): ")
         except (EOFError, KeyboardInterrupt):
             print("\nAborted.")
             sys.exit(0)
 
-        if len(password) < 8:
-            print("Password must be at least 8 characters.")
+        import re as _re
+        issues = []
+        if len(password) < 16:       issues.append("at least 16 characters")
+        if not _re.search(r'[A-Z]', password): issues.append("an uppercase letter")
+        if not _re.search(r'[a-z]', password): issues.append("a lowercase letter")
+        if not _re.search(r'[0-9]', password): issues.append("a number")
+        if not _re.search(r'[^A-Za-z0-9]', password): issues.append("a special character")
+        if issues:
+            print("Password needs: " + ", ".join(issues) + ".")
+
             continue
 
         try:

@@ -382,7 +382,6 @@ class ConfigManager:
             "e-ink-display-connected": True,
             "omni_device_name": "epd7in3f",  # Default to native Waveshare 7.3" driver
             "admin_username": "admin",
-            "admin_password": "mempaper2025",
             "public_dashboard": False,
             # --- Info block config additions ---
             "show_btc_price_block": True,
@@ -410,6 +409,11 @@ class ConfigManager:
             "prioritize_large_scaled_meme": False,
             "color_mode_dark": True,
             "opsec_mode_enabled": False,
+            # --- Meme sync schedule ---
+            "meme_sync_enabled": False,
+            "meme_sync_day": "4",   # Thursday (cron: 0=Sun … 6=Sat)
+            "meme_sync_hour": "13", # 13:00
+            "tor_meme_downloads": False,
             # --- Donation block ---
             "show_donation_block": False,
             "donation_display_mode": "latest",
@@ -761,7 +765,7 @@ class ConfigManager:
             "color_btc_price_light", "color_btc_price_dark",
             "color_bitaxe_stats_light", "color_bitaxe_stats_dark",
             "color_wallets_light", "color_wallets_dark",
-            "webhook_relay_ws_url", "donation_display_mode",
+            "webhook_relay_ws_url", "donation_webhook_token", "donation_display_mode",
             "color_donation_light", "color_donation_dark",
             "color_countdown_light", "color_countdown_dark",
             "color_halving_light", "color_halving_dark",
@@ -770,6 +774,13 @@ class ConfigManager:
         for setting in passthrough_settings:
             if setting in config:
                 validated[setting] = config[setting]
+
+        # Preserve runtime-generated tokens that are never sent by the web UI.
+        # Falls back to the current in-memory value so a web save never erases them.
+        if 'donation_webhook_token' not in validated:
+            existing = self.config.get('donation_webhook_token', '')
+            if existing:
+                validated['donation_webhook_token'] = existing
         
         # Gap limit and bootstrap search validation
         gap_limit_bool_settings = [
@@ -1340,6 +1351,45 @@ class ConfigManager:
                 "type": "opsec_management",
                 "label": t.get("opsec_management", "OPSec Images"),
                 "category": "opsec"
+            },
+            # --- Meme sync schedule ---
+            "meme_sync_enabled": {
+                "type": "boolean",
+                "label": t.get("meme_sync_enabled", "Auto-Sync Memes"),
+                "description": t.get("meme_sync_enabled_desc", "Schedule a weekly check for new memes on einundzwanzig-memes.space. Writes a crontab entry for the mempaper user — no manual crontab editing needed."),
+                "default": False,
+                "category": "meme_sync"
+            },
+            "meme_sync_day": {
+                "type": "select",
+                "label": t.get("meme_sync_day", "Day"),
+                "description": t.get("meme_sync_day_desc", "Day of the week to check for new memes."),
+                "options": [
+                    {"value": "0", "label": t.get("day_sunday",    "Sunday")},
+                    {"value": "1", "label": t.get("day_monday",    "Monday")},
+                    {"value": "2", "label": t.get("day_tuesday",   "Tuesday")},
+                    {"value": "3", "label": t.get("day_wednesday", "Wednesday")},
+                    {"value": "4", "label": t.get("day_thursday",  "Thursday")},
+                    {"value": "5", "label": t.get("day_friday",    "Friday")},
+                    {"value": "6", "label": t.get("day_saturday",  "Saturday")},
+                ],
+                "default": "4",
+                "category": "meme_sync"
+            },
+            "meme_sync_hour": {
+                "type": "select",
+                "label": t.get("meme_sync_hour", "Time"),
+                "description": t.get("meme_sync_hour_desc", "Hour of day to run the sync (24-hour clock)."),
+                "options": [{"value": str(h), "label": f"{h:02d}:00"} for h in range(24)],
+                "default": "13",
+                "category": "meme_sync"
+            },
+            "tor_meme_downloads": {
+                "type": "boolean",
+                "label": t.get("tor_meme_downloads", "Route via Tor"),
+                "description": t.get("tor_meme_downloads_desc", "Hide your IP from the meme server by routing downloads through Tor (SOCKS5 127.0.0.1:9050). Requires: sudo apt install tor — the Tor daemon must be running."),
+                "default": False,
+                "category": "meme_sync"
             },
             # --- Donation block ---
             "show_donation_block": {

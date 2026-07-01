@@ -454,8 +454,19 @@ body.dark-mode .section-nav-pill:not(.active) .section-nav-icon {
 }
 
 .info-copyable.copied::after {
-    content: ' ✓';
-    color: var(--success);
+    content: '';
+    display: inline-block;
+    width: 0.85em;
+    height: 0.85em;
+    margin-left: 4px;
+    background-color: var(--success);
+    -webkit-mask-image: url('/static/icons/check.svg');
+    mask-image: url('/static/icons/check.svg');
+    -webkit-mask-size: contain;
+    mask-size: contain;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    vertical-align: -0.1em;
 }
 
 .form-input {
@@ -516,9 +527,27 @@ body.dark-mode .form-input[type="date"] {
 .mempool-private-check input[type="checkbox"] {
     width: 16px;
     height: 16px;
-    accent-color: var(--accent);
     cursor: pointer;
     flex-shrink: 0;
+    appearance: none;
+    -webkit-appearance: none;
+    border: 2px solid var(--border-color);
+    border-radius: 3px;
+    background: var(--bg-color);
+    box-sizing: border-box;
+    transition: background 0.15s, border-color 0.15s;
+}
+.mempool-private-check input[type="checkbox"]:checked {
+    background: var(--accent);
+    border-color: var(--accent);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpolyline points='2.5,8.5 6,12 13.5,4' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+}
+.mempool-private-check input[type="checkbox"]:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
 }
 
 .form-select {
@@ -862,18 +891,27 @@ body.dark-mode .config-section.section-disabled .section-toggle-switch {
     background: var(--bg-elevated);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
-    padding: 6px 12px;
+    padding: 6px;
     cursor: pointer;
-    font-size: 0.82rem;
-    color: var(--text-secondary);
     transition: all var(--transition);
     flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
-.tag-add-button:hover {
+.tag-add-button:hover:not(:disabled) {
     background: var(--accent-dim);
     border-color: var(--accent-border);
-    color: var(--accent);
+}
+
+.tag-add-button:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.tag-add-button:disabled .tag-add-icon {
+    background-color: var(--text-muted);
 }
 
 /* ── Wallet Table ───────────────────────────────────────────── */
@@ -916,6 +954,34 @@ body.dark-mode .config-section.section-disabled .section-toggle-switch {
     background: rgba(255,255,255,0.02);
 }
 
+/* Invalid input state — shared by all table input fields */
+.input-invalid {
+    border-color: #dc3545 !important;
+    box-shadow: 0 0 0 2px rgba(220, 53, 69, 0.22) !important;
+    outline: none !important;
+}
+
+/* Inline error message rendered after each invalid input */
+.input-error-msg {
+    display: block;
+    font-size: 0.73rem;
+    color: #dc3545;
+    margin-top: 3px;
+    line-height: 1.3;
+}
+
+.input-error-msg:empty,
+.input-error-msg[hidden] {
+    display: none;
+}
+
+/* Save button visually blocked by validation errors (no disabled attr — clicks still fire for scroll-to-error) */
+.save-blocked-by-validation {
+    opacity: 0.4 !important;
+    cursor: not-allowed !important;
+    filter: grayscale(0.3);
+}
+
 .wallet-address-input,
 .wallet-comment-input {
     width: 100%;
@@ -956,6 +1022,23 @@ body.dark-mode .config-section.section-disabled .section-toggle-switch {
 
 body.dark-mode .table-delete-icon {
     filter: brightness(0) invert(1);
+}
+
+/* Unified delete-button hover: solid red bg + white icon for all tables.
+   !important is needed because wallet/bitaxe buttons set background via inline style. */
+.wallet-remove-icon:hover,
+.bitaxe-remove-icon:hover,
+.block-reward-remove-icon:hover,
+.ssh-remove-btn:hover {
+    background: rgba(220, 53, 69, 0.82) !important;
+    border-radius: 4px;
+}
+
+.wallet-remove-icon:hover .table-delete-icon,
+.bitaxe-remove-icon:hover .table-delete-icon,
+.block-reward-remove-icon:hover .table-delete-icon,
+.ssh-remove-btn:hover .table-delete-icon {
+    filter: brightness(0) invert(1) !important;
 }
 
 /* ── Bitaxe & Block Reward Table ────────────────────────────── */
@@ -1298,14 +1381,33 @@ body.dark-mode .table-delete-icon {
     font-size: 0.82rem;
 }
 
-.meme-info-row #meme-modal-filename-input {
+.meme-info-row #meme-modal-filename-input,
+.meme-info-row #opsec-modal-filename-input {
     flex: 1 1 auto;
     min-width: 100px;
-    max-width: 300px;
+}
+
+.rename-actions {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+    align-items: center;
+}
+
+.rename-actions .icon-button {
+    margin-left: 0;
 }
 
 .meme-info-row .icon-button {
     flex-shrink: 0;
+    width: 30px;
+    height: 30px;
+    margin-left: 6px;
+}
+
+.meme-info-row .icon-button img {
+    width: 16px;
+    height: 16px;
 }
 
 .modal-footer {
@@ -1366,6 +1468,106 @@ body.dark-mode .table-delete-icon {
     width: 20px;
     height: 20px;
     filter: brightness(0) invert(1);
+}
+
+/* Cancel buttons: neutral bg needs a readable (non-white) icon */
+.icon-button.cancel img {
+    filter: brightness(0) invert(0.35);
+}
+
+body.dark-mode .icon-button.cancel img {
+    filter: brightness(0) invert(0.70);
+}
+
+/* Save button — no changes yet: grey, disabled-looking */
+.icon-button.rename-clean {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-color);
+    cursor: not-allowed;
+    opacity: 0.65;
+    animation: none;
+}
+
+.icon-button.rename-clean img {
+    filter: brightness(0) invert(0.35);
+}
+
+body.dark-mode .icon-button.rename-clean img {
+    filter: brightness(0) invert(0.70);
+}
+
+/* Save button — changes detected: same grey as clean but with orange pulsing dot */
+.icon-button.rename-dirty {
+    position: relative;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-color);
+}
+
+.icon-button.rename-dirty img {
+    filter: brightness(0) invert(0.35);
+}
+
+body.dark-mode .icon-button.rename-dirty img {
+    filter: brightness(0) invert(0.70);
+}
+
+.icon-button.rename-dirty::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 6px rgba(247, 147, 26, 0.6);
+    animation: save-dot-pulse 2s ease-in-out infinite;
+    pointer-events: none;
+}
+
+/* Neutral ghost variant — transparent bg, icon color follows text */
+.icon-button.action {
+    background: transparent;
+    border: 1px solid var(--border-subtle);
+}
+
+.icon-button.action:hover {
+    background: var(--bg-elevated);
+    border-color: var(--border-color);
+    box-shadow: 0 2px 6px rgba(0,0,0,0.10);
+}
+
+.icon-button.action img {
+    filter: brightness(0) invert(0.35);
+}
+
+body.dark-mode .icon-button.action img {
+    filter: brightness(0) invert(0.75);
+}
+
+/* ── Tag add icon (mask-image for theme-aware color) ────────── */
+.tag-add-icon {
+    display: block;
+    width: 18px;
+    height: 18px;
+    background-color: var(--text-secondary);
+    mask-image: url('/static/icons/add.svg');
+    mask-size: contain;
+    mask-repeat: no-repeat;
+    mask-position: center;
+    -webkit-mask-image: url('/static/icons/add.svg');
+    -webkit-mask-size: contain;
+    -webkit-mask-repeat: no-repeat;
+    -webkit-mask-position: center;
+    transition: background-color var(--transition);
+}
+
+.tag-add-button {
+    padding: 6px;
+}
+
+.tag-add-button:hover .tag-add-icon {
+    background-color: var(--accent);
 }
 
 /* ── Upload Area ────────────────────────────────────────────── */
@@ -2298,16 +2500,39 @@ body.dark-mode .wifi-badge-saved {
 }
 .mempool-action-btn:disabled { opacity: 0.5; cursor: default; }
 
+/* Password change Save button — handles orange/grey states via :disabled */
+.pw-save-btn {
+    box-sizing: border-box;
+    background: #F7931A;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    overflow: hidden;
+    white-space: nowrap;
+    transition: background 0.15s;
+}
+.pw-save-btn:disabled {
+    background: var(--bg-elevated);
+    cursor: not-allowed;
+    opacity: 1;
+}
+
 /* Animated "..." on the Check Connection button while loading */
 .mpa-dots {
     display: inline-block;
     overflow: hidden;
-    vertical-align: bottom;
-    width: 0;
-    animation: mpa-dot-expand 1.2s steps(4, end) infinite;
+    vertical-align: baseline;
+    width: 1.4em; /* Fixed — outer span never changes size, so button text never shifts */
 }
 .mpa-dots::before {
     content: '...';
+    display: inline-block;
+    width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    animation: mpa-dot-expand 1.2s steps(4, end) infinite;
 }
 @keyframes mpa-dot-expand {
     0%   { width: 0; }
@@ -3053,6 +3278,295 @@ body.dark-mode .preview-card-dark {
     0%   { opacity: 1; transform: translate(0, 0) scale(1); }
     100% { opacity: 0; transform: translate(var(--cx), var(--cy)) scale(0.3); }
 }
+
+/* ── SSH Access Section ─────────────────────────────────────── */
+.ssh-access-wrapper {
+    background: var(--bg-input);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.ssh-access-hint {
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    margin: 0;
+    line-height: 1.4;
+}
+
+.ssh-access-hint code {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.80rem;
+    background: var(--bg-input, rgba(0,0,0,0.08));
+    color: var(--text-primary);
+    border-radius: 3px;
+    padding: 1px 4px;
+    white-space: nowrap;
+}
+
+.ssh-keys-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.ssh-keys-empty {
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    margin: 0;
+    font-style: italic;
+}
+
+/* SSH key table */
+.ssh-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+}
+
+.ssh-table thead th {
+    padding: 10px 8px;
+    text-align: left;
+    background: var(--bg-card) !important;
+    color: var(--text-secondary) !important;
+    font-weight: 600;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border: 1px solid var(--border-subtle);
+}
+
+.ssh-table td {
+    padding: 8px;
+    border: 1px solid var(--border-subtle);
+    vertical-align: middle;
+}
+
+.ssh-row--pending td:first-child {
+    border-left: 2px solid var(--accent);
+}
+
+.ssh-cell-key {
+    width: 42%;
+}
+
+.ssh-key-type {
+    display: inline-block;
+    font-family: monospace;
+    font-size: 0.72rem;
+    font-weight: 600;
+    background: rgba(247,147,26,0.15);
+    color: var(--accent);
+    padding: 1px 5px;
+    border-radius: 3px;
+    margin-right: 5px;
+}
+
+.ssh-key-tail {
+    font-family: monospace;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+}
+
+.ssh-key-comment {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    margin-left: 8px;
+}
+
+.ssh-pending-badge {
+    display: inline-block;
+    font-size: 0.68rem;
+    background: var(--accent);
+    color: #000;
+    padding: 1px 5px;
+    border-radius: 3px;
+    margin-left: 6px;
+    opacity: 0.85;
+    font-weight: 600;
+}
+
+.ssh-cell-cmd {
+    min-width: 0;
+}
+
+
+.ssh-unsaved-hint {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+.ssh-cell-actions {
+    width: 48px;
+    text-align: center;
+    white-space: nowrap;
+}
+
+.ssh-remove-btn {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    padding: 4px;
+    cursor: pointer;
+    line-height: 0;
+    border-radius: var(--radius-sm);
+    transition: background 0.15s;
+}
+
+
+/* Inline key input (full-width, inside table cell) */
+.ssh-key-input {
+    width: 100%;
+    border: 1px solid var(--border-color) !important;
+    padding: 6px 7px !important;
+    background: var(--bg-input) !important;
+    color: var(--text-primary) !important;
+    font-family: monospace;
+    font-size: 0.8rem;
+    border-radius: var(--radius-sm) !important;
+    box-sizing: border-box;
+}
+
+.ssh-key-input::placeholder {
+    color: var(--text-muted) !important;
+    font-style: italic;
+}
+
+.ssh-key-input:focus {
+    outline: none;
+    border-color: var(--accent) !important;
+    box-shadow: 0 0 0 2px var(--accent-dim);
+    background: var(--bg-elevated) !important;
+}
+
+.ssh-key-input.input-invalid:focus {
+    border-color: #dc3545 !important;
+    box-shadow: 0 0 0 2px rgba(220, 53, 69, 0.22) !important;
+}
+
+.ssh-add-btn {
+    align-self: flex-start;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius-md);
+    padding: 8px 18px;
+    font-size: 0.88rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background var(--transition);
+    white-space: nowrap;
+}
+
+.ssh-add-btn:hover {
+    background: var(--accent-hover);
+}
+
+
+.ssh-connect-cmd {
+    display: inline-block;
+    flex: 1;
+    min-width: 0;
+    font-family: monospace;
+    font-size: 0.8rem;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    background: rgba(255,255,255,0.06);
+    padding: 2px 7px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.ssh-connect-cmd:hover {
+    background: rgba(255,255,255,0.1);
+}
+
+.ssh-connect-cmd.copied::after {
+    content: '';
+    display: inline-block;
+    width: 0.85em;
+    height: 0.85em;
+    margin-left: 4px;
+    background-color: var(--success);
+    -webkit-mask-image: url('/static/icons/check.svg');
+    mask-image: url('/static/icons/check.svg');
+    -webkit-mask-size: contain;
+    mask-size: contain;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    vertical-align: -0.1em;
+}
+
+@media (max-width: 600px) {
+    /* Stack table rows as cards using flex */
+    .ssh-table thead { display: none; }
+
+    .ssh-table,
+    .ssh-table tbody { display: block; width: 100%; }
+
+    .ssh-table tr {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-md);
+        margin-bottom: 8px;
+        padding: 6px 8px;
+        gap: 0;
+    }
+
+    .ssh-table tbody tr:last-child { margin-bottom: 0; }
+
+    .ssh-table td {
+        border-bottom: none;
+        padding: 4px 0;
+    }
+
+    /* Row 1: key input (grows) + delete button (shrinks to fit) */
+    .ssh-cell-key {
+        flex: 1 1 auto;
+        min-width: 0;
+        order: 1;
+        width: auto;
+    }
+
+    .ssh-cell-actions {
+        flex: 0 0 auto;
+        width: auto;
+        order: 2;
+        padding-left: 6px;
+        text-align: center;
+    }
+
+    /* Row 2: command takes full width */
+    .ssh-cell-cmd {
+        flex: 0 0 100%;
+        width: 100%;
+        order: 3;
+        min-width: 0;
+    }
+
+    /* Cmd: wrap naturally */
+    .ssh-connect-cmd { word-break: break-all; white-space: normal; }
+}
+
+.ssh-status-msg {
+    display: block;
+    min-height: 1.2em;
+    font-size: 0.82rem;
+    margin-top: 6px;
+    transition: color 0.2s;
+}
+
+.ssh-status-ok    { color: var(--accent); }
+.ssh-status-error { color: #dc3545; }
 
 /* Flee animations (fast escape after whack) */
 .pepe-mole.flee-bottom { animation: pepe-flee-bottom 0.4s ease-in forwards !important; }

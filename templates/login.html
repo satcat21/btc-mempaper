@@ -38,12 +38,12 @@
         <form id="login-form">
             <div class="form-group">
                 <label class="form-label" for="username">{{ translations.username }}</label>
-                <input type="text" id="username" class="form-input" placeholder="{{ translations.username }}" required>
+                <input type="text" id="username" class="form-input" placeholder="{{ translations.username }}" autocomplete="username" required>
             </div>
             
             <div class="form-group">
                 <label class="form-label" for="password">{{ translations.password }}</label>
-                <input type="password" id="password" class="form-input" placeholder="{{ translations.password }}" required>
+                <input type="password" id="password" class="form-input" placeholder="{{ translations.password }}" maxlength="128" autocomplete="current-password" required>
             </div>
             
             <button type="submit" id="login-button" class="login-button">
@@ -52,7 +52,7 @@
         </form>
         
         <div class="community-message">
-            Made with ❤️ for the Bitcoin community
+            Made with <img src="/static/icons/heart.svg" alt="♥" style="width:13px;height:13px;vertical-align:middle;margin-top:-2px;"> for the Bitcoin community
         </div>
 
     </div>

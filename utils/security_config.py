@@ -22,7 +22,7 @@ class SecurityConfig:
     RATE_LIMIT_WINDOW = 300   # 5 minutes window (300 seconds)
     
     # Session timeout (balanced for usability vs security)
-    SESSION_TIMEOUT = 7200  # 2 hours (7200 seconds) - original timeout
+    SESSION_TIMEOUT = 1800  # 30 minutes (1800 seconds)
     
     # Secret key length (industry standard)
     SECRET_KEY_LENGTH = 64  # 64 bytes = 512 bits

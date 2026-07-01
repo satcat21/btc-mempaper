@@ -127,16 +127,18 @@
                     <div class="meme-info-row" style="align-items: center;">
                         <strong data-i18n="filename">{{ translations.filename }}</strong>
                         <span id="opsec-modal-filename-display" style="display: inline;"></span>
-                        <input type="text" id="opsec-modal-filename-input" class="form-input" style="display: none; flex: 1; margin: 0 10px; padding: 4px 8px;">
-                        <button id="opsec-modal-edit-btn" class="icon-button" onclick="startRenameInOpsecModal()" title="{{ translations.rename_opsec }}" data-i18n-title="rename_opsec" style="padding: 4px 8px; margin-left: 8px;">
-                            <img src="/static/icons/edit.svg" alt="Edit" style="width: 16px; height: 16px;" />
+                        <input type="text" id="opsec-modal-filename-input" class="form-input" style="display: none; flex: 1; margin: 0 8px; padding: 4px 8px;">
+                        <button id="opsec-modal-edit-btn" class="icon-button action" onclick="startRenameInOpsecModal()" title="{{ translations.rename_opsec }}" data-i18n-title="rename_opsec">
+                            <img src="/static/icons/edit.svg" alt="Edit" />
                         </button>
-                        <button id="opsec-modal-save-btn" class="icon-button" onclick="saveRenameInOpsecModal()" title="{{ translations.save }}" data-i18n-title="save" style="display: none; padding: 4px 8px; margin-left: 8px; background: #F7931A;">
-                            <img src="/static/icons/save.svg" alt="Save" style="width: 16px; height: 16px; filter: brightness(0) invert(1);" />
-                        </button>
-                        <button id="opsec-modal-cancel-rename-btn" class="icon-button cancel" onclick="cancelRenameInOpsecModal()" title="{{ translations.cancel }}" data-i18n-title="cancel" style="display: none; padding: 4px 8px; margin-left: 4px;">
-                            <img src="/static/icons/cancel.svg" alt="Cancel" style="width: 16px; height: 16px;" />
-                        </button>
+                        <div id="opsec-rename-actions" class="rename-actions" style="display: none;">
+                            <button id="opsec-modal-save-btn" class="icon-button" onclick="saveRenameInOpsecModal()" title="{{ translations.save }}" data-i18n-title="save">
+                                <img src="/static/icons/save.svg" alt="Save" />
+                            </button>
+                            <button id="opsec-modal-cancel-rename-btn" class="icon-button cancel" onclick="cancelRenameInOpsecModal()" title="{{ translations.cancel }}" data-i18n-title="cancel">
+                                <img src="/static/icons/cancel.svg" alt="Cancel" />
+                            </button>
+                        </div>
                     </div>
                     <div class="meme-info-row">
                         <strong data-i18n="dimensions">{{ translations.dimensions }}</strong> <span id="opsec-modal-dimensions">{{ translations.loading }}</span>
@@ -169,23 +171,25 @@
                     <div class="meme-info-row" style="align-items: center;">
                         <strong data-i18n="filename">{{ translations.filename }}</strong>
                         <span id="meme-modal-filename-display" style="display: inline;"></span>
-                        <input type="text" id="meme-modal-filename-input" class="form-input" style="display: none; flex: 1; margin: 0 10px; padding: 4px 8px;">
-                        <button id="meme-modal-edit-btn" class="icon-button" onclick="startRenameInModal()" title="{{ translations.rename_meme }}" data-i18n-title="rename_meme" style="padding: 4px 8px; margin-left: 8px;">
-                            <img src="/static/icons/edit.svg" alt="Edit" style="width: 16px; height: 16px;" />
+                        <input type="text" id="meme-modal-filename-input" class="form-input" style="display: none; flex: 1; margin: 0 8px; padding: 4px 8px;">
+                        <button id="meme-modal-edit-btn" class="icon-button action" onclick="startRenameInModal()" title="{{ translations.rename_meme }}" data-i18n-title="rename_meme">
+                            <img src="/static/icons/edit.svg" alt="Edit" />
                         </button>
-                        <button id="meme-modal-save-btn" class="icon-button" onclick="saveRenameInModal()" title="{{ translations.save }}" data-i18n-title="save" style="display: none; padding: 4px 8px; margin-left: 8px; background: #F7931A;">
-                            <img src="/static/icons/save.svg" alt="Save" style="width: 16px; height: 16px; filter: brightness(0) invert(1);" />
-                        </button>
-                        <button id="meme-modal-cancel-rename-btn" class="icon-button cancel" onclick="cancelRenameInModal()" title="{{ translations.cancel }}" data-i18n-title="cancel" style="display: none; padding: 4px 8px; margin-left: 4px;">
-                            <img src="/static/icons/cancel.svg" alt="Cancel" style="width: 16px; height: 16px;" />
-                        </button>
+                        <div id="meme-rename-actions" class="rename-actions" style="display: none;">
+                            <button id="meme-modal-save-btn" class="icon-button" onclick="saveRenameInModal()" title="{{ translations.save }}" data-i18n-title="save">
+                                <img src="/static/icons/save.svg" alt="Save" />
+                            </button>
+                            <button id="meme-modal-cancel-rename-btn" class="icon-button cancel" onclick="cancelRenameInModal()" title="{{ translations.cancel }}" data-i18n-title="cancel">
+                                <img src="/static/icons/cancel.svg" alt="Cancel" />
+                            </button>
+                        </div>
                     </div>
                     <div id="meme-modal-rename-warning" style="display: none; font-size: 0.82rem; color: #dc3545; margin-top: 4px; padding-left: 4px;"></div>
                     <div class="meme-info-row" style="align-items: flex-start;">
                         <strong style="margin-top: 4px;" data-i18n="tags">{{ translations.tags }}</strong>
                         <div id="meme-modal-tags-container" style="flex: 1;"></div>
-                        <button id="meme-modal-save-tags-btn" class="icon-button" onclick="saveMemeTags()" title="{{ translations.tags_saved|default('Save Tags') }}" data-i18n-title="tags_saved" style="display: none; padding: 4px 8px; margin-left: 8px; background: #F7931A;">
-                            <img src="/static/icons/save.svg" alt="Save" style="width: 16px; height: 16px; filter: brightness(0) invert(1);" />
+                        <button id="meme-modal-save-tags-btn" class="icon-button" onclick="saveMemeTags()" title="{{ translations.tags_saved|default('Save Tags') }}" data-i18n-title="tags_saved">
+                            <img src="/static/icons/save.svg" alt="Save" />
                         </button>
                     </div>
                     <div class="meme-info-row">

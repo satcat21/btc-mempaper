@@ -23,8 +23,8 @@ function applyLanguage(lang) {
     document.querySelectorAll('[data-i18n-html]').forEach(function(el) {
         var key = el.getAttribute('data-i18n-html');
         var val = t(key);
-        // Prefix the success title with checkmark
-        if (key === 'setup_success_title') val = '\u2705 ' + val;
+        // Prefix the success title with check icon
+        if (key === 'setup_success_title') val = '<span style="display:inline-block;width:1.1em;height:1.1em;background-color:#22c55e;-webkit-mask-image:url(\'/static/icons/check.svg\');mask-image:url(\'/static/icons/check.svg\');-webkit-mask-size:contain;mask-size:contain;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;vertical-align:-0.15em;margin-right:4px"></span>' + val;
         el.innerHTML = val;
     });
 
@@ -39,6 +39,40 @@ function applyLanguage(lang) {
     if (connectBtn && connectBtn.style.display !== 'none') {
         connectBtn.textContent = _adminVisible ? t('setup_connect_admin_button') : t('setup_connect_button');
     }
+}
+
+/* ── Password strength ────────────────────────────────────────────────────── */
+
+var _pwDebounce = null;
+
+function _pwRules(pw) {
+    return [
+        { ok: pw.length >= 16,          label: t('pw_rule_min_length') || 'At least 16 characters' },
+        { ok: /[A-Z]/.test(pw),         label: t('pw_rule_uppercase')  || 'Uppercase letter (A–Z)' },
+        { ok: /[a-z]/.test(pw),         label: t('pw_rule_lowercase')  || 'Lowercase letter (a–z)' },
+        { ok: /[0-9]/.test(pw),         label: t('pw_rule_number')     || 'Number (0–9)' },
+        { ok: /[^A-Za-z0-9]/.test(pw),  label: t('pw_rule_special')    || 'Special character (!@#…)' },
+    ];
+}
+
+function _renderPwStrength(container, pw) {
+    if (!container) return;
+    if (!pw) { container.style.display = 'none'; return; }
+    var rules = _pwRules(pw);
+    container.innerHTML = '';
+    rules.forEach(function(r) {
+        var el = document.createElement('div');
+        el.className = 'pw-rule' + (r.ok ? ' ok' : '');
+        el.textContent = r.label;
+        container.appendChild(el);
+    });
+    container.style.display = 'flex';
+}
+
+function _initPwStrength(input, container) {
+    function update() { _renderPwStrength(container, input.value); }
+    input.addEventListener('input', update);
+    input.addEventListener('blur', function() { if (input.value) update(); });
 }
 
 /* ── Live form validation ─────────────────────────────────────────────────── */
@@ -61,7 +95,7 @@ function validateForm() {
     var valid = true;
 
     if (username.length < 3) valid = false;
-    if (adminPassword.length < 8) valid = false;
+    if (!_pwRules(adminPassword).every(function(r) { return r.ok; })) valid = false;
 
     // Password match check (only show mismatch when confirm field has input)
     if (adminConfirm.length > 0 && adminPassword !== adminConfirm) {
@@ -240,12 +274,12 @@ async function connectWifi() {
             setMessage('Username must be at least 3 characters.', true);
             return;
         }
-        if (adminPassword.length < 8) {
-            setMessage('Admin password must be at least 8 characters.', true);
+        if (!_pwRules(adminPassword).every(function(r) { return r.ok; })) {
+            setMessage(t('password_too_short') || 'Password must be at least 16 characters', true);
             return;
         }
         if (adminPassword !== adminConfirm) {
-            setMessage('Admin passwords do not match.', true);
+            setMessage(t('passwords_do_not_match') || 'Passwords do not match', true);
             return;
         }
 
@@ -411,6 +445,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                         var el = document.getElementById(id);
                         if (el) el.addEventListener('input', validateForm);
                     });
+                    // Wire password strength checklist (debounced)
+                    _initPwStrength(
+                        document.getElementById('admin-password'),
+                        document.getElementById('admin-pw-strength')
+                    );
                 }
             }
         } catch (_) {

@@ -32,7 +32,6 @@ async function checkSessionStatus() {
         
         // Auto-refresh session when 10 minutes left if user is actively editing
         if (sessionInfo.time_remaining <= 600 && isUserActivelyEditing()) {
-            console.log('Auto-refreshing session due to user activity');
             await refreshSession();
         }
         
@@ -236,18 +235,14 @@ function showFailedRefreshMessage() {
  * Initialize session management
  */
 function initializeSessionManager() {
-    console.log('Initializing session manager');
-    
     // Start session monitoring (check every 2 minutes)
     sessionCheckInterval = setInterval(checkSessionStatus, 120000);
-    
+
     // Initial session check after 5 seconds
     setTimeout(checkSessionStatus, 5000);
-    
+
     // Track user activity on form elements
     setTimeout(trackUserActivity, 1000);
-    
-    console.log('Session manager initialized');
 }
 
 /**

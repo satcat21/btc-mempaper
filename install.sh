@@ -30,7 +30,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 VENV_DIR="$SCRIPT_DIR/.venv"
-SERVICE_USER="$(whoami)"
+SERVICE_USER="mempaper"
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -61,9 +61,54 @@ echo "  │     mempaper installer                │"
 echo "  │     Bitcoin Meme Block Clock          │"
 echo "  └──────────────────────────────────────┘"
 echo ""
-echo "  User:    $SERVICE_USER"
+echo "  User:    $SERVICE_USER (service account)"
+echo "  Runner:  $(whoami)"
 echo "  Path:    $SCRIPT_DIR"
 echo ""
+
+# ── Step 0: Create mempaper service user ──────────────────────────────────
+step "Step 0 — Creating mempaper service user"
+
+if id "$SERVICE_USER" >/dev/null 2>&1; then
+    ok "User '$SERVICE_USER' already exists"
+else
+    sudo useradd -r -m -s /bin/bash "$SERVICE_USER"
+    ok "Created service user '$SERVICE_USER'"
+fi
+
+# Ensure required group memberships
+REQUIRED_GROUPS="netdev gpio spi i2c"
+for grp in $REQUIRED_GROUPS; do
+    if getent group "$grp" >/dev/null 2>&1; then
+        if id -nG "$SERVICE_USER" | grep -qw "$grp"; then
+            ok "User '$SERVICE_USER' is already in the '$grp' group"
+        else
+            sudo usermod -aG "$grp" "$SERVICE_USER"
+            ok "Added '$SERVICE_USER' to the '$grp' group"
+        fi
+    else
+        warn "Group '$grp' does not exist — skipping (OK on non-Pi systems)"
+    fi
+done
+
+# Grant ownership of the repo directory to the service user so it can
+# write config/cache files and create the venv
+sudo chown -R "$SERVICE_USER":"$SERVICE_USER" "$SCRIPT_DIR"
+ok "Repo ownership set to '$SERVICE_USER'"
+
+# Pre-create .ssh dirs so ReadWritePaths in the service unit takes effect.
+# ProtectSystem=strict silently ignores ReadWritePaths entries that don't exist
+# at service start, which would prevent SSH key writes from the web GUI.
+SERVICE_HOME=$(getent passwd "$SERVICE_USER" | cut -d: -f6)
+sudo -u "$SERVICE_USER" mkdir -p "$SERVICE_HOME/.ssh"
+sudo chmod 700 "$SERVICE_HOME/.ssh"
+sudo mkdir -p /home/pi/.ssh
+sudo chmod 700 /home/pi/.ssh
+# chown /home/pi/.ssh only if pi user exists
+if id pi >/dev/null 2>&1; then
+    sudo chown pi:pi /home/pi/.ssh
+fi
+ok ".ssh directories created for SSH key management"
 
 # ── Step 1: System packages ────────────────────────────────────────────────
 step "Step 1/9 — Installing system packages"
@@ -87,36 +132,35 @@ ok "python3-venv available"
 step "Step 2/9 — Setting up Python virtual environment"
 
 if [ ! -d "$VENV_DIR" ]; then
-    python3 -m venv "$VENV_DIR"
+    sudo -u "$SERVICE_USER" python3 -m venv "$VENV_DIR"
     ok "Virtual environment created at $VENV_DIR"
 else
     ok "Virtual environment already exists"
 fi
 
-source "$VENV_DIR/bin/activate"
-
-pip install --upgrade pip setuptools wheel -q
+sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" install --upgrade pip setuptools wheel -q
 ok "pip/setuptools upgraded"
 
 # ── Step 3: Python dependencies ────────────────────────────────────────────
 step "Step 3/9 — Installing Python dependencies"
 
 if [ -f requirements.txt ]; then
-    pip install -r requirements.txt
+    sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" install -r requirements.txt
     ok "Python packages installed"
 else
     fail "requirements.txt not found"
 fi
 
 # Raspberry Pi specific packages (GPIO/SPI)
-pip install spidev gpiozero lgpio 2>/dev/null && ok "GPIO/SPI libraries installed" \
+sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" install spidev gpiozero lgpio 2>/dev/null \
+    && ok "GPIO/SPI libraries installed" \
     || warn "GPIO/SPI libraries not available (OK if not running on a Pi)"
 
 # Pillow source rebuild for Pi Zero 1 WH (armv6l)
 ARCH=$(uname -m)
 if [ "$ARCH" = "armv6l" ]; then
     step "Rebuilding Pillow from source (Pi Zero 1 WH — this takes a few minutes)"
-    pip install --force-reinstall --no-cache-dir --no-binary :all: Pillow
+    sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" install --force-reinstall --no-cache-dir --no-binary :all: Pillow
     ok "Pillow rebuilt from source"
 fi
 
@@ -129,7 +173,7 @@ echo ""
 read -rp "  Minify JavaScript? [Y/n]: " MINIFY_CHOICE
 MINIFY_CHOICE="${MINIFY_CHOICE:-Y}"
 if [[ "$MINIFY_CHOICE" =~ ^[Yy]$ ]]; then
-    "$VENV_DIR/bin/python" tools/minify.py
+    sudo -u "$SERVICE_USER" "$VENV_DIR/bin/python" tools/minify.py
     ok "JavaScript minified — served from static/js/dist/"
 else
     ok "Skipping JS minification (app will use unminified source files)"
@@ -138,17 +182,37 @@ fi
 # ── Step 4: Configuration ─────────────────────────────────────────────────
 step "Step 4/9 — Setting up configuration"
 
-mkdir -p config cache
+sudo -u "$SERVICE_USER" mkdir -p config cache
 
 if [ ! -f config/config.json ]; then
     if [ -f config/config.json.example ]; then
-        cp config/config.json.example config/config.json
+        sudo -u "$SERVICE_USER" cp config/config.json.example config/config.json
         ok "Config created from example"
     else
         warn "No config.json.example found — service will create defaults on first start"
     fi
 else
     ok "config.json already exists"
+fi
+
+# Secure config directory and file (contains password hashes and API keys)
+sudo chmod 700 config/
+[ -f config/config.json ] && sudo chmod 600 config/config.json
+ok "Config permissions secured (dir 700, file 600)"
+
+# ── Optional: Create admin account ───────────────────────────────────────────
+echo ""
+echo -e "  ${CYAN}Create an admin account now?${NC}"
+echo "  Recommended for headless installs. You can also do this later via"
+echo "  the web UI (connect to the mempaper hotspot after first start)."
+echo ""
+read -rp "  Create admin account? [y/N]: " ADMIN_CHOICE
+ADMIN_CHOICE="${ADMIN_CHOICE:-N}"
+if [[ "$ADMIN_CHOICE" =~ ^[Yy]$ ]]; then
+    sudo -u "$SERVICE_USER" "$VENV_DIR/bin/python" tools/setup_user.py
+    ok "Admin account created"
+else
+    ok "Skipping — admin account can be created during first-time web onboarding"
 fi
 
 # ── Step 5: E-Ink display configuration ───────────────────────────────────
@@ -179,7 +243,7 @@ done
 
 if [ "$DISPLAY_CHOICE" != "s" ] && [ "$DISPLAY_CHOICE" != "S" ]; then
     echo ""
-    "$VENV_DIR/bin/python" tools/configure_display.py "$DISPLAY_CHOICE"
+    sudo -u "$SERVICE_USER" "$VENV_DIR/bin/python" tools/configure_display.py "$DISPLAY_CHOICE"
     ok "Display configured"
 
     # Enable SPI interface (required for e-ink displays)
@@ -203,7 +267,7 @@ fi
 # ── Step 6: Systemd service ───────────────────────────────────────────────
 step "Step 6/9 — Installing systemd service"
 
-python tools/generate_service_file.py
+sudo -u "$SERVICE_USER" "$VENV_DIR/bin/python" tools/generate_service_file.py
 sudo cp mempaper.service /etc/systemd/system/mempaper.service
 sudo systemctl daemon-reload
 sudo systemctl enable mempaper.service
@@ -214,6 +278,57 @@ step "Step 7/9 — Installing WiFi hotspot permissions"
 
 sudo bash tools/install_wifi_permissions.sh "$SERVICE_USER"
 ok "WiFi permissions installed"
+
+# ── Step 8: Disable WiFi power management ────────────────────────────────
+step "Step 8/9 — Disabling WiFi power management"
+
+NM_CONF_DIR="/etc/NetworkManager/conf.d"
+NM_POWERSAVE_CONF="$NM_CONF_DIR/99-disable-powersave.conf"
+
+if [ -d "$NM_CONF_DIR" ]; then
+    if [ ! -f "$NM_POWERSAVE_CONF" ]; then
+        sudo tee "$NM_POWERSAVE_CONF" > /dev/null << 'EOF'
+[connection]
+wifi.powersave = 2
+EOF
+        sudo systemctl restart NetworkManager 2>/dev/null || true
+        ok "WiFi power management disabled (prevents BCM43430 beacon misses)"
+    else
+        ok "WiFi power management already disabled"
+    fi
+else
+    warn "NetworkManager conf.d not found — skipping powersave configuration"
+fi
+
+# ── Optional: UFW firewall ────────────────────────────────────────────────
+echo ""
+echo -e "  ${CYAN}Configure UFW firewall?${NC}"
+echo "  Allows SSH (port 22) and mempaper (port 5000), blocks everything else."
+echo ""
+read -rp "  Configure UFW? [Y/n]: " UFW_CHOICE
+UFW_CHOICE="${UFW_CHOICE:-Y}"
+if [[ "$UFW_CHOICE" =~ ^[Yy]$ ]]; then
+    sudo apt-get install -y ufw -q
+    sudo ufw default deny incoming
+    sudo ufw default allow outgoing
+    sudo ufw allow ssh
+    sudo ufw allow 5000/tcp
+    sudo ufw --force enable
+    ok "UFW firewall configured (SSH + port 5000 allowed)"
+else
+    ok "Skipping UFW — configure later with: sudo ufw enable"
+fi
+
+# ── Optional: fail2ban ────────────────────────────────────────────────────
+echo ""
+read -rp "  Install fail2ban (SSH brute-force protection)? [Y/n]: " F2B_CHOICE
+F2B_CHOICE="${F2B_CHOICE:-Y}"
+if [[ "$F2B_CHOICE" =~ ^[Yy]$ ]]; then
+    sudo apt-get install -y fail2ban -q
+    ok "fail2ban installed"
+else
+    ok "Skipping fail2ban"
+fi
 
 # ── Done ──────────────────────────────────────────────────────────────────
 NEEDS_REBOOT=false
@@ -237,7 +352,7 @@ fi
 
 echo ""
 echo "  ┌──────────────────────────────────────┐"
-echo "  │     Installation complete!            │"
+echo "  │     Setup complete — ready to start!  │"
 echo "  └──────────────────────────────────────┘"
 echo ""
 if [ -n "$HOTSPOT_SSID" ]; then
@@ -274,29 +389,6 @@ echo ""
 echo "  To prepare for delivery (factory reset):"
 echo "    python tools/delivery_state.py"
 echo ""
-
-# ── Step 8: Disable WiFi power management ────────────────────────────────
-step "Step 8/9 — Disabling WiFi power management"
-
-NM_CONF_DIR="/etc/NetworkManager/conf.d"
-NM_POWERSAVE_CONF="$NM_CONF_DIR/99-disable-powersave.conf"
-
-if [ -d "$NM_CONF_DIR" ]; then
-    if [ ! -f "$NM_POWERSAVE_CONF" ]; then
-        sudo tee "$NM_POWERSAVE_CONF" > /dev/null << 'EOF'
-[connection]
-wifi.powersave = 2
-EOF
-        # Restart NM to pick up the new config; ignore errors (service may
-        # restart itself later, and the setting takes effect on next connect).
-        sudo systemctl restart NetworkManager 2>/dev/null || true
-        ok "WiFi power management disabled (prevents BCM43430 beacon misses)"
-    else
-        ok "WiFi power management already disabled"
-    fi
-else
-    warn "NetworkManager conf.d not found — skipping powersave configuration"
-fi
 
 # ── Step 9: Start service (last — drops SSH when hotspot activates) ───────
 if [ "$NEEDS_REBOOT" = true ]; then

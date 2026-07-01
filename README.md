@@ -264,20 +264,38 @@ These components are the same regardless of which display you choose:
 
 **Raspberry Pi / Linux**
 ```bash
-# Clone the repository
+# Update system packages
 sudo apt update && sudo apt upgrade -y
-git clone https://github.com/satcat21/btc-mempaper.git
-cd btc-mempaper
+
+# Create dedicated service account (isolated from the pi user, not in sudo group)
+sudo useradd -r -m -s /bin/bash mempaper
+sudo usermod -aG netdev mempaper
+
+# Clone repository into mempaper's home directory
+sudo -u mempaper git clone https://github.com/satcat21/btc-mempaper.git /home/mempaper/btc-mempaper
+cd /home/mempaper/btc-mempaper
 
 # Install system dependencies from apt-requirements.txt
 sudo apt install -y $(grep -v '^\s*#' apt-requirements.txt | grep -v '^\s*$')
 
-# Create virtual environment and install Python dependencies
-python3 -m venv .venv
-source .venv/bin/activate
-pip install spidev gpiozero lgpio
-pip install -r requirements.txt
-pip install --force-reinstall --no-cache-dir --no-binary :all: Pillow  # Rebuild from source for native WebP support (slow on Pi Zero, but one-time only)
+# Enable automatic security updates (recommended)
+# Patches critical OS/kernel CVEs in the background without touching mempaper or Python packages
+sudo apt install -y unattended-upgrades
+sudo dpkg-reconfigure -plow unattended-upgrades
+
+# Optional: auto-reboot at 4am when a kernel update requires it
+# Without this, kernel patches are installed but only take effect after a manual reboot
+sudo sh -c 'cat >> /etc/apt/apt.conf.d/50unattended-upgrades <<EOF
+
+Unattended-Upgrade::Automatic-Reboot "true";
+Unattended-Upgrade::Automatic-Reboot-Time "04:00";
+EOF'
+
+# Create virtual environment and install Python dependencies (as mempaper user)
+sudo -u mempaper python3 -m venv .venv
+sudo -u mempaper .venv/bin/pip install spidev gpiozero lgpio
+sudo -u mempaper .venv/bin/pip install -r requirements.txt
+sudo -u mempaper .venv/bin/pip install --force-reinstall --no-cache-dir --no-binary :all: Pillow  # Rebuild from source for native WebP support (slow on Pi Zero, but one-time only)
 ```
 
 **PC / Windows**
@@ -294,20 +312,20 @@ pip install -r requirements.txt
 
 1. **Create Configuration**
    ```bash
-   cp config/config.json.example config/config.json
+   sudo -u mempaper cp config/config.json.example config/config.json
    # Windows: copy config\config.json.example config\config.json
    ```
 
    > **IMPORTANT:** Open `config/config.json` now and review:
    > - `language`, `web_orientation`, `eink_orientation`, `mempool_host`, etc.
    ```bash
-   nano config/config.json
+   sudo -u mempaper nano config/config.json
    ```
 
 2. **Create the first admin user**
 
    ```bash
-   python tools/setup_user.py
+   sudo -u mempaper .venv/bin/python tools/setup_user.py
    ```
 
    You will be prompted for a username and password. The password is hashed with Argon2id and stored in the config -- the plain text is never saved.
@@ -315,7 +333,7 @@ pip install -r requirements.txt
 3. **Start the application**
 
    ```bash
-   python serve.py
+   sudo -u mempaper .venv/bin/python serve.py
    ```
 
    > **Memes:** Upload your own meme images via the web interface (Meme Management section in Settings). Supported formats: PNG, JPG, JPEG, GIF, WebP.
@@ -331,7 +349,7 @@ pip install -r requirements.txt
    **Generate the service file** (automatically configures paths and user):
 
    ```bash
-   python tools/generate_service_file.py
+   sudo -u mempaper .venv/bin/python tools/generate_service_file.py
    cat mempaper.service
    sudo cp mempaper.service /etc/systemd/system/
    sudo systemctl daemon-reload
@@ -355,12 +373,73 @@ pip install -r requirements.txt
   This installs the required permissions for NetworkManager operations used by `mempaper.service`.
 
   ```bash
-  sudo bash tools/install_wifi_permissions.sh
+  sudo bash tools/install_wifi_permissions.sh mempaper
   ```
 
   > If you update mempaper later, run the command again to refresh installed rules.
 
-  This also installs the sudoers rule for **software self-update** from the web UI (allows `systemctl restart mempaper.service` without a password).
+  This installs scoped sudoers rules for all mempaper operations: WiFi management, captive portal, apt package installs, service restart, reboot, and SSH key provisioning for the `pi` user.
+
+6. **Configure SSH Admin Access (for shipped devices)**
+
+  Admins need SSH access for full system maintenance. Each admin generates a key pair **once on their own machine** — the private key never leaves their machine.
+
+  **Admin: generate your key pair (run on your laptop, not the Pi):**
+  ```bash
+  ssh-keygen -t ed25519 -C "your-name-mempaper"
+  cat ~/.ssh/id_ed25519.pub   # copy this output
+  ```
+
+  **On the device:** log into the web UI → General → SSH Access → paste the public key → click **Add Key**.
+
+  This writes the key to both the `mempaper` user (scoped sudo) and the `pi` user (full sudo). Each user gets their own key entry; keys can be removed via the same UI.
+
+  **Connect after delivery:**
+  ```bash
+  ssh mempaper@<pi-ip>   # scoped maintenance (apt-get upgrade, restart, reboot)
+  ssh pi@<pi-ip>         # full root access (apt dist-upgrade, system config, etc.)
+  ```
+
+  > **Note:** SSH must be enabled on the Pi. On Raspberry Pi OS, enable it via `sudo raspi-config` → Interface Options → SSH, or by placing an empty file named `ssh` in the `/boot` partition before first boot.
+
+  **Harden SSH (disable password login, key-only):**
+
+  Edit `/etc/ssh/sshd_config` on the Pi:
+  ```bash
+  sudo nano /etc/ssh/sshd_config
+  ```
+  Set or uncomment these lines:
+  ```
+  PubkeyAuthentication yes
+  PasswordAuthentication no
+  PermitRootLogin no
+  AuthorizedKeysFile .ssh/authorized_keys
+  ```
+  Apply:
+  ```bash
+  sudo systemctl restart ssh
+  ```
+  > **Important:** Verify key login works in a second terminal **before** closing your current session, or you will be locked out.
+
+  **Restrict SSH to LAN only (firewall):**
+
+  The `sshd_config` changes above disable password login but don't restrict *which IPs* can reach SSH. Without an explicit firewall rule, LAN-only access relies entirely on your router not forwarding port 22 — fine for typical home deployment, but fragile. Lock it down on the device itself with `ufw`:
+
+  ```bash
+  sudo apt install ufw -y
+
+  # Allow SSH only from private LAN ranges
+  sudo ufw allow from 10.0.0.0/8 to any port 22
+  sudo ufw allow from 172.16.0.0/12 to any port 22
+  sudo ufw allow from 192.168.0.0/16 to any port 22
+
+  # Allow mempaper web UI from anywhere
+  sudo ufw allow 5000/tcp
+
+  sudo ufw --force enable
+  ```
+
+  > For standard home router setups NAT already blocks inbound SSH, but explicit rules are the safer default.
 
   **Verify installation:**
 
@@ -645,7 +724,7 @@ sudo chmod 0440 /etc/sudoers.d/mempaper-update
 ## DOCUMENTATION
 
 - [Configuration Reference](docs/CONFIG_REFERENCE.md) -- Complete guide to all settings
-- [Security Guide](docs/SECURITY_GUIDE.md) -- Encryption and password protection
+- [Security Guide](docs/SECURITY_GUIDE.md) -- Hardening guide: installation, SSH, UFW, threat model, audit checklist
 - [Self-Hosting Guide](docs/SELF_HOSTING_GUIDE.md) -- Expose mempaper to the internet via Traefik, OIDC login, and TLS
 - [Cache System Documentation](docs/UNIFIED_CACHE_DOCUMENTATION.md) -- Technical cache implementation details
 

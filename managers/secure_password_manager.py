@@ -94,6 +94,9 @@ class SecurePasswordManager:
         if len(password) < 8:
             logger.error("Password must be at least 8 characters")
             return False
+        if len(password) > 128:
+            logger.error("Password must not exceed 128 characters")
+            return False
         password_hash = self.hash_password(password)
         if not password_hash:
             return False
@@ -287,6 +290,10 @@ class SecurePasswordManager:
         Returns:
             bool: True if authentication successful, False otherwise
         """
+        if not password or len(password) > 128:
+            logger.warning("Authentication rejected: password length out of allowed range")
+            return False
+
         users = self._get_users()
         if users:
             # Multi-user format
@@ -424,6 +431,9 @@ class SecurePasswordManager:
         """
         if not new_password or len(new_password) < 8:
             logger.error("Password must be at least 8 characters")
+            return False
+        if len(new_password) > 128:
+            logger.error("Password must not exceed 128 characters")
             return False
         
         # Hash the new password

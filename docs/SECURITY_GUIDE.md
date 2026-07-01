@@ -1,381 +1,290 @@
-# CONFIGURATION SECURITY GUIDE
+# mempaper Security Guide
 
-## OVERVIEW
-
-Lightweight but effective protection for sensitive Bitcoin data (XPUBs, wallet addresses, API keys) on Raspberry Pi Zero W. The solution uses industry-standard encryption while maintaining optimal performance for embedded devices.
+This guide covers the full security posture of a mempaper installation and how to harden it for your deployment scenario.
 
 ---
 
-## SECURITY IMPLEMENTATION
+## Threat model
 
-### Encryption Method
+mempaper is designed for **trusted local networks**. It is not designed to be directly exposed to the internet without additional protection (reverse proxy + authentication layer).
 
-- **Algorithm** -- AES-128 via Fernet (cryptography library)
-- **Key Derivation** -- PBKDF2-HMAC-SHA256 with 100,000 iterations
-- **Device Binding** -- Hardware fingerprint from CPU serial + MAC address
-- **File Separation** -- Public config (plain) + sensitive data (encrypted)
-
-### What Gets Encrypted
-
-```json
-{
-  "wallet_balance_addresses": ["bc1q..."],
-  "wallet_balance_addresses_with_comments": [...],
-  "block_reward_addresses": ["bc1q..."],
-  "admin_password_hash": "...",
-  "secret_key": "..."
-}
-```
-
-### What Stays Public
-
-```json
-{
-  "language": "en",
-  "display_orientation": "vertical",
-  "mempool_host": "192.168.1.100",
-  "btc_price_currency": "USD"
-}
-```
+| Scenario | Risk level | Required hardening |
+|---|---|---|
+| Home LAN, no port forwarding | Low | Strong password, default setup is sufficient |
+| Home LAN with internet exposure via Traefik | Medium | Traefik + OIDC + UFW (see Self-Hosting Guide) |
+| Untrusted network (hotel, office) | High | VPN-only access, no direct port forwarding |
 
 ---
 
-## QUICK SETUP
+## What mempaper protects by default
 
-### 1. Install Dependencies
+| Protection | Detail |
+|---|---|
+| **Password hashing** | Argon2id with memory/iteration hardening |
+| **Login rate limiting** | 10 failed attempts per 5-minute window before lockout |
+| **Session timeout** | 30-minute idle timeout |
+| **Session cookies** | `HttpOnly`, `SameSite=Strict` |
+| **Security headers** | `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `X-XSS-Protection` |
+| **Service isolation** | App runs as dedicated `mempaper` user, not `pi` or `root` |
+| **Scoped sudo** | Only the exact commands mempaper needs; no wildcard `NOPASSWD: ALL` |
+| **Upload limit** | Rejects files larger than 15 MB at the HTTP layer |
+| **Webhook token** | Donation webhook requires a per-installation secret in the URL |
 
-If you installed from `requirements.txt`, these are already installed:
-```bash
-# Already included in requirements.txt
-# cryptography==45.0.6
-# psutil==6.1.0
-```
+---
 
-If installing manually or updating:
-```bash
-pip install cryptography psutil
-```
+## Initial secure installation
 
-### 2. Enable Secure Configuration
+### 1. Run the installer
 
 ```bash
-# Test encryption functionality
-python secure_config_cli.py test
-
-# Check current security status
-python secure_config_cli.py status
-
-# Migrate existing config.json to encrypted format
-python secure_config_cli.py migrate
+# On the Pi, as the 'pi' user (or any sudo-capable user):
+git clone https://github.com/your-org/btc-mempaper.git ~/btc-mempaper
+cd ~/btc-mempaper
+bash install.sh
 ```
 
-### 3. Verify Security
+`install.sh` will:
+- Create the `mempaper` service user
+- Add it to the `gpio`, `spi`, `i2c`, `netdev` groups (required for display and WiFi)
+- Install the Python virtual environment as the `mempaper` user
+- Generate the systemd service file
+
+### 2. Install WiFi and sudo permissions
 
 ```bash
-# Check file permissions
-python secure_config_cli.py permissions
-
-# Create encrypted backup
-python secure_config_cli.py backup
+sudo bash ~/btc-mempaper/tools/install_wifi_permissions.sh mempaper
 ```
 
----
+This installs:
+- Polkit rules for NetworkManager (WiFi onboarding)
+- A scoped `/etc/sudoers.d/mempaper-wifi` with exactly the commands mempaper needs
+- The `/usr/local/bin/mempaper-apt-install` wrapper (restricts package installs to `apt-requirements.txt`)
 
-## FILE STRUCTURE AFTER SETUP
-
-```
-config/
-  config.json              Public configuration (readable)
-  config.secure.json       Encrypted sensitive data (600 permissions)
-  .config_key              Salt for key derivation (600 permissions)
-  config.json.backup       Backup of original config
-  config_backup_*.secure.json  Encrypted backups
-```
-
----
-
-## AUTOMATIC INTEGRATION
-
-The system automatically integrates with existing code:
-
-```python
-# Your existing code continues to work unchanged
-from config_manager import ConfigManager
-
-config_manager = ConfigManager()  # Automatically uses encryption if available
-config = config_manager.config   # Transparent decryption
-
-# Access sensitive data normally
-wallet_addresses = config.get("wallet_balance_addresses", [])
-admin_hash = config.get("admin_password_hash", "")
-```
-
----
-
-## SECURITY FEATURES
-
-### Device Binding
-
-- **CPU Serial** -- Uses Raspberry Pi's unique hardware serial number
-- **MAC Address** -- Network interface hardware identifier
-- **System Info** -- Platform and user ID for additional entropy
-- **Result** -- Config encrypted to specific device, won't decrypt elsewhere
-
-### Key Management
-
-- **No Plain Keys** -- Actual encryption key never stored on disk
-- **Salt Storage** -- Only PBKDF2 salt stored in `.config_key`
-- **Key Derivation** -- Encryption key regenerated from device fingerprint each time
-- **Hardware Security** -- Bound to specific Raspberry Pi hardware
-
-### File Permissions
+### 3. Enable and start the service
 
 ```bash
--rw------- 1 pi pi  config.secure.json    # 600: Owner read/write only
--rw------- 1 pi pi  .config_key           # 600: Owner read/write only
--rw-r--r-- 1 pi pi  config.json          # 644: Public config readable
+sudo systemctl enable mempaper.service
+sudo systemctl start mempaper.service
 ```
 
----
+### 4. First-time admin setup
 
-## PERFORMANCE -- OPTIMIZED FOR PI ZERO W
+Open `http://<pi-ip>:5000` in a browser. You will be prompted to create an admin user. Use a strong, unique password (a password manager is recommended).
 
-### Lightweight Encryption
+### 5. Harden SSH access (recommended)
 
-- **Fast Algorithm** -- AES-128 (faster than AES-256 on ARM)
-- **Minimal Memory** -- ~1MB additional RAM usage
-- **Quick Operations** -- Encrypt/decrypt in <100ms
-- **Low CPU** -- Optimized iteration count for ARM processor
-
-### Smart Caching
-
-- **Device Fingerprint** -- Cached to avoid repeated hardware queries
-- **Encryption Key** -- Derived once and reused during session
-- **Minimal I/O** -- Only reads encrypted file when config changes
-
----
-
-## SECURITY STATUS MONITORING
-
-### Check Security Status
+Generate an SSH key pair on your computer:
 
 ```bash
-python secure_config_cli.py status
+ssh-keygen -t ed25519 -C "mempaper-admin"
 ```
 
-**Example Output:**
-```
-Security Status Check
-
-Encryption Status:
-   Encryption enabled: YES
-   Key file exists: YES
-   Public config exists: YES
-   Device fingerprint: a1b2c3d4e5f6...
-
-File Permissions:
-   config.secure.json: 600 (Encrypted configuration)
-   .config_key: 600 (Encryption key salt)
-   config.json: 644 (Public configuration)
-
-No security recommendations -- configuration is secure.
-```
-
----
-
-## MIGRATION PROCESS
-
-### Step-by-Step Migration
-
-1. **Backup Current Config:**
-   ```bash
-   cp config.json config.json.original
-   ```
-
-2. **Test Migration:**
-   ```bash
-   python secure_config_cli.py test
-   python secure_config_cli.py migrate
-   ```
-
-3. **Verify Application:**
-   ```bash
-   python mempaper_app.py  # Test that app still works
-   ```
-
-4. **Security Check:**
-   ```bash
-   python secure_config_cli.py status
-   ```
-
-5. **Clean Up (optional):**
-   ```bash
-   rm config.json.backup  # Remove backup if everything works
-   ```
-
----
-
-## RECOVERY AND TROUBLESHOOTING
-
-### If Decryption Fails
-
-1. **Check Dependencies:**
-   ```bash
-   pip install cryptography psutil
-   ```
-
-2. **Verify Hardware:**
-   ```bash
-   # Check if CPU serial is readable
-   cat /proc/cpuinfo | grep Serial
-   ```
-
-3. **Recovery from Backup:**
-   ```bash
-   # Restore from original
-   cp config.json.original config.json
-
-   # Or restore from encrypted backup
-   python secure_config_cli.py decrypt
-   ```
-
-### Emergency Access
-
-If encryption fails, the system gracefully falls back to plain config:
-
-```python
-# ConfigManager automatically falls back
-config_manager = ConfigManager(enable_secure_config=False)
-```
-
----
-
-## SECURITY BEST PRACTICES
-
-### Recommended Setup
-
-1. **Enable Encryption** -- `python secure_config_cli.py migrate`
-2. **Set Permissions** -- `python secure_config_cli.py permissions`
-3. **Regular Backups** -- `python secure_config_cli.py backup`
-4. **Monitor Status** -- `python secure_config_cli.py status`
-
-### File System Security
+Add the public key to the Pi via **Settings → General → Advanced → SSH Access**, then disable password-based SSH:
 
 ```bash
-# Set restrictive permissions on entire config directory
-chmod 700 /home/pi/btc-mempaper/
-chown -R pi:pi /home/pi/btc-mempaper/
-
-# Secure SSH access (if using SSH)
-sudo ufw enable
-sudo ufw allow ssh
-sudo ufw allow 5000  # For web interface on local network only
+# /etc/ssh/sshd_config
+PubkeyAuthentication yes
+PasswordAuthentication no
+PermitRootLogin no
 ```
-
-### Network Security
 
 ```bash
-# Web interface only on local network
-python mempaper_app.py --host 192.168.1.100  # Bind to local IP only
-
-# Or use with firewall
-sudo ufw allow from 192.168.1.0/24 to any port 5000
+sudo systemctl restart ssh
 ```
+
+> **Test your SSH key login before closing the current session.**
 
 ---
 
-## PRIVILEGED OPERATIONS — SUDO & NETWORK MANAGEMENT
+## Migrating an existing installation
 
-### What mempaper runs as root
+### From `pi` user to `mempaper` user
 
-The mempaper service runs as the `pi` user (non-root). Certain operations require elevated privileges and are executed via passwordless `sudo`:
+If you installed mempaper before the `mempaper` service user was introduced, re-run the installer:
+
+```bash
+cd ~/btc-mempaper
+bash install.sh
+```
+
+Then reinstall the WiFi permissions for the new user:
+
+```bash
+sudo bash tools/install_wifi_permissions.sh mempaper
+```
+
+Check that the display still works (the `mempaper` user needs the hardware groups):
+
+```bash
+sudo usermod -aG gpio,spi,i2c mempaper
+# Reboot or log out and back in for group changes to take effect
+```
+
+If the Waveshare drivers were not downloaded, run the display configuration tool:
+
+```bash
+sudo -u mempaper .venv/bin/python tools/configure_display.py 1
+```
+
+### Update the donation webhook URL
+
+The webhook endpoint now requires a per-installation secret token in the URL. After updating:
+
+1. Open **Settings → Lightning Donations**
+2. Copy the new webhook URL (it now includes a 64-character token)
+3. Update the webhook URL in your LNbits Pay Link settings
+
+The old `/api/donation-webhook` URL will return HTTP 410 with a message explaining the change.
+
+---
+
+## Firewall configuration (UFW)
+
+For **all deployments**, apply UFW rules to limit surface:
+
+```bash
+# Allow mempaper web UI only from your home network
+sudo ufw allow from 192.168.0.0/16 to any port 5000
+sudo ufw allow from 10.0.0.0/8 to any port 5000
+sudo ufw allow from 172.16.0.0/12 to any port 5000
+
+# Restrict SSH to LAN only
+sudo ufw allow from 192.168.0.0/16 to any port 22
+sudo ufw allow from 10.0.0.0/8 to any port 22
+sudo ufw allow from 172.16.0.0/12 to any port 22
+
+# Block everything else (including internet)
+sudo ufw --force enable
+```
+
+> `192.168.0.0/16` covers all common home router subnets including FritzBox (`192.168.178.x`).
+
+---
+
+## Deployment-specific hardening
+
+### Home LAN (no internet access)
+
+The default installation is sufficient for most home users:
+
+- Router NAT blocks all inbound internet connections
+- `mempaper` auth (Argon2id + rate limiting) is the only barrier needed
+- UFW is optional but recommended for defense in depth
+
+**Checklist:**
+- [x] Strong admin password (minimum 12 characters, unique)
+- [x] No port forwarding for port 5000 or 22 on your router
+- [x] `unattended-upgrades` enabled for automatic OS security patches (see below)
+- [ ] UFW enabled (optional, but good practice)
+
+### Internet-accessible via Traefik + OIDC
+
+See the [Self-Hosting Guide](SELF_HOSTING_GUIDE.md) for full Traefik setup. Additionally:
+
+**Set the `MEMPAPER_BEHIND_PROXY` environment variable** so the session cookie gets the `Secure` flag:
+
+Add to `/etc/systemd/system/mempaper.service` in the `[Service]` section:
+
+```ini
+Environment="MEMPAPER_BEHIND_PROXY=1"
+```
+
+Then reload:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart mempaper.service
+```
+
+Without this flag, the `Secure` cookie attribute is not set, meaning browsers may send the session cookie over HTTP if the Pi is ever accessed directly (bypassing Traefik).
+
+**Restrict port 5000 with UFW:**
+
+If you want all traffic to go through Traefik (not directly to Flask), bind UFW to block direct port 5000 access from outside your LAN, and ensure Traefik is the only way in from the internet.
+
+---
+
+## Automatic OS security updates
+
+Install `unattended-upgrades` to keep the Pi patched automatically:
+
+```bash
+sudo apt install unattended-upgrades
+sudo dpkg-reconfigure --priority=low unattended-upgrades
+```
+
+This installs security updates automatically without manual intervention.
+
+---
+
+## Sudo rules — what mempaper can do as root
+
+The scoped sudoers file (`/etc/sudoers.d/mempaper-wifi`) grants exactly:
 
 | Command | Purpose |
 |---|---|
-| `apt-get update / upgrade` | System package updates during auto-update |
-| `apt-get install` | Installing mempaper runtime dependencies |
-| `systemctl restart mempaper.service` | Restarting the service after a software update |
-| `dnsmasq`, `iptables` | WiFi hotspot / access-point management |
+| `nmcli` | WiFi management via NetworkManager |
+| `iw dev * scan passive` | Read-only WiFi scan during AP mode |
+| `iptables -t nat/filter ...` | Captive-portal redirect rules (setup hotspot) |
+| `dnsmasq --conf-file=/tmp/mempaper-captive-dns.conf ...` | On-demand DNS for captive portal |
+| `kill [PID]` / `pkill -f /tmp/mempaper-captive-dns.conf` | Stop captive-portal dnsmasq |
+| `mount -o remount,rw/ro /` | Remount root for apt on read-only Pi OS |
+| `apt update / upgrade -y / autoremove -y` | System package maintenance (SSH admin use) |
+| `/usr/local/bin/mempaper-apt-install` | Install packages from `apt-requirements.txt` only |
+| `systemctl restart mempaper.service` | Restart after software update |
+| `systemctl reboot` | Reboot via web UI |
+| `mkdir/tee/chmod/cat` on `/home/pi/.ssh/` | SSH key provisioning for admin access |
 
-### Risk assessment
-
-**Auto-update (apt-get as sudo)** is the most significant exposure. `apt-get` runs maintainer scripts as root and can install arbitrary packages. If the git remote or apt mirror were compromised, a malicious update could fully own the device. Mitigations already in place: updates only pull signed git tags from the project repository; apt packages come from official Debian mirrors.
-
-**WiFi / network management** (dnsmasq, iptables) means the web interface can reconfigure local network routing. A compromised or hijacked admin session could redirect traffic on your LAN. This risk is bounded when the device stays on a trusted local network and is not exposed to the internet.
-
-**Recommended sudoers hardening** — restrict to exact command paths rather than a broad `NOPASSWD: ALL` rule:
-
-```bash
-# /etc/sudoers.d/mempaper
-pi ALL=(ALL) NOPASSWD: /usr/bin/apt-get update, \
-                       /usr/bin/apt-get upgrade -y, \
-                       /usr/bin/apt-get install -y *, \
-                       /usr/bin/systemctl restart mempaper.service, \
-                       /usr/sbin/dnsmasq *, \
-                       /usr/sbin/iptables *
-```
-
-To suppress noisy PAM auth entries from the system journal when sudo is called by mempaper:
-
-```bash
-# /etc/sudoers.d/mempaper-nolog
-Defaults:pi !syslog
-```
-
-### Overall threat model
-
-mempaper is designed for a **trusted local network**. The current privilege model is acceptable under these conditions:
-
-- The config interface is **not exposed to the internet** (firewall / bind to local IP)
-- The admin password is **strong and unique**
-- The Raspberry Pi is on a **network you control**
-
-If you expose mempaper to the internet (e.g. via port forwarding), the sudo surface becomes a genuine risk. In that case, prefer access via VPN and do not use the auto-update feature over untrusted networks.
-
-### Audit checklist addition
-
-- [ ] Sudoers rules scoped to specific commands (not `NOPASSWD: ALL`)
-- [ ] Config interface not reachable from outside your local network
-- [ ] Auto-update only enabled when the Pi has a trusted internet connection
+The apt install wrapper (`/usr/local/bin/mempaper-apt-install`) is root-owned and accepts no arguments — it reads the package list from `apt-requirements.txt` and cannot be used to install arbitrary packages even if the web process is compromised.
 
 ---
 
-## ADVANCED SECURITY OPTIONS
+## Sensitive data storage
 
-### Hardware Security Module (Future)
+Sensitive fields are stored in an encrypted configuration file:
 
-For production deployments, consider:
-- **TPM Integration** -- Use Raspberry Pi's TPM chip if available
-- **Hardware RNG** -- Use `/dev/hwrng` for better entropy
-- **Secure Boot** -- Enable secure boot in Raspberry Pi firmware
+| Field | Storage |
+|---|---|
+| `admin_password_hash` (Argon2id) | `config/config.secure.json` (AES-128) |
+| `wallet_balance_addresses` | `config/config.secure.json` |
+| `block_reward_addresses` | `config/config.secure.json` |
+| `secret_key` (Flask session) | `config/.secret_key` (permissions 600) |
+| `donation_webhook_token` | `config/config.json` (not sensitive to encrypt, required for webhook validation) |
 
-### Network Isolation
-
-- **Air-Gapped Setup** -- Use Pi without internet connection
-- **VPN Only** -- Access only through VPN tunnel
-- **Local Network** -- Restrict to local subnet only
+The encryption key is derived from the Pi's hardware fingerprint (CPU serial + MAC address) — the encrypted config cannot be decrypted on a different device.
 
 ---
 
-## SECURITY AUDIT CHECKLIST
+## Security audit checklist
 
-### Configuration Security
+### Installation
 
-- [ ] Encryption enabled for sensitive data
-- [ ] File permissions set to 600 for encrypted files
-- [ ] Device fingerprinting working correctly
-- [ ] Backup strategy implemented
+- [ ] `mempaper` service user created (not running as `pi` or `root`)
+- [ ] `install_wifi_permissions.sh mempaper` run (scoped sudoers, apt wrapper installed)
+- [ ] Admin password set via first-time setup (not the old default `mempaper2025`)
 
-### System Security
+### SSH
 
-- [ ] SSH keys configured (disable password auth)
-- [ ] Firewall enabled and configured
-- [ ] System updates applied
-- [ ] User accounts secured
+- [ ] SSH key uploaded via web UI (Settings → General → Advanced → SSH Access)
+- [ ] `PasswordAuthentication no` in `/etc/ssh/sshd_config`
+- [ ] `PermitRootLogin no` in `/etc/ssh/sshd_config`
+- [ ] SSH restricted to LAN via UFW
 
-### Application Security
+### Network
 
-- [ ] Admin password strong and unique
-- [ ] Session timeout configured
-- [ ] HTTPS enabled for remote access
-- [ ] Rate limiting configured
+- [ ] UFW enabled with LAN-only rules for port 5000 and 22
+- [ ] No port forwarding for port 5000 or 22 on the router (for home users)
+- [ ] If using Traefik: `MEMPAPER_BEHIND_PROXY=1` set in systemd unit
+
+### Application
+
+- [ ] Donation webhook URL updated in LNbits to include the security token
+- [ ] `unattended-upgrades` installed and enabled
+
+---
+
+## Known limitations
+
+- **No CSRF tokens**: SameSite=Strict cookies prevent the vast majority of CSRF attacks, but token-based CSRF protection is not implemented. Risk is low for local network use.
+- **LAN bypass of Traefik/OIDC**: Port 5000 is accessible to any LAN device. The mempaper login is the only barrier for direct LAN access. Use UFW to restrict if needed.
+- **Webhook relay trust**: If you use an event-hub relay, the relay URL should include a high-entropy secret token (32+ random bytes). The Pi trusts all events it receives over the WebSocket.

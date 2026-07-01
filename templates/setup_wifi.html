@@ -72,13 +72,14 @@
             <div class="form-group">
                 <label class="form-label" for="admin-password" data-i18n="setup_admin_password">Password</label>
                 <input type="password" id="admin-password" class="form-input"
-                       data-i18n-placeholder="setup_admin_password_placeholder" placeholder="Min. 8 characters" autocomplete="new-password">
+                       data-i18n-placeholder="setup_admin_password_placeholder" placeholder="Min. 16 characters" maxlength="128" autocomplete="new-password">
+                <div id="admin-pw-strength" class="pw-strength"></div>
             </div>
 
             <div class="form-group">
                 <label class="form-label" for="admin-confirm" data-i18n="setup_admin_confirm">Confirm Password</label>
                 <input type="password" id="admin-confirm" class="form-input"
-                       data-i18n-placeholder="setup_admin_confirm_placeholder" placeholder="Repeat password" autocomplete="new-password">
+                       data-i18n-placeholder="setup_admin_confirm_placeholder" placeholder="Repeat password" maxlength="128" autocomplete="new-password">
                 <div id="admin-confirm-hint" class="form-description" style="display:none; color:var(--danger); font-weight:600;"></div>
                 <div class="form-description" data-i18n="setup_admin_confirm_desc">You can change this later in Settings.</div>
             </div>

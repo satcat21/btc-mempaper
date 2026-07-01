@@ -28,3 +28,6 @@ iptables
 
 # GPIO (Raspberry Pi)
 python3-gpiozero
+
+# Optional: Tor daemon for anonymous downloads
+tor

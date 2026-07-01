@@ -44,14 +44,38 @@ def generate_service_file():
     group = get_current_group()
     project_path = get_project_root()
     venv_path = os.path.join(project_path, ".venv")
-    
+
     # Check if .venv exists
     if not os.path.exists(venv_path):
         print(f"⚠️  Warning: Virtual environment not found at {venv_path}")
         print("   Please create the virtual environment first:")
         print(f"   python3 -m venv {venv_path}")
         print()
-    
+
+    # Home dir of the service user — used for ReadWritePaths so the SSH-key
+    # management GUI can write to ~/.ssh/authorized_keys.  ProtectSystem=strict
+    # creates a read-only mount namespace; any path that must be writable (even
+    # via sudo'd child processes, which inherit the namespace) needs an entry here.
+    user_home = os.path.expanduser('~')
+    service_user_ssh = os.path.join(user_home, '.ssh')
+
+    # Pi user authorized_keys — the GUI also writes here via 'sudo tee' so that
+    # the SSH admin key works regardless of which shell user is used to log in.
+    pi_ssh = '/home/pi/.ssh'
+
+    # crontab writes temp files to /var/spool/cron when scheduling meme sync.
+    cron_spool = '/var/spool/cron'
+
+    # Build ReadWritePaths lines; deduplicate in case service runs as pi.
+    rw_paths = [project_path]
+    if service_user_ssh not in rw_paths:
+        rw_paths.append(service_user_ssh)
+    if pi_ssh not in rw_paths and pi_ssh != service_user_ssh:
+        rw_paths.append(pi_ssh)
+    if cron_spool not in rw_paths:
+        rw_paths.append(cron_spool)
+    rw_lines = '\n'.join(f'ReadWritePaths={p}' for p in rw_paths)
+
     service_content = f"""# /etc/systemd/system/mempaper.service
 # Generated automatically by tools/generate_service_file.py
 
@@ -88,7 +112,7 @@ TimeoutStopSec=10
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=false
-ReadWritePaths={project_path}
+{rw_lines}
 
 # Logging
 StandardOutput=journal

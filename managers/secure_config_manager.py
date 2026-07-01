@@ -102,14 +102,12 @@ class SecureConfigManager:
             fingerprint_data.extend([
                 platform.system(),
                 platform.machine(),
-                str(os.getuid() if hasattr(os, 'getuid') else 'windows')
             ])
         except (AttributeError, OSError):
             # Fallback if platform calls fail
             fingerprint_data.extend([
                 'unknown_system',
-                'unknown_machine', 
-                'unknown_user'
+                'unknown_machine',
             ])
         
         # Ensure we have at least some fingerprint data

@@ -28,7 +28,7 @@ import requests
 requests.utils.default_user_agent = lambda *_args, **_kw: "python-requests"
 from datetime import datetime
 from werkzeug.utils import secure_filename
-from flask import Flask, send_file, render_template, request, jsonify, session, redirect, url_for
+from flask import Flask, send_file, render_template, request, jsonify, session, redirect, url_for, make_response
 from flask_socketio import SocketIO, join_room, leave_room
 from flask_compress import Compress
 
@@ -118,11 +118,17 @@ class MempaperApp:
         Compress(self.app)
         self.app.secret_key = SecurityConfig.get_secret_key_from_env_or_generate()  # For session management
         
-        # Configure session settings for longer-lived sessions
+        # Configure session settings
         self.app.config['PERMANENT_SESSION_LIFETIME'] = SecurityConfig.SESSION_TIMEOUT
-        self.app.config['SESSION_COOKIE_SECURE'] = False  # Set to True for HTTPS
+        # Set Secure flag only when behind a TLS-terminating proxy (e.g. Traefik).
+        # Direct LAN access on HTTP (port 5000) requires Secure=False or the cookie is never sent.
+        # Set env MEMPAPER_BEHIND_PROXY=1 in the systemd unit when using Traefik.
+        behind_proxy = os.getenv('MEMPAPER_BEHIND_PROXY', '').lower() in ('1', 'true', 'yes')
+        self.app.config['SESSION_COOKIE_SECURE'] = behind_proxy
         self.app.config['SESSION_COOKIE_HTTPONLY'] = True
-        self.app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+        self.app.config['SESSION_COOKIE_SAMESITE'] = 'Strict'
+        # Enforce upload size limit — rejects oversized requests before they hit the handler
+        self.app.config['MAX_CONTENT_LENGTH'] = 15 * 1024 * 1024  # 15 MB
         
         # TEMPORARY: Disable session cookie domain to fix gevent issues
         self.app.config['SESSION_COOKIE_DOMAIN'] = None
@@ -183,8 +189,6 @@ class MempaperApp:
                 'transports': ['websocket', 'polling']  # Explicitly allow websocket and polling
             }
             print(f"🚀 SocketIO async mode: {async_mode} ({'production' if is_production else 'development'})")
-            # if is_pi_zero:
-            #     print("🍓 Raspberry Pi Zero detected - using optimized settings")
             
             # Suppress Engine.IO transport warnings at Python logging level
             logging.getLogger('engineio').setLevel(logging.CRITICAL)
@@ -234,6 +238,16 @@ class MempaperApp:
         
         # Summary: Cache loading complete
         print("💾 Secure caches loaded")
+
+        # Ensure a per-installation donation webhook secret exists; generate once and persist.
+        if not self.config_manager.get('donation_webhook_token'):
+            import secrets as _secrets
+            self.config_manager.set('donation_webhook_token', _secrets.token_hex(32))
+            self.config_manager.save_config()
+            print("✅ Generated donation webhook token")
+
+        # Sync meme-sync crontab entry with current config (no-op when disabled)
+        self._apply_meme_sync_crontab()
         
         # Note: Cache sync and monitoring start moved to _run_background_startup for faster website availability
         print("⚙️ Block monitor initialized (sync and monitoring will start in background)")
@@ -1389,16 +1403,16 @@ class MempaperApp:
 
                         # Progressive backoff: probe quickly at first (WiFi blip),
                         # then slow down (device moved, user needs stable hotspot).
-                        # 0-2 failures: 90s, 3-5: 180s, 6-9: 300s, 10+: 600s
+                        # 0-2 failures: 90s, 3-5: 180s, 6+: 300s
+                        # Capped at 300s so recovery after a router reboot is always
+                        # detected within 5 minutes of the network coming back.
                         failures = self._wifi_setup_probe_failures
                         if failures <= 2:
                             probe_interval = 90
                         elif failures <= 5:
                             probe_interval = 180
-                        elif failures <= 9:
-                            probe_interval = 300
                         else:
-                            probe_interval = 600
+                            probe_interval = 300
 
                         if pending or (
                             has_saved_networks
@@ -1413,25 +1427,29 @@ class MempaperApp:
                             time.sleep(3)
                             self._nmcli(['device', 'wifi', 'rescan', 'ifname', interface], timeout=10)
                             time.sleep(8)
-                            reconnect = self._nmcli(['device', 'connect', interface], timeout=40)
-                            if reconnect is not None and reconnect.returncode == 0:
-                                for _ in range(5):
-                                    time.sleep(3)
-                                    probe_status = self._current_wifi_status(interface)
-                                    if probe_status.get('connected'):
-                                        print('✅ Wi-Fi recovered during setup mode probe; disabling setup hotspot')
-                                        self._bring_down_setup_hotspot()
-                                        print('⏳ Waiting 15s for DHCP/DNS to settle…')
-                                        time.sleep(15)
-                                        time.sleep(max(5, poll_seconds))
-                                        break
-                                else:
-                                    self._wifi_setup_probe_failures += 1
-                                    self._bring_up_setup_hotspot(interface)
-                                continue
+                            # Generous timeout: Pi Zero + slow post-reboot DHCP can take 60s+.
+                            reconnect = self._nmcli(['device', 'connect', interface], timeout=90)
+                            # On modern NM, returncode=0 means fully connected (DHCP done).
+                            # If we hit our Python timeout (None) NM may still be finishing
+                            # up in the background — poll for up to 30s before giving up.
+                            poll_attempts = 1 if (reconnect is not None and reconnect.returncode == 0) else 10
+                            recovered = False
+                            for _ in range(poll_attempts):
+                                time.sleep(3)
+                                probe_status = self._current_wifi_status(interface)
+                                if probe_status.get('connected'):
+                                    recovered = True
+                                    break
+                            if recovered:
+                                print('✅ Wi-Fi recovered during setup mode probe; disabling setup hotspot')
+                                self._bring_down_setup_hotspot()
+                                print('⏳ Waiting 15s for DHCP/DNS to settle…')
+                                time.sleep(15)
+                                time.sleep(max(5, poll_seconds))
                             else:
                                 self._wifi_setup_probe_failures += 1
                                 self._bring_up_setup_hotspot(interface)
+                            continue
 
                         time.sleep(max(5, poll_seconds))
                         continue
@@ -3646,12 +3664,23 @@ class MempaperApp:
             self.config = new_config
             print("📝 Configuration updated (no image refresh required)")
         
-        # Check for block reward address changes (independent of image refresh)
-        self._check_block_reward_address_changes(old_config, new_config)
+        # Check for block reward address changes (independent of image refresh).
+        # Runs in a background thread: scanning new addresses involves mempool API
+        # calls that can take many seconds per address and must not block the HTTP response.
+        threading.Thread(
+            target=self._check_block_reward_address_changes,
+            args=(old_config, new_config),
+            daemon=True,
+        ).start()
 
         # Reschedule auto-update timer in case the schedule settings changed.
         if hasattr(self, '_reschedule_auto_update'):
             self._reschedule_auto_update()
+
+        # Update meme sync crontab if any of its settings changed.
+        _meme_sync_keys = {'meme_sync_enabled', 'meme_sync_day', 'meme_sync_hour', 'tor_meme_downloads'}
+        if any(old_config.get(k) != new_config.get(k) for k in _meme_sync_keys):
+            self._apply_meme_sync_crontab(new_config)
     
     def _check_block_reward_address_changes(self, old_config, new_config):
         """Check if block reward addresses have changed and update cache accordingly."""
@@ -3762,6 +3791,57 @@ class MempaperApp:
             print(f"❌ Error regenerating image with cached meme: {e}")
             # Fall back to normal generation
             self._generate_new_image(self.current_block_height, self.current_block_hash, skip_epaper=False, use_new_meme=False)
+
+    def _apply_meme_sync_crontab(self, config=None):
+        """Write or remove the mempaper meme-sync cron entry for the current (mempaper) user.
+
+        Uses the standard crontab command — no sudo needed because the app runs
+        as the mempaper user and manages only its own crontab.
+        The entry is tagged with a comment marker so it can be found on updates.
+        """
+        if config is None:
+            config = self.config
+
+        MARKER = '# mempaper-meme-sync'
+        enabled = config.get('meme_sync_enabled', False)
+        day = str(config.get('meme_sync_day', '4'))
+        hour = str(config.get('meme_sync_hour', '13'))
+        tor = config.get('tor_meme_downloads', False)
+
+        # Read existing crontab (empty crontab returns exit 1 on some systems)
+        result = subprocess.run(['crontab', '-l'], capture_output=True, text=True)
+        existing = result.stdout if result.returncode == 0 else ''
+
+        # Strip any previous mempaper meme-sync line
+        lines = [ln for ln in existing.splitlines() if MARKER not in ln]
+
+        if enabled:
+            project_dir = os.path.dirname(os.path.abspath(__file__))
+            venv_python = os.path.join(project_dir, '.venv', 'bin', 'python')
+            python = venv_python if os.path.exists(venv_python) else 'python3'
+            script = os.path.join(project_dir, 'tools', 'download_all_memes.py')
+            log_dir = os.path.join(project_dir, 'logs')
+            os.makedirs(log_dir, exist_ok=True)
+            log_file = os.path.join(log_dir, 'meme-sync.log')
+            tor_flag = ' --tor' if tor else ''
+            lines.append(
+                f'0 {hour} * * {day} '
+                f'cd {project_dir} && {python} {script} --update{tor_flag} '
+                f'>> {log_file} 2>&1 {MARKER}'
+            )
+
+        new_crontab = '\n'.join(lines)
+        if new_crontab and not new_crontab.endswith('\n'):
+            new_crontab += '\n'
+
+        proc = subprocess.run(['crontab', '-'], input=new_crontab, text=True, capture_output=True)
+        if proc.returncode != 0:
+            print(f'⚠️ Failed to update meme sync crontab: {proc.stderr.strip()}')
+        else:
+            if enabled:
+                print(f'📅 Meme sync scheduled: 0 {hour} * * {day}{"  (Tor)" if tor else ""}')
+            else:
+                print('📅 Meme sync crontab entry removed')
 
     def _refresh_eink_for_opsec_toggle(self, opsec_enabled):
         """
@@ -4938,6 +5018,11 @@ class MempaperApp:
             except Exception:
                 pass
 
+            # Security headers
+            response.headers.setdefault('X-Frame-Options', 'DENY')
+            response.headers.setdefault('X-Content-Type-Options', 'nosniff')
+            response.headers.setdefault('X-XSS-Protection', '1; mode=block')
+
             return response
 
         # Cache static icons (SVG, etc.) for 7 days — they never change at runtime
@@ -5339,7 +5424,6 @@ class MempaperApp:
                                  translations=current_translations,
                                  display_icon=display_icon,
                                  e_ink_enabled=self.e_ink_enabled,
-                                 # This orientation determines the CSS class for layout
                                  orientation=orientation,
                                  block_height=block_height,
                                  is_authenticated=is_authenticated,
@@ -5403,7 +5487,10 @@ class MempaperApp:
                 
                 username = data.get('username', '')
                 password = data.get('password', '')
-                
+
+                if len(password) > 128:
+                    return jsonify({'success': False, 'message': 'Password too long (max 128 characters)'}), 400
+
                 # Try to authenticate
                 try:
                     auth_result = self.auth_manager.login(username, password)
@@ -5510,6 +5597,8 @@ class MempaperApp:
                 password = data.get('password', '')
                 if len(password) < 8:
                     return jsonify({'success': False, 'message': 'Password must be at least 8 characters'}), 400
+                if len(password) > 128:
+                    return jsonify({'success': False, 'message': 'Password too long (max 128 characters)'}), 400
                 users = self.auth_manager.password_manager.list_users()
                 if username not in users:
                     return jsonify({'success': False, 'message': 'User not found'}), 404
@@ -5560,19 +5649,27 @@ class MempaperApp:
                 return jsonify({'success': False, 'message': str(e)}), 400
 
         # Lightning Donation Webhook
-        @self.app.route('/api/donation-webhook', methods=['POST'])
-        def donation_webhook():
-            """Receive LNbits payment webhook and broadcast donation to connected clients."""
-            # force=True parses JSON regardless of Content-Type header,
-            # which LNbits sometimes omits.
+        @self.app.route('/api/donation-webhook/<webhook_token>', methods=['POST'])
+        def donation_webhook(webhook_token):
+            """Receive LNbits payment webhook and broadcast donation to connected clients.
+            The URL must include the per-installation secret token (shown in Settings > Lightning Donations).
+            """
+            expected = self.config_manager.get('donation_webhook_token', '')
+            if not expected or webhook_token != expected:
+                return jsonify({'success': False}), 403
+            # force=True parses JSON regardless of Content-Type header, which LNbits sometimes omits.
             data = request.get_json(force=True, silent=True) or {}
-
-            # Debug: log raw body + parsed fields so misconfigured LNbits is easy to diagnose
-            raw_body = request.get_data(as_text=True)
-            print(f"⚡ Donation webhook received — body: {raw_body[:500]!r}")
-
             self._process_donation_payload(data)
             return jsonify({'success': True}), 200
+
+        @self.app.route('/api/donation-webhook', methods=['POST'])
+        def donation_webhook_legacy():
+            """Reject calls to the old tokenless webhook URL with a helpful message."""
+            return jsonify({
+                'success': False,
+                'message': 'Webhook URL must include the security token. '
+                           'Update your LNbits webhook URL — open Settings > Lightning Donations to copy the correct URL.'
+            }), 410
 
         @self.app.route('/api/mempool/validate', methods=['GET'])
         @require_auth(self.auth_manager)
@@ -7547,6 +7644,179 @@ class MempaperApp:
             except Exception as e:
                 return jsonify({'success': False, 'error': str(e)}), 500
 
+        # ── SSH Key Management API ─────────────────────────────────────────────
+        # Marker lines that delimit the mempaper-managed section inside authorized_keys.
+        # All lines outside this block are never touched by the app.
+        _SSH_BLOCK_START = '# BEGIN mempaper-managed'
+        _SSH_BLOCK_END = '# END mempaper-managed'
+
+        def _ssh_block_keys(content: str) -> tuple[list, bool]:
+            """Return (keys_in_block, block_found).
+
+            If no block exists yet (first use / legacy file) block_found is False
+            and we return all non-comment keys so the UI shows existing keys.
+            """
+            has_block = _SSH_BLOCK_START in content
+            in_block = False
+            all_keys: list = []
+            block_keys: list = []
+            for line in content.splitlines():
+                s = line.strip()
+                if s == _SSH_BLOCK_START:
+                    in_block = True
+                    continue
+                if s == _SSH_BLOCK_END:
+                    in_block = False
+                    continue
+                if s and not s.startswith('#'):
+                    all_keys.append(s)
+                    if in_block:
+                        block_keys.append(s)
+            return (block_keys if has_block else all_keys), has_block
+
+        def _update_ssh_block(existing_content: str, valid_keys: list) -> str:
+            """Splice the mempaper block into authorized_keys content.
+
+            Lines outside the block are preserved verbatim. Only the block
+            itself is replaced, so pre-existing manually-added keys are safe.
+            """
+            lines = existing_content.splitlines(keepends=True)
+            kept: list = []
+            in_block = False
+            for line in lines:
+                s = line.strip()
+                if s == _SSH_BLOCK_START:
+                    in_block = True
+                    continue
+                if s == _SSH_BLOCK_END:
+                    in_block = False
+                    continue
+                if not in_block:
+                    kept.append(line)
+
+            result = ''.join(kept).rstrip('\n')
+            if result:
+                result += '\n'
+            if valid_keys:
+                if result:
+                    result += '\n'
+                result += _SSH_BLOCK_START + '\n'
+                result += ''.join(k + '\n' for k in valid_keys)
+                result += _SSH_BLOCK_END + '\n'
+            return result
+
+        @self.app.route('/api/system/ssh-keys', methods=['GET'])
+        @require_auth(self.auth_manager)
+        def get_ssh_keys():
+            """Return mempaper-managed SSH public keys from the service user's authorized_keys."""
+            try:
+                home_dir = os.path.expanduser('~')
+                auth_keys_path = os.path.join(home_dir, '.ssh', 'authorized_keys')
+                keys: list = []
+                if os.path.exists(auth_keys_path):
+                    with open(auth_keys_path, encoding='utf-8') as f:
+                        content = f.read()
+                    keys, _ = _ssh_block_keys(content)
+                return jsonify({'success': True, 'keys': keys})
+            except Exception as e:
+                return jsonify({'success': False, 'error': str(e)}), 500
+
+        @self.app.route('/api/system/ssh-keys', methods=['POST'])
+        @require_auth(self.auth_manager)
+        def save_ssh_keys():
+            """Update only the mempaper-managed block in both authorized_keys files."""
+            import re as _re
+            SSH_KEY_RE = _re.compile(
+                r'^(ssh-ed25519|ssh-rsa|ssh-dss|ecdsa-sha2-nistp(?:256|384|521)'
+                r'|sk-ssh-ed25519@openssh\.com|sk-ecdsa-sha2-nistp256@openssh\.com)'
+                r'\s+[A-Za-z0-9+/]+=*(\s+\S.*)?$'
+            )
+            try:
+                data = request.json or {}
+                raw_keys = data.get('keys', [])
+
+                valid_keys = []
+                for key in raw_keys:
+                    key = key.strip()
+                    if not key or key.startswith('#'):
+                        continue
+                    if not SSH_KEY_RE.match(key):
+                        return jsonify({
+                            'success': False,
+                            'error': f'Invalid SSH public key: {key[:50]}...'
+                        }), 400
+                    valid_keys.append(key)
+
+                # ── Service user's own authorized_keys (no sudo needed) ───────
+                # Wrapped non-fatally: ProtectSystem=strict in the service unit
+                # makes the service user's home dir read-only when running under
+                # systemd.  The pi-user sudo block below is what actually grants
+                # SSH access; this write is best-effort.
+                auth_keys_path = None
+                try:
+                    home_dir = os.path.expanduser('~')
+                    ssh_dir = os.path.join(home_dir, '.ssh')
+                    os.makedirs(ssh_dir, mode=0o700, exist_ok=True)
+                    auth_keys_path = os.path.join(ssh_dir, 'authorized_keys')
+                    existing = ''
+                    if os.path.exists(auth_keys_path):
+                        with open(auth_keys_path, encoding='utf-8') as f:
+                            existing = f.read()
+                    new_content = _update_ssh_block(existing, valid_keys)
+                    with open(auth_keys_path, 'w', encoding='utf-8') as f:
+                        f.write(new_content)
+                    os.chmod(auth_keys_path, 0o600)
+                except OSError as own_err:
+                    logger.warning(f'SSH: could not update service-user authorized_keys: {own_err}')
+
+                # ── pi user's authorized_keys (via sudo, preserve non-mempaper keys) ──
+                pi_auth_keys = '/home/pi/.ssh/authorized_keys'
+                if auth_keys_path != pi_auth_keys:
+                    try:
+                        subprocess.run(
+                            ['sudo', 'mkdir', '-p', '/home/pi/.ssh'],
+                            check=True, capture_output=True, timeout=10
+                        )
+                        # Read current content first so non-mempaper keys are preserved
+                        cat_result = subprocess.run(
+                            ['sudo', 'cat', pi_auth_keys],
+                            capture_output=True, text=True, timeout=10
+                        )
+                        pi_existing = cat_result.stdout if cat_result.returncode == 0 else ''
+                        pi_new = _update_ssh_block(pi_existing, valid_keys)
+                        result = subprocess.run(
+                            ['sudo', 'tee', pi_auth_keys],
+                            input=pi_new, text=True, capture_output=True, timeout=10
+                        )
+                        if result.returncode == 0:
+                            subprocess.run(['sudo', 'chmod', '700', '/home/pi/.ssh'],
+                                           capture_output=True, timeout=10)
+                            subprocess.run(['sudo', 'chmod', '600', pi_auth_keys],
+                                           capture_output=True, timeout=10)
+                        else:
+                            logger.warning('SSH: failed to write /home/pi/.ssh/authorized_keys')
+                    except Exception as pi_err:
+                        logger.warning(f'SSH: could not update pi authorized_keys: {pi_err}')
+
+                return jsonify({'success': True, 'key_count': len(valid_keys)})
+            except Exception as e:
+                return jsonify({'success': False, 'error': str(e)}), 500
+
+        @self.app.route('/api/system/lan-ip', methods=['GET'])
+        @require_auth(self.auth_manager)
+        def get_lan_ip():
+            """Return the device's LAN IP address."""
+            import socket as _socket
+            try:
+                s = _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM)
+                s.settimeout(2)
+                s.connect(('8.8.8.8', 80))
+                ip = s.getsockname()[0]
+                s.close()
+                return jsonify({'success': True, 'ip': ip})
+            except Exception as e:
+                return jsonify({'success': False, 'error': str(e)}), 500
+
         @self.app.route('/api/update/current', methods=['GET'])
         @require_auth(self.auth_manager)
         def get_current_version():
@@ -7698,6 +7968,22 @@ class MempaperApp:
                 print(f"Error fetching releases: {e}")
                 return jsonify({'success': False, 'message': f'Failed to fetch releases: {e}'}), 502
 
+        def _meme_download_cmd(project_dir: str, extra_args: list | None = None) -> list:
+            """Build the subprocess command for tools/download_all_memes.py.
+
+            Automatically appends --tor when tor_meme_downloads is enabled in config.
+            extra_args (e.g. ['--update'] or ['--status']) are appended after the tor flag.
+            """
+            venv_python = os.path.join(project_dir, '.venv', 'bin', 'python')
+            python = venv_python if os.path.exists(venv_python) else 'python3'
+            script = os.path.join(project_dir, 'tools', 'download_all_memes.py')
+            cmd = [python, script]
+            if self.config_manager.get('tor_meme_downloads', False):
+                cmd.append('--tor')
+            if extra_args:
+                cmd.extend(extra_args)
+            return cmd
+
         @self.app.route('/api/update/install', methods=['POST'])
         @require_auth(self.auth_manager)
         def install_update():
@@ -7798,7 +8084,7 @@ class MempaperApp:
                                 ]
                             if apt_pkgs:
                                 proc = subprocess.Popen(
-                                    ['sudo', 'apt-get', 'install', '-y', '--no-upgrade'] + apt_pkgs,
+                                    ['sudo', '/usr/local/bin/mempaper-apt-install'],
                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                     text=True, bufsize=1
                                 )
@@ -8331,26 +8617,7 @@ class MempaperApp:
                 project_dir = os.path.dirname(os.path.abspath(__file__))
                 needs_restart = False
 
-                # Phase 1: System packages (apt update + upgrade) — always runs
-                try:
-                    print("🔄 Auto-update: running apt update && apt upgrade...")
-                    subprocess.run(['sudo', 'apt-get', 'update'], capture_output=True, timeout=300)
-                    subprocess.run(['sudo', 'apt-get', 'upgrade', '-y'], capture_output=True, timeout=600)
-
-                    apt_req_file = os.path.join(project_dir, 'apt-requirements.txt')
-                    if os.path.exists(apt_req_file):
-                        with open(apt_req_file) as f:
-                            apt_pkgs = [l.strip() for l in f if l.strip() and not l.strip().startswith('#')]
-                        if apt_pkgs:
-                            subprocess.run(
-                                ['sudo', 'apt-get', 'install', '-y', '--no-upgrade'] + apt_pkgs,
-                                capture_output=True, timeout=300
-                            )
-                    print("✅ Auto-update: system packages done")
-                except Exception as e:
-                    print(f"⚠️ Auto-update: apt failed: {e}")
-
-                # Phase 2: mempaper software update — only if a newer release exists
+                # mempaper software update — only if a newer release exists
                 try:
                     subprocess.run(
                         ['git', 'fetch', '--tags', '--force'],

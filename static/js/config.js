@@ -1,3 +1,93 @@
+// ── Form-level input validation ───────────────────────────────
+// Shared regexes
+const _RE_IPV4        = /^\d{1,3}(\.\d{1,3}){3}$/;
+const _RE_SSH_KEY     = /^(ssh-ed25519|ssh-rsa|ssh-dss|ecdsa-sha2-nistp(?:256|384|521)|sk-ssh-ed25519@openssh\.com|sk-ecdsa-sha2-nistp256@openssh\.com)\s+[A-Za-z0-9+/]+=*(\s+\S.*)?$/;
+// Bitcoin address (P2PKH, P2SH, bech32/taproot) OR extended pub key (xpub/zpub/ypub/…)
+const _RE_BTC_OR_XPUB = /^([13][a-km-zA-HJ-NP-Z1-9]{25,34}|bc1[a-z0-9]{6,87}|[a-zA-Z]{1,4}pub[a-km-zA-HJ-NP-Z1-9]{100,120})$/;
+// Block-reward monitoring accepts plain addresses only (no xpub/zpub)
+const _RE_BTC_ADDR    = /^([13][a-km-zA-HJ-NP-Z1-9]{25,34}|bc1[a-z0-9]{6,87})$/;
+const _RE_HEX_COLOR   = /^#[0-9A-Fa-f]{6}$/;
+
+// Set of currently-invalid input elements (auto-cleaned when element leaves DOM)
+const _invalidInputs = new Set();
+
+function _validationMsg(regex) {
+    const t = window.translations || {};
+    if (regex === _RE_SSH_KEY)     return t.validation_ssh_key     || 'Invalid SSH public key (expected: ssh-ed25519 AAAA… or ssh-rsa AAAA…)';
+    if (regex === _RE_IPV4)        return t.validation_ipv4        || 'Invalid IP address (expected: 192.168.x.x)';
+    if (regex === _RE_BTC_OR_XPUB) return t.validation_btc_or_xpub || 'Invalid Bitcoin address or extended public key (xpub / zpub)';
+    if (regex === _RE_BTC_ADDR)    return t.validation_btc_addr    || 'Invalid Bitcoin address';
+    if (regex === _RE_HEX_COLOR)   return t.validation_hex_color   || 'Invalid color (expected: #RRGGBB)';
+    return t.validation_invalid || 'Invalid value';
+}
+
+function _scrollToFirstError() {
+    for (const el of _invalidInputs) {
+        if (document.contains(el)) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            setTimeout(() => el.focus(), 300);
+            return;
+        }
+    }
+}
+
+function _updateFormValidity() {
+    for (const el of _invalidInputs) {
+        if (!document.contains(el)) _invalidInputs.delete(el);
+    }
+    const hasErrors = _invalidInputs.size > 0;
+    document.querySelectorAll('#desktop-save-button, #mobile-save-button').forEach(btn => {
+        // Use a CSS class instead of disabled so click events still fire for scroll-to-error
+        btn.classList.toggle('save-blocked-by-validation', hasErrors);
+    });
+}
+
+// Mark an input valid or invalid; pass allowEmpty=true to treat empty value as valid.
+function _validateInput(el, regex, allowEmpty = true) {
+    const val = el.value.trim();
+    const valid = val === '' ? allowEmpty : regex.test(val);
+    el.classList.toggle('input-invalid', !valid);
+
+    // Find or create the error message span that lives right after the input
+    let errEl = el.nextElementSibling;
+    if (!errEl || !errEl.classList.contains('input-error-msg')) {
+        errEl = document.createElement('span');
+        errEl.className = 'input-error-msg';
+        el.insertAdjacentElement('afterend', errEl);
+    }
+    errEl.textContent = valid ? '' : _validationMsg(regex);
+    errEl.hidden = valid;
+
+    if (valid) { _invalidInputs.delete(el); } else { _invalidInputs.add(el); }
+    _updateFormValidity();
+    return valid;
+}
+
+// Intercept clicks on the save buttons when validation errors exist.
+// Registered in capture phase so it fires before the save handler.
+function _setupValidationClickInterceptor() {
+    document.querySelectorAll('#desktop-save-button, #mobile-save-button').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            // Clean stale entries first
+            for (const el of _invalidInputs) {
+                if (!document.contains(el)) _invalidInputs.delete(el);
+            }
+            if (_invalidInputs.size > 0) {
+                e.stopImmediatePropagation();
+                e.preventDefault();
+                _scrollToFirstError();
+            }
+        }, true /* capture phase */);
+    });
+}
+
+// ── End form-level validation ─────────────────────────────────
+
+// Preload SVG icons that are only referenced via JS (mask-image set dynamically).
+// Without this the browser lazy-fetches them on first use, causing a visible delay.
+fetch('/static/icons/check.svg').catch(() => {});
+fetch('/static/icons/add.svg').catch(() => {});
+
 // Reload after a service restart, persisting the update tag so the new page can show a toast.
 function _reloadAfterRestart(tag) {
     if (tag) sessionStorage.setItem('mempaper_updated_to', tag);
@@ -18,19 +108,80 @@ function _buildInfoHtml(builder, t) {
         const bStep1 = t['webhook_option_b_step1']     || 'Deploy <a href="https://github.com/satcat21/event-hub" target="_blank" style="color:inherit">event-hub</a> on a server reachable from the internet.';
         const bStep2 = t['webhook_option_b_step2']     || 'Create a session — note the token UUID. Set the LNbits Webhook URL to <code>https://your-host/{token}</code>.';
         const bStep3 = t['webhook_option_b_step3']     || 'Paste the full WebSocket URL (e.g. <code>wss://your-host/ws/{token}</code>) in the field below.';
+
+        const cfg = window.currentConfig || window.configData || {};
         const origin = window.location.origin;
-        return `<div style="margin-bottom:8px"><strong>${title}</strong></div>`
-            + `<div style="border:1px solid rgba(128,128,128,.3);border-radius:6px;padding:10px 12px;margin-bottom:10px">`
-            + `<div style="font-weight:600;margin-bottom:4px">${aTitle} <small style="opacity:.65;font-weight:400">${aSub}</small></div>`
-            + `<div style="margin-bottom:6px;font-size:.9em">${aDesc}</div>`
-            + `<code class="info-copyable" onclick="navigator.clipboard.writeText(this.textContent).then(()=>this.classList.add('copied'))" title="Click to copy">${origin}/api/donation-webhook</code>`
-            + `<div style="font-size:.8em;opacity:.6;margin-top:4px">${aNote}</div>`
-            + `</div>`
-            + `<div style="border:1px solid rgba(128,128,128,.3);border-radius:6px;padding:10px 12px">`
-            + `<div style="font-weight:600;margin-bottom:6px">${bTitle} <small style="opacity:.65;font-weight:400">${bSub}</small></div>`
-            + `<ol style="margin:0;padding-left:1.4em;font-size:.9em;line-height:1.7">`
-            + `<li>${bStep1}</li><li>${bStep2}</li><li>${bStep3}</li>`
-            + `</ol></div>`;
+        const webhookToken = cfg.donation_webhook_token || '';
+
+        // Derive LAN IP URL when it differs from the current hostname (same-LAN setup)
+        const lanIp = window._mpaLanIp || '';
+        const curHostname = window.location.hostname;
+        const portStr = window.location.port ? `:${window.location.port}` : '';
+        const lanOrigin = lanIp && lanIp !== curHostname
+            ? `${window.location.protocol}//${lanIp}${portStr}` : '';
+
+        // Derive the LNbits HTTP URL for Option B from the configured WebSocket URL:
+        // wss://host/ws/{token}  →  https://host/{token}
+        const relayWsUrl = (cfg.webhook_relay_ws_url || '').trim();
+        const optionBActive = !!relayWsUrl;
+        const optionBLnbitsUrl = relayWsUrl
+            ? relayWsUrl.replace(/^wss?:\/\//, 'https://').replace(/\/ws\//, '/')
+            : '';
+
+        const copySnippet = (url, label) => {
+            const display = label ? `<span style="font-size:.75em;opacity:.6;margin-right:5px">${label}</span>` : '';
+            return `<div style="margin-top:4px">${display}<code class="info-copyable" onclick="navigator.clipboard.writeText(this.textContent).then(()=>this.classList.add('copied'))" title="Click to copy">${url}</code></div>`;
+        };
+
+        const activeBadge = `<span style="font-size:.75em;font-weight:600;color:#22c55e;border:1px solid #22c55e;border-radius:4px;padding:1px 6px;vertical-align:middle;margin-left:6px">Active</span>`;
+
+        let html = `<div style="margin-bottom:8px"><strong>${title}</strong></div>`;
+
+        // Option A — always shown; token makes URL unguessable and secure
+        html += `<div style="border:1px solid rgba(128,128,128,.3);border-radius:6px;padding:10px 12px;margin-bottom:10px">`;
+        html += `<div style="font-weight:600;margin-bottom:4px">${aTitle} <small style="opacity:.65;font-weight:400">${aSub}</small>`;
+        if (webhookToken) html += activeBadge;
+        html += `</div>`;
+        html += `<div style="margin-bottom:6px;font-size:.9em">${aDesc}</div>`;
+
+        if (webhookToken) {
+            const domainUrl = `${origin}/api/donation-webhook/${webhookToken}`;
+            const aLanLabel = t['webhook_option_a_lan_label'] || 'LAN (same network):';
+            const aDomainLabel = t['webhook_option_a_domain_label'] || 'Domain / internet:';
+            if (lanOrigin) {
+                // Show both: domain URL and LAN IP URL
+                const lanUrl = `${lanOrigin}/api/donation-webhook/${webhookToken}`;
+                html += copySnippet(lanUrl, aLanLabel);
+                html += copySnippet(domainUrl, aDomainLabel);
+            } else {
+                html += copySnippet(domainUrl);
+            }
+        } else {
+            // Token not yet generated — service restart needed
+            const noToken = t['webhook_no_token'] || 'Token not yet generated. Restart the mempaper service to generate it.';
+            html += `<div style="font-size:.85em;color:var(--danger,#ef4444);margin:4px 0">${noToken}</div>`;
+        }
+
+        html += `<div style="font-size:.8em;opacity:.6;margin-top:6px">${aNote}</div>`;
+        html += `</div>`;
+
+        // Option B
+        html += `<div style="border:1px solid rgba(128,128,128,.3);border-radius:6px;padding:10px 12px">`;
+        html += `<div style="font-weight:600;margin-bottom:6px">${bTitle} <small style="opacity:.65;font-weight:400">${bSub}</small>`;
+        if (optionBActive) html += activeBadge;
+        html += `</div>`;
+        if (optionBActive) {
+            const checkIcon = `<span style="display:inline-block;width:14px;height:14px;background-color:#22c55e;-webkit-mask-image:url('/static/icons/check.svg');mask-image:url('/static/icons/check.svg');-webkit-mask-size:contain;mask-size:contain;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;vertical-align:-2px;margin-right:4px"></span>`;
+            const bConfigured = t['webhook_option_b_configured'] || 'Relay configured — use this URL in LNbits:';
+            html += `<div style="margin-bottom:6px;font-size:.9em">${checkIcon}${bConfigured}</div>`;
+            html += copySnippet(optionBLnbitsUrl);
+        } else {
+            html += `<ol style="margin:0;padding-left:1.4em;font-size:.9em;line-height:1.7">`;
+            html += `<li>${bStep1}</li><li>${bStep2}</li><li>${bStep3}</li>`;
+            html += `</ol>`;
+        }
+        html += `</div>`;
+        return html;
     }
     return '';
 }
@@ -156,10 +307,6 @@ function closeMemeModal() {
             const socket = window.io();
             window.configSocket = socket;
 
-            socket.on('connect', function() {
-                console.log('🔌 Config WebSocket connected');
-            });
-
             socket.on('disconnect', function(reason) {
                 console.warn('Config WebSocket disconnected:', reason);
             });
@@ -168,14 +315,9 @@ function closeMemeModal() {
                 console.error('Config WebSocket connection error:', error);
             });
 
-            socket.on('block_notification', function(data) {
-                console.log('🔔 [CONFIG] Block notification:', data);
-            });
-
             // Live wallet balance updates from backend
             socket.on('wallet_balance_updated', function(data) {
                 if (window._suppressWalletUpdates) return;
-                console.log('💰 [CONFIG] Wallet balance updated via WebSocket');
                 const tbody = document.querySelector('.wallet-table tbody');
                 if (!tbody) return;
                 const allEntries = [].concat(data.addresses || [], data.xpubs || []);
@@ -218,7 +360,6 @@ function closeMemeModal() {
 
             // Live bitaxe stats updates from backend
             socket.on('bitaxe_stats_updated', function(data) {
-                console.log('⛏️ [CONFIG] Bitaxe stats updated via WebSocket');
                 if (!data || !data.miners) return;
                 const rows = document.querySelectorAll('.bitaxe-table-container tbody tr');
                 rows.forEach(row => {
@@ -246,7 +387,6 @@ function closeMemeModal() {
 
             // Live found-blocks updates from backend
             socket.on('found_blocks_updated', function(data) {
-                console.log('🏆 [CONFIG] Found blocks updated via WebSocket');
                 if (!data || !data.blocks) return;
                 const rows = document.querySelectorAll('.block-reward-table-container tbody tr');
                 rows.forEach(row => {
@@ -273,7 +413,6 @@ function closeMemeModal() {
             });
 
             socket.on('donation_received', function(donation) {
-                console.log('⚡ Donation received:', donation);
                 // Prepend new row to table if it is currently visible
                 const tbody = document.getElementById('donation-history-tbody');
                 if (tbody) {
@@ -321,7 +460,6 @@ function closeMemeModal() {
 
             // Auto-update service restart — show countdown modal
             socket.on('service_restarting', function(data) {
-                console.log('🔄 Service restarting:', data);
                 const t = window.translations || {};
                 const _icon = '<img src="/static/icons/update.svg" alt="" class="modal-title-icon">';
                 const title = data.reason === 'auto_update'
@@ -599,7 +737,7 @@ function createPasswordChangeInterface(key, field) {
     changeButton.textContent = window.translations?.change_password || 'Change Password';
     
     // Create password change form (initially hidden)
-    const passwordForm = document.createElement('div');
+    const passwordForm = document.createElement('form');
     passwordForm.className = 'password-change-form';
     passwordForm.style.display = 'none';
     passwordForm.style.marginTop = '10px';
@@ -607,7 +745,13 @@ function createPasswordChangeInterface(key, field) {
     passwordForm.style.border = '1px solid #ddd';
     passwordForm.style.borderRadius = '4px';
     passwordForm.style.backgroundColor = 'var(--bg-color)';
-    
+    passwordForm.onsubmit = e => e.preventDefault();
+    // Hidden username field required by password managers / browser accessibility
+    const _hiddenUser = document.createElement('input');
+    _hiddenUser.type = 'text'; _hiddenUser.autocomplete = 'username';
+    _hiddenUser.setAttribute('aria-hidden', 'true'); _hiddenUser.style.display = 'none';
+    passwordForm.appendChild(_hiddenUser);
+
     // New password field
     const newPasswordLabel = document.createElement('label');
     newPasswordLabel.textContent = window.translations?.new_password || 'New Password';
@@ -618,20 +762,85 @@ function createPasswordChangeInterface(key, field) {
     newPasswordInput.type = 'password';
     newPasswordInput.className = 'form-input';
     newPasswordInput.placeholder = window.translations?.new_password || 'New Password';
-    newPasswordInput.style.marginBottom = '10px';
-    
+    newPasswordInput.maxLength = 128;
+    newPasswordInput.autocomplete = 'new-password';
+    newPasswordInput.style.marginBottom = '6px';
+
+    // Password strength checklist (admin_password only) or advisory (mempool_password)
+    const pwFeedback = document.createElement('div');
+    pwFeedback.style.marginBottom = '10px';
+    let updateSaveState = () => {};
+    if (key === 'admin_password') {
+        pwFeedback.className = 'pw-strength';
+        const tr = window.translations || {};
+        const pwRules = [
+            { re: null,              min: 16, label: tr.pw_rule_min_length || 'At least 16 characters' },
+            { re: /[A-Z]/,           min: 0,  label: tr.pw_rule_uppercase  || 'Uppercase letter (A–Z)' },
+            { re: /[a-z]/,           min: 0,  label: tr.pw_rule_lowercase  || 'Lowercase letter (a–z)' },
+            { re: /[0-9]/,           min: 0,  label: tr.pw_rule_number     || 'Number (0–9)' },
+            { re: /[^A-Za-z0-9]/,   min: 0,  label: tr.pw_rule_special    || 'Special character (!@#…)' },
+        ];
+        function renderPwStrength(pw) {
+            pwFeedback.innerHTML = '';
+            if (!pw) { pwFeedback.style.display = 'none'; return; }
+            pwRules.forEach(r => {
+                const ok = r.re ? r.re.test(pw) : pw.length >= r.min;
+                const el = document.createElement('div');
+                el.className = 'pw-rule' + (ok ? ' ok' : '');
+                el.textContent = r.label;
+                pwFeedback.appendChild(el);
+            });
+            pwFeedback.style.display = 'flex';
+        }
+        updateSaveState = () => {
+            const pw = newPasswordInput.value;
+            const conf = confirmPasswordInput.value;
+            const allPass = pwRules.every(r => r.re ? r.re.test(pw) : pw.length >= r.min);
+            saveButton.disabled = !(allPass && conf.length > 0 && pw === conf);
+        };
+        newPasswordInput.addEventListener('input', () => {
+            renderPwStrength(newPasswordInput.value);
+            errorMessage.style.display = 'none';
+            updateSaveState();
+        });
+        newPasswordInput.addEventListener('blur', () => {
+            if (newPasswordInput.value) renderPwStrength(newPasswordInput.value);
+        });
+    }
+
     // Confirm password field
     const confirmPasswordLabel = document.createElement('label');
     confirmPasswordLabel.textContent = window.translations?.confirm_password || 'Confirm Password';
     confirmPasswordLabel.style.display = 'block';
     confirmPasswordLabel.style.marginBottom = '5px';
-    
+
     const confirmPasswordInput = document.createElement('input');
     confirmPasswordInput.type = 'password';
     confirmPasswordInput.className = 'form-input';
     confirmPasswordInput.placeholder = window.translations?.confirm_password || 'Confirm Password';
-    confirmPasswordInput.style.marginBottom = '15px';
-    
+    confirmPasswordInput.maxLength = 128;
+    confirmPasswordInput.autocomplete = 'new-password';
+    confirmPasswordInput.style.marginBottom = '6px';
+
+    // Live match indicator below confirm field
+    const matchHint = document.createElement('div');
+    matchHint.style.cssText = 'font-size:0.82rem; margin-bottom:10px; display:none;';
+    function updateMatchHint() {
+        const a = newPasswordInput.value;
+        const b = confirmPasswordInput.value;
+        if (!b) { matchHint.style.display = 'none'; return; }
+        const match = a === b;
+        matchHint.style.display = 'flex';
+        matchHint.style.alignItems = 'center';
+        matchHint.style.gap = '7px';
+        matchHint.style.color = match ? 'var(--success)' : 'var(--danger)';
+        matchHint.textContent = match
+            ? (window.translations?.passwords_match || 'Passwords match')
+            : (window.translations?.passwords_do_not_match || 'Passwords do not match');
+    }
+    confirmPasswordInput.addEventListener('input', () => { updateMatchHint(); updateSaveState(); });
+    newPasswordInput.addEventListener('input', updateMatchHint);
+
     // Error message div
     const errorMessage = document.createElement('div');
     errorMessage.className = 'password-error';
@@ -647,15 +856,10 @@ function createPasswordChangeInterface(key, field) {
     // Save button
     const saveButton = document.createElement('button');
     saveButton.type = 'button';
-    saveButton.className = 'form-button';
-    saveButton.style.backgroundColor = '#F7931A';
-    saveButton.style.color = 'white';
-    saveButton.style.border = 'none';
-    saveButton.style.padding = '8px 16px';
-    saveButton.style.borderRadius = '4px';
-    saveButton.style.cursor = 'pointer';
+    saveButton.className = 'form-button pw-save-btn';
     saveButton.textContent = window.translations?.save || 'Save';
-    
+    if (key === 'admin_password') saveButton.disabled = true;
+
     // Cancel button
     const cancelButton = document.createElement('button');
     cancelButton.type = 'button';
@@ -672,21 +876,37 @@ function createPasswordChangeInterface(key, field) {
     changeButton.addEventListener('click', () => {
         passwordForm.style.display = 'block';
         buttonWrapper.style.display = 'none';
+        if (key === 'admin_password') saveButton.disabled = true;
         newPasswordInput.focus();
+        // Pre-size button once to the saving-state width so it never shifts during save
+        if (key === 'admin_password' && !saveButton._widthSet) {
+            requestAnimationFrame(() => {
+                const label = saveButton.textContent;
+                saveButton.style.visibility = 'hidden';
+                saveButton.innerHTML = (window.translations?.saving || 'Saving')
+                    + '<span style="display:inline-block;width:1.4em"></span>';
+                saveButton.style.minWidth = saveButton.getBoundingClientRect().width + 'px';
+                saveButton.textContent = label;
+                saveButton.style.visibility = '';
+                saveButton._widthSet = true;
+            });
+        }
     });
-    
+
     cancelButton.addEventListener('click', () => {
         passwordForm.style.display = 'none';
         buttonWrapper.style.display = 'block';
         newPasswordInput.value = '';
         confirmPasswordInput.value = '';
         errorMessage.style.display = 'none';
+        if (key === 'admin_password') { pwFeedback.innerHTML = ''; pwFeedback.style.display = 'none'; saveButton.disabled = true; }
+        matchHint.style.display = 'none';
     });
-    
+
     saveButton.addEventListener('click', async () => {
         const newPassword = newPasswordInput.value;
         const confirmPassword = confirmPasswordInput.value;
-        
+
         // Validate passwords
         if (!newPassword || !confirmPassword) {
             errorMessage.textContent = 'Please fill in both password fields';
@@ -699,47 +919,59 @@ function createPasswordChangeInterface(key, field) {
             errorMessage.style.display = 'block';
             return;
         }
-        
-        if (newPassword.length < 6) {
-            errorMessage.textContent = 'Password must be at least 6 characters long';
+
+        const failedRules = key === 'admin_password'
+            ? pwRules.filter(r => !(r.re ? r.re.test(newPassword) : newPassword.length >= r.min))
+            : [];
+        if (failedRules.length > 0) {
+            // Force checklist visible so user sees exactly what's missing
+            renderPwStrength(newPassword);
+            errorMessage.textContent = window.translations?.password_too_short || 'Password does not meet requirements';
             errorMessage.style.display = 'block';
             return;
         }
-        
+        if (newPassword.length > 128) {
+            errorMessage.textContent = window.translations?.password_too_long || 'Password too long (max 128 characters)';
+            errorMessage.style.display = 'block';
+            return;
+        }
+
         // Save the password
         try {
             saveButton.disabled = true;
-            saveButton.textContent = '';
-            
+            saveButton.innerHTML = `${window.translations?.saving || 'Saving'}<span class="mpa-dots"></span>`;
+
             // Update the config with new password
             currentConfig[key] = newPassword;
             await saveConfiguration();
-            
+
             // Hide form and show success
             passwordForm.style.display = 'none';
             buttonWrapper.style.display = 'block';
             newPasswordInput.value = '';
             confirmPasswordInput.value = '';
             errorMessage.style.display = 'none';
-            
+
             // Show success message
             showNotification(window.translations?.password_changed_successfully || 'Password changed successfully', 'success');
-            
+
         } catch (error) {
             console.error('Error changing password:', error);
             errorMessage.textContent = window.translations?.password_change_failed || 'Failed to change password';
             errorMessage.style.display = 'block';
         } finally {
-            saveButton.disabled = false;
             saveButton.textContent = window.translations?.save || 'Save';
+            updateSaveState();
         }
     });
-    
+
     // Assemble the form
     passwordForm.appendChild(newPasswordLabel);
     passwordForm.appendChild(newPasswordInput);
+    passwordForm.appendChild(pwFeedback);
     passwordForm.appendChild(confirmPasswordLabel);
     passwordForm.appendChild(confirmPasswordInput);
+    passwordForm.appendChild(matchHint);
     passwordForm.appendChild(errorMessage);
     buttonContainer.appendChild(saveButton);
     buttonContainer.appendChild(cancelButton);
@@ -788,8 +1020,6 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
                 const notificationData = JSON.parse(e.newValue);
                 if (notificationData && notificationData.timestamp > Date.now() - 5000) {
-                    // Show notification if it's recent (within 5 seconds)
-                    console.log('⚙️ Received cross-page block notification');
                     showBlockToast(notificationData.data);
                 }
             } catch (error) {
@@ -810,7 +1040,6 @@ function setupModals() {
     
     if (confirmDeleteBtn) {
         confirmDeleteBtn.onclick = async () => {
-            console.log('Confirm delete clicked, memeToDelete:', memeToDelete);
             if (memeToDelete) {
                 await deleteMeme(memeToDelete);
                 hideDeleteModal();
@@ -852,9 +1081,6 @@ function setupUpload() {
     const fileInput = document.getElementById('file-input');
     
     if (!uploadArea || !fileInput) {
-        if (isConfigPage) {
-            console.warn('Upload elements not found - upload functionality disabled');
-        }
         return;
     }
     
@@ -1108,7 +1334,6 @@ async function uploadFiles(files) {
     // Show duplicate details if any
     if (duplicates.length > 0) {
         const dupList = duplicates.map(d => `• ${d.name} (duplicate of ${d.duplicate})`).join('\n');
-        console.log('Duplicates detected:\n' + dupList);
         showNotification((t?.upload_duplicates_skipped_notification || '{count} duplicate file(s) skipped').replace('{count}', duplicates.length), 'warning');
     }
     
@@ -1364,6 +1589,7 @@ function startRenameInModal() {
     const editBtn = document.getElementById('meme-modal-edit-btn');
     const saveBtn = document.getElementById('meme-modal-save-btn');
     const cancelBtn = document.getElementById('meme-modal-cancel-rename-btn');
+    const renameActions = document.getElementById('meme-rename-actions');
     const warning = document.getElementById('meme-modal-rename-warning');
 
     if (!filenameDisplay || !filenameInput || !editBtn || !saveBtn || !cancelBtn) return;
@@ -1376,8 +1602,7 @@ function startRenameInModal() {
     filenameDisplay.style.display = 'none';
     editBtn.style.display = 'none';
     filenameInput.style.display = 'inline-block';
-    saveBtn.style.display = 'inline-block';
-    cancelBtn.style.display = 'inline-block';
+    if (renameActions) renameActions.style.display = 'flex';
 
     filenameInput.value = nameWithoutExt;
     filenameInput.focus();
@@ -1385,18 +1610,25 @@ function startRenameInModal() {
 
     // Live validation: block saving if the chosen name is already in use by another file
     const validateModalInput = () => {
-        const candidate = filenameInput.value.trim() + extension;
-        // Allow the current filename itself (no-op rename)
+        const val = filenameInput.value.trim();
+        const candidate = val + extension;
         const conflict = candidate !== filename && window.memeFilenameSet.has(candidate);
+        const unchanged = val === nameWithoutExt.trim();
         if (warning) {
             warning.textContent = conflict
                 ? (window.translations?.rename_name_in_use || 'This name is already in use. Please choose a different name.')
                 : '';
             warning.style.display = conflict ? 'block' : 'none';
         }
-        saveBtn.disabled = conflict || !filenameInput.value.trim();
-        saveBtn.style.opacity = saveBtn.disabled ? '0.5' : '';
-        saveBtn.style.cursor = saveBtn.disabled ? 'not-allowed' : '';
+        if (!val || conflict || unchanged) {
+            saveBtn.disabled = true;
+            saveBtn.classList.remove('rename-dirty');
+            saveBtn.classList.add('rename-clean');
+        } else {
+            saveBtn.disabled = false;
+            saveBtn.classList.remove('rename-clean');
+            saveBtn.classList.add('rename-dirty');
+        }
     };
 
     // Remove any previous listener before adding a new one
@@ -1476,6 +1708,7 @@ function cancelRenameInModal() {
     const editBtn = document.getElementById('meme-modal-edit-btn');
     const saveBtn = document.getElementById('meme-modal-save-btn');
     const cancelBtn = document.getElementById('meme-modal-cancel-rename-btn');
+    const renameActions = document.getElementById('meme-rename-actions');
     const warning = document.getElementById('meme-modal-rename-warning');
 
     if (!filenameDisplay || !filenameInput || !editBtn || !saveBtn || !cancelBtn) return;
@@ -1484,11 +1717,9 @@ function cancelRenameInModal() {
     filenameDisplay.style.display = 'inline';
     editBtn.style.display = 'inline-block';
     filenameInput.style.display = 'none';
-    saveBtn.style.display = 'none';
+    if (renameActions) renameActions.style.display = 'none';
     saveBtn.disabled = false;
-    saveBtn.style.opacity = '';
-    saveBtn.style.cursor = '';
-    cancelBtn.style.display = 'none';
+    saveBtn.classList.remove('rename-dirty', 'rename-clean');
     if (warning) { warning.style.display = 'none'; warning.textContent = ''; }
 }
 
@@ -1645,7 +1876,6 @@ async function loadMemes(search = '') {
     try {
         const memesList = document.getElementById('memes-list');
         if (!memesList) {
-            console.warn('memes-list element not found, skipping meme load');
             return;
         }
         // Show loading indicator
@@ -1814,8 +2044,6 @@ if (logoutButton) {
     logoutButton.addEventListener('click', () => {
         window.location.href = '/logout';
     });
-} else if (isConfigPage) {
-    console.warn('Logout button not found in DOM - expected on config page');
 }
 
 async function loadConfiguration() {
@@ -1923,21 +2151,87 @@ function createCurrentUserPasswordInterface() {
     changeButton.style.cssText = 'background:#F7931A;color:white;border:none;padding:8px 16px;border-radius:4px;cursor:pointer;';
     changeButton.textContent = window.translations?.change_password || 'Change Password';
 
-    const passwordForm = document.createElement('div');
+    const passwordForm = document.createElement('form');
     passwordForm.className = 'password-change-form';
     passwordForm.style.cssText = 'display:none;margin-top:10px;padding:15px;border:1px solid #ddd;border-radius:4px;background:var(--bg-color);';
+    passwordForm.onsubmit = e => e.preventDefault();
+    // Hidden username field required by password managers / browser accessibility
+    const _hiddenUser2 = document.createElement('input');
+    _hiddenUser2.type = 'text'; _hiddenUser2.autocomplete = 'username';
+    _hiddenUser2.setAttribute('aria-hidden', 'true'); _hiddenUser2.style.display = 'none';
+    passwordForm.appendChild(_hiddenUser2);
 
     const newPasswordInput = document.createElement('input');
     newPasswordInput.type = 'password';
     newPasswordInput.className = 'form-input';
     newPasswordInput.placeholder = window.translations?.new_password || 'New Password';
-    newPasswordInput.style.marginBottom = '10px';
+    newPasswordInput.maxLength = 128;
+    newPasswordInput.autocomplete = 'new-password';
+    newPasswordInput.style.marginBottom = '6px';
+
+    // Password strength checklist
+    const pwFeedback2 = document.createElement('div');
+    pwFeedback2.className = 'pw-strength';
+    pwFeedback2.style.marginBottom = '10px';
+    const tr2 = window.translations || {};
+    const pwRules2 = [
+        { re: null,            min: 16, label: tr2.pw_rule_min_length || 'At least 16 characters' },
+        { re: /[A-Z]/,         min: 0,  label: tr2.pw_rule_uppercase  || 'Uppercase letter (A–Z)' },
+        { re: /[a-z]/,         min: 0,  label: tr2.pw_rule_lowercase  || 'Lowercase letter (a–z)' },
+        { re: /[0-9]/,         min: 0,  label: tr2.pw_rule_number     || 'Number (0–9)' },
+        { re: /[^A-Za-z0-9]/, min: 0,  label: tr2.pw_rule_special    || 'Special character (!@#…)' },
+    ];
+    function renderPwStrength2(pw) {
+        pwFeedback2.innerHTML = '';
+        if (!pw) { pwFeedback2.style.display = 'none'; return; }
+        pwRules2.forEach(r => {
+            const ok = r.re ? r.re.test(pw) : pw.length >= r.min;
+            const el = document.createElement('div');
+            el.className = 'pw-rule' + (ok ? ' ok' : '');
+            el.textContent = r.label;
+            pwFeedback2.appendChild(el);
+        });
+        pwFeedback2.style.display = 'flex';
+    }
+    function updateSaveState2() {
+        const pw = newPasswordInput.value;
+        const conf = confirmPasswordInput.value;
+        const allPass = pwRules2.every(r => r.re ? r.re.test(pw) : pw.length >= r.min);
+        saveButton.disabled = !(allPass && conf.length > 0 && pw === conf);
+    }
 
     const confirmPasswordInput = document.createElement('input');
     confirmPasswordInput.type = 'password';
     confirmPasswordInput.className = 'form-input';
     confirmPasswordInput.placeholder = window.translations?.confirm_password || 'Confirm Password';
-    confirmPasswordInput.style.marginBottom = '15px';
+    confirmPasswordInput.maxLength = 128;
+    confirmPasswordInput.autocomplete = 'new-password';
+    confirmPasswordInput.style.marginBottom = '6px';
+
+    // Live match hint
+    const matchHint2 = document.createElement('div');
+    matchHint2.style.cssText = 'font-size:0.82rem;margin-bottom:10px;display:none;';
+    function updateMatchHint2() {
+        const a = newPasswordInput.value, b = confirmPasswordInput.value;
+        if (!b) { matchHint2.style.display = 'none'; return; }
+        const match = a === b;
+        matchHint2.style.display = 'block';
+        matchHint2.style.color = match ? 'var(--success)' : 'var(--danger)';
+        matchHint2.textContent = match
+            ? (window.translations?.passwords_match || 'Passwords match')
+            : (window.translations?.passwords_do_not_match || 'Passwords do not match');
+    }
+
+    newPasswordInput.addEventListener('input', () => {
+        renderPwStrength2(newPasswordInput.value);
+        errorMessage.style.display = 'none';
+        updateMatchHint2();
+        updateSaveState2();
+    });
+    newPasswordInput.addEventListener('blur', () => {
+        if (newPasswordInput.value) renderPwStrength2(newPasswordInput.value);
+    });
+    confirmPasswordInput.addEventListener('input', () => { updateMatchHint2(); updateSaveState2(); });
 
     const errorMessage = document.createElement('div');
     errorMessage.className = 'password-error';
@@ -1948,9 +2242,9 @@ function createCurrentUserPasswordInterface() {
 
     const saveButton = document.createElement('button');
     saveButton.type = 'button';
-    saveButton.className = 'form-button';
-    saveButton.style.cssText = 'background:#F7931A;color:white;border:none;padding:8px 16px;border-radius:4px;cursor:pointer;';
+    saveButton.className = 'form-button pw-save-btn';
     saveButton.textContent = window.translations?.save || 'Save';
+    saveButton.disabled = true;
 
     const cancelButton = document.createElement('button');
     cancelButton.type = 'button';
@@ -1961,7 +2255,20 @@ function createCurrentUserPasswordInterface() {
     changeButton.addEventListener('click', () => {
         passwordForm.style.display = 'block';
         buttonWrapper.style.display = 'none';
+        saveButton.disabled = true;
         newPasswordInput.focus();
+        if (!saveButton._widthSet) {
+            requestAnimationFrame(() => {
+                const label = saveButton.textContent;
+                saveButton.style.visibility = 'hidden';
+                saveButton.innerHTML = (window.translations?.saving || 'Saving')
+                    + '<span style="display:inline-block;width:1.4em"></span>';
+                saveButton.style.minWidth = saveButton.getBoundingClientRect().width + 'px';
+                saveButton.textContent = label;
+                saveButton.style.visibility = '';
+                saveButton._widthSet = true;
+            });
+        }
     });
     cancelButton.addEventListener('click', () => {
         passwordForm.style.display = 'none';
@@ -1969,6 +2276,9 @@ function createCurrentUserPasswordInterface() {
         newPasswordInput.value = '';
         confirmPasswordInput.value = '';
         errorMessage.style.display = 'none';
+        pwFeedback2.innerHTML = ''; pwFeedback2.style.display = 'none';
+        matchHint2.style.display = 'none';
+        saveButton.disabled = true;
     });
     saveButton.addEventListener('click', async () => {
         const newPassword = newPasswordInput.value;
@@ -1983,14 +2293,21 @@ function createCurrentUserPasswordInterface() {
             errorMessage.style.display = '';
             return;
         }
-        if (newPassword.length < 8) {
-            errorMessage.textContent = 'Password must be at least 8 characters';
+        const failedRules2 = pwRules2.filter(r => !(r.re ? r.re.test(newPassword) : newPassword.length >= r.min));
+        if (failedRules2.length > 0) {
+            renderPwStrength2(newPassword);
+            errorMessage.textContent = window.translations?.password_too_short || 'Password does not meet requirements';
+            errorMessage.style.display = '';
+            return;
+        }
+        if (newPassword.length > 128) {
+            errorMessage.textContent = window.translations?.password_too_long || 'Password too long (max 128 characters)';
             errorMessage.style.display = '';
             return;
         }
         errorMessage.style.display = 'none';
         saveButton.disabled = true;
-        saveButton.textContent = '...';
+        saveButton.innerHTML = `${window.translations?.saving || 'Saving'}<span class="mpa-dots"></span>`;
         try {
             const resp = await fetch(`/api/users/${encodeURIComponent(configCurrentUser)}/password`, {
                 method: 'POST',
@@ -2009,15 +2326,17 @@ function createCurrentUserPasswordInterface() {
             errorMessage.textContent = 'Request failed';
             errorMessage.style.display = '';
         } finally {
-            saveButton.disabled = false;
             saveButton.textContent = window.translations?.save || 'Save';
+            updateSaveState2();
         }
     });
 
     buttonContainer.appendChild(saveButton);
     buttonContainer.appendChild(cancelButton);
     passwordForm.appendChild(newPasswordInput);
+    passwordForm.appendChild(pwFeedback2);
     passwordForm.appendChild(confirmPasswordInput);
+    passwordForm.appendChild(matchHint2);
     passwordForm.appendChild(errorMessage);
     passwordForm.appendChild(buttonContainer);
     buttonWrapper.appendChild(changeButton);
@@ -2083,14 +2402,15 @@ function createWifiSection() {
     section.appendChild(savedList);
 
     // Add network form (collapsed by default)
-    const addForm = document.createElement('div');
+    const addForm = document.createElement('form');
     addForm.className = 'wifi-add-form';
     addForm.id = 'wifi-add-form';
     addForm.style.display = 'none';
+    addForm.onsubmit = e => e.preventDefault();
     addForm.innerHTML = `
         <div class="wifi-add-fields">
             <input type="text" class="form-input" id="wifi-add-ssid" placeholder="${t.wifi_ssid || 'Network name (SSID)'}" />
-            <input type="password" class="form-input" id="wifi-add-password" placeholder="${t.wifi_password || 'Password'}" />
+            <input type="password" class="form-input" id="wifi-add-password" placeholder="${t.wifi_password || 'Password'}" autocomplete="off" />
             <label class="wifi-hidden-label">
                 <input type="checkbox" id="wifi-add-hidden" /> ${t.wifi_hidden_network || 'Hidden network'}
             </label>
@@ -3150,6 +3470,246 @@ function createSystemUpdateSection() {
     return formGroup;
 }
 
+// ── SSH Access (admin key management) ────────────────────────
+
+function createSshAccessSection() {
+    const t = window.translations || {};
+
+    const KEY_TYPE_FILE = {
+        'ssh-ed25519':                        'id_ed25519',
+        'ssh-rsa':                            'id_rsa',
+        'ssh-dss':                            'id_dsa',
+        'ecdsa-sha2-nistp256':                'id_ecdsa',
+        'ecdsa-sha2-nistp384':                'id_ecdsa',
+        'ecdsa-sha2-nistp521':                'id_ecdsa',
+        'sk-ssh-ed25519@openssh.com':         'id_ed25519_sk',
+        'sk-ecdsa-sha2-nistp256@openssh.com': 'id_ecdsa_sk',
+    };
+    const VALID_KEY_TYPES = Object.keys(KEY_TYPE_FILE);
+    // Use the global _RE_SSH_KEY so _validationMsg() can match by reference
+    const SSH_KEY_RE = _RE_SSH_KEY;
+
+    const formGroup = document.createElement('div');
+    formGroup.className = 'form-group ssh-access-section';
+
+    const label = document.createElement('label');
+    label.className = 'form-label';
+    label.textContent = t.ssh_access || 'SSH Access';
+    formGroup.appendChild(label);
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'ssh-access-wrapper';
+
+    const hint = document.createElement('p');
+    hint.className = 'ssh-access-hint';
+    hint.innerHTML = t.ssh_access_hint || 'Paste the contents of <code>~/.ssh/id_ed25519.pub</code> to grant SSH access to this device.';
+    wrapper.appendChild(hint);
+
+    // ── Table ─────────────────────────────────────────────────
+    const table = document.createElement('table');
+    table.className = 'ssh-table';
+
+    const thead = document.createElement('thead');
+    const hRow = document.createElement('tr');
+    [t.ssh_col_key || 'Public Key', t.ssh_col_connect || 'SSH Connect Command', ''].forEach(txt => {
+        const th = document.createElement('th');
+        th.textContent = txt;
+        hRow.appendChild(th);
+    });
+    thead.appendChild(hRow);
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    table.appendChild(tbody);
+    wrapper.appendChild(table);
+
+    // ── Add Key button ─────────────────────────────────────────
+    const addBtn = document.createElement('button');
+    addBtn.type = 'button';
+    addBtn.className = 'ssh-add-btn';
+    addBtn.textContent = t.ssh_add_key || 'Add Key';
+    wrapper.appendChild(addBtn);
+
+    // ── Status message (inline feedback after main save) ───────
+    const statusMsg = document.createElement('div');
+    statusMsg.className = 'ssh-status-msg';
+    wrapper.appendChild(statusMsg);
+
+    formGroup.appendChild(wrapper);
+
+    // ── State ──────────────────────────────────────────────────
+    let savedKeys = [];
+    let lanIp = null;
+
+    fetch('/api/system/lan-ip')
+        .then(r => r.json())
+        .then(d => { if (d.success) { lanIp = d.ip; refreshAllCmds(); } })
+        .catch(() => {});
+
+    function showStatus(text, isError) {
+        statusMsg.textContent = text;
+        statusMsg.className = 'ssh-status-msg ' + (isError ? 'ssh-status-error' : 'ssh-status-ok');
+        setTimeout(() => { statusMsg.textContent = ''; statusMsg.className = 'ssh-status-msg'; }, 4000);
+    }
+
+    function currentKeys() {
+        return Array.from(tbody.querySelectorAll('.ssh-key-input'))
+            .map(inp => inp.value.trim())
+            .filter(v => v);
+    }
+
+    function buildSshCmd(keyLine) {
+        const host = lanIp || window.location.hostname;
+        const parts = keyLine.trim().split(/\s+/);
+        const keyFile = KEY_TYPE_FILE[parts[0]] || 'id_ed25519';
+        return `ssh -i ~/.ssh/${keyFile} pi@${host}`;
+    }
+
+    function updateCmdCell(cmdCell, keyText) {
+        cmdCell.innerHTML = '';
+        if (!keyText) return;
+        const parts = keyText.trim().split(/\s+/);
+        if (!VALID_KEY_TYPES.includes(parts[0]) || !parts[1]) {
+            const hint = document.createElement('span');
+            hint.className = 'ssh-unsaved-hint';
+            hint.textContent = '…';
+            cmdCell.appendChild(hint);
+            return;
+        }
+        const cmd = buildSshCmd(keyText);
+        const code = document.createElement('code');
+        code.className = 'ssh-connect-cmd';
+        code.textContent = cmd;
+        code.title = t.click_to_copy || 'Click to copy';
+        code.addEventListener('click', () => {
+            const copy = () => {
+                const ta = document.createElement('textarea');
+                ta.value = cmd;
+                ta.style.cssText = 'position:fixed;opacity:0;top:0;left:0;pointer-events:none';
+                document.body.appendChild(ta);
+                ta.focus(); ta.select();
+                try { document.execCommand('copy'); } catch (_) {}
+                document.body.removeChild(ta);
+                code.classList.add('copied');
+                setTimeout(() => code.classList.remove('copied'), 2000);
+            };
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(cmd)
+                    .then(() => { code.classList.add('copied'); setTimeout(() => code.classList.remove('copied'), 2000); })
+                    .catch(copy);
+            } else {
+                copy();
+            }
+        });
+        cmdCell.appendChild(code);
+    }
+
+    function refreshAllCmds() {
+        tbody.querySelectorAll('tr').forEach(tr => {
+            const inp = tr.querySelector('.ssh-key-input');
+            const cmdCell = tr.querySelector('.ssh-cell-cmd');
+            if (inp && cmdCell) updateCmdCell(cmdCell, inp.value.trim());
+        });
+    }
+
+    function addRow(keyValue) {
+        const tr = document.createElement('tr');
+
+        // Col 1: editable key input
+        const keyCell = document.createElement('td');
+        keyCell.className = 'ssh-cell-key';
+        const inp = document.createElement('input');
+        inp.type = 'text';
+        inp.className = 'ssh-key-input';
+        inp.value = keyValue || '';
+        inp.placeholder = t.ssh_key_placeholder || 'ssh-ed25519 AAAA…';
+        inp.spellcheck = false;
+        inp.autocomplete = 'off';
+        keyCell.appendChild(inp);
+        tr.appendChild(keyCell);
+
+        // Col 2: derived connect command
+        const cmdCell = document.createElement('td');
+        cmdCell.className = 'ssh-cell-cmd';
+        updateCmdCell(cmdCell, keyValue || '');
+        tr.appendChild(cmdCell);
+
+        // Col 3: delete
+        const actCell = document.createElement('td');
+        actCell.className = 'ssh-cell-actions';
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.className = 'ssh-remove-btn';
+        removeBtn.title = t.remove || 'Remove';
+        removeBtn.innerHTML = '<img src="/static/icons/delete.svg" alt="Remove" class="table-delete-icon" />';
+        removeBtn.addEventListener('click', () => { tr.remove(); _updateFormValidity(); _checkDirty(); });
+        actCell.appendChild(removeBtn);
+        tr.appendChild(actCell);
+
+        inp.addEventListener('input', () => {
+            _validateInput(inp, SSH_KEY_RE, true);
+            updateCmdCell(cmdCell, inp.value.trim());
+        });
+        inp.addEventListener('paste', () => {
+            setTimeout(() => {
+                inp.value = inp.value.trim();
+                _validateInput(inp, SSH_KEY_RE, true);
+                updateCmdCell(cmdCell, inp.value);
+            }, 0);
+        });
+
+        if (inp.value) _validateInput(inp, SSH_KEY_RE, true);
+        tbody.appendChild(tr);
+        return inp;
+    }
+
+    addBtn.addEventListener('click', () => {
+        const inp = addRow('');
+        inp.focus();
+    });
+
+    // Expose dirty-check so _checkDirty() can reflect SSH changes without snapshot timing issues
+    window._sshIsDirty = () => JSON.stringify(currentKeys()) !== JSON.stringify(savedKeys);
+
+    // Register hook so the main Save button also saves SSH keys
+    window._sshSaveHook = async () => {
+        const keys = currentKeys();
+        if (JSON.stringify(keys) === JSON.stringify(savedKeys)) return; // no change
+        for (const key of keys) {
+            if (!SSH_KEY_RE.test(key)) {
+                showStatus((t.ssh_invalid_key || 'Invalid SSH key') + ': ' + key.slice(0, 40) + '…', true);
+                throw new Error('Invalid SSH key');
+            }
+        }
+        const resp = await fetch('/api/system/ssh-keys', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ keys })
+        });
+        const data = await resp.json();
+        if (data.success) {
+            savedKeys = [...keys];
+            showStatus(`${data.key_count} ${t.ssh_keys_saved || 'key(s) saved.'}`, false);
+        } else {
+            showStatus(data.error || t.ssh_save_error || 'Failed to save SSH keys.', true);
+            throw new Error(data.error || 'Failed to save SSH keys');
+        }
+    };
+
+    // Load existing keys
+    fetch('/api/system/ssh-keys')
+        .then(r => r.json())
+        .then(data => {
+            if (data.success && Array.isArray(data.keys)) {
+                savedKeys = [...data.keys];
+                savedKeys.forEach(key => addRow(key));
+            }
+        })
+        .catch(() => {});
+
+    return formGroup;
+}
+
 // ── Device Control (Restart / Reboot) ────────────────────────
 
 function createDeviceControlSection() {
@@ -3353,7 +3913,7 @@ function _pollForService(overlay, countdownNumber, countdownLabel, progressFill,
         if (attempts >= maxAttempts) {
             clearInterval(pollInterval);
             clearInterval(countdownInterval);
-            countdownNumber.textContent = '\u2715';
+            countdownNumber.innerHTML = '<span style="display:inline-block;width:0.85em;height:0.85em;background-color:var(--danger,#ef4444);-webkit-mask-image:url(\'/static/icons/error.svg\');mask-image:url(\'/static/icons/error.svg\');-webkit-mask-size:contain;mask-size:contain;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;vertical-align:middle"></span>';
             countdownNumber.classList.add('restart-countdown-error');
             countdownLabel.textContent = t.service_not_responding || 'Service not responding. Try refreshing manually.';
             progressFill.style.transform = 'scaleX(1)';
@@ -3899,8 +4459,8 @@ function _renderCategorySection(category, section) {
                 }
         });
 
-        // Append user credential fields (username + password) to the General advanced section
-        if (category.id === 'general' && configCurrentUser) {
+        // Append user credentials + SSH access into the General advanced section
+        if (category.id === 'general') {
             if (!advancedContainer) {
                 advancedContainer = document.createElement('div');
                 advancedContainer.className = 'advanced-section';
@@ -3919,9 +4479,14 @@ function _renderCategorySection(category, section) {
                 advancedContainer.appendChild(advancedContent);
                 section.appendChild(advancedContainer);
             }
-            advancedContainer.querySelector('.advanced-section-content').appendChild(createCurrentUserUsernameField());
-            advancedContainer.querySelector('.advanced-section-content').appendChild(createCurrentUserPasswordField());
-            fieldsAdded += 2;
+            const advancedContent = advancedContainer.querySelector('.advanced-section-content');
+            if (configCurrentUser) {
+                advancedContent.appendChild(createCurrentUserUsernameField());
+                advancedContent.appendChild(createCurrentUserPasswordField());
+                fieldsAdded += 2;
+            }
+            advancedContent.appendChild(createSshAccessSection());
+            fieldsAdded += 1;
         }
 
         // Populate the WiFi section
@@ -4132,7 +4697,7 @@ function renderConfigurationForm() {
         const section = document.createElement('div');
         section.className = 'config-section';
         section.id = 'section-' + category.id;
-        if (category.id === 'meme_management' || category.id === 'opsec') {
+        if (category.id === 'meme_management' || category.id === 'opsec' || category.id === 'meme_sync') {
             section.classList.add('meme-management-section');
         }
         section.dataset.lazy = 'true';
@@ -4179,15 +4744,10 @@ function renderConfigurationForm() {
     setTimeout(() => {
         const walletTable = document.querySelector('.wallet-table tbody');
         if (walletTable && walletTable.children.length > 0) {
-            console.log('Loading cached balances for existing wallet entries');
             loadCachedWalletBalances(walletTable);
         }
     }, 100); // Small delay to ensure DOM is fully updated
     
-    // Diagnostic call to check boolean elements after form is rendered
-    setTimeout(() => {
-        diagnoseBooleanElements();
-    }, 200); // Ensure everything is fully loaded
 
     // Fetch live preview data — retry with backoff if the server hasn't cached data yet
     // (e.g. freshly started, BTC price not fetched yet). Stops once price + network are filled
@@ -4400,8 +4960,70 @@ function createFormField(key, field, value) {
 
                 input = wrapper;
             }
+
+            // WebSocket relay URL — add a "Test" button that opens a WS connection
+            if (key === 'webhook_relay_ws_url') {
+                const wsInput = input;
+                wsInput.style.flex = '1';
+                wsInput.style.minWidth = '0';
+
+                const wrapper = document.createElement('div');
+                wrapper.style.cssText = 'display:flex;gap:8px;align-items:center';
+                wrapper.appendChild(wsInput);
+                wrapper.getValue = () => wsInput.value;
+                Object.defineProperty(wrapper, 'value', {
+                    get: () => wsInput.value,
+                    set: (v) => { wsInput.value = v; }
+                });
+
+                const testBtn = document.createElement('button');
+                testBtn.type = 'button';
+                testBtn.className = 'mempool-action-btn';
+                testBtn.textContent = window.translations?.check_relay_connection || 'Check Relay Connection';
+                testBtn.style.flexShrink = '0';
+
+                testBtn.addEventListener('click', () => {
+                    const url = wsInput.value.trim();
+                    if (!url) {
+                        _buildLiveToast('No URL', ['Enter a WebSocket URL first.'], '#ef4444', 5000);
+                        return;
+                    }
+                    const origLabel = testBtn.textContent;
+                    testBtn.style.width = testBtn.offsetWidth + 'px';
+                    testBtn.disabled = true;
+                    testBtn.innerHTML = `${window.translations?.checking || 'Checking'}<span class="mpa-dots"></span>`;
+
+                    const _t = window.translations || {};
+                    let ws, done = false;
+                    const finish = (ok, msg) => {
+                        if (done) return;
+                        done = true;
+                        try { if (ws) ws.close(); } catch (_) {}
+                        clearTimeout(timer);
+                        testBtn.disabled = false;
+                        testBtn.textContent = origLabel;
+                        testBtn.style.width = '';
+                        const color = ok ? '#22c55e' : '#ef4444';
+                        _buildLiveToast(
+                            `${_mpaIcon(ok ? 'check' : 'error', color, 15)}${ok ? (_t.relay_connected || 'Relay Connected') : (_t.relay_unreachable || 'Relay Unreachable')}`,
+                            [msg], color, 8000
+                        );
+                    };
+                    const timer = setTimeout(() => finish(false, _t.relay_connection_timeout || 'Connection timed out after 8 s'), 8000);
+                    try {
+                        ws = new WebSocket(url);
+                        ws.onopen  = () => finish(true,  _t.relay_handshake_ok || 'WebSocket handshake successful.');
+                        ws.onerror = () => finish(false, _t.relay_connection_refused || 'Connection refused or handshake failed.');
+                    } catch (e) {
+                        finish(false, e.message || (_t.relay_invalid_url || 'Invalid WebSocket URL.'));
+                    }
+                });
+
+                wrapper.appendChild(testBtn);
+                input = wrapper;
+            }
             break;
-            
+
         case 'password':
             if (key === 'admin_password' || key === 'mempool_password') {
                 // Use dedicated change-password workflow (button + new/confirm validation).
@@ -4413,6 +5035,7 @@ function createFormField(key, field, value) {
                 input.className = 'form-input';
                 input.value = value !== undefined && value !== null ? value : '';
                 input.placeholder = field.placeholder || '';
+                input.autocomplete = 'new-password';
             }
             break;
             
@@ -4525,27 +5148,22 @@ function createFormField(key, field, value) {
             break;
             
         case 'wallet_table':
-            console.log(`Creating wallet table for key ${key} (${(value || []).length} entries)`);
             input = createWalletTableInput(value || [], field);
             break;
             
         case 'bitaxe_table':
-            console.log(`Creating bitaxe table for key ${key} (${(value || []).length} entries)`);
             input = createBitaxeTableInput(value || [], field);
             break;
             
         case 'block_reward_table':
-            console.log(`Creating block reward table for key ${key} (${(value || []).length} entries)`);
             input = createBlockRewardTableInput(value || [], field);
             break;
             
         case 'meme_management':
-            console.log(`Creating meme management interface for key ${key}`);
             input = createMemeManagementInterface(field);
             break;
 
         case 'opsec_management':
-            console.log(`Creating OPSec management interface for key ${key}`);
             input = createOpsecManagementInterface(field);
             break;
 
@@ -4633,8 +5251,20 @@ function createFormField(key, field, value) {
         case 'info_text': {
             const infoBox = document.createElement('div');
             infoBox.className = 'form-info-box';
-            const rawHtml = (field.html || field.text || '');
-            infoBox.innerHTML = rawHtml.replace(/\{BASE_URL\}/g, window.location.origin);
+            const _rebuildInfoBox = () => {
+                const h = field._html_builder
+                    ? _buildInfoHtml(field._html_builder, window.translations || {})
+                    : (field.html || field.text || '');
+                infoBox.innerHTML = h.replace(/\{BASE_URL\}/g, window.location.origin);
+            };
+            _rebuildInfoBox();
+            // For donation_webhook: fetch LAN IP once and re-render to show the IP-based URL
+            if (field._html_builder === 'donation_webhook' && !window._mpaLanIp) {
+                fetch('/api/system/lan-ip')
+                    .then(r => r.ok ? r.json() : null)
+                    .then(d => { if (d?.success && d.ip) { window._mpaLanIp = d.ip; _rebuildInfoBox(); } })
+                    .catch(() => {});
+            }
             // Not a config value — excluded from saves
             infoBox.getValue = () => null;
             input = infoBox;
@@ -4758,17 +5388,24 @@ function createColorInput(value) {
     // Sync inputs
     colorInput.addEventListener('input', () => {
         textInput.value = colorInput.value.toUpperCase();
+        _validateInput(textInput, _RE_HEX_COLOR, false);
     });
 
     textInput.addEventListener('input', () => {
         const val = textInput.value;
-        if (/^#[0-9A-F]{6}$/i.test(val)) {
+        _validateInput(textInput, _RE_HEX_COLOR, false);
+        if (_RE_HEX_COLOR.test(val)) {
             colorInput.value = val;
         }
     });
 
+    // Wrap text input in a column so the error message renders below it
+    const textWrapper = document.createElement('div');
+    textWrapper.style.cssText = 'display:flex;flex-direction:column;';
+    textWrapper.appendChild(textInput);
+
     container.appendChild(colorInput);
-    container.appendChild(textInput);
+    container.appendChild(textWrapper);
     
     // Config collector uses getValue() if available
     container.getValue = function() {
@@ -5678,26 +6315,6 @@ function createColorSelect(value) {
     return container;
 }
 
-// Diagnostic function to test boolean elements
-function diagnoseBooleanElements() {
-    console.log('👁️ [DIAGNOSTIC] Checking all boolean elements:');
-    const booleanFields = ['prioritize_large_scaled_meme', 'color_mode_dark', 'show_btc_price_block', 'show_bitaxe_block', 'show_wallet_balances_block', 'show_donation_block', 'e-ink-display-connected', 'mempool_is_private'];
-    
-    booleanFields.forEach(fieldName => {
-        const element = document.querySelector(`[data-config-key="${fieldName}"]`);
-        if (element) {
-            // console.log(`✅ Found ${fieldName}:`, {
-            //     tagName: element.tagName,
-            //     className: element.className,
-            //     hasGetValue: typeof element.getValue === 'function',
-            //     dataConfigKey: element.dataset.configKey,
-            //     currentValue: element.getValue ? element.getValue() : 'N/A'
-            // });
-        } else {
-            console.log(`❌ Missing ${fieldName}`);
-        }
-    });
-}
 
 function createBooleanSwitch(value) {
     const container = document.createElement('div');
@@ -5891,16 +6508,18 @@ function createTagsInput(values, placeholder) {
     const addButton = document.createElement('button');
     addButton.type = 'button';
     addButton.className = 'tag-add-button';
-    addButton.innerHTML = '➕';
-    addButton.title = 'Tag hinzufügen';
-    addButton.style.marginLeft = '8px';
-    addButton.style.padding = '8px 12px';
-    addButton.style.border = '1px solid #ced4da';
-    addButton.style.borderRadius = '4px';
-    addButton.style.backgroundColor = '#f8f9fa';
-    addButton.style.cursor = 'pointer';
-    addButton.style.fontSize = '14px';
-    
+    addButton.title = (window.translations && window.translations.add_tag) || 'Add tag';
+    addButton.disabled = true;
+    const addIcon = document.createElement('span');
+    addIcon.className = 'tag-add-icon';
+    addIcon.setAttribute('aria-hidden', 'true');
+    addButton.appendChild(addIcon);
+
+    // Enable/disable add button based on input content
+    input.addEventListener('input', () => {
+        addButton.disabled = !input.value.trim();
+    });
+
     // Add button click handler
     addButton.addEventListener('click', (e) => {
         e.preventDefault();
@@ -5909,6 +6528,7 @@ function createTagsInput(values, placeholder) {
         if (value) {
             addTag(container, value);
             input.value = '';
+            addButton.disabled = true;
             container.dispatchEvent(new Event('change', { bubbles: true }));
             input.focus(); // Keep focus on input for continuous adding
         }
@@ -6150,7 +6770,6 @@ function createWalletTableInput(values, field) {
             };
         }).filter(entry => entry !== null);
         
-        console.log('Wallet table getValue called, returning:', result.length + ' entries (addresses masked)');
         return result;
     };
     
@@ -6158,22 +6777,18 @@ function createWalletTableInput(values, field) {
     Object.defineProperty(container, 'value', {
         get: () => container.getValue(),
         set: (newValues) => {
-            console.log('Wallet table setValue called with:', (newValues || []).length + ' entries (addresses masked)');
             // Clear existing rows
             tbody.innerHTML = '';
             // Add new rows
             if (Array.isArray(newValues)) {
                 newValues.forEach(entry => addWalletTableRow(tbody, entry));
-                console.log(`Added ${newValues.length} wallet entries to table`);
-                
+
                 // Load cached balances for the newly added entries
                 loadCachedWalletBalances(tbody);
-            } else {
-                console.log('Invalid newValues for wallet table:', typeof newValues + ' (content masked)');
             }
         }
     });
-    
+
     return container;
 }
 
@@ -6195,16 +6810,18 @@ function addWalletTableRow(tbody, entry) {
     addressInput.style.padding = '5px';
     
     addressInput.addEventListener('input', () => {
+        _validateInput(addressInput, _RE_BTC_OR_XPUB, true);
         tbody.parentElement.parentElement.dispatchEvent(new Event('change', { bubbles: true }));
     });
-    
+    if (addressInput.value) _validateInput(addressInput, _RE_BTC_OR_XPUB, true);
+
     addressCell.appendChild(addressInput);
-    
+
     // Comment cell
     const commentCell = document.createElement('td');
     commentCell.style.padding = '8px';
     commentCell.style.border = '1px solid var(--border-subtle)';
-    
+
     const commentInput = document.createElement('input');
     commentInput.type = 'text';
     commentInput.className = 'form-control wallet-comment-input';
@@ -6269,6 +6886,7 @@ function addWalletTableRow(tbody, entry) {
     removeButton.addEventListener('click', (e) => {
         e.preventDefault();
         row.remove();
+        _updateFormValidity();
         // Update table visibility after removing row
         const container = tbody.closest('.wallet-table-container');
         if (container && container._updateTableVisibility) {
@@ -6431,7 +7049,6 @@ function createBitaxeTableInput(values, field) {
             };
         }).filter(entry => entry !== null);
         
-        console.log('Bitaxe table getValue called, returning:', result.length + ' entries (IPs masked for privacy)');
         return result;
     };
     
@@ -6439,15 +7056,13 @@ function createBitaxeTableInput(values, field) {
     Object.defineProperty(container, 'value', {
         get: () => container.getValue(),
         set: (newValues) => {
-            console.log('Bitaxe table setValue called with:', Array.isArray(newValues) ? newValues.length + ' entries (IPs masked for privacy)' : 'invalid data');
+
             // Clear existing rows
             tbody.innerHTML = '';
             // Add new rows
             if (Array.isArray(newValues)) {
                 newValues.forEach(entry => addBitaxeTableRow(tbody, entry));
-                console.log(`Added ${newValues.length} bitaxe entries to table`);
             } else {
-                console.log('Invalid newValues for bitaxe table: type =', typeof newValues, '(data masked for privacy)');
             }
         }
     });
@@ -6568,6 +7183,7 @@ function addBitaxeTableRow(tbody, entry) {
     // Fetch both hashrate and best diff together; debounced on IP input
     let _bitaxeIpDebounce = null;
     addressInput.addEventListener('input', () => {
+        _validateInput(addressInput, _RE_IPV4, true);
         clearTimeout(_bitaxeIpDebounce);
         const newIp = addressInput.value.trim();
         if (!newIp) {
@@ -6580,7 +7196,7 @@ function addBitaxeTableRow(tbody, entry) {
         // Wait until the field looks like a complete IPv4 address before fetching
         _bitaxeIpDebounce = setTimeout(() => {
             const ip = addressInput.value.trim();
-            if (/^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) {
+            if (_RE_IPV4.test(ip)) {
                 bestDiffDisplay.textContent = '...';
                 bestDiffDisplay.style.color = 'var(--text-muted)';
                 hashrateDisplay.textContent = '...';
@@ -6589,6 +7205,7 @@ function addBitaxeTableRow(tbody, entry) {
             }
         }, 1000);
     });
+    if (addressInput.value) _validateInput(addressInput, _RE_IPV4, true);
 
     // Load initial values if IP is set
     if (entry.address) {
@@ -6632,6 +7249,7 @@ function addBitaxeTableRow(tbody, entry) {
     removeButton.addEventListener('click', (e) => {
         e.preventDefault();
         row.remove();
+        _updateFormValidity();
         // Update table visibility after removing row
         const container = tbody.closest('.bitaxe-table-container');
         if (container && container._updateTableVisibility) {
@@ -6807,7 +7425,6 @@ function createBlockRewardTableInput(values, field) {
             return entries;
         },
         set: function(newValues) {
-            console.log('Setting block reward table values:', Array.isArray(newValues) ? newValues.length + ' entries (addresses masked for privacy)' : 'invalid data');
             if (Array.isArray(newValues)) {
                 // Clear existing rows
                 tbody.innerHTML = '';
@@ -6818,28 +7435,23 @@ function createBlockRewardTableInput(values, field) {
                         addBlockRewardTableRow(tbody, entry);
                     }
                 });
-            } else {
-                console.log('Invalid newValues for block reward table: type =', typeof newValues, '(data masked for privacy)');
             }
         }
     });
-    
+
     // Add getValue method for form collection
     container.getValue = () => {
         const entries = [];
         const rows = tbody.querySelectorAll('tr');
-        console.log('Block reward table getValue called, found rows:', rows.length);
-        
-        rows.forEach((row, index) => {
+
+        rows.forEach((row) => {
             const addressInput = row.querySelector('.block-reward-address-input');
             const commentInput = row.querySelector('.block-reward-comment-input');
-            
+
             if (addressInput && commentInput) {
                 const address = addressInput.value.trim();
                 const comment = commentInput.value.trim();
-                
-                console.log(`Row ${index}: address="${address ? '[MASKED]' : ''}", comment="${comment}"`);
-                
+
                 if (address) {
                     entries.push({
                         address: address,
@@ -6848,8 +7460,7 @@ function createBlockRewardTableInput(values, field) {
                 }
             }
         });
-        
-        console.log('Block reward table getValue returning:', entries.length, 'entries (addresses masked for privacy)');
+
         return entries;
     };
 
@@ -6875,7 +7486,9 @@ function addBlockRewardTableRow(tbody, entry) {
     addressInput.style.background = 'transparent';
     addressInput.style.color = 'var(--text-primary)';
     addressInput.style.fontSize = '14px';
-    
+    addressInput.addEventListener('input', () => _validateInput(addressInput, _RE_BTC_ADDR, true));
+    if (addressInput.value) _validateInput(addressInput, _RE_BTC_ADDR, true);
+
     addressCell.appendChild(addressInput);
     
     // Comment cell
@@ -6940,6 +7553,7 @@ function addBlockRewardTableRow(tbody, entry) {
     
     removeButton.addEventListener('click', () => {
         row.remove();
+        _updateFormValidity();
         // Update table visibility after removing row
         const container = tbody.closest('.block-reward-table-container');
         if (container && container._updateTableVisibility) {
@@ -7592,7 +8206,6 @@ async function uploadOpsecFiles(files) {
 
     if (duplicates.length > 0) {
         const dupList = duplicates.map(d => `• ${d.name} (duplicate of ${d.duplicate})`).join('\n');
-        console.log('OPSec duplicates detected:\n' + dupList);
         showNotification((t?.upload_duplicates_skipped_notification || '{count} duplicate file(s) skipped').replace('{count}', duplicates.length), 'warning');
     }
 
@@ -7669,7 +8282,8 @@ function _collectFormSnapshot() {
 }
 
 function _checkDirty() {
-    const dirty = _collectFormSnapshot() !== _savedSnapshot;
+    const sshDirty = typeof window._sshIsDirty === 'function' && window._sshIsDirty();
+    const dirty = _collectFormSnapshot() !== _savedSnapshot || sshDirty;
     document.querySelectorAll('#desktop-save-button, #mobile-save-button').forEach(btn => {
         btn.classList.toggle('unsaved-changes', dirty);
     });
@@ -7766,27 +8380,16 @@ async function saveConfiguration() {
             }
         });
         
-        // Additional safety check: ensure all boolean fields are properly collected
-        // This is a fallback in case boolean switches weren't collected above
+        // Fallback: ensure all boolean fields are properly collected if missed above
         const expectedBooleanFields = ['prioritize_large_scaled_meme', 'color_mode_dark', 'show_btc_price_block', 'show_bitaxe_block', 'show_wallet_balances_block', 'show_donation_block', 'e-ink-display-connected', 'mempool_is_private'];
         expectedBooleanFields.forEach(fieldName => {
             if (!(fieldName in formConfig)) {
-                console.log(`🚨 [FALLBACK] Missing boolean field ${fieldName} in form collection, attempting to recover...`);
                 const element = document.querySelector(`[data-config-key="${fieldName}"]`);
                 if (element && element.getValue) {
-                    const value = element.getValue();
-                    formConfig[fieldName] = value;
-                    console.log(`🔧 [FALLBACK] Recovered boolean field ${fieldName}: ${value}`);
+                    formConfig[fieldName] = element.getValue();
                 } else if (element && element.classList && element.classList.contains('boolean-switch')) {
-                    // Direct fallback for boolean switches
                     const switchEl = element.querySelector('.switch');
-                    if (switchEl) {
-                        const isActive = switchEl.classList.contains('active');
-                        formConfig[fieldName] = isActive;
-                        console.log(`🔧 [FALLBACK] Direct boolean recovery for ${fieldName}: ${isActive}`);
-                    }
-                } else {
-                    console.log(`❌ [FALLBACK] Could not recover boolean field ${fieldName}, element not found or invalid`);
+                    if (switchEl) formConfig[fieldName] = switchEl.classList.contains('active');
                 }
             }
         });
@@ -7843,16 +8446,7 @@ async function saveConfiguration() {
             const oldLanguage = currentConfig.language;
             const newLanguage = pendingLanguageChange || formConfig.language;
             const languageChanged = pendingLanguageChange !== null || (newLanguage && newLanguage !== oldLanguage);
-            
-            console.log('👁️ Language change detection (saveConfiguration):', {
-                oldLanguage,
-                newLanguage,
-                pendingLanguageChange,
-                languageChanged,
-                'pendingLanguageChange !== null': pendingLanguageChange !== null,
-                'formConfig has language': !!formConfig.language
-            });
-            
+
             // Update current config
             currentConfig = newConfig;
             window.currentConfig = newConfig; // Make available globally
@@ -7872,7 +8466,12 @@ async function saveConfiguration() {
             if (languageChanged) {
                 pendingLanguageChange = null;
             }
-            
+
+            // Save SSH keys if the section added/removed any
+            if (typeof window._sshSaveHook === 'function') {
+                try { await window._sshSaveHook(); } catch (_) { /* error shown in SSH section */ }
+            }
+
             // Block notifications are always enabled - no need to update subscription
             return true;
         } else {
@@ -7943,8 +8542,6 @@ if (saveButton) {
             saveButton.textContent = 'Save Configuration';
         }
     });
-} else if (isConfigPage) {
-    console.warn('Save button not found in DOM - expected on config page');
 }
 
 // Listen for config changes from header toggles
@@ -7965,7 +8562,6 @@ document.addEventListener('configChange', async (event) => {
     try {
         const result = await saveConfigurationSilent({ ...currentConfig, [key]: value });
         if (result.success) {
-            console.log(`Section toggle for ${key} saved successfully`);
         }
     } catch (error) {
         console.error('Error saving section toggle:', error);
@@ -8001,14 +8597,15 @@ function openMemeModal(filename, url, tags, apiTags) {
     const editBtn = document.getElementById('meme-modal-edit-btn');
     const saveBtn = document.getElementById('meme-modal-save-btn');
     const cancelBtn = document.getElementById('meme-modal-cancel-rename-btn');
-    
-    if (modalFilenameDisplay && filenameInput && editBtn && saveBtn && cancelBtn) {
-        modalFilenameDisplay.style.display = 'inline';
-        editBtn.style.display = 'inline-block';
-        filenameInput.style.display = 'none';
-        saveBtn.style.display = 'none';
-        cancelBtn.style.display = 'none';
-    }
+    const renameActionsReset = document.getElementById('meme-rename-actions');
+
+    if (modalFilenameDisplay) modalFilenameDisplay.style.display = 'inline';
+    if (editBtn) editBtn.style.display = 'inline-block';
+    if (filenameInput) filenameInput.style.display = 'none';
+    if (renameActionsReset) renameActionsReset.style.display = 'none';
+    // Clear any stale inline display so buttons are visible when wrapper is shown
+    if (saveBtn) { saveBtn.style.display = ''; saveBtn.disabled = false; saveBtn.classList.remove('rename-dirty', 'rename-clean'); }
+    if (cancelBtn) cancelBtn.style.display = '';
     
     // Render tags: API tags (read-only) + user tags (editable)
     const tagsContainer = document.getElementById('meme-modal-tags-container');
@@ -8048,11 +8645,21 @@ function openMemeModal(filename, url, tags, apiTags) {
         wrapper.appendChild(tagsInput);
 
         tagsContainer.appendChild(wrapper);
-        // Show save button when user tags change
+        // Tags save button: grey until tags differ from original, dot when changed
         if (saveTagsBtn) {
-            saveTagsBtn.style.display = 'none';
+            saveTagsBtn.style.display = 'inline-block';
+            saveTagsBtn.classList.add('rename-clean');
+            saveTagsBtn.classList.remove('rename-dirty');
+            const originalTagsKey = [...userTags].map(t => t.trim().toLowerCase()).sort().join('\0');
             HTMLElement.prototype.addEventListener.call(tagsInput, 'change', () => {
-                saveTagsBtn.style.display = 'inline-block';
+                const currentKey = tagsInput.getValue().map(t => t.trim().toLowerCase()).sort().join('\0');
+                if (currentKey === originalTagsKey) {
+                    saveTagsBtn.classList.remove('rename-dirty');
+                    saveTagsBtn.classList.add('rename-clean');
+                } else {
+                    saveTagsBtn.classList.remove('rename-clean');
+                    saveTagsBtn.classList.add('rename-dirty');
+                }
             });
         }
     }
@@ -8175,7 +8782,7 @@ async function saveMemeTags() {
             const uniqueUserTags = tags.filter(t => !apiLower.has(t.toLowerCase()));
             currentModalMeme.tags = [...apiTags, ...uniqueUserTags];
             const saveBtn = document.getElementById('meme-modal-save-tags-btn');
-            if (saveBtn) saveBtn.style.display = 'none';
+            if (saveBtn) { saveBtn.classList.remove('rename-dirty'); saveBtn.classList.add('rename-clean'); }
             showNotification(window.translations?.tags_saved || 'Tags saved', 'success');
         } else {
             showNotification(result.message || window.translations?.tags_save_failed || 'Failed to save tags', 'error');
@@ -8225,14 +8832,15 @@ function openOpsecModal(filename, url) {
     const editBtn = document.getElementById('opsec-modal-edit-btn');
     const saveBtn = document.getElementById('opsec-modal-save-btn');
     const cancelBtn = document.getElementById('opsec-modal-cancel-rename-btn');
+    const renameActionsReset = document.getElementById('opsec-rename-actions');
 
-    if (modalFilenameDisplay && filenameInput && editBtn && saveBtn && cancelBtn) {
-        modalFilenameDisplay.style.display = 'inline';
-        editBtn.style.display = 'inline-block';
-        filenameInput.style.display = 'none';
-        saveBtn.style.display = 'none';
-        cancelBtn.style.display = 'none';
-    }
+    if (modalFilenameDisplay) modalFilenameDisplay.style.display = 'inline';
+    if (editBtn) editBtn.style.display = 'inline-block';
+    if (filenameInput) filenameInput.style.display = 'none';
+    if (renameActionsReset) renameActionsReset.style.display = 'none';
+    // Clear any stale inline display so buttons are visible when wrapper is shown
+    if (saveBtn) { saveBtn.style.display = ''; saveBtn.disabled = false; saveBtn.classList.remove('rename-dirty', 'rename-clean'); }
+    if (cancelBtn) cancelBtn.style.display = '';
 
     if (modalDimensions) {
         modalDimensions.textContent = window.translations?.loading || 'Loading...';
@@ -8294,6 +8902,7 @@ function startRenameInOpsecModal() {
     const editBtn = document.getElementById('opsec-modal-edit-btn');
     const saveBtn = document.getElementById('opsec-modal-save-btn');
     const cancelBtn = document.getElementById('opsec-modal-cancel-rename-btn');
+    const renameActions = document.getElementById('opsec-rename-actions');
 
     if (!filenameDisplay || !filenameInput || !editBtn || !saveBtn || !cancelBtn) return;
 
@@ -8303,12 +8912,31 @@ function startRenameInOpsecModal() {
     filenameDisplay.style.display = 'none';
     editBtn.style.display = 'none';
     filenameInput.style.display = 'inline-block';
-    saveBtn.style.display = 'inline-block';
-    cancelBtn.style.display = 'inline-block';
+    if (renameActions) renameActions.style.display = 'flex';
 
     filenameInput.value = nameWithoutExt;
     filenameInput.focus();
     filenameInput.select();
+
+    const _opsecOriginal = nameWithoutExt.trim();
+    const validateOpsecInput = () => {
+        const val = filenameInput.value.trim();
+        const unchanged = val === _opsecOriginal;
+        if (!val || unchanged) {
+            saveBtn.disabled = true;
+            saveBtn.classList.remove('rename-dirty');
+            saveBtn.classList.add('rename-clean');
+        } else {
+            saveBtn.disabled = false;
+            saveBtn.classList.remove('rename-clean');
+            saveBtn.classList.add('rename-dirty');
+        }
+    };
+
+    filenameInput._opsecValidate && filenameInput.removeEventListener('input', filenameInput._opsecValidate);
+    filenameInput._opsecValidate = validateOpsecInput;
+    filenameInput.addEventListener('input', validateOpsecInput);
+    validateOpsecInput();
 
     filenameInput.onkeydown = (e) => {
         if (e.key === 'Enter') saveRenameInOpsecModal();
@@ -8361,14 +8989,16 @@ function cancelRenameInOpsecModal() {
     const editBtn = document.getElementById('opsec-modal-edit-btn');
     const saveBtn = document.getElementById('opsec-modal-save-btn');
     const cancelBtn = document.getElementById('opsec-modal-cancel-rename-btn');
+    const renameActions = document.getElementById('opsec-rename-actions');
 
     if (!filenameDisplay || !filenameInput || !editBtn || !saveBtn || !cancelBtn) return;
 
     filenameDisplay.style.display = 'inline';
     editBtn.style.display = 'inline-block';
     filenameInput.style.display = 'none';
-    saveBtn.style.display = 'none';
-    cancelBtn.style.display = 'none';
+    if (renameActions) renameActions.style.display = 'none';
+    saveBtn.disabled = false;
+    saveBtn.classList.remove('rename-dirty', 'rename-clean');
 }
 
 async function renameOpsecImage(oldFilename, newFilename) {
@@ -8531,7 +9161,7 @@ async function loadCachedWalletBalances(tbody) {
                     }
                 }
             } catch (apiError) {
-                console.log('Test API error:', apiError);
+                console.error('Test API error:', apiError);
             }
         }
         
@@ -8638,17 +9268,13 @@ let reconnectingConfig = false;
 let reconnectTimeoutConfig = null;
 
 function connectConfigSocket() {
-    if (typeof io === 'undefined') {
-        console.log('Socket.IO not available');
-        return;
-    }
+    if (typeof io === 'undefined') return;
     configSocket = io();
     setupConfigSocketHandlers();
 }
 
 function setupConfigSocketHandlers() {
     configSocket.on('connect', () => {
-        console.log('🔌 Config WebSocket connected');
         reconnectingConfig = false;
         // Register this page for notifications
         registerPageForNotifications('config');
@@ -8675,7 +9301,6 @@ function setupConfigSocketHandlers() {
     });
 
     configSocket.on('disconnect', () => {
-        console.log('🔌 Config WebSocket disconnected');
         attemptConfigReconnect();
     });
 
@@ -8692,7 +9317,6 @@ function setupConfigSocketHandlers() {
     // Listen for wallet balance updates
     configSocket.on('wallet_balance_updated', (data) => {
         if (window._suppressWalletUpdates) return;
-        console.log('💾 Received wallet balance update:', data ? Object.keys(data).length + ' addresses (data masked for privacy)' : 'no data');
         updateWalletBalancesFromWebSocket(data);
         // Update wallet preview card with new totals
         if (data && data.total_btc != null) {
@@ -8783,7 +9407,6 @@ function setupConfigSocketHandlers() {
 
     // Listen for block notifications
     configSocket.on('new_block_notification', (data) => {
-        console.log("👁️ New block notification received:", data && data.block_height ? 'block ' + data.block_height + ' (details masked for privacy)' : 'notification data');
         // Store latest block hash so holiday color preview can show it
         if (data?.block_hash_full || data?.block_hash) {
             window._previewData = window._previewData || {};
@@ -8801,7 +9424,6 @@ function setupConfigSocketHandlers() {
         const isDifferentBlock = !state.lastBlockHeight || state.lastBlockHeight !== data.block_height;
         
         if (!isEnrichment && !isDifferentBlock && (now - state.lastNotification) < 10000) {
-            console.log("⚠️ Duplicate block notification detected, skipping");
             return;
         }
         
@@ -8826,14 +9448,6 @@ function setupConfigSocketHandlers() {
         }
     });
 
-    configSocket.on('block_notification_status', (data) => {
-        if (data.status === 'subscribed') {
-            console.log('⚙️ [CONFIG] ' + (data.message || 'Subscribed to live block notifications'));
-        } else if (data.status === 'unsubscribed') {
-            console.log('⚙️ [CONFIG] Unsubscribed from live block notifications');
-        }
-    });
-
     configSocket.on('block_notification_error', (data) => {
         console.error('❌ [CONFIG] Block notification error:', data.error);
     });
@@ -8844,7 +9458,6 @@ function setupConfigSocketHandlers() {
             try {
                 const notificationData = JSON.parse(e.newValue);
                 if (notificationData && notificationData.timestamp > Date.now() - 5000) {
-                    console.log('⚙️ Received cross-page block notification');
                     showBlockToast(notificationData.data);
                 }
             } catch (error) {
@@ -8864,7 +9477,6 @@ function attemptConfigReconnect() {
     reconnectingConfig = true;
     if (reconnectTimeoutConfig) clearTimeout(reconnectTimeoutConfig);
     reconnectTimeoutConfig = setTimeout(() => {
-        console.log("⚙️ Attempting Config WebSocket reconnect...");
         if (configSocket) configSocket.connect();
         reconnectingConfig = false;
     }, 2000);
@@ -8956,53 +9568,26 @@ function setupNavigationButtons() {
                 
                 try {
                     const formConfig = {};
-                    
-                    console.log('👁️ [SAVE DEBUG] Starting form collection...');
-                    
+
                     // Collect all form values using the proper method that handles custom getValue() functions
                     document.querySelectorAll('[data-config-key]').forEach(element => {
                         const key = element.dataset.configKey;
-                        
+
                         if (element.getValue) {
-                            // Use custom getValue method for boolean switches and other custom elements
-                            const value = element.getValue();
-                            formConfig[key] = value;
-                            console.log(`👁️ [SAVE DEBUG] Collected ${key} via getValue(): ${value} (type: ${typeof value})`);
+                            formConfig[key] = element.getValue();
                         } else if (element.type === 'checkbox') {
                             formConfig[key] = element.checked;
-                            console.log(`👁️ [SAVE DEBUG] Collected ${key} via checkbox: ${element.checked}`);
                         } else if (element.type === 'number') {
                             formConfig[key] = parseFloat(element.value) || 0;
-                            console.log(`👁️ [SAVE DEBUG] Collected ${key} via number: ${formConfig[key]}`);
                         } else {
                             formConfig[key] = element.value;
-                            console.log(`👁️ [SAVE DEBUG] Collected ${key} via value: ${element.value}`);
                         }
                     });
-                    
-                    console.log('👁️ [SAVE DEBUG] Final formConfig:', formConfig);
-                    
-                    // Temporary: Show what we collected for boolean fields
-                    const booleanFields = ['prioritize_large_scaled_meme', 'color_mode_dark', 'show_btc_price_block', 'show_bitaxe_block', 'show_wallet_balances_block', 'show_donation_block', 'e-ink-display-connected', 'mempool_is_private'];
-                    const booleanData = {};
-                    booleanFields.forEach(field => {
-                        if (formConfig.hasOwnProperty(field)) {
-                            booleanData[field] = formConfig[field];
-                        }
-                    });
-                    console.log('👁️ [SAVE DEBUG] Boolean fields being saved:', booleanData);
-                    
-                    
+
                     // If we have a pending language change, make sure it's included in formConfig
                     if (pendingLanguageChange) {
                         formConfig.language = pendingLanguageChange;
-                        console.log('Including pending language change in form config:', pendingLanguageChange);
                     }
-                    
-                    console.log('Form config collected: object with', Object.keys(formConfig).length, 'fields (sensitive data masked)');
-                    console.log('Current config language:', currentConfig.language);
-                    console.log('Form config language:', formConfig.language);
-                    console.log('Pending language change:', pendingLanguageChange);
 
                     // Privacy gate: warn when mempool host changed and private checkbox is unchecked
                     const savedHost = (currentConfig.mempool_host || '').trim().toLowerCase();
@@ -9014,8 +9599,6 @@ function setupNavigationButtons() {
                             return;
                         }
                     }
-
-                    console.log('Saving configuration: object with', Object.keys(formConfig).length, 'fields (sensitive data masked)');
 
                     const response = await fetch('/api/config', {
                         method: 'POST',
@@ -9032,16 +9615,7 @@ function setupNavigationButtons() {
                         const oldLanguage = currentConfig.language;
                         const newLanguage = pendingLanguageChange || formConfig.language;
                         const languageChanged = pendingLanguageChange !== null || (newLanguage && newLanguage !== oldLanguage);
-                        
-                        console.log('👁️ Language change detection (nav buttons):', {
-                            oldLanguage,
-                            newLanguage,
-                            pendingLanguageChange,
-                            languageChanged,
-                            'pendingLanguageChange !== null': pendingLanguageChange !== null,
-                            'formConfig has language': !!formConfig.language
-                        });
-                        
+
                         // Update current config
                         currentConfig = { ...currentConfig, ...formConfig };
                         
@@ -9104,6 +9678,7 @@ function setupNavigationButtons() {
     setupBackButton('mobile-back-button');
     setupSaveButton('desktop-save-button');
     setupSaveButton('mobile-save-button');
+    _setupValidationClickInterceptor();
     setupLogoutButton('desktop-logout-button');
     setupLogoutButton('mobile-logout-button');
 }
@@ -9142,16 +9717,13 @@ function unregisterPageForNotifications(pageType) {
 }
 
 function subscribeToBlockNotifications() {
-    // Always subscribe for config page, even if other pages are subscribed
     if (configSocket) {
-        console.log('⚙️ Config page subscribing to live block notifications...');
         configSocket.emit('subscribe_block_notifications', { page: 'config' });
     }
 }
 
 function unsubscribeFromBlockNotifications() {
     if (configSocket) {
-        console.log('⚙️ Config page unsubscribing from live block notifications...');
         configSocket.emit('unsubscribe_block_notifications');
     }
 }
@@ -9414,29 +9986,5 @@ window.addEventListener('pageshow', (event) => {
         })
         .catch(() => { window.location.replace('/login'); });
 });
-
-// Testing function that can be called from browser console
-window.testConfigSave = function() {
-    console.log('🧪 Starting config save test...');
-    
-    // Test current boolean values
-    const booleanFields = ['prioritize_large_scaled_meme', 'color_mode_dark', 'show_btc_price_block', 'show_bitaxe_block', 'show_wallet_balances_block', 'show_donation_block', 'e-ink-display-connected', 'mempool_is_private'];
-    
-    console.log('💾 Current boolean values:');
-    booleanFields.forEach(fieldName => {
-        const element = document.querySelector(`[data-config-key="${fieldName}"]`);
-        if (element && element.getValue) {
-            console.log(`  ${fieldName}: ${element.getValue()}`);
-        } else {
-            console.log(`  ${fieldName}: NOT FOUND or no getValue method`);
-        }
-    });
-    
-    // Trigger save
-    console.log('💾 Triggering save configuration...');
-    saveConfiguration();
-    
-    return 'Test initiated - check console for results';
-};
 
 
