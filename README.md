@@ -260,127 +260,50 @@ These components are the same regardless of which display you choose:
 
 #### 1. Installation
 
-> **Recommended OS:** Raspberry Pi OS Lite **Bookworm (Debian 12, 32-bit)** -- this is the tested and supported OS version. Debian 13 (trixie) with Python 3.13 causes Pillow SIGILL crashes on Pi Zero 1 WH due to incompatible SIMD instructions in the piwheels armv6l build.
+> **Recommended OS:** Raspberry Pi OS Lite **Bookworm (Debian 12, 32-bit)** — this is the tested and supported OS version. Debian 13 (trixie) with Python 3.13 causes Pillow SIGILL crashes on Pi Zero 1 WH due to incompatible SIMD instructions in the piwheels armv6l build.
 
-**Raspberry Pi / Linux**
+**Raspberry Pi (one-click installer)**
+
+SSH into your Pi and run:
+
 ```bash
-# Update system packages
-sudo apt update && sudo apt upgrade -y
-
-# Create dedicated service account (isolated from the pi user, not in sudo group)
-sudo useradd -r -m -s /bin/bash mempaper
-sudo usermod -aG netdev mempaper
-
-# Clone repository into mempaper's home directory
-sudo -u mempaper git clone https://github.com/satcat21/btc-mempaper.git /home/mempaper/btc-mempaper
-cd /home/mempaper/btc-mempaper
-
-# Install system dependencies from apt-requirements.txt
-sudo apt install -y $(grep -v '^\s*#' apt-requirements.txt | grep -v '^\s*$')
-
-# Enable automatic security updates (recommended)
-# Patches critical OS/kernel CVEs in the background without touching mempaper or Python packages
-sudo apt install -y unattended-upgrades
-sudo dpkg-reconfigure -plow unattended-upgrades
-
-# Optional: auto-reboot at 4am when a kernel update requires it
-# Without this, kernel patches are installed but only take effect after a manual reboot
-sudo sh -c 'cat >> /etc/apt/apt.conf.d/50unattended-upgrades <<EOF
-
-Unattended-Upgrade::Automatic-Reboot "true";
-Unattended-Upgrade::Automatic-Reboot-Time "04:00";
-EOF'
-
-# Create virtual environment and install Python dependencies (as mempaper user)
-sudo -u mempaper python3 -m venv .venv
-sudo -u mempaper .venv/bin/pip install spidev gpiozero lgpio
-sudo -u mempaper .venv/bin/pip install -r requirements.txt
-sudo -u mempaper .venv/bin/pip install --force-reinstall --no-cache-dir --no-binary :all: Pillow  # Rebuild from source for native WebP support (slow on Pi Zero, but one-time only)
-```
-
-**PC / Windows**
-```powershell
-# Clone and install
 git clone https://github.com/satcat21/btc-mempaper.git
 cd btc-mempaper
-python -m venv venv
-.\venv\Scripts\Activate.ps1
+bash install.sh
+```
+
+Run as your normal user (e.g. `pi`) — **not** as root. The script uses `sudo` internally where needed.
+
+The installer takes care of everything:
+- Creates the `mempaper` service account
+- Installs all system and Python packages
+- Rebuilds Pillow from source on Pi Zero 1 WH (armv6l) if the piwheels wheel is incompatible
+- Copies the example config (skipped if `config/config.json` already exists)
+- Configures the e-ink display (interactive prompt)
+- Generates and installs the `mempaper.service` systemd unit
+- Sets up Wi-Fi hotspot permissions
+- Optionally configures UFW firewall and fail2ban
+- Starts the service
+
+When the service starts the Pi enters **hotspot onboarding mode**. Connect to the `mempaper-XXXX` Wi-Fi network from your phone or laptop, then open [http://10.42.0.1:5000](http://10.42.0.1:5000) to complete setup.
+
+**Service management after install:**
+```bash
+sudo journalctl -u mempaper.service -f       # live logs
+sudo systemctl restart mempaper.service       # restart after config changes
+sudo systemctl status mempaper.service        # status
+```
+
+**PC / Windows (development only)**
+```powershell
+git clone https://github.com/satcat21/btc-mempaper.git
+cd btc-mempaper
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 ```
 
-#### 2. Setup (All Platforms)
-
-1. **Create Configuration**
-   ```bash
-   sudo -u mempaper cp config/config.json.example config/config.json
-   # Windows: copy config\config.json.example config\config.json
-   ```
-
-   > **IMPORTANT:** Open `config/config.json` now and review:
-   > - `language`, `web_orientation`, `eink_orientation`, `mempool_host`, etc.
-   ```bash
-   sudo -u mempaper nano config/config.json
-   ```
-
-2. **Create the first admin user**
-
-   ```bash
-   sudo -u mempaper .venv/bin/python tools/setup_user.py
-   ```
-
-   You will be prompted for a username and password. The password is hashed with Argon2id and stored in the config -- the plain text is never saved.
-
-3. **Start the application**
-
-   ```bash
-   sudo -u mempaper .venv/bin/python serve.py
-   ```
-
-   > **Memes:** Upload your own meme images via the web interface (Meme Management section in Settings). Supported formats: PNG, JPG, JPEG, GIF, WebP.
-
-   Access the dashboard at [http://mempaper-ip:5000](http://mempaper-ip:5000)
-
-   **After setup is complete**, press `Ctrl+C` to stop the server.
-
-4. **Enable Background Service (Linux Systems)**
-
-   For production use, run mempaper as a systemd service (auto-starts on boot).
-
-   **Generate the service file** (automatically configures paths and user):
-
-   ```bash
-   sudo -u mempaper .venv/bin/python tools/generate_service_file.py
-   cat mempaper.service
-   sudo cp mempaper.service /etc/systemd/system/
-   sudo systemctl daemon-reload
-   sudo systemctl enable mempaper.service
-   sudo systemctl start mempaper.service
-   sudo systemctl status mempaper.service
-   ```
-
-   The dashboard will be accessible at [http://mempaper-ip:5000](http://mempaper-ip:5000).
-
-   **Service Management:**
-   ```bash
-   sudo journalctl -u mempaper.service -f       # View live logs
-   sudo systemctl restart mempaper.service       # Restart after config changes
-   sudo systemctl stop mempaper.service          # Stop service
-   sudo systemctl disable mempaper.service       # Disable auto-start
-   ```
-
-5. **Enable Integrated Wi-Fi Onboarding Hotspot (for shipped devices)**
-
-  This installs the required permissions for NetworkManager operations used by `mempaper.service`.
-
-  ```bash
-  sudo bash tools/install_wifi_permissions.sh mempaper
-  ```
-
-  > If you update mempaper later, run the command again to refresh installed rules.
-
-  This installs scoped sudoers rules for all mempaper operations: WiFi management, captive portal, apt package installs, service restart, reboot, and SSH key provisioning for the `pi` user.
-
-6. **Configure SSH Admin Access (for shipped devices)**
+#### 2. Configure SSH Admin Access (for shipped devices)
 
   Admins need SSH access for full system maintenance. Each admin generates a key pair **once on their own machine** — the private key never leaves their machine.
 

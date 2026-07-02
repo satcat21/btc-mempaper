@@ -157,11 +157,25 @@ sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" install spidev gpiozero lgpio 2>/dev
     || warn "GPIO/SPI libraries not available (OK if not running on a Pi)"
 
 # Pillow source rebuild for Pi Zero 1 WH (armv6l)
+# piwheels.org provides pre-built armv6l wheels that work on the Pi Zero 1 WH.
+# Only rebuild from source if the installed wheel fails the import check.
 ARCH=$(uname -m)
 if [ "$ARCH" = "armv6l" ]; then
-    step "Rebuilding Pillow from source (Pi Zero 1 WH — this takes a few minutes)"
-    sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" install --force-reinstall --no-cache-dir --no-binary :all: Pillow
-    ok "Pillow rebuilt from source"
+    if sudo -u "$SERVICE_USER" "$VENV_DIR/bin/python" -c "from PIL import Image; Image.new('RGB', (1,1))" 2>/dev/null; then
+        ok "Pillow (piwheels wheel) works on armv6l — skipping source rebuild"
+    else
+        step "Rebuilding Pillow from source (Pi Zero 1 WH — this takes a few minutes)"
+        # Ask pip which Pillow version is installed (pinned by requirements.txt in step 3).
+        # This avoids fragile grep/awk parsing of requirements.txt across different line endings.
+        PILLOW_VER=$(sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" show Pillow 2>/dev/null \
+            | grep '^Version:' | awk '{print $2}' | tr -d '[:space:]')
+        PILLOW_REQ="${PILLOW_VER:+pillow==$PILLOW_VER}"
+        PILLOW_REQ="${PILLOW_REQ:-Pillow}"
+        # Install cmake via apt so pip doesn't need to download cmake binaries at build time
+        sudo apt-get install -y cmake libjpeg-dev libpng-dev zlib1g-dev libfreetype6-dev
+        sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" install --force-reinstall --no-cache-dir --no-binary :all: "$PILLOW_REQ"
+        ok "Pillow rebuilt from source (${PILLOW_REQ})"
+    fi
 fi
 
 # ── Optional: Minify JavaScript ───────────────────────────────────────────
