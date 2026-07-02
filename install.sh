@@ -91,6 +91,23 @@ for grp in $REQUIRED_GROUPS; do
     fi
 done
 
+# ── Relocate repo into the service user's home directory ──────────────────
+# The pi user clones to /home/pi/btc-mempaper; the app should live at
+# /home/mempaper/btc-mempaper so all app files are owned and contained by the
+# service account rather than scattered under the pi home.
+APP_DIR="/home/${SERVICE_USER}/$(basename "$SCRIPT_DIR")"
+if [ "$SCRIPT_DIR" != "$APP_DIR" ]; then
+    if [ -d "$APP_DIR" ]; then
+        warn "Destination $APP_DIR already exists — skipping relocation, continuing from there"
+    else
+        sudo mv "$SCRIPT_DIR" "$APP_DIR"
+        ok "Repo relocated to '$APP_DIR'"
+    fi
+    SCRIPT_DIR="$APP_DIR"
+    VENV_DIR="$SCRIPT_DIR/.venv"
+    cd "$SCRIPT_DIR"
+fi
+
 # Grant ownership of the repo directory to the service user so it can
 # write config/cache files and create the venv
 sudo chown -R "$SERVICE_USER":"$SERVICE_USER" "$SCRIPT_DIR"
