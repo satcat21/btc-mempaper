@@ -358,6 +358,11 @@ if [[ "$UFW_CHOICE" =~ ^[Yy]$ ]]; then
     sudo apt-get install -y ufw -q
     sudo ufw default deny incoming
     sudo ufw default allow outgoing
+    # Remove any pre-existing broad rules that would override the LAN-only rules below
+    for port in 22 5000; do
+        sudo ufw delete allow "${port}/tcp" 2>/dev/null || true
+        sudo ufw delete allow "${port}"     2>/dev/null || true
+    done
     for subnet in 192.168.0.0/16 10.0.0.0/8 172.16.0.0/12; do
         sudo ufw allow from "$subnet" to any port 22
         sudo ufw allow from "$subnet" to any port 5000
