@@ -8,7 +8,10 @@ deployment with Gunicorn using gevent workers for better compatibility.
 
 # Must be before any other imports when using gevent workers
 from gevent import monkey
-monkey.patch_all()
+# Exclude ssl from patching: gevent's ssl C extension uses ARMv7+ instructions
+# that cause SIGILL on Pi Zero 1WH (ARMv6). The underlying socket is still
+# patched for cooperative I/O; SSL wrapping uses the system OpenSSL instead.
+monkey.patch_all(ssl=False)
 
 import os
 import sys

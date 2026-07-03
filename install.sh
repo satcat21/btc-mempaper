@@ -2,7 +2,7 @@
 # ============================================================================
 # mempaper one-click installer
 # ============================================================================
-# Sets up a fresh Raspberry Pi (Raspbian OS 32-bit) as a mempaper device.
+# Sets up a fresh Raspberry Pi (Raspberry Pi OS Lite 32-bit, Bookworm or Trixie) as a mempaper device.
 #
 # Usage:
 #   git clone https://github.com/satcat21/btc-mempaper.git
@@ -169,18 +169,22 @@ fi
 sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" install --upgrade pip setuptools wheel -q
 ok "pip/setuptools upgraded"
 
+# Always include piwheels so ARMv6-compatible wheels are found on any OS.
+# Trixie (Debian 13) does not ship with piwheels in pip.conf unlike Bookworm.
+PIP_PIWHEELS="--extra-index-url https://www.piwheels.org/simple"
+
 # ── Step 3: Python dependencies ────────────────────────────────────────────
 step "Step 3/9 — Installing Python dependencies"
 
 if [ -f requirements.txt ]; then
-    sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" install -r requirements.txt
+    sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" install $PIP_PIWHEELS -r requirements.txt
     ok "Python packages installed"
 else
     fail "requirements.txt not found"
 fi
 
 # Raspberry Pi specific packages (GPIO/SPI)
-sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" install spidev gpiozero lgpio 2>/dev/null \
+sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" install $PIP_PIWHEELS spidev gpiozero lgpio 2>/dev/null \
     && ok "GPIO/SPI libraries installed" \
     || warn "GPIO/SPI libraries not available (OK if not running on a Pi)"
 

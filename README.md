@@ -260,7 +260,7 @@ These components are the same regardless of which display you choose:
 
 #### 1. Installation
 
-> **Recommended OS:** Raspberry Pi OS Lite **Bookworm (Debian 12, 32-bit)** — this is the tested and supported OS version. Debian 13 (trixie) with Python 3.13 causes Pillow SIGILL crashes on Pi Zero 1 WH due to incompatible SIMD instructions in the piwheels armv6l build.
+> **Supported OS:** Raspberry Pi OS Lite **32-bit** — both **Bookworm (Debian 12)** and **Trixie (Debian 13)** are supported. The installer handles two Pi Zero 1 WH (ARMv6) quirks automatically: it rebuilds Pillow from source if the piwheels wheel is incompatible with Python 3.13, and `wsgi.py` excludes gevent's ssl C extension (which uses ARMv7+ NEON instructions) to prevent SIGILL crashes on ARMv6. Ship with Trixie — it will keep receiving OS security updates longer.
 
 **Raspberry Pi (one-click installer)**
 
