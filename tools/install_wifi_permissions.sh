@@ -186,7 +186,7 @@ fi
 
 echo ""
 echo "✅  Wi-Fi permissions installed."
-echo "   Verify with:  nmcli general permissions | grep -E 'modify.system|share.protected'"
+echo "   Verify with:  sudo -u mempaper nmcli general permissions | grep -E 'modify.system|share.protected'"
 echo "   Expected:     org.freedesktop.NetworkManager.settings.modify.system  ja"
 echo "                 org.freedesktop.NetworkManager.wifi.share.protected     ja"
 echo ""

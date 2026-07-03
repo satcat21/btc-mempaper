@@ -345,7 +345,8 @@ fi
 # ── Optional: UFW firewall ────────────────────────────────────────────────
 echo ""
 echo -e "  ${CYAN}Configure UFW firewall?${NC}"
-echo "  Allows SSH (port 22) and mempaper (port 5000), blocks everything else."
+echo "  Restricts SSH (port 22) and mempaper (port 5000) to LAN only."
+echo "  Covers all private subnets: 192.168.x.x, 10.x.x.x, 172.16-31.x.x"
 echo ""
 read -rp "  Configure UFW? [Y/n]: " UFW_CHOICE
 UFW_CHOICE="${UFW_CHOICE:-Y}"
@@ -353,10 +354,17 @@ if [[ "$UFW_CHOICE" =~ ^[Yy]$ ]]; then
     sudo apt-get install -y ufw -q
     sudo ufw default deny incoming
     sudo ufw default allow outgoing
-    sudo ufw allow ssh
-    sudo ufw allow 5000/tcp
+    for subnet in 192.168.0.0/16 10.0.0.0/8 172.16.0.0/12; do
+        sudo ufw allow from "$subnet" to any port 22
+        sudo ufw allow from "$subnet" to any port 5000
+    done
+    # Allow WireGuard if installed
+    if command -v wg >/dev/null 2>&1; then
+        sudo ufw allow 51820/udp
+        ok "WireGuard detected — UDP 51820 allowed"
+    fi
     sudo ufw --force enable
-    ok "UFW firewall configured (SSH + port 5000 allowed)"
+    ok "UFW firewall configured (SSH + port 5000 restricted to LAN only)"
 else
     ok "Skipping UFW — configure later with: sudo ufw enable"
 fi
@@ -372,31 +380,52 @@ else
     ok "Skipping fail2ban"
 fi
 
+# ── Optional: unattended-upgrades ─────────────────────────────────────────
+echo ""
+read -rp "  Enable unattended-upgrades (automatic OS security patches)? [Y/n]: " UU_CHOICE
+UU_CHOICE="${UU_CHOICE:-Y}"
+if [[ "$UU_CHOICE" =~ ^[Yy]$ ]]; then
+    sudo apt-get install -y unattended-upgrades -q
+    sudo dpkg-reconfigure --priority=low unattended-upgrades
+    ok "unattended-upgrades enabled"
+else
+    ok "Skipping unattended-upgrades"
+fi
+
 # ── Optional: disable SSH password authentication ─────────────────────────
 echo ""
-echo "  SSH password authentication is currently enabled."
-echo "  Disabling it forces key-only login — more secure, but you must have"
-echo "  your public key in ~/.ssh/authorized_keys before doing this."
+echo -e "  ${CYAN}SSH hardening — key-only login${NC}"
+echo ""
+echo "  To disable SSH password authentication you need an SSH key in place first."
+echo "  If you haven't done this yet, run the following on your LOCAL machine:"
+echo ""
+echo "    ssh-keygen -t ed25519 -C \"mempaper-admin\""
+echo "    ssh-copy-id $(whoami)@$(hostname -I | awk '{print $1}')"
+echo ""
+echo "  Then verify you can log in with your key before continuing."
 echo ""
 read -rp "  Disable SSH password authentication now? [y/N]: " SSH_HARDENING
 SSH_HARDENING="${SSH_HARDENING:-N}"
 if [[ "$SSH_HARDENING" =~ ^[Yy]$ ]]; then
     if [ -s "/home/$(whoami)/.ssh/authorized_keys" ]; then
         sudo sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+        sudo sed -i 's/^#*PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
         sudo systemctl reload sshd
-        ok "SSH password authentication disabled (key-only login active)"
+        ok "SSH hardened: password auth disabled, root login disabled (key-only)"
     else
         warn "No authorized_keys found for $(whoami) — skipping to avoid lockout"
         echo ""
-        echo "  To disable password auth manually once your key is in place:"
+        echo "  To harden SSH manually once your key is in place:"
         echo "    sudo sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config"
+        echo "    sudo sed -i 's/^#*PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config"
         echo "    sudo systemctl reload sshd"
     fi
 else
     ok "Skipping SSH hardening"
     echo ""
-    echo "  To disable SSH password authentication later (once your key is set up):"
+    echo "  To harden SSH later (once your key is set up):"
     echo "    sudo sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config"
+    echo "    sudo sed -i 's/^#*PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config"
     echo "    sudo systemctl reload sshd"
 fi
 
