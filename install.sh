@@ -26,11 +26,15 @@
 
 set -e
 
+SERVICE_USER="mempaper"
+# If a prior run already relocated the repo into the service-user home,
+# the runner needs traverse permission before we can resolve SCRIPT_DIR.
+sudo chmod o+x "/home/${SERVICE_USER}" 2>/dev/null || true
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 VENV_DIR="$SCRIPT_DIR/.venv"
-SERVICE_USER="mempaper"
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -55,11 +59,17 @@ if ! command -v python3 >/dev/null 2>&1; then
     fail "python3 not found. Install it with: sudo apt install python3"
 fi
 
-echo ""
-echo "  ┌──────────────────────────────────────┐"
-echo "  │     mempaper installer                │"
-echo "  │     Bitcoin Meme Block Clock          │"
-echo "  └──────────────────────────────────────┘"
+cat <<'ASCIIEOF'
+  _ __ ___   ___ _ __ ___  _ __   __ _ _ __   ___ _ __
+ | '_ ` _ \ / _ \ '_ ` _ \| '_ \ / _` | '_ \ / _ \ '__|
+ | | | | | |  __/ | | | | | |_) | (_| | |_) |  __/ |
+ |_| |_| |_|\___|_| |_| |_| .__/ \__,_| .__/ \___|_|
+                            |_|         |_|
+               Bitcoin Meme Block Clock  
+
+                      Installer 
+
+ASCIIEOF
 echo ""
 echo "  User:    $SERVICE_USER (service account)"
 echo "  Runner:  $(whoami)"
@@ -105,6 +115,7 @@ if [ "$SCRIPT_DIR" != "$APP_DIR" ]; then
     fi
     SCRIPT_DIR="$APP_DIR"
     VENV_DIR="$SCRIPT_DIR/.venv"
+    sudo chmod o+x "/home/${SERVICE_USER}"
     cd "$SCRIPT_DIR"
 fi
 
@@ -359,6 +370,34 @@ if [[ "$F2B_CHOICE" =~ ^[Yy]$ ]]; then
     ok "fail2ban installed"
 else
     ok "Skipping fail2ban"
+fi
+
+# ── Optional: disable SSH password authentication ─────────────────────────
+echo ""
+echo "  SSH password authentication is currently enabled."
+echo "  Disabling it forces key-only login — more secure, but you must have"
+echo "  your public key in ~/.ssh/authorized_keys before doing this."
+echo ""
+read -rp "  Disable SSH password authentication now? [y/N]: " SSH_HARDENING
+SSH_HARDENING="${SSH_HARDENING:-N}"
+if [[ "$SSH_HARDENING" =~ ^[Yy]$ ]]; then
+    if [ -s "/home/$(whoami)/.ssh/authorized_keys" ]; then
+        sudo sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+        sudo systemctl reload sshd
+        ok "SSH password authentication disabled (key-only login active)"
+    else
+        warn "No authorized_keys found for $(whoami) — skipping to avoid lockout"
+        echo ""
+        echo "  To disable password auth manually once your key is in place:"
+        echo "    sudo sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config"
+        echo "    sudo systemctl reload sshd"
+    fi
+else
+    ok "Skipping SSH hardening"
+    echo ""
+    echo "  To disable SSH password authentication later (once your key is set up):"
+    echo "    sudo sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config"
+    echo "    sudo systemctl reload sshd"
 fi
 
 # ── Done ──────────────────────────────────────────────────────────────────
