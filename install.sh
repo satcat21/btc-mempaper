@@ -447,11 +447,19 @@ fi
 # ── SSH login overview (MOTD) ─────────────────────────────────────────────────
 MOTD_SCRIPT="${SCRIPT_DIR}/tools/mempaper-motd.sh"
 MOTD_LINK="/etc/profile.d/mempaper-motd.sh"
-chmod +x "$MOTD_SCRIPT"
+sudo chmod +x "$MOTD_SCRIPT"
 if sudo ln -sf "$MOTD_SCRIPT" "$MOTD_LINK" 2>/dev/null; then
     ok "SSH login overview installed (${MOTD_LINK})"
 else
     warn "Could not install SSH login overview — symlink $MOTD_LINK failed"
+fi
+
+# Install 'mempaper' CLI command — runs the same overview on demand
+MEMPAPER_CMD="/usr/local/bin/mempaper"
+if sudo ln -sf "$MOTD_SCRIPT" "$MEMPAPER_CMD" 2>/dev/null; then
+    ok "CLI command installed — run 'mempaper' anywhere to show the overview"
+else
+    warn "Could not install 'mempaper' CLI command — symlink $MEMPAPER_CMD failed"
 fi
 
 # ── Optional: UFW firewall ────────────────────────────────────────────────
@@ -504,6 +512,34 @@ UU_CHOICE="${UU_CHOICE:-Y}"
 if [[ "$UU_CHOICE" =~ ^[Yy]$ ]]; then
     sudo apt-get install -y unattended-upgrades -q
     sudo dpkg-reconfigure --priority=low unattended-upgrades
+
+    echo ""
+    echo -e "  ${CYAN}Auto-reboot after security updates?${NC}"
+    echo "  Reboots the Pi at a scheduled time when a package update requires it."
+    echo "  Skipped if someone is actively logged in via SSH."
+    echo ""
+    read -rp "  Enable auto-reboot? [Y/n]: " UU_REBOOT_CHOICE
+    UU_REBOOT_CHOICE="${UU_REBOOT_CHOICE:-Y}"
+    if [[ "$UU_REBOOT_CHOICE" =~ ^[Yy]$ ]]; then
+        echo ""
+        read -rp "  Reboot time (24h, default 04:00): " UU_REBOOT_TIME
+        UU_REBOOT_TIME="${UU_REBOOT_TIME:-04:00}"
+        # Basic validation — fall back to 04:00 if the format is wrong
+        if ! echo "$UU_REBOOT_TIME" | grep -qE '^([01][0-9]|2[0-3]):[0-5][0-9]$'; then
+            warn "Invalid time format '${UU_REBOOT_TIME}' — using 04:00"
+            UU_REBOOT_TIME="04:00"
+        fi
+        sudo tee /etc/apt/apt.conf.d/52mempaper-reboot > /dev/null <<EOF
+// Written by mempaper install.sh
+Unattended-Upgrade::Automatic-Reboot "true";
+Unattended-Upgrade::Automatic-Reboot-WithUsers "false";
+Unattended-Upgrade::Automatic-Reboot-Time "${UU_REBOOT_TIME}";
+EOF
+        ok "Auto-reboot enabled at ${UU_REBOOT_TIME} (skipped if SSH session active)"
+    else
+        ok "Auto-reboot disabled — reboot manually after updates if needed"
+    fi
+
     ok "unattended-upgrades enabled"
 else
     ok "Skipping unattended-upgrades"

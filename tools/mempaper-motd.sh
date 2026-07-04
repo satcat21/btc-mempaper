@@ -2,14 +2,20 @@
 # tools/mempaper-motd.sh — SSH login system overview for mempaper
 #
 # Installed by install.sh as a symlink:
-#   /etc/profile.d/mempaper-motd.sh
+#   /etc/profile.d/mempaper-motd.sh        (sourced on SSH login)
+#   /usr/local/bin/mempaper                (direct CLI invocation)
 #
 # This file is sourced by bash for interactive login shells.
 # Do NOT use 'set -e' — an error would exit the user's login shell.
 
-# Only run for interactive SSH sessions; skip scripts and non-login shells.
-case "$-" in *i*) ;; *) return 0 2>/dev/null; exit 0 ;; esac
-[ -n "${SSH_CONNECTION:-}${SSH_TTY:-}" ] || return 0
+# When run directly (not sourced from profile.d), skip the SSH guard.
+# Use -ef (same inode) rather than string equality — symlinks give different
+# path strings for $0 vs BASH_SOURCE[0] even when pointing to the same file.
+if [[ ! "${BASH_SOURCE[0]}" -ef "${0}" ]]; then
+    # Being sourced — only proceed for interactive SSH sessions.
+    case "$-" in *i*) ;; *) return 0 2>/dev/null; exit 0 ;; esac
+    [ -n "${SSH_CONNECTION:-}${SSH_TTY:-}" ] || return 0
+fi
 
 PROJECT_DIR="/home/mempaper/btc-mempaper"
 CONFIG_FILE="${PROJECT_DIR}/config/config.json"
@@ -23,6 +29,7 @@ _W='\033[1;97m'
 # ── Config (one Python call for all fields) ───────────────────────────────────
 MEMPOOL_HOST="mempool.space"
 MEMPOOL_PORT="443"
+MEMPOOL_HTTPS="true"
 DISP_ON="false"
 DEVICE_NAME="none"
 
@@ -32,18 +39,20 @@ import json, sys
 try:
     with open('${CONFIG_FILE}') as f:
         c = json.load(f)
-    print(c.get('mempool_api_host', 'mempool.space'))
-    print(c.get('mempool_api_port', 443))
+    print(c.get('mempool_host', 'mempool.space'))
+    print(c.get('mempool_rest_port', '443'))
     print(str(c.get('e-ink-display-connected', False)).lower())
     print(c.get('omni_device_name', 'none'))
+    print(str(c.get('mempool_use_https', True)).lower())
 except Exception:
-    print('mempool.space'); print('443'); print('false'); print('none')
+    print('mempool.space'); print('443'); print('false'); print('none'); print('true')
 PYEOF
 )
-    MEMPOOL_HOST=$(printf '%s' "$_raw" | sed -n '1p')
-    MEMPOOL_PORT=$(printf '%s' "$_raw" | sed -n '2p')
+    MEMPOOL_HOST=$(printf '%s' "$_raw"  | sed -n '1p')
+    MEMPOOL_PORT=$(printf '%s' "$_raw"  | sed -n '2p')
     DISP_ON=$(printf '%s' "$_raw"       | sed -n '3p')
     DEVICE_NAME=$(printf '%s' "$_raw"   | sed -n '4p')
+    MEMPOOL_HTTPS=$(printf '%s' "$_raw" | sed -n '5p')
 fi
 
 # ── Banner ────────────────────────────────────────────────────────────────────
@@ -60,7 +69,28 @@ for _l in "${_bl[@]}"; do
     printf '%b%s%b%s%b\n' "${_W}" "${_l:0:$_sp}" "${_O}" "${_l:$_sp}" "${_R}"
 done
 printf '\n'
-printf '%b\n\n' "  ${_D}Bitcoin Block Clock  ·  github.com/satcat21/btc-mempaper${_R}"
+printf '%b\n' "  ${_B}${_Y}Bitcoin Meme Block Clock  ·  github.com/satcat21/btc-mempaper${_R}"
+
+# ── Version info ──────────────────────────────────────────────────────────────
+_OS_PRETTY=$(. /etc/os-release 2>/dev/null && echo "${PRETTY_NAME:-}")
+_PY_VER=$(python3 --version 2>/dev/null | awk '{print $2}')
+_MVER=$(git -C "${PROJECT_DIR}" describe --tags --abbrev=0 2>/dev/null || echo "unknown")
+_LATEST=$(curl -sf --max-time 2 \
+    "https://api.github.com/repos/satcat21/btc-mempaper/releases/latest" 2>/dev/null \
+    | python3 -c "import json,sys; print(json.load(sys.stdin)['tag_name'])" 2>/dev/null \
+    || echo "")
+
+printf '\n'
+printf "  %b%s%b\n" "${_D}" "${_OS_PRETTY}" "${_R}"
+printf "  Python %-10s mempaper %s" "${_PY_VER}" "${_MVER}"
+if [ -n "$_LATEST" ] && [ "$_LATEST" != "$_MVER" ]; then
+    printf "   %b${_B}→ %s available${_R}" "${_Y}" "${_LATEST}"
+fi
+printf '\n'
+if [ -n "$_LATEST" ] && [ "$_LATEST" != "$_MVER" ]; then
+    printf "  %bUpdate: cd %s && git pull%b\n" "${_D}" "${PROJECT_DIR}" "${_R}"
+fi
+printf '\n'
 
 _SEP="────────────────────────────────────────────────────────────────"
 printf ' %b\n' "${_B}${_SEP}${_R}"
@@ -79,10 +109,11 @@ fi
 _UP=$(uptime -p 2>/dev/null | sed 's/^up //' \
     | sed 's/ hours\?/h/g; s/ minutes\?/m/g; s/ days\?/d/g' || echo '?')
 
-# Memory
-_MU=$(free -m 2>/dev/null | awk '/^Mem:/{print $3}')
-_MT=$(free -m 2>/dev/null | awk '/^Mem:/{print $2}')
-: "${_MU:=0}" "${_MT:=1}"
+# Memory — read /proc/meminfo directly (no locale dependency; free translates headers)
+_MT=$(awk '/^MemTotal:/{print int($2/1024)}' /proc/meminfo 2>/dev/null)
+_MA=$(awk '/^MemAvailable:/{print int($2/1024)}' /proc/meminfo 2>/dev/null)
+: "${_MT:=1}" "${_MA:=0}"
+_MU=$(( _MT - _MA ))
 _MP=$(( _MU * 100 / _MT ))
 
 # Disk (root filesystem)
@@ -98,9 +129,9 @@ fi
 _LD=$(uptime 2>/dev/null | awk -F'load average:' '{print $2}' | xargs)
 
 # Print system rows (no colour in value strings — printf width works correctly)
-printf "  %-9s ${_TC}%-27s${_R} %-9s %s\n" \
+printf "  %-9s ${_TC}%-30s${_R} %-13s %s\n" \
     "temp"   "${_T}°C"                         "uptime"  "${_UP}"
-printf "  %-9s ${_DC}%-27s${_R} %-9s %s\n" \
+printf "  %-9s ${_DC}%-29s${_R} %-13s %s\n" \
     "disk"   "${_DU:-?}/${_DT:-?} (${_DP:-?}%)" "memory"  "${_MU}/${_MT} MB (${_MP}%)"
 printf "  %-9s %s\n" \
     "load"   "${_LD}"
@@ -110,7 +141,8 @@ printf ' %b\n' "${_B}${_SEP}${_R}"
 # ── mempaper stats ────────────────────────────────────────────────────────────
 
 # Service status
-_SVC=$(systemctl is-active mempaper.service 2>/dev/null || echo unknown)
+_SVC=$(systemctl is-active mempaper.service 2>/dev/null || true)
+: "${_SVC:=unknown}"
 if [ "$_SVC" = "active" ]; then _SD="${_G}"; _SL="running"
 else                            _SD="${_RE}"; _SL="${_SVC}"
 fi
@@ -124,10 +156,14 @@ if [ -d "$MEMES_DIR" ]; then
 fi
 
 # Mempool URL
-if [ "${MEMPOOL_PORT}" = "443" ]; then
-    _MURL="https://${MEMPOOL_HOST}"
+if [ "$MEMPOOL_HTTPS" = "true" ]; then
+    [ "$MEMPOOL_PORT" = "443" ] \
+        && _MURL="https://${MEMPOOL_HOST}" \
+        || _MURL="https://${MEMPOOL_HOST}:${MEMPOOL_PORT}"
 else
-    _MURL="http://${MEMPOOL_HOST}:${MEMPOOL_PORT}"
+    [ "$MEMPOOL_PORT" = "80" ] \
+        && _MURL="http://${MEMPOOL_HOST}" \
+        || _MURL="http://${MEMPOOL_HOST}:${MEMPOOL_PORT}"
 fi
 
 # Block height — query mempool (4 s timeout)
@@ -150,15 +186,15 @@ else
 fi
 
 # ── Print mempaper rows ───────────────────────────────────────────────────────
-# Coloured-dot rows: label(9) + dot(1 vis.) + space + value(26) + label(9) + value
-# The %-26s is applied to the plain-text value *after* the dot — alignment holds.
+# Coloured-dot rows: label(9) + " ● "(3 vis.) + value(26) + label(13) + value
+# Right labels align with system rows: 2+9+1+1+1+26+1 = 41 = 2+9+29+1.
 _COL=26
 
-printf "  %-9s %b● %b%-${_COL}s %b%-9s %s\n" \
-    "service"  "${_SD}" "${_R}" "${_SL}"  "${_R}" "block"  "${_BH}"
+printf "  %-9s %b● %b%-${_COL}s %b%-13s %s\n" \
+    "service"  "${_SD}" "${_R}" "${_SL}"  "${_R}" "block height"  "${_BH}"
 
-printf "  %-9s %b● %b%-${_COL}s %b%-9s %s files\n" \
-    "mempool"  "${_MD}" "${_R}" "${_ML}"  "${_R}" "memes"  "${_MC}"
+printf "  %-9s %b● %b%-${_COL}s %b%-13s %s files\n" \
+    "mempool"  "${_MD}" "${_R}" "${_ML}"  "${_R}" "memes count"  "${_MC}"
 
 printf "  %-9s   %-${_COL}s\n" \
     "display"  "${_DL}"
