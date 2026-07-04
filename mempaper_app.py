@@ -19,6 +19,7 @@ import threading
 import traceback
 import urllib3
 import os
+import sys
 import logging
 import subprocess
 import hashlib
@@ -8088,6 +8089,62 @@ class MempaperApp:
                         cwd=project_dir, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL
                     )
                     _emit('update_output', {'line': self.translations.get('checked_out', 'Checked out {tag}').format(tag=tag), 'phase': 'git', 'header': True})
+
+                    # Check if the new release requires a different Python minor.
+                    # The venv is bound to the installed minor — a mismatch means
+                    # pip install will fail or install incompatible wheels.
+                    # When a mismatch is detected we run the upgrade script inline
+                    # (streams output to the UI) before continuing with pip install.
+                    py_version_file = os.path.join(project_dir, 'tools', 'python_version')
+                    if os.path.exists(py_version_file):
+                        try:
+                            required_minor = int(open(py_version_file).read().strip())
+                            current_minor = sys.version_info.minor
+                            if required_minor != current_minor:
+                                _emit('update_output', {
+                                    'line': f'Python 3.{required_minor} required (currently 3.{current_minor}) — upgrading Python first...',
+                                    'phase': 'pip', 'header': True
+                                })
+                                _emit('update_output', {
+                                    'line': 'This may take 20-30 minutes on Pi Zero 1 WH (compiling from source).',
+                                    'phase': 'pip'
+                                })
+                                try:
+                                    proc = subprocess.Popen(
+                                        ['sudo', '/usr/local/bin/mempaper-upgrade-python'],
+                                        cwd=project_dir,
+                                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                        text=True, bufsize=1
+                                    )
+                                    for line in proc.stdout:
+                                        _emit('update_output', {'line': line.rstrip('\n'), 'phase': 'pip'})
+                                    proc.wait()
+                                    if proc.returncode != 0:
+                                        subprocess.check_call(
+                                            ['git', 'checkout', rollback_commit],
+                                            cwd=project_dir, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL
+                                        )
+                                        _emit('update_done', {
+                                            'success': False,
+                                            'error': f'Python upgrade to 3.{required_minor} failed. Check logs or run tools/upgrade_python.sh manually via SSH.'
+                                        })
+                                        return
+                                    _emit('update_output', {
+                                        'line': f'Python 3.{required_minor} upgrade complete — continuing with mempaper update.',
+                                        'phase': 'pip', 'header': True
+                                    })
+                                except Exception as py_err:
+                                    subprocess.check_call(
+                                        ['git', 'checkout', rollback_commit],
+                                        cwd=project_dir, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL
+                                    )
+                                    _emit('update_done', {
+                                        'success': False,
+                                        'error': f'Python upgrade failed: {py_err}. Run tools/upgrade_python.sh via SSH.'
+                                    })
+                                    return
+                        except (ValueError, OSError):
+                            pass  # malformed file — ignore and proceed
 
                     # Install apt dependencies if changed
                     apt_req_file = os.path.join(project_dir, 'apt-requirements.txt')

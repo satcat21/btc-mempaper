@@ -264,7 +264,14 @@ These components are the same regardless of which display you choose:
 
 **Raspberry Pi (one-click installer)**
 
-SSH into your Pi and run:
+On a fresh Raspberry Pi OS, run these once before cloning:
+
+```bash
+sudo apt update && sudo apt upgrade -y
+sudo apt install -y git locales-all
+```
+
+Then clone and run the installer:
 
 ```bash
 git clone https://github.com/satcat21/btc-mempaper.git
@@ -659,6 +666,7 @@ sudo chmod 0440 /etc/sudoers.d/mempaper-update
 
 - [Configuration Reference](docs/CONFIG_REFERENCE.md) -- Complete guide to all settings
 - [Security Guide](docs/SECURITY_GUIDE.md) -- Hardening guide: installation, SSH, UFW, threat model, audit checklist
+- [Maintenance Guide](docs/MAINTENANCE_GUIDE.md) -- Safe apt upgrades, Python version management
 - [Self-Hosting Guide](docs/SELF_HOSTING_GUIDE.md) -- Expose mempaper to the internet via Traefik, OIDC login, and TLS
 - [Cache System Documentation](docs/UNIFIED_CACHE_DOCUMENTATION.md) -- Technical cache implementation details
 

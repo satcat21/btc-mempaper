@@ -189,6 +189,19 @@ fi
 sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" install --upgrade pip setuptools wheel -q
 ok "pip/setuptools upgraded"
 
+# Lock the Python minor version so 'apt upgrade' can never switch the default
+# Python (e.g. 3.13 → 3.14) and orphan the virtual environment.
+# Security patches within the same minor (python3.13 updates) still flow —
+# only the metapackage that controls which minor is the default is held.
+# To intentionally upgrade: use tools/upgrade_python.sh after testing.
+_PYMINOR=$(python3 -c "import sys; print(sys.version_info.minor)" 2>/dev/null || echo "?")
+sudo apt-mark hold python3 python3-dev python3-venv >/dev/null 2>&1 \
+    && ok "Python 3.${_PYMINOR} version locked — run tools/upgrade_python.sh to move to a new minor" \
+    || warn "Could not lock Python version (non-fatal)"
+
+# Record the currently locked minor for the upgrade-path check
+echo "${_PYMINOR}" > "${PROJECT_DIR}/tools/python_version"
+
 # Always include piwheels so ARMv6-compatible wheels are found on any OS.
 # Trixie (Debian 13) does not ship with piwheels in pip.conf unlike Bookworm.
 PIP_PIWHEELS="--extra-index-url https://www.piwheels.org/simple"
@@ -417,6 +430,16 @@ EOF
     fi
 else
     warn "NetworkManager conf.d not found — skipping powersave configuration"
+fi
+
+# ── SSH login overview (MOTD) ─────────────────────────────────────────────────
+MOTD_SCRIPT="${PROJECT_DIR}/tools/mempaper-motd.sh"
+MOTD_LINK="/etc/profile.d/mempaper-motd.sh"
+chmod +x "$MOTD_SCRIPT"
+if sudo ln -sf "$MOTD_SCRIPT" "$MOTD_LINK" 2>/dev/null; then
+    ok "SSH login overview installed (${MOTD_LINK})"
+else
+    warn "Could not install SSH login overview — symlink $MOTD_LINK failed"
 fi
 
 # ── Optional: UFW firewall ────────────────────────────────────────────────
