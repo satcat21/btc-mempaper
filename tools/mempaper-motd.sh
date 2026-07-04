@@ -129,9 +129,11 @@ fi
 _LD=$(uptime 2>/dev/null | awk -F'load average:' '{print $2}' | xargs)
 
 # Print system rows (no colour in value strings — printf width works correctly)
-printf "  %-9s ${_TC}%-30s${_R} %-13s %s\n" \
+# Left value column is 23 display chars; temp uses 24 to compensate for the
+# 2-byte UTF-8 degree sign (° = 0xC2 0xB0) which printf counts as 2 chars.
+printf "  %-9s ${_TC}%-23s${_R} %-13s %s\n" \
     "temp"   "${_T}°C"                         "uptime"  "${_UP}"
-printf "  %-9s ${_DC}%-29s${_R} %-13s %s\n" \
+printf "  %-9s ${_DC}%-22s${_R} %-13s %s\n" \
     "disk"   "${_DU:-?}/${_DT:-?} (${_DP:-?}%)" "memory"  "${_MU}/${_MT} MB (${_MP}%)"
 printf "  %-9s %s\n" \
     "load"   "${_LD}"
@@ -186,9 +188,10 @@ else
 fi
 
 # ── Print mempaper rows ───────────────────────────────────────────────────────
-# Coloured-dot rows: label(9) + " ● "(3 vis.) + value(26) + label(13) + value
-# Right labels align with system rows: 2+9+1+1+1+26+1 = 41 = 2+9+29+1.
-_COL=26
+# Coloured-dot rows: label(9) + " ● "(3 vis.) + value(20) + label(13) + value
+# _COL=20 empirically aligns with system rows — ● is ambiguous-width in some
+# terminals, causing a 1-column offset vs. the byte-count calculation.
+_COL=20
 
 printf "  %-9s %b● %b%-${_COL}s %b%-13s %s\n" \
     "service"  "${_SD}" "${_R}" "${_SL}"  "${_R}" "block height"  "${_BH}"
