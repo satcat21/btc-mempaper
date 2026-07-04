@@ -74,7 +74,7 @@ printf '%b\n' "  ${_B}${_Y}Bitcoin Meme Block Clock  ·  github.com/satcat21/btc
 # ── Version info ──────────────────────────────────────────────────────────────
 _OS_PRETTY=$(. /etc/os-release 2>/dev/null && echo "${PRETTY_NAME:-}")
 _PY_VER=$(python3 --version 2>/dev/null | awk '{print $2}')
-_MVER=$(git -C "${PROJECT_DIR}" describe --tags --abbrev=0 2>/dev/null || echo "unknown")
+_MVER=$(git -C "${PROJECT_DIR}" -c safe.directory="${PROJECT_DIR}" describe --tags --abbrev=0 2>/dev/null || echo "unknown")
 _LATEST=$(curl -sf --max-time 2 \
     "https://api.github.com/repos/satcat21/btc-mempaper/releases/latest" 2>/dev/null \
     | python3 -c "import json,sys; print(json.load(sys.stdin)['tag_name'])" 2>/dev/null \

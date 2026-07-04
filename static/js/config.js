@@ -3445,9 +3445,10 @@ async function _enhanceDisplaySelect() {
         return;
     }
 
-    // Map device_id → option metadata for the change listener
+    // Map device_id → option metadata for the change listener and save-time check
     const optionMap = {};
     options.forEach(o => { optionMap[o.device_id] = o; });
+    window._displayOptionMap = optionMap;
 
     // Rebuild select options with availability prefix
     const currentVal = selectEl.value;
@@ -8554,13 +8555,14 @@ async function saveConfiguration() {
             currentConfig = newConfig;
             window.currentConfig = newConfig; // Make available globally
 
-            // Check if display device changed — install drivers if needed
+            // Install display drivers if needed — trigger whenever display is enabled
+            // and drivers are not yet available, regardless of whether device/toggle changed.
             const newDeviceName = formConfig.omni_device_name || newConfig.omni_device_name;
             const newDisplayEnabled = formConfig['e-ink-display-connected'];
-            if (newDeviceName && newDisplayEnabled !== false) {
-                const deviceChanged = oldDeviceName && newDeviceName !== oldDeviceName;
-                const displayJustEnabled = newDisplayEnabled === true && !oldDisplayEnabled;
-                if (deviceChanged || displayJustEnabled) {
+            if (newDeviceName && newDisplayEnabled === true) {
+                const opt = (window._displayOptionMap || {})[newDeviceName];
+                const driversReady = opt ? opt.available : true;
+                if (!driversReady) {
                     _installDisplayDrivers(newDeviceName);
                 }
             }
