@@ -24,6 +24,23 @@ import random
 import subprocess
 from datetime import datetime
 from PIL import Image, ImageDraw, ImageFont, ImageOps
+
+# Probe whether PIL can decode WebP without SIGILL.
+# On ARMv6 with a NEON-compiled libwebp, both encode and decode cause SIGILL
+# (an uncatchable signal). Running the probe in a subprocess isolates the crash.
+def _probe_webp_decode() -> bool:
+    try:
+        r = subprocess.run(
+            [sys.executable, '-c',
+             'from PIL import Image; import io; '
+             'buf=io.BytesIO(); Image.new("RGB",(1,1)).save(buf,"WEBP"); '
+             'buf.seek(0); Image.open(buf).load()'],
+            capture_output=True, timeout=10)
+        return r.returncode == 0
+    except Exception:
+        return False
+
+_WEBP_PIL_DECODE_SAFE = _probe_webp_decode()
 from babel.dates import format_date
 
 from lib.btc_holidays import btc_holidays
@@ -483,60 +500,67 @@ class ImageRenderer:
     def _open_image_robust(self, path: str) -> 'Image.Image':
         """Open an image file, falling back to ImageMagick when PIL lacks codec support.
 
-        This is particularly important for WebP files on Raspberry Pi where Pillow
-        may have been built before libwebp-dev was installed (no WebP codec compiled in).
-        ImageMagick's ``convert`` is used as a fallback if available.
+        On ARMv6 (Pi Zero 1WH), PIL's WebP decode causes SIGILL (uncatchable signal).
+        For .webp files on ARMv6 we skip PIL entirely and go straight to ImageMagick,
+        which runs in a subprocess so a SIGILL inside convert cannot kill the main process.
 
-        Raises the original PIL exception if all attempts fail.
+        Raises if all attempts fail.
         """
-        try:
-            return Image.open(path)
-        except Exception as pil_err:
-            # Only attempt ImageMagick fallback for formats PIL might lack codec support for.
-            ext = os.path.splitext(path)[1].lower()
-            if ext not in ('.webp', '.avif', '.heic', '.heif'):
-                raise
+        ext = os.path.splitext(path)[1].lower()
+        pil_err = None
+        needs_fallback = ext in ('.webp', '.avif', '.heic', '.heif')
 
-            # Lazy-check whether ImageMagick convert is available.
-            if self._imagemagick_available is None:
-                try:
-                    import subprocess as _sp
-                    r = _sp.run(['convert', '--version'], capture_output=True, timeout=5)
-                    self._imagemagick_available = (r.returncode == 0)
-                except Exception:
-                    self._imagemagick_available = False
-
-            if not self._imagemagick_available:
-                print(f"⚠️ PIL cannot open {ext} file and ImageMagick is not available. "
-                      f"Install libwebp-dev then rebuild Pillow: "
-                      f"pip install --no-binary :all: pillow")
-                raise
-
-            import subprocess as _sp, tempfile as _tf
-            tmp_fd, tmp_path = _tf.mkstemp(suffix='.png')
-            os.close(tmp_fd)
+        # Skip PIL for WebP on ARMv6 — SIGILL cannot be caught by try/except.
+        if _WEBP_PIL_DECODE_SAFE or not needs_fallback:
             try:
-                result = _sp.run(
-                    ['convert', path, tmp_path],
-                    capture_output=True, timeout=30
-                )
-                if result.returncode != 0:
-                    raise RuntimeError(
-                        f"ImageMagick convert failed: {result.stderr.decode(errors='replace')}"
-                    )
-                img = Image.open(tmp_path)
-                img.load()  # force full decode before temp file is removed
-                print(f"⚙️ Loaded {ext} via ImageMagick fallback: {os.path.basename(path)}")
-                return img
-            except Exception as im_err:
+                return Image.open(path)
+            except Exception as e:
+                if not needs_fallback:
+                    raise
+                pil_err = e
+
+        # Reach here when: PIL failed for a special format, OR ARMv6 WebP (PIL skipped).
+        # ImageMagick runs in a subprocess — safe even if libwebp SIGILLs inside convert.
+        if self._imagemagick_available is None:
+            try:
+                import subprocess as _sp
+                r = _sp.run(['convert', '--version'], capture_output=True, timeout=5)
+                self._imagemagick_available = (r.returncode == 0)
+            except Exception:
+                self._imagemagick_available = False
+
+        if not self._imagemagick_available:
+            if pil_err:
+                raise pil_err
+            raise RuntimeError(
+                f"PIL skipped for {ext} on ARMv6 and ImageMagick is not available — "
+                f"install imagemagick: sudo apt-get install imagemagick"
+            )
+
+        import subprocess as _sp, tempfile as _tf
+        tmp_fd, tmp_path = _tf.mkstemp(suffix='.png')
+        os.close(tmp_fd)
+        try:
+            result = _sp.run(
+                ['convert', path, tmp_path],
+                capture_output=True, timeout=30
+            )
+            if result.returncode != 0:
                 raise RuntimeError(
-                    f"PIL error: {pil_err}; ImageMagick fallback error: {im_err}"
-                ) from im_err
-            finally:
-                try:
-                    os.unlink(tmp_path)
-                except OSError:
-                    pass
+                    f"ImageMagick convert failed: {result.stderr.decode(errors='replace')}"
+                )
+            img = Image.open(tmp_path)
+            img.load()  # force full decode before temp file is removed
+            print(f"⚙️ Loaded {ext} via ImageMagick fallback: {os.path.basename(path)}")
+            return img
+        except Exception as im_err:
+            pil_msg = f"PIL error: {pil_err}; " if pil_err else "PIL skipped (ARMv6); "
+            raise RuntimeError(f"{pil_msg}ImageMagick fallback error: {im_err}") from im_err
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
 
     def _get_font(self, font_path, size):
         """Get a cached font object, loading from disk only on first request."""

@@ -2091,6 +2091,8 @@ async function loadConfiguration() {
         setTimeout(_initDirtyTracking, 300);
         // Privacy: monitor mempool_host changes and reset mempool_is_private when host changes
         setTimeout(_initMempoolPrivacyWatch, 400);
+        // Enhance display select with availability badges from API
+        setTimeout(_enhanceDisplaySelect, 150);
     } catch (error) {
         // console.error('Configuration load error:', error);
         const failedMessage = window.translations?.failed_to_load_configuration || 'Failed to load configuration';
@@ -3421,6 +3423,65 @@ function _startDriverHealthPolling(toast) {
             `;
         }
     }, 2000);
+}
+
+// ── Display Select Enhancement ───────────────────────────────
+
+// Fetches /api/display/options and rebuilds the omni_device_name select with
+// availability badges (✓ ready / ⬇ needs download), plus an inline hint div.
+async function _enhanceDisplaySelect() {
+    const selectEl = document.querySelector('[data-config-key="omni_device_name"]');
+    if (!selectEl || selectEl.tagName !== 'SELECT') return;
+
+    let options;
+    try {
+        const resp = await fetch('/api/display/options');
+        if (!resp.ok) return;
+        const data = await resp.json();
+        if (!data.success || !Array.isArray(data.options)) return;
+        options = data.options;
+    } catch (_) {
+        return;
+    }
+
+    // Map device_id → option metadata for the change listener
+    const optionMap = {};
+    options.forEach(o => { optionMap[o.device_id] = o; });
+
+    // Rebuild select options with availability prefix
+    const currentVal = selectEl.value;
+    selectEl.innerHTML = '';
+    options.forEach(opt => {
+        const el = document.createElement('option');
+        el.value = opt.device_id;
+        el.textContent = (opt.available ? '✓ ' : '⬇ ') + opt.label;
+        if (opt.device_id === currentVal) el.selected = true;
+        selectEl.appendChild(el);
+    });
+
+    // Add (or reuse) a hint div immediately after the select
+    let hint = document.getElementById('display-driver-hint');
+    if (!hint) {
+        hint = document.createElement('div');
+        hint.id = 'display-driver-hint';
+        hint.style.cssText = 'margin-top:6px;font-size:12px;padding:4px 8px;border-radius:6px;line-height:1.4;';
+        selectEl.parentNode.insertBefore(hint, selectEl.nextSibling);
+    }
+
+    function _updateHint(deviceId) {
+        const opt = optionMap[deviceId];
+        if (!opt) { hint.textContent = ''; return; }
+        if (opt.available) {
+            hint.style.color = '#28a745';
+            hint.innerHTML = '<img src="/static/icons/check.svg" alt="" style="width:13px;height:13px;vertical-align:middle;margin-right:4px;opacity:0.85;filter:invert(44%) sepia(72%) saturate(456%) hue-rotate(97deg) brightness(96%) contrast(97%)"> Drivers ready — display will activate after save';
+        } else {
+            hint.style.color = '#F7931A';
+            hint.innerHTML = '<img src="/static/icons/download.svg" alt="" style="width:13px;height:13px;vertical-align:middle;margin-right:4px;opacity:0.85;filter:invert(62%) sepia(65%) saturate(2028%) hue-rotate(6deg) brightness(100%) contrast(93%)"> Drivers will be downloaded automatically when you save (~15 MB)';
+        }
+    }
+
+    _updateHint(currentVal);
+    selectEl.addEventListener('change', e => _updateHint(e.target.value));
 }
 
 // ── System Package Update ────────────────────────────────────
@@ -5565,13 +5626,18 @@ function _buildSectionPreview(categoryId, sectionEl) {
         const clDark  = cfg['color_bitaxe_stats_dark']  || '#F7931A';
         const rl = mode === 'difficulty' ? (t.best_difficulty || 'Best diff') : (t.valid_blocks || 'Found blocks');
 
+        const hasBitaxe = (cfg['bitaxe_miner_table'] || []).some(a => a.address?.trim());
+
         function fmtHashrate(ths) {
-            if (ths == null) return '…';
+            if (ths == null) return hasBitaxe ? '…' : '0.0 kH/s';
             if (ths >= 1000) return `${(ths/1000).toFixed(2)} PH/s`;
             if (ths >= 1)    return `${ths.toFixed(2)} TH/s`;
             return `${(ths*1000).toFixed(1)} GH/s`;
         }
-        function fmtRight(val) { return val == null ? '…' : (mode === 'difficulty' ? formatBitaxeDifficulty(val) : String(val)); }
+        function fmtRight(val) {
+            if (val == null) return hasBitaxe ? '…' : (mode === 'difficulty' ? '0.0K' : '0');
+            return mode === 'difficulty' ? formatBitaxeDifficulty(val) : String(val);
+        }
 
         const bd  = window._previewData.bitaxe;
         const onl = bd?.miners_online ?? '?';
@@ -5610,7 +5676,7 @@ function _buildSectionPreview(categoryId, sectionEl) {
         const rl = t.fiat_value || 'Fiat value';
 
         function fmtBtc(v) {
-            if (v == null) return hasWallets ? '…' : (unit === 'sats' ? '123,456' : '0.00123456');
+            if (v == null) return hasWallets ? '…' : (unit === 'sats' ? '0' : '0.00000000');
             return unit === 'sats' ? Math.round(v * 1e8).toLocaleString() : v.toFixed(8);
         }
         function fmtFiat(fv, btcAmt) {
@@ -5620,12 +5686,12 @@ function _buildSectionPreview(categoryId, sectionEl) {
             if (btcPrice && btcAmt != null) {
                 return `${Math.round(btcAmt * btcPrice).toLocaleString()} ${sym}`;
             }
-            return '…';
+            return hasWallets ? '…' : `0.00 ${sym}`;
         }
 
         const wd = window._previewData.wallet;
-        const lv = fmtBtc(wd?.total_btc ?? (hasWallets ? null : 0.00123456));
-        const rv = fmtFiat(wd?.fiat_value, wd?.total_btc ?? 0.00123456);
+        const lv = fmtBtc(wd?.total_btc ?? null);
+        const rv = fmtFiat(wd?.fiat_value, wd?.total_btc ?? null);
 
         const lightCard = _buildSingleThemeCard(ll, lv, rl, rv, clLight, '#fff', '#6a6a78');
         const darkCard  = _buildSingleThemeCard(ll, lv, rl, rv, clDark,  '#111827', '#aaa');
@@ -9611,6 +9677,10 @@ function setupNavigationButtons() {
                     const result = await response.json();
                     
                     if (result.success) {
+                        // Capture display state before config update for driver install check
+                        const oldDeviceName = currentConfig.omni_device_name;
+                        const oldDisplayEnabled = currentConfig['e-ink-display-connected'];
+
                         // Check if language was changed using pendingLanguageChange
                         const oldLanguage = currentConfig.language;
                         const newLanguage = pendingLanguageChange || formConfig.language;
@@ -9618,10 +9688,22 @@ function setupNavigationButtons() {
 
                         // Update current config
                         currentConfig = { ...currentConfig, ...formConfig };
-                        
+
                         if (languageChanged) {
                             pendingLanguageChange = null;
                         }
+
+                        // Trigger driver install if display device changed or display just enabled
+                        const newDeviceName = formConfig.omni_device_name || currentConfig.omni_device_name;
+                        const newDisplayEnabled = formConfig['e-ink-display-connected'];
+                        if (newDeviceName && newDisplayEnabled !== false) {
+                            const deviceChanged = oldDeviceName && newDeviceName !== oldDeviceName;
+                            const displayJustEnabled = newDisplayEnabled === true && !oldDisplayEnabled;
+                            if (deviceChanged || displayJustEnabled) {
+                                _installDisplayDrivers(newDeviceName);
+                            }
+                        }
+
                         showNotification(window.translations?.configuration_saved || 'Configuration saved successfully!', 'success');
                         _markClean();
                     } else {

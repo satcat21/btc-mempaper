@@ -260,7 +260,7 @@ These components are the same regardless of which display you choose:
 
 #### 1. Installation
 
-> **Supported OS:** Raspberry Pi OS Lite **32-bit** — both **Bookworm (Debian 12)** and **Trixie (Debian 13)** are supported. The installer handles two Pi Zero 1 WH (ARMv6) quirks automatically: it rebuilds Pillow from source if the piwheels wheel is incompatible with Python 3.13, and `wsgi.py` excludes gevent's ssl C extension (which uses ARMv7+ NEON instructions) to prevent SIGILL crashes on ARMv6. Ship with Trixie — it will keep receiving OS security updates longer.
+> **Supported OS:** Raspberry Pi OS Lite **32-bit** — both **Bookworm (Debian 12)** and **Trixie (Debian 13)** are supported. On Pi Zero 1 WH (ARMv6) with Trixie/Python 3.13, piwheels does not yet provide ARMv6 wheels for Python 3.13 and PyPI wheels target ARMv7+. The installer automatically detects this and rebuilds **gevent** and **Pillow** from source so their C extensions are compiled for the device's ARMv6 CPU. This takes 10–20 minutes on first install. Ship with Trixie — it receives OS security updates longer than Bookworm.
 
 **Raspberry Pi (one-click installer)**
 
@@ -613,6 +613,17 @@ git checkout <tag>                                    # e.g. git checkout v2.1.0
 .venv/bin/pip install -r requirements.txt --quiet
 sudo systemctl restart mempaper.service
 ```
+
+#### Transferring Memes via SCP
+
+The installer adds the `pi` user to the `mempaper` group and sets `static/memes/` to group-writable (`chmod 2775`), so you can copy memes directly from another machine without switching users:
+
+```bash
+# Copy a local memes folder to the Pi
+scp -r ~/memes/* pi@<pi-ip>:/home/mempaper/btc-mempaper/static/memes/
+```
+
+> **Note:** You must log out and back in (or run `newgrp mempaper`) on the Pi after installation for the group membership to take effect for any already-running SSH session.
 
 #### Private Repositories
 

@@ -29,7 +29,9 @@ set -e
 SERVICE_USER="mempaper"
 # If a prior run already relocated the repo into the service-user home,
 # the runner needs traverse permission before we can resolve SCRIPT_DIR.
-sudo chmod o+x "/home/${SERVICE_USER}" 2>/dev/null || true
+# g+x is needed because pi (added to the mempaper group) uses group permissions,
+# not "other" permissions, when accessing mempaper-owned paths.
+sudo chmod g+x,o+x "/home/${SERVICE_USER}" 2>/dev/null || true
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
@@ -115,7 +117,7 @@ if [ "$SCRIPT_DIR" != "$APP_DIR" ]; then
     fi
     SCRIPT_DIR="$APP_DIR"
     VENV_DIR="$SCRIPT_DIR/.venv"
-    sudo chmod o+x "/home/${SERVICE_USER}"
+    sudo chmod g+x,o+x "/home/${SERVICE_USER}"
     cd "$SCRIPT_DIR"
 fi
 
@@ -123,6 +125,24 @@ fi
 # write config/cache files and create the venv
 sudo chown -R "$SERVICE_USER":"$SERVICE_USER" "$SCRIPT_DIR"
 ok "Repo ownership set to '$SERVICE_USER'"
+
+# Allow the pi user (and any other admin) to SCP files into static/memes/.
+# pi is added to the mempaper group, which uses GROUP permissions on these paths —
+# so both the repo root and static/ need g+rx, not just o+x.
+sudo chmod g+rx "$SCRIPT_DIR"
+sudo mkdir -p "$SCRIPT_DIR/static/memes"
+sudo chown "$SERVICE_USER":"$SERVICE_USER" "$SCRIPT_DIR/static"
+sudo chmod g+rx "$SCRIPT_DIR/static"
+sudo chown "$SERVICE_USER":"$SERVICE_USER" "$SCRIPT_DIR/static/memes"
+sudo chmod 2775 "$SCRIPT_DIR/static/memes"  # setgid + group write; new files inherit mempaper group
+if id pi >/dev/null 2>&1; then
+    if ! groups pi | grep -qw "$SERVICE_USER"; then
+        sudo usermod -aG "$SERVICE_USER" pi
+        ok "Added 'pi' user to '$SERVICE_USER' group (SCP access to static/memes)"
+    else
+        ok "'pi' user already in '$SERVICE_USER' group"
+    fi
+fi
 
 # Pre-create .ssh dirs so ReadWritePaths in the service unit takes effect.
 # ProtectSystem=strict silently ignores ReadWritePaths entries that don't exist
@@ -188,25 +208,69 @@ sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" install $PIP_PIWHEELS spidev gpiozer
     && ok "GPIO/SPI libraries installed" \
     || warn "GPIO/SPI libraries not available (OK if not running on a Pi)"
 
-# Pillow source rebuild for Pi Zero 1 WH (armv6l)
-# piwheels.org provides pre-built armv6l wheels that work on the Pi Zero 1 WH.
-# Only rebuild from source if the installed wheel fails the import check.
+# On Pi Zero 1 WH (armv6l) with Python 3.13, piwheels does not yet provide
+# armv6l wheels for Python 3.13. PyPI wheels target armv7+ and cause SIGILL or
+# Python 3.13 ssl incompatibility. We rebuild gevent and Pillow from source.
+# Raspbian Trixie's system libwebp is compiled for ARMv7+ NEON and causes SIGILL
+# on ARMv6 during both encode and decode. We build libwebp from source with NEON
+# disabled and install it as a shared library so Pillow links against it at runtime.
 ARCH=$(uname -m)
 if [ "$ARCH" = "armv6l" ]; then
-    if sudo -u "$SERVICE_USER" "$VENV_DIR/bin/python" -c "from PIL import Image; Image.new('RGB', (1,1))" 2>/dev/null; then
-        ok "Pillow (piwheels wheel) works on armv6l — skipping source rebuild"
+    # gevent: test ssl C extension (SIGILL on armv7+ wheel, TypeError on Python 3.13 with ssl=False)
+    if sudo -u "$SERVICE_USER" "$VENV_DIR/bin/python" -c "import gevent.ssl; print('ok')" >/dev/null 2>&1; then
+        ok "gevent ssl works on armv6l — skipping source rebuild"
     else
-        step "Rebuilding Pillow from source (Pi Zero 1 WH — this takes a few minutes)"
-        # Ask pip which Pillow version is installed (pinned by requirements.txt in step 3).
-        # This avoids fragile grep/awk parsing of requirements.txt across different line endings.
+        step "Rebuilding gevent from source (Pi Zero 1 WH — takes 10-20 minutes)"
+        GEVENT_VER=$(sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" show gevent 2>/dev/null \
+            | grep '^Version:' | awk '{print $2}' | tr -d '[:space:]')
+        GEVENT_REQ="${GEVENT_VER:+gevent==$GEVENT_VER}"
+        GEVENT_REQ="${GEVENT_REQ:-gevent}"
+        sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" install --force-reinstall --no-cache-dir --no-binary :all: "$GEVENT_REQ"
+        ok "gevent rebuilt from source (${GEVENT_REQ})"
+    fi
+
+    # libwebp: Raspbian Trixie's package is compiled for ARMv7+ NEON — causes SIGILL on ARMv6.
+    # Build from source with NEON disabled, install as shared lib to override the system one.
+    # Test by probing WebP encode in a subprocess (SIGILL kills the child, not the app).
+    if sudo -u "$SERVICE_USER" "$VENV_DIR/bin/python" -c \
+        'from PIL import Image; import io; buf=io.BytesIO(); Image.new("RGB",(1,1)).save(buf,"WEBP")' \
+        >/dev/null 2>&1; then
+        ok "Pillow WebP works on armv6l — skipping libwebp source build"
+    else
+        LIBWEBP_VER="1.5.0"
+        LIBWEBP_URL="https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-${LIBWEBP_VER}.tar.gz"
+        step "Building libwebp ${LIBWEBP_VER} from source with NEON disabled (Pi Zero 1 WH — takes ~10 minutes)"
+        sudo apt-get install -y cmake
+        LIBWEBP_BUILD_DIR=$(mktemp -d)
+        wget -qO "${LIBWEBP_BUILD_DIR}/libwebp.tar.gz" "$LIBWEBP_URL"
+        tar xf "${LIBWEBP_BUILD_DIR}/libwebp.tar.gz" -C "$LIBWEBP_BUILD_DIR"
+        LIBWEBP_SRC=$(find "$LIBWEBP_BUILD_DIR" -maxdepth 1 -name 'libwebp-*' -type d | head -1)
+        mkdir -p "${LIBWEBP_SRC}/build"
+        cmake -S "$LIBWEBP_SRC" -B "${LIBWEBP_SRC}/build" \
+            -DWEBP_ENABLE_SIMD=OFF -DBUILD_SHARED_LIBS=ON -DCMAKE_BUILD_TYPE=Release \
+            >/dev/null 2>&1
+        make -j1 -C "${LIBWEBP_SRC}/build" >/dev/null 2>&1
+        sudo make -C "${LIBWEBP_SRC}/build" install >/dev/null 2>&1
+        # Overwrite the system libwebp shared library so runtime picks up our NEON-free build.
+        LIBWEBP_SO=$(find /usr/local/lib -name 'libwebp.so.*.*.*' | head -1)
+        LIBWEBP_SYSTEM=$(find /lib/arm-linux-gnueabihf -name 'libwebp.so.*.*.*' 2>/dev/null | head -1)
+        if [ -n "$LIBWEBP_SO" ] && [ -n "$LIBWEBP_SYSTEM" ]; then
+            sudo cp "$LIBWEBP_SO" "$LIBWEBP_SYSTEM"
+        fi
+        sudo ldconfig
+        rm -rf "$LIBWEBP_BUILD_DIR"
+        ok "libwebp ${LIBWEBP_VER} built without NEON and installed"
+
+        # Rebuild Pillow from source so it links against the new NEON-free libwebp.
+        step "Rebuilding Pillow from source (Pi Zero 1 WH — takes a few minutes)"
         PILLOW_VER=$(sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" show Pillow 2>/dev/null \
             | grep '^Version:' | awk '{print $2}' | tr -d '[:space:]')
-        PILLOW_REQ="${PILLOW_VER:+pillow==$PILLOW_VER}"
+        PILLOW_REQ="${PILLOW_VER:+Pillow==$PILLOW_VER}"
         PILLOW_REQ="${PILLOW_REQ:-Pillow}"
-        # Install cmake via apt so pip doesn't need to download cmake binaries at build time
-        sudo apt-get install -y cmake libjpeg-dev libpng-dev zlib1g-dev libfreetype6-dev
-        sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" install --force-reinstall --no-cache-dir --no-binary :all: "$PILLOW_REQ"
-        ok "Pillow rebuilt from source (${PILLOW_REQ})"
+        sudo apt-get install -y libjpeg-dev libpng-dev zlib1g-dev libfreetype6-dev libwebp-dev
+        sudo -u "$SERVICE_USER" TMPDIR="$SERVICE_HOME" "$VENV_DIR/bin/pip" install \
+            --force-reinstall --no-cache-dir --no-binary :all: "$PILLOW_REQ"
+        ok "Pillow rebuilt from source with ARMv6-safe WebP (${PILLOW_REQ})"
     fi
 fi
 

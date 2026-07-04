@@ -1299,8 +1299,8 @@ class ConfigManager:
                 "description": t.get("display_type_desc", "Select your specific e-paper display model"),
                 "_dk": "display_type_desc",
                 "options": [
-                    {"value": "epd13in3E", "label": "Waveshare 13.3\" 6-Color (Spectra 6) - 1600x1200"},
-                    {"value": "epd7in3f",  "label": "Waveshare 7.3\" 7-Color - 800x480"},
+                    {"value": "epd13in3E", "label": "Waveshare 13.3\" 6-Color (Spectra 6) — 1200×1600"},
+                    {"value": "epd7in3f",  "label": "Waveshare 7.3\" 7-Color — 800×480"},
                 ],
                 "category": "eink_display"
             },

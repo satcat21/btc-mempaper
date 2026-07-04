@@ -55,6 +55,26 @@ except ImportError:
 # Disable SSL warnings for local mempool connections
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+# Probe WebP encoding once at startup in a subprocess.
+# On ARMv6 (Pi Zero 1WH) the WebP C encoder can use NEON SIMD instructions
+# that cause SIGILL. SIGILL is a signal, not a Python exception, so it kills
+# the whole process even inside try/except — the subprocess isolates the crash.
+def _probe_webp_encoding():
+    import sys
+    try:
+        r = subprocess.run(
+            [sys.executable, '-c',
+             'from PIL import Image; import io; '
+             'img=Image.new("RGB",(1,1)); buf=io.BytesIO(); img.save(buf,"WEBP")'],
+            capture_output=True, timeout=5)
+        return r.returncode == 0
+    except Exception:
+        return False
+
+_WEBP_ENCODING_OK = _probe_webp_encoding()
+if not _WEBP_ENCODING_OK:
+    print("⚠️  WebP encoding disabled (SIGILL on ARMv6 + NEON-compiled libwebp). Falling back to PNG.")
+
 
 class MempaperApp:
     """Main application class that coordinates all components."""
@@ -4178,10 +4198,11 @@ class MempaperApp:
             try:
                 if web_img is not None:
                     web_img.save(self.current_image_path, compress_level=1)
-                    try:
-                        web_img.save(self.current_webp_image_path, format='WEBP', quality=82, method=4)
-                    except Exception:
-                        pass
+                    if _WEBP_ENCODING_OK:
+                        try:
+                            web_img.save(self.current_webp_image_path, format='WEBP', quality=82, method=4)
+                        except Exception:
+                            pass
                 if eink_img is not None:
                     eink_img.save(self.current_eink_image_path, compress_level=1)
             except Exception as e:
@@ -8281,6 +8302,39 @@ class MempaperApp:
 
             except Exception as e:
                 print(f"Driver install error: {e}")
+                traceback.print_exc()
+                return jsonify({'success': False, 'message': str(e)}), 500
+
+        # ── Display Options Endpoint ──────────────────────────────
+
+        @self.app.route('/api/display/options', methods=['GET'])
+        @require_auth(self.auth_manager)
+        def get_display_options():
+            """Return all display options with per-device driver availability status."""
+            try:
+                from tools.configure_display import (
+                    DEVICE_CONFIGS, DRIVER_DOWNLOADS, _drivers_missing
+                )
+                options = []
+                for device_id, info in DEVICE_CONFIGS.items():
+                    in_downloads = device_id in DRIVER_DOWNLOADS
+                    if in_downloads:
+                        missing = _drivers_missing(device_id)
+                        available = len(missing) == 0
+                    else:
+                        available = True
+                    options.append({
+                        'device_id': device_id,
+                        'label': info['name'],
+                        'description': info.get('description', ''),
+                        'width': info['width'],
+                        'height': info['height'],
+                        'available': available,
+                        'needs_download': in_downloads and not available,
+                    })
+                return jsonify({'success': True, 'options': options})
+            except Exception as e:
+                print(f"Display options error: {e}")
                 traceback.print_exc()
                 return jsonify({'success': False, 'message': str(e)}), 500
 

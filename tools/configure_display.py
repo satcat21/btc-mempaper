@@ -37,42 +37,43 @@ DEVICE_CONFIGS = {
         "description": "7.3 inch 7-color e-ink display",
         "driver_files": ["epd7in3f.py", "epdconfig.py"],
     },
-    "waveshare_epd.epd5in83_v2": {
-        "name": "Waveshare 5.83\" V2 (via omni-epd)",
-        "width": 648,
-        "height": 480,
-        "description": "Medium sized black/white display",
-    },
-    "waveshare_epd.epd4in2": {
-        "name": "Waveshare 4.2\" (via omni-epd)",
-        "width": 400,
-        "height": 300,
-        "description": "Popular 4.2 inch black/white display",
-    },
-    "waveshare_epd.epd2in7": {
-        "name": "Waveshare 2.7\" (via omni-epd)",
-        "width": 264,
-        "height": 176,
-        "description": "Compact black/white display",
-    },
-    "inky.impression": {
-        "name": "Inky Impression 7-color",
-        "width": 448,
-        "height": 600,
-        "description": "Pimoroni 7-color e-ink display",
-    },
-    "inky.auto": {
-        "name": "Inky Auto-detect",
-        "width": 400,
-        "height": 300,
-        "description": "Auto-detect connected Inky display",
-    },
-    "omni_epd.mock": {
-        "name": "Mock Display (Testing)",
-        "width": 800,
-        "height": 600,
-        "description": "Virtual display for testing (no hardware)",
-    },
+    # Displays below are not yet supported in this release
+    # "waveshare_epd.epd5in83_v2": {
+    #     "name": "Waveshare 5.83\" V2 (via omni-epd)",
+    #     "width": 648,
+    #     "height": 480,
+    #     "description": "Medium sized black/white display",
+    # },
+    # "waveshare_epd.epd4in2": {
+    #     "name": "Waveshare 4.2\" (via omni-epd)",
+    #     "width": 400,
+    #     "height": 300,
+    #     "description": "Popular 4.2 inch black/white display",
+    # },
+    # "waveshare_epd.epd2in7": {
+    #     "name": "Waveshare 2.7\" (via omni-epd)",
+    #     "width": 264,
+    #     "height": 176,
+    #     "description": "Compact black/white display",
+    # },
+    # "inky.impression": {
+    #     "name": "Inky Impression 7-color",
+    #     "width": 448,
+    #     "height": 600,
+    #     "description": "Pimoroni 7-color e-ink display",
+    # },
+    # "inky.auto": {
+    #     "name": "Inky Auto-detect",
+    #     "width": 400,
+    #     "height": 300,
+    #     "description": "Auto-detect connected Inky display",
+    # },
+    # "omni_epd.mock": {
+    #     "name": "Mock Display (Testing)",
+    #     "width": 800,
+    #     "height": 600,
+    #     "description": "Virtual display for testing (no hardware)",
+    # },
 }
 
 # Download sources for native Waveshare drivers
@@ -232,7 +233,7 @@ def install_drivers(device_id):
 
     print(f"   Downloading drivers from {url.split('/')[2]}...")
     try:
-        with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
+        with tempfile.NamedTemporaryFile(suffix=".zip", delete=False, dir=device_driver_dir) as tmp:
             tmp_path = tmp.name
 
         # Download with progress
