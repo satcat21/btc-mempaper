@@ -109,8 +109,12 @@ def _import_display_isolated(module_name, subdir, fallback_paths, _retried=False
         sys.modules.pop(_pkg, None)
         sys.modules.pop(f"{_pkg}.epdconfig", None)
         sys.modules.pop(f"{_pkg}.{module_name}", None)
+        # SPI device missing — /dev/spidev0.0 doesn't exist
+        if isinstance(e, FileNotFoundError) and not os.path.exists('/dev/spidev0.0'):
+            print(f"   SPI interface is not enabled on this Pi.")
+            print(f"   Enable it and reboot: sudo raspi-config nonint do_spi 0 && sudo reboot")
         # GPIO left busy by a previously crashed worker — clean up and retry once
-        if not _retried and ('busy' in err_str.lower() or 'gpio' in err_str.lower()):
+        elif not _retried and ('busy' in err_str.lower() or 'gpio' in err_str.lower()):
             try:
                 import RPi.GPIO as GPIO
                 GPIO.cleanup()

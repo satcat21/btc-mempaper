@@ -100,6 +100,42 @@ if [ -n "$_LATEST" ] && [ "$_LATEST" != "$_MVER" ]; then
 fi
 printf '\n'
 
+# ── Minification notice ────────────────────────────────────────────────────────
+_DIST_EXISTS=false
+_MINIFY_STALE=false
+_JS_DIST="${PROJECT_DIR}/static/js/dist"
+_CSS_DIST="${PROJECT_DIR}/static/css/dist"
+if { [ -d "$_JS_DIST" ]  && ls "$_JS_DIST"/*.js  >/dev/null 2>&1; } || \
+   { [ -d "$_CSS_DIST" ] && ls "$_CSS_DIST"/*.css >/dev/null 2>&1; }; then
+    _DIST_EXISTS=true
+    # Newest dist file is the staleness reference (-printf requires GNU find, fine on Pi OS)
+    _DIST_REF=$(find "$_JS_DIST" "$_CSS_DIST" -maxdepth 1 \( -name '*.js' -o -name '*.css' \) \
+                -type f -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
+    # Stale when at least one source file is newer than the newest dist file
+    if [ -n "$_DIST_REF" ] && \
+       find "${PROJECT_DIR}/static/js" "${PROJECT_DIR}/static/css" \
+            -maxdepth 1 \( -name '*.js' -o -name '*.css' \) -newer "$_DIST_REF" \
+            2>/dev/null | grep -q .; then
+        _MINIFY_STALE=true
+    fi
+fi
+# Show when stale, or when an update is available (minify must be re-run after checkout)
+if [ "$_MINIFY_STALE" = "true" ] || \
+   { [ "$_DIST_EXISTS" = "true" ] && [ -n "$_LATEST" ] && [ "$_LATEST" != "$_MVER" ]; }; then
+    _MCU=$(id -un 2>/dev/null || echo "${USER:-unknown}")
+    if [ "$_MINIFY_STALE" = "true" ]; then
+        printf "  %b${_B}⚡ Minified JS/CSS is stale${_R}%b — re-run minify.py:\n" "${_Y}" "${_R}"
+    else
+        printf "  %b${_B}⚡ Re-run minify.py after updating${_R}%b:\n" "${_Y}" "${_R}"
+    fi
+    if [ "$_MCU" = "mempaper" ]; then
+        printf "  %bcd ~/btc-mempaper && .venv/bin/python tools/minify.py%b\n" "${_D}" "${_R}"
+    else
+        printf "  %bsudo -u mempaper sh -c 'cd %s && .venv/bin/python tools/minify.py'%b\n" "${_D}" "${PROJECT_DIR}" "${_R}"
+    fi
+    printf '\n'
+fi
+
 _SEP="────────────────────────────────────────────────────────────────"
 printf ' %b\n' "${_B}${_SEP}${_R}"
 

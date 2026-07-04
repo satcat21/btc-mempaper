@@ -392,22 +392,25 @@ if [ "$DISPLAY_CHOICE" != "s" ] && [ "$DISPLAY_CHOICE" != "S" ]; then
     sudo -u "$SERVICE_USER" "$VENV_DIR/bin/python" tools/configure_display.py $CONFIGURE_ARGS
     ok "Display configured"
 
-    # Enable SPI interface (required for e-ink displays)
-    if [ "$DISPLAY_CHOICE" != "8" ]; then
-        echo ""
-        echo "  Enabling SPI interface..."
-        if command -v raspi-config >/dev/null 2>&1; then
-            sudo raspi-config nonint do_spi 0
-            ok "SPI interface enabled"
-            if [ ! -e /dev/spidev0.0 ]; then
-                warn "SPI device not yet available — a reboot is required after install"
-            fi
-        else
-            warn "raspi-config not found — enable SPI manually: sudo raspi-config > Interface Options > SPI"
-        fi
-    fi
 else
     warn "Display configuration skipped — configure later in Settings > Display"
+fi
+
+# Enable SPI interface for all real display choices (including skip — user may
+# connect a display later via web UI, and SPI is harmless when unused).
+# Only skip for option 8 (Mock/virtual display — no hardware, no SPI needed).
+if [ "$DISPLAY_CHOICE" != "8" ]; then
+    echo ""
+    echo "  Enabling SPI interface..."
+    if command -v raspi-config >/dev/null 2>&1; then
+        sudo raspi-config nonint do_spi 0
+        ok "SPI interface enabled"
+        if [ ! -e /dev/spidev0.0 ]; then
+            warn "SPI device not yet available — a reboot is required after install"
+        fi
+    else
+        warn "raspi-config not found — enable SPI manually: sudo raspi-config > Interface Options > SPI"
+    fi
 fi
 
 # ── Step 6: Systemd service ───────────────────────────────────────────────
@@ -586,10 +589,8 @@ fi
 
 # ── Done ──────────────────────────────────────────────────────────────────
 NEEDS_REBOOT=false
-if [ "$DISPLAY_CHOICE" != "s" ] && [ "$DISPLAY_CHOICE" != "S" ] && [ "$DISPLAY_CHOICE" != "8" ]; then
-    if [ ! -e /dev/spidev0.0 ]; then
-        NEEDS_REBOOT=true
-    fi
+if [ "$DISPLAY_CHOICE" != "8" ] && [ ! -e /dev/spidev0.0 ]; then
+    NEEDS_REBOOT=true
 fi
 
 # Derive hotspot credentials from MAC address (same algorithm as mempaper_app.py)

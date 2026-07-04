@@ -76,7 +76,10 @@ DEVICE_CONFIGS = {
     # },
 }
 
-# Download sources for native Waveshare drivers
+# Download sources for native Waveshare drivers.
+# Two modes:
+#   "url" + "files"  — download a zip and extract named files from it
+#   "direct_files"   — download each file individually by URL (faster, no zip overhead)
 DRIVER_DOWNLOADS = {
     "epd13in3E": {
         "url": "https://files.waveshare.com/wiki/13.3inch%20e-Paper%20HAT%2B/13.3inch_e-Paper_E.zip",
@@ -87,10 +90,17 @@ DRIVER_DOWNLOADS = {
         },
     },
     "epd7in3f": {
-        "url": "https://github.com/waveshare/e-Paper/archive/refs/heads/master.zip",
-        "files": {
-            "epd7in3f.py": None,
-            "epdconfig.py": None,
+        # Downloading the full e-Paper repo zip (~80 MB) for two small files is wasteful.
+        # Fetch each file directly from raw.githubusercontent.com instead.
+        "direct_files": {
+            "epd7in3f.py": (
+                "https://raw.githubusercontent.com/waveshare/e-Paper/master"
+                "/RaspberryPi_JetsonNano/python/lib/waveshare_epd/epd7in3f.py"
+            ),
+            "epdconfig.py": (
+                "https://raw.githubusercontent.com/waveshare/e-Paper/master"
+                "/RaspberryPi_JetsonNano/python/lib/waveshare_epd/epdconfig.py"
+            ),
         },
     },
 }
@@ -224,11 +234,40 @@ def install_drivers(device_id, max_retries=5, retry_delay=10):
         return True
 
     dl = DRIVER_DOWNLOADS[device_id]
-    url = dl["url"]
-    target_files = list(dl["files"].keys())
-
     device_driver_dir = os.path.join(DRIVERS_DIR, device_id)
     os.makedirs(device_driver_dir, exist_ok=True)
+
+    # ── Direct file download mode ──────────────────────────────────────────────
+    if "direct_files" in dl:
+        installed = []
+        for fname, url in dl["direct_files"].items():
+            if fname not in missing:
+                continue
+            dest = os.path.join(device_driver_dir, fname)
+            host = url.split('/')[2]
+            for attempt in range(1, max_retries + 1):
+                try:
+                    if attempt > 1:
+                        import time
+                        print(f"   Retrying {fname} in {retry_delay}s (attempt {attempt}/{max_retries})...")
+                        time.sleep(retry_delay)
+                    print(f"   Downloading {fname} from {host}...")
+                    with urllib.request.urlopen(url, timeout=30) as resp:
+                        with open(dest, 'wb') as f:
+                            f.write(resp.read())
+                    print(f"   Installed: {os.path.join(device_id, fname)}")
+                    installed.append(fname)
+                    break
+                except Exception as e:
+                    print(f"   ❌ Failed to download {fname} (attempt {attempt}/{max_retries}): {e}")
+                    if attempt == max_retries:
+                        print("   Try again: python tools/configure_display.py")
+                        return False
+        return len(installed) > 0
+
+    # ── Zip download mode ──────────────────────────────────────────────────────
+    url = dl["url"]
+    target_files = list(dl["files"].keys())
 
     # Remove any leftover temp zips from interrupted previous attempts
     for _stale in glob.glob(os.path.join(device_driver_dir, 'tmp*.zip')):
@@ -254,7 +293,17 @@ def install_drivers(device_id, max_retries=5, retry_delay=10):
             with tempfile.NamedTemporaryFile(suffix=".zip", delete=False, dir=device_driver_dir) as tmp:
                 tmp_path = tmp.name
 
-            urllib.request.urlretrieve(url, tmp_path, reporthook=_report)
+            with urllib.request.urlopen(url, timeout=60) as resp:
+                total = int(resp.headers.get('Content-Length', 0))
+                downloaded = 0
+                with open(tmp_path, 'wb') as f:
+                    while True:
+                        chunk = resp.read(65536)
+                        if not chunk:
+                            break
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        _report(downloaded, 1, total)
             print()  # newline after progress
 
             installed = _extract_files_from_zip(tmp_path, target_files, device_driver_dir)

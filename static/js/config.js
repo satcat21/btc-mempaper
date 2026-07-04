@@ -3363,11 +3363,25 @@ async function _installDisplayDrivers(deviceId) {
         if (data.success) {
             if (bar) bar.style.transform = 'scaleX(1)';
 
-            if (data.restart_required) {
+            if (data.spi_required) {
+                const spiMsg = window.translations?.spi_not_enabled || 'SPI interface not enabled';
+                const spiCmd = 'sudo raspi-config nonint do_spi 0 && sudo reboot';
+                if (statusEl) statusEl.innerHTML =
+                    `⚠️ ${spiMsg}:<br><code style="font-size:0.8em">${spiCmd}</code>`;
+                toast.classList.add('update-toast-error');
+                toast.innerHTML += `
+                    <button class="update-toast-dismiss" onclick="this.closest('.update-countdown-toast').remove()">
+                        ${window.translations?.dismiss || 'Dismiss'}
+                    </button>
+                `;
+            } else if (data.restart_required) {
                 if (statusEl) statusEl.innerHTML = '<span class="update-spinner"></span> ' + (window.translations?.drivers_installed_restarting || 'Drivers installed! Service restarting...');
                 toast.classList.add('update-toast-success');
                 // Poll for service to come back, then reload
                 _startDriverHealthPolling(toast);
+            } else if (!data.installed) {
+                // Nothing was downloaded or installed — dismiss silently
+                toast.remove();
             } else {
                 if (statusEl) statusEl.textContent = data.message;
                 toast.classList.add('update-toast-success');
@@ -8555,16 +8569,12 @@ async function saveConfiguration() {
             currentConfig = newConfig;
             window.currentConfig = newConfig; // Make available globally
 
-            // Install display drivers if needed — trigger whenever display is enabled
-            // and drivers are not yet available, regardless of whether device/toggle changed.
+            // Install display drivers if needed — always call when display is enabled;
+            // the backend is idempotent and returns immediately when nothing is needed.
             const newDeviceName = formConfig.omni_device_name || newConfig.omni_device_name;
             const newDisplayEnabled = formConfig['e-ink-display-connected'];
-            if (newDeviceName && newDisplayEnabled === true) {
-                const opt = (window._displayOptionMap || {})[newDeviceName];
-                const driversReady = opt ? opt.available : true;
-                if (!driversReady) {
-                    _installDisplayDrivers(newDeviceName);
-                }
+            if (newDeviceName && newDisplayEnabled) {
+                _installDisplayDrivers(newDeviceName);
             }
 
             // Language already applied live via setLanguage() on dropdown change — just clear pending flag
@@ -9716,9 +9726,7 @@ function setupNavigationButtons() {
                     const result = await response.json();
                     
                     if (result.success) {
-                        // Capture display state before config update for driver install check
-                        const oldDeviceName = currentConfig.omni_device_name;
-                        const oldDisplayEnabled = currentConfig['e-ink-display-connected'];
+                        // (oldDeviceName/oldDisplayEnabled no longer used — driver install always fires)
 
                         // Check if language was changed using pendingLanguageChange
                         const oldLanguage = currentConfig.language;
@@ -9732,15 +9740,12 @@ function setupNavigationButtons() {
                             pendingLanguageChange = null;
                         }
 
-                        // Trigger driver install if display device changed or display just enabled
+                        // Always trigger driver install when display is enabled — backend is
+                        // idempotent and returns immediately when nothing is needed.
                         const newDeviceName = formConfig.omni_device_name || currentConfig.omni_device_name;
                         const newDisplayEnabled = formConfig['e-ink-display-connected'];
-                        if (newDeviceName && newDisplayEnabled !== false) {
-                            const deviceChanged = oldDeviceName && newDeviceName !== oldDeviceName;
-                            const displayJustEnabled = newDisplayEnabled === true && !oldDisplayEnabled;
-                            if (deviceChanged || displayJustEnabled) {
-                                _installDisplayDrivers(newDeviceName);
-                            }
+                        if (newDeviceName && newDisplayEnabled) {
+                            _installDisplayDrivers(newDeviceName);
                         }
 
                         showNotification(window.translations?.configuration_saved || 'Configuration saved successfully!', 'success');

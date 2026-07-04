@@ -8407,6 +8407,24 @@ class MempaperApp:
 
                 if ok:
                     print(f"✅ Display drivers installed for {device_id}")
+
+                    # SPI must be enabled for the hardware to work
+                    spi_missing = not os.path.exists('/dev/spidev0.0')
+                    if spi_missing:
+                        print(f"⚠️ SPI interface not enabled — /dev/spidev0.0 missing.")
+                        print(f"   Enable it: sudo raspi-config nonint do_spi 0 && sudo reboot")
+                        return jsonify({
+                            'success': True,
+                            'message': (
+                                f'Drivers installed for {DEVICE_CONFIGS[device_id]["name"]}, '
+                                f'but SPI is not enabled. '
+                                f'Run: sudo raspi-config nonint do_spi 0 && sudo reboot'
+                            ),
+                            'installed': True,
+                            'restart_required': False,
+                            'spi_required': True,
+                        })
+
                     # Schedule service restart so new drivers are loaded
                     def _delayed_restart():
                         time.sleep(2)
@@ -8424,7 +8442,8 @@ class MempaperApp:
                         'success': True,
                         'message': f'Drivers installed for {DEVICE_CONFIGS[device_id]["name"]}. Service restarting...',
                         'installed': True,
-                        'restart_required': True
+                        'restart_required': True,
+                        'spi_required': False,
                     })
                 else:
                     return jsonify({
