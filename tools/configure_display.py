@@ -213,7 +213,7 @@ def _extract_files_from_zip(zip_path, target_files, dest_dir):
     return installed
 
 
-def install_drivers(device_id):
+def install_drivers(device_id, max_retries=5, retry_delay=10):
     """Download and install driver files for a native Waveshare display."""
     if device_id not in DRIVER_DOWNLOADS:
         return True  # Nothing to install for non-native devices
@@ -227,55 +227,66 @@ def install_drivers(device_id):
     url = dl["url"]
     target_files = list(dl["files"].keys())
 
-    # Create device-specific subdirectory (e.g., display/drivers/epd13in3E/)
     device_driver_dir = os.path.join(DRIVERS_DIR, device_id)
     os.makedirs(device_driver_dir, exist_ok=True)
 
-    print(f"   Downloading drivers from {url.split('/')[2]}...")
-    try:
-        with tempfile.NamedTemporaryFile(suffix=".zip", delete=False, dir=device_driver_dir) as tmp:
-            tmp_path = tmp.name
+    def _report(count, block_size, total):
+        if total > 0:
+            pct = min(100, count * block_size * 100 // total)
+            print(f"\r   Downloading... {pct}%", end="", flush=True)
 
-        # Download with progress
-        def _report(count, block_size, total):
-            if total > 0:
-                pct = min(100, count * block_size * 100 // total)
-                print(f"\r   Downloading... {pct}%", end="", flush=True)
-
-        urllib.request.urlretrieve(url, tmp_path, reporthook=_report)
-        print()  # newline after progress
-
-        installed = _extract_files_from_zip(tmp_path, target_files, device_driver_dir)
-        for fname in installed:
-            print(f"   Installed: {os.path.join(device_id, fname)}")
-
-        os.unlink(tmp_path)
-        return len(installed) > 0
-
-    except Exception as e:
-        print(f"   ❌ Driver download failed: {e}")
-        print(f"   Try again: python tools/configure_display.py")
+    for attempt in range(1, max_retries + 1):
+        tmp_path = None
         try:
+            if attempt > 1:
+                import time
+                print(f"   Retrying in {retry_delay}s (attempt {attempt}/{max_retries})...")
+                time.sleep(retry_delay)
+
+            print(f"   Downloading drivers from {url.split('/')[2]}...")
+            with tempfile.NamedTemporaryFile(suffix=".zip", delete=False, dir=device_driver_dir) as tmp:
+                tmp_path = tmp.name
+
+            urllib.request.urlretrieve(url, tmp_path, reporthook=_report)
+            print()  # newline after progress
+
+            installed = _extract_files_from_zip(tmp_path, target_files, device_driver_dir)
+            for fname in installed:
+                print(f"   Installed: {os.path.join(device_id, fname)}")
+
             os.unlink(tmp_path)
-        except Exception:
-            pass
-        return False
+            return len(installed) > 0
+
+        except Exception as e:
+            print(f"\n   ❌ Driver download failed (attempt {attempt}/{max_retries}): {e}")
+            if tmp_path:
+                try:
+                    os.unlink(tmp_path)
+                except Exception:
+                    pass
+            if attempt == max_retries:
+                print("   Try again: python tools/configure_display.py")
+
+    return False
 
 
-def set_device(config, device_id):
+def set_device(config, device_id, offline=False):
     if device_id not in DEVICE_CONFIGS:
         print(f"❌ Unknown device: {device_id}")
         return False
 
     info = DEVICE_CONFIGS[device_id]
 
-    # Install drivers if needed
+    # Install drivers if needed (skip silently when offline)
     if device_id in DRIVER_DOWNLOADS:
         missing = _drivers_missing(device_id)
         if missing:
-            print(f"\nInstalling drivers for {info['name']}...")
-            if not install_drivers(device_id):
-                print(f"   Continuing with config update anyway.")
+            if offline:
+                print(f"   Skipping driver download (offline mode) — fetch via web GUI when online.")
+            else:
+                print(f"\nInstalling drivers for {info['name']}...")
+                if not install_drivers(device_id):
+                    print(f"   Continuing with config update anyway.")
         else:
             print(f"   Drivers already present.")
 
@@ -306,18 +317,21 @@ def main():
     show_current_device(config)
 
     if len(sys.argv) > 1:
-        device_arg = sys.argv[1]
+        args = sys.argv[1:]
+        offline = "--offline" in args
+        args = [a for a in args if a != "--offline"]
+        device_arg = args[0] if args else ""
 
         if device_arg.isdigit():
             device_num = int(device_arg)
             device_list = list(DEVICE_CONFIGS.keys())
             if 1 <= device_num <= len(device_list):
-                set_device(config, device_list[device_num - 1])
+                set_device(config, device_list[device_num - 1], offline=offline)
             else:
                 print(f"❌ Invalid device number: {device_num}")
                 list_available_devices()
         elif device_arg in DEVICE_CONFIGS:
-            set_device(config, device_arg)
+            set_device(config, device_arg, offline=offline)
         elif device_arg in ["list", "show", "devices"]:
             list_available_devices()
         else:

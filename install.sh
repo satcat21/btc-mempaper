@@ -65,8 +65,8 @@ cat <<'ASCIIEOF'
   _ __ ___   ___ _ __ ___  _ __   __ _ _ __   ___ _ __
  | '_ ` _ \ / _ \ '_ ` _ \| '_ \ / _` | '_ \ / _ \ '__|
  | | | | | |  __/ | | | | | |_) | (_| | |_) |  __/ |
- |_| |_| |_|\___|_| |_| |_| .__/ \__,_| .__/ \___|_|
-                            |_|         |_|
+ |_| |_| |_|\___|_| |_| |_| .__/ \__,_| .__/ \___|_|        
+                          |_|         |_|
                Bitcoin Meme Block Clock  
 
                       Installer 
@@ -353,7 +353,16 @@ done
 
 if [ "$DISPLAY_CHOICE" != "s" ] && [ "$DISPLAY_CHOICE" != "S" ]; then
     echo ""
-    sudo -u "$SERVICE_USER" "$VENV_DIR/bin/python" tools/configure_display.py "$DISPLAY_CHOICE"
+    # Pass --offline flag when no internet is reachable so driver download is
+    # skipped silently rather than retried repeatedly — drivers can be fetched
+    # later via the web GUI.
+    if curl -fsS --max-time 5 https://github.com >/dev/null 2>&1; then
+        CONFIGURE_ARGS="$DISPLAY_CHOICE"
+    else
+        warn "No internet connection — driver download skipped. Select the display again in the web GUI once online to fetch drivers automatically."
+        CONFIGURE_ARGS="$DISPLAY_CHOICE --offline"
+    fi
+    sudo -u "$SERVICE_USER" "$VENV_DIR/bin/python" tools/configure_display.py $CONFIGURE_ARGS
     ok "Display configured"
 
     # Enable SPI interface (required for e-ink displays)
