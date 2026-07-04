@@ -49,13 +49,20 @@ if [ "$(id -u)" != "0" ]; then
     fail "Run with sudo: sudo bash $0 $*"
 fi
 
-# ── Read required version ─────────────────────────────────────────────────────
+# ── Detect OS and read required version ───────────────────────────────────────
 if [ ! -f "$VERSION_FILE" ]; then
     fail "tools/python_version not found — cannot determine required Python minor"
 fi
-REQUIRED_MINOR=$(cat "$VERSION_FILE" | tr -d '[:space:]')
+OS_CODENAME=$(. /etc/os-release 2>/dev/null && echo "${VERSION_CODENAME:-}" | tr '[:upper:]' '[:lower:]')
+if [ -z "$OS_CODENAME" ]; then
+    fail "Cannot detect OS version (VERSION_CODENAME not found in /etc/os-release)"
+fi
+REQUIRED_MINOR=$(grep -E "^${OS_CODENAME}=" "$VERSION_FILE" 2>/dev/null | cut -d= -f2 | tr -d '[:space:]')
+if [ -z "$REQUIRED_MINOR" ]; then
+    fail "No Python version entry for OS '${OS_CODENAME}' in tools/python_version — add '${OS_CODENAME}=<minor>' to the file"
+fi
 if ! echo "$REQUIRED_MINOR" | grep -qE '^[0-9]+$'; then
-    fail "tools/python_version contains invalid content: '$REQUIRED_MINOR' (expected a number like '14')"
+    fail "Invalid Python minor '${REQUIRED_MINOR}' for '${OS_CODENAME}' in tools/python_version (expected a number)"
 fi
 
 # ── Current version ───────────────────────────────────────────────────────────
@@ -68,8 +75,8 @@ echo "  Current : Python ${CURRENT_MAJOR}.${CURRENT_MINOR}"
 echo "  Required: Python ${CURRENT_MAJOR}.${REQUIRED_MINOR}"
 echo ""
 
-if [ "$CURRENT_MINOR" = "$REQUIRED_MINOR" ]; then
-    ok "Already on Python ${CURRENT_MAJOR}.${REQUIRED_MINOR} — nothing to do."
+if [ "$CURRENT_MINOR" -ge "$REQUIRED_MINOR" ] 2>/dev/null; then
+    ok "Python ${CURRENT_MAJOR}.${CURRENT_MINOR} meets requirement (≥ 3.${REQUIRED_MINOR}) — nothing to do."
     exit 0
 fi
 
@@ -181,10 +188,6 @@ fi
 step "Re-locking Python ${CURRENT_MAJOR}.${NEW_MINOR}"
 apt-mark hold python3 python3-dev python3-venv >/dev/null 2>&1 \
     && ok "Python ${CURRENT_MAJOR}.${NEW_MINOR} locked (apt-mark hold)"
-
-# Update the recorded version
-echo "$NEW_MINOR" > "$VERSION_FILE"
-ok "tools/python_version updated to ${NEW_MINOR}"
 
 # ── Step 6: Restart service ───────────────────────────────────────────────────
 if $NO_RESTART; then

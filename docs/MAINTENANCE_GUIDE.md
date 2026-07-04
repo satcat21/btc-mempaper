@@ -55,14 +55,36 @@ Then verify:
 - Pillow WebP works: `python3 -c "from PIL import Image; import io; b=io.BytesIO(); Image.new('RGB',(1,1)).save(b,'WEBP'); print('ok')"` — if SIGILL, libwebp source build needed
 - Full install: delete `.venv`, re-run install.sh, confirm the service starts correctly
 
-### Step 2 — Update the version lock file
+### Step 2 — Update the version spec file
 
-```bash
-echo "14" > tools/python_version
-git commit tools/python_version -m "feat: support Python 3.14"
+Edit `tools/python_version` and bump the entry for the relevant OS codename:
+
+```
+# before
+trixie=13
+
+# after
+trixie=14
 ```
 
-`tools/python_version` contains a single number — the required Python minor version. It is written by `install.sh` on first install and read by both the web UI update flow and `tools/upgrade_python.sh`.
+Then commit:
+
+```bash
+git commit tools/python_version -m "feat(trixie): require Python 3.14"
+```
+
+`tools/python_version` is a git-managed spec file mapping Raspberry Pi OS codenames to the minimum required Python minor. The web UI update flow detects the current OS via `/etc/os-release`, looks up its entry, and only triggers an upgrade when `current_minor < required_minor`. Devices already on a newer minor are not affected.
+
+```
+bookworm=11
+trixie=13
+```
+
+> **Current entries:** Bookworm (Python 3.11 minimum) and Trixie (Python 3.13 minimum).
+> A Trixie device running 3.13 passes (13 ≥ 13). A Bookworm device running 3.11 passes (11 ≥ 11).
+> Only if a future release sets `bookworm=12` would Bookworm devices see an upgrade prompt.
+
+To **add a new OS** (e.g. Forky/Debian 14): add `forky=14` to the file and push. Devices on that OS will auto-upgrade Python when they pull the update.
 
 ### Step 3 — Push a release
 

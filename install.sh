@@ -61,17 +61,23 @@ if ! command -v python3 >/dev/null 2>&1; then
     fail "python3 not found. Install it with: sudo apt install python3"
 fi
 
-cat <<'ASCIIEOF'
-  _ __ ___   ___ _ __ ___  _ __   __ _ _ __   ___ _ __
- | '_ ` _ \ / _ \ '_ ` _ \| '_ \ / _` | '_ \ / _ \ '__|
- | | | | | |  __/ | | | | | |_) | (_| | |_) |  __/ |
- |_| |_| |_|\___|_| |_| |_| .__/ \__,_| .__/ \___|_|        
-                          |_|         |_|
-               Bitcoin Meme Block Clock  
-
-                      Installer 
-
-ASCIIEOF
+python3 - <<'PYEOF'
+W = '\033[1;97m'       # bold bright white — "mem"
+O = '\033[38;5;214m'   # orange            — "paper"
+R = '\033[0m'
+lines = [
+    "  _ __ ___   ___ _ __ ___  _ __   __ _ _ __   ___ _ __",
+    " | '_ ` _ \\ / _ \\ '_ ` _ \\| '_ \\ / _` | '_ \\ / _ \\ '__|",
+    " | | | | | |  __/ | | | | | |_) | (_| | |_) |  __/ |",
+    " |_| |_| |_|\\___|_| |_| |_| .__/ \\__,_| .__/ \\___|_|",
+    "                          |_|         |_|",
+]
+s = 26
+for l in lines:
+    print(f"{W}{l[:s]}{O}{l[s:]}{R}")
+print(f"\n{O}               Bitcoin Meme Block Clock{R}")
+print(f"\n{O}                      Installer{R}\n")
+PYEOF
 echo ""
 echo "  User:    $SERVICE_USER (service account)"
 echo "  Runner:  $(whoami)"
@@ -199,8 +205,13 @@ sudo apt-mark hold python3 python3-dev python3-venv >/dev/null 2>&1 \
     && ok "Python 3.${_PYMINOR} version locked — run tools/upgrade_python.sh to move to a new minor" \
     || warn "Could not lock Python version (non-fatal)"
 
-# Record the currently locked minor for the upgrade-path check
-echo "${_PYMINOR}" > "${PROJECT_DIR}/tools/python_version"
+# Validate that this OS has an entry in the Python version spec file.
+# tools/python_version is a git-managed spec (codename=minor pairs) — not written here.
+_OS_CODENAME=$(. /etc/os-release 2>/dev/null && echo "${VERSION_CODENAME:-}" | tr '[:upper:]' '[:lower:]')
+_VERSION_FILE="${PROJECT_DIR}/tools/python_version"
+if [ -n "$_OS_CODENAME" ] && ! grep -qE "^${_OS_CODENAME}=" "$_VERSION_FILE" 2>/dev/null; then
+    warn "No Python version entry for OS '${_OS_CODENAME}' in tools/python_version — web update auto-upgrade will not trigger for this OS"
+fi
 
 # Always include piwheels so ARMv6-compatible wheels are found on any OS.
 # Trixie (Debian 13) does not ship with piwheels in pip.conf unlike Bookworm.

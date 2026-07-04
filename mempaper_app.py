@@ -8098,9 +8098,26 @@ class MempaperApp:
                     py_version_file = os.path.join(project_dir, 'tools', 'python_version')
                     if os.path.exists(py_version_file):
                         try:
-                            required_minor = int(open(py_version_file).read().strip())
+                            _os_codename = ''
+                            try:
+                                with open('/etc/os-release') as _f:
+                                    for _l in _f:
+                                        if _l.startswith('VERSION_CODENAME='):
+                                            _os_codename = _l.split('=', 1)[1].strip().strip('"').lower()
+                                            break
+                            except OSError:
+                                pass
+                            required_minor = None
+                            with open(py_version_file) as _f:
+                                for _l in _f:
+                                    _l = _l.strip()
+                                    if '=' in _l and not _l.startswith('#'):
+                                        _k, _v = _l.split('=', 1)
+                                        if _k.strip().lower() == _os_codename:
+                                            required_minor = int(_v.strip())
+                                            break
                             current_minor = sys.version_info.minor
-                            if required_minor != current_minor:
+                            if required_minor is not None and current_minor < required_minor:
                                 _emit('update_output', {
                                     'line': f'Python 3.{required_minor} required (currently 3.{current_minor}) — upgrading Python first...',
                                     'phase': 'pip', 'header': True
