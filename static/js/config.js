@@ -2072,6 +2072,7 @@ async function loadConfiguration() {
         categories = data.categories;
         colorOptions = data.color_options || [];
         window.btcHolidays = data.btc_holidays || {};
+        window._rebootWindow = data.reboot_window || null;
         configCurrentUser = data.current_user || '';
         
         // Check wallet configuration data
@@ -5114,6 +5115,10 @@ function createFormField(key, field, value) {
             input.className = 'form-input';
             input.value = value !== undefined && value !== null ? value : '';
             input.title = window.translations?.time_picker_tooltip || 'Select time';
+            if (key === 'auto_update_time') {
+                input.addEventListener('change', () => _checkRebootWindowConflict(input));
+                setTimeout(() => _checkRebootWindowConflict(input), 0);
+            }
             break;
 
         case 'select':
@@ -6378,6 +6383,39 @@ function createColorSelect(value) {
     container.getValue = () => hiddenInput.value;
     
     return container;
+}
+
+
+function _checkRebootWindowConflict(input) {
+    const rw = window._rebootWindow;
+    const existing = input.parentNode?.querySelector('.reboot-window-warning');
+    if (!rw || !input.value) { if (existing) existing.remove(); return; }
+    const [h, m] = input.value.split(':').map(Number);
+    const candidate  = h * 60 + m;
+    const reboot     = rw.hour * 60 + rw.minute;
+    const blockStart = (reboot - 120 + 1440) % 1440;
+    const blockEnd   = (reboot + 15) % 1440;
+    const inWindow   = blockStart <= blockEnd
+        ? candidate >= blockStart && candidate < blockEnd
+        : candidate >= blockStart || candidate < blockEnd;
+    if (inWindow) {
+        const fmt = n => `${String(Math.floor(n/60)).padStart(2,'0')}:${String(n%60).padStart(2,'0')}`;
+        const msg = (window.translations?.reboot_window_conflict
+            || 'Conflicts with OS auto-reboot window ({start}–{end})')
+            .replace('{start}', fmt(blockStart))
+            .replace('{end}',   fmt(blockEnd));
+        if (!existing) {
+            const w = document.createElement('div');
+            w.className = 'reboot-window-warning';
+            w.style.cssText = 'color:#dc3545;font-size:12px;margin-top:4px;';
+            w.textContent = msg;
+            input.parentNode.appendChild(w);
+        } else {
+            existing.textContent = msg;
+        }
+    } else {
+        if (existing) existing.remove();
+    }
 }
 
 

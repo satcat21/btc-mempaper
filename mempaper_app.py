@@ -77,6 +77,41 @@ if not _WEBP_ENCODING_OK:
     print("⚠️  WebP encoding disabled (SIGILL on ARMv6 + NEON-compiled libwebp). Falling back to PNG.")
 
 
+def _read_reboot_time():
+    """Parse the unattended-upgrades auto-reboot time from all apt conf.d files.
+    Returns (hour, minute) tuple or None if auto-reboot is not configured."""
+    import re, glob as _glob
+    for path in sorted(_glob.glob('/etc/apt/apt.conf.d/*')):
+        try:
+            with open(path) as f:
+                content = f.read()
+            if 'Automatic-Reboot-Time' not in content:
+                continue
+            m = re.search(r'Automatic-Reboot-Time\s+"(\d{1,2}):(\d{2})"', content)
+            if m:
+                return int(m.group(1)), int(m.group(2))
+        except Exception:
+            continue
+    return None
+
+
+def _in_reboot_window(h, m, reboot_hm, before_minutes=120, after_minutes=15):
+    """Return True if time h:m falls in the blocked window around reboot_hm.
+    Blocks [reboot - before_minutes, reboot + after_minutes) to avoid both
+    interrupting a running update and scheduling during the post-reboot boot phase."""
+    if reboot_hm is None:
+        return False
+    rh, rm = reboot_hm
+    candidate   = h * 60 + m
+    reboot      = rh * 60 + rm
+    block_start = (reboot - before_minutes) % (24 * 60)
+    block_end   = (reboot + after_minutes)  % (24 * 60)
+    if block_start <= block_end:
+        return block_start <= candidate < block_end
+    else:  # window wraps midnight
+        return candidate >= block_start or candidate < block_end
+
+
 class MempaperApp:
     """Main application class that coordinates all components."""
     
@@ -6195,6 +6230,7 @@ class MempaperApp:
                     }
                 except Exception:
                     btc_h_compact = {}
+                _rbt = _read_reboot_time()
                 return jsonify({
                     'config': config_data,
                     'schema': self.config_manager.get_config_schema(schema_translations),
@@ -6202,6 +6238,7 @@ class MempaperApp:
                     'color_options': self.config_manager.get_color_options(),
                     'current_user': _session.get('username', ''),
                     'btc_holidays': btc_h_compact,
+                    'reboot_window': {'hour': _rbt[0], 'minute': _rbt[1]} if _rbt else None,
                 })
             except Exception as e:
                 print(f"Error in get_config: {e}")
@@ -8700,9 +8737,9 @@ class MempaperApp:
 
         def _next_run_dt():
             """Return the next datetime at which the update should fire, or None if
-            disabled / no days configured.  Searches up to 7 days ahead so gaps
-            between allowed days (e.g. Mon only → next Monday) are handled correctly
-            regardless of how far in the future that is."""
+            disabled / no days configured.  Searches up to 14 days ahead so gaps
+            between allowed days are handled correctly, and skips any candidate that
+            falls within 2 hours before the unattended-upgrades auto-reboot time."""
             if not self.config.get('auto_update_enabled', False):
                 return None
             raw = self.config.get('auto_update_time', self.config.get('auto_update_hour', '03:00'))
@@ -8714,12 +8751,21 @@ class MempaperApp:
             allowed = {_DAY_MAP.get(d, -1) for d in self.config.get('auto_update_days', ['mon', 'wed', 'fri'])} - {-1}
             if not allowed:
                 return None
+            reboot_hm = _read_reboot_time()
             now = datetime.datetime.now()
-            for days_ahead in range(8):
+            for days_ahead in range(14):
                 candidate = (now + datetime.timedelta(days=days_ahead)).replace(
                     hour=h, minute=m, second=0, microsecond=0)
-                if candidate.weekday() in allowed and (candidate - now).total_seconds() > 5:
-                    return candidate
+                if candidate.weekday() not in allowed or (candidate - now).total_seconds() <= 5:
+                    continue
+                if _in_reboot_window(h, m, reboot_hm):
+                    rh, rm = reboot_hm
+                    ws = (rh * 60 + rm - 120) % (24 * 60)
+                    we = (rh * 60 + rm + 15)  % (24 * 60)
+                    print(f"⚠️ Auto-update: {h:02d}:{m:02d} falls in OS reboot window "
+                          f"{ws//60:02d}:{ws%60:02d}–{we//60:02d}:{we%60:02d} — skipping this occurrence")
+                    continue
+                return candidate
             return None
 
         def _schedule():
@@ -8765,6 +8811,21 @@ class MempaperApp:
 
                 project_dir = os.path.dirname(os.path.abspath(__file__))
                 needs_restart = False
+
+                # System packages update — safe because python3/python3-dev/python3-venv
+                # are held via apt-mark hold, so the Python minor cannot change.
+                try:
+                    subprocess.run(
+                        ['sudo', 'apt-get', 'update', '-qq'],
+                        timeout=120, capture_output=True, check=True
+                    )
+                    subprocess.run(
+                        ['sudo', 'apt-get', 'upgrade', '-y'],
+                        timeout=300, capture_output=True, check=True
+                    )
+                    print("✅ Auto-update: system packages upgraded")
+                except Exception as e:
+                    print(f"⚠️ Auto-update: system packages update failed (non-fatal): {e}")
 
                 # mempaper software update — only if a newer release exists
                 try:
