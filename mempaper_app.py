@@ -8263,6 +8263,27 @@ class MempaperApp:
 
                 missing = _drivers_missing(device_id)
                 if not missing:
+                    # Drivers exist on disk — but the module may have failed to
+                    # load at startup if the service started before drivers were
+                    # downloaded. Check the runtime flag and restart if needed.
+                    from display.waveshare_display import WAVESHARE_AVAILABLE
+                    if not WAVESHARE_AVAILABLE:
+                        def _delayed_restart():
+                            time.sleep(2)
+                            try:
+                                subprocess.run(
+                                    ['sudo', 'systemctl', 'restart', 'mempaper.service'],
+                                    timeout=30
+                                )
+                            except Exception as e:
+                                print(f"Service restart failed: {e}")
+                        threading.Thread(target=_delayed_restart, daemon=True).start()
+                        return jsonify({
+                            'success': True,
+                            'message': f'Drivers ready. Service restarting to load {DEVICE_CONFIGS[device_id]["name"]}...',
+                            'installed': False,
+                            'restart_required': True
+                        })
                     return jsonify({
                         'success': True,
                         'message': 'Drivers already installed',

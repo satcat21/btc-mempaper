@@ -76,7 +76,7 @@ def generate_service_file():
         rw_paths.append(cron_spool)
     rw_lines = '\n'.join(f'ReadWritePaths={p}' for p in rw_paths)
 
-    service_content = f"""# /etc/systemd/system/mempaper.service
+    return f"""# /etc/systemd/system/mempaper.service
 # Generated automatically by tools/generate_service_file.py
 
 [Unit]
@@ -122,7 +122,6 @@ SyslogIdentifier=mempaper
 [Install]
 WantedBy=multi-user.target
 """
-    return service_content
 
 
 def main():
@@ -147,20 +146,22 @@ def main():
         f.write(service_content)
     
     print(f"✅ Service file generated successfully: {output_file}")
-    print()
-    print("📋 Next steps:")
-    print(f"   1. Review the file: cat {output_file}")
-    print(f"   2. Copy to system:  sudo cp {output_file} /etc/systemd/system/")
-    print("   3. Reload systemd:  sudo systemctl daemon-reload")
-    print("   4. Enable service:  sudo systemctl enable mempaper.service")
-    print("   5. Start service:   sudo systemctl start mempaper.service")
-    print("   6. Check status:    sudo systemctl status mempaper.service")
-    print("   7. View logs:       sudo journalctl -u mempaper.service -f")
-    print()
-    print("⚠️  Important: Make sure you have created the virtual environment and installed dependencies:")
-    print(f"   python3 -m venv {project_path}/.venv")
-    print(f"   {project_path}/.venv/bin/pip install -r requirements.txt")
-    print()
+
+    if "--quiet" not in sys.argv:
+        print()
+        print("📋 Next steps:")
+        print(f"   1. Review the file: cat {output_file}")
+        print(f"   2. Copy to system:  sudo cp {output_file} /etc/systemd/system/")
+        print("   3. Reload systemd:  sudo systemctl daemon-reload")
+        print("   4. Enable service:  sudo systemctl enable mempaper.service")
+        print("   5. Start service:   sudo systemctl start mempaper.service")
+        print("   6. Check status:    sudo systemctl status mempaper.service")
+        print("   7. View logs:       sudo journalctl -u mempaper.service -f")
+        print()
+        print("⚠️  Important: Make sure you have created the virtual environment and installed dependencies:")
+        print(f"   python3 -m venv {project_path}/.venv")
+        print(f"   {project_path}/.venv/bin/pip install -r requirements.txt")
+        print()
 
 
 if __name__ == "__main__":

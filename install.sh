@@ -386,7 +386,7 @@ fi
 # ── Step 6: Systemd service ───────────────────────────────────────────────
 step "Step 6/9 — Installing systemd service"
 
-sudo -u "$SERVICE_USER" "$VENV_DIR/bin/python" tools/generate_service_file.py
+sudo -u "$SERVICE_USER" "$VENV_DIR/bin/python" tools/generate_service_file.py --quiet
 sudo cp mempaper.service /etc/systemd/system/mempaper.service
 sudo systemctl daemon-reload
 sudo systemctl enable mempaper.service

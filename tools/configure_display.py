@@ -230,6 +230,13 @@ def install_drivers(device_id, max_retries=5, retry_delay=10):
     device_driver_dir = os.path.join(DRIVERS_DIR, device_id)
     os.makedirs(device_driver_dir, exist_ok=True)
 
+    # Remove any leftover temp zips from interrupted previous attempts
+    for _stale in glob.glob(os.path.join(device_driver_dir, 'tmp*.zip')):
+        try:
+            os.unlink(_stale)
+        except Exception:
+            pass
+
     def _report(count, block_size, total):
         if total > 0:
             pct = min(100, count * block_size * 100 // total)

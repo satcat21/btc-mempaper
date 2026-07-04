@@ -185,10 +185,19 @@ else
 fi
 
 echo ""
-echo "✅  Wi-Fi permissions installed."
-echo "   Verify with:  sudo -u mempaper nmcli general permissions | grep -E 'modify.system|share.protected'"
-echo "   Expected:     org.freedesktop.NetworkManager.settings.modify.system  ja"
-echo "                 org.freedesktop.NetworkManager.wifi.share.protected     ja"
+if command -v nmcli >/dev/null 2>&1; then
+    _PERMS=$(sudo -u "$SERVICE_USER" nmcli general permissions 2>/dev/null || true)
+    _MODIFY=$(echo "$_PERMS" | grep -c 'settings\.modify\.system.*\(yes\|ja\)' || true)
+    _SHARE=$(echo  "$_PERMS" | grep -c 'wifi\.share\.protected.*\(yes\|ja\)'   || true)
+    if [ "$_MODIFY" -ge 1 ] && [ "$_SHARE" -ge 1 ]; then
+        echo "✅  Wi-Fi permissions installed and verified."
+    else
+        echo "✅  Wi-Fi permissions installed."
+        echo "⚠️  Permissions not yet active — a reboot may be required for polkit rules to take effect."
+    fi
+else
+    echo "✅  Wi-Fi permissions installed."
+fi
 echo ""
 
 # --- Captive-portal DNS (dnsmasq) ---------------------------------------------
