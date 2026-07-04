@@ -3480,7 +3480,6 @@ async function _enhanceDisplaySelect() {
         }
     }
 
-    _updateHint(currentVal);
     selectEl.addEventListener('change', e => _updateHint(e.target.value));
 }
 

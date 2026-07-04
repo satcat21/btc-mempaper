@@ -88,7 +88,13 @@ if [ -n "$_LATEST" ] && [ "$_LATEST" != "$_MVER" ]; then
 fi
 printf '\n'
 if [ -n "$_LATEST" ] && [ "$_LATEST" != "$_MVER" ]; then
-    printf "  %bUpdate: sudo -u mempaper git -C %s pull%b\n" "${_D}" "${PROJECT_DIR}" "${_R}"
+    _CU=$(id -un 2>/dev/null || echo "${USER:-unknown}")
+    if [ "$_CU" = "mempaper" ]; then
+        printf "  %bUpdate: git -C ~/btc-mempaper pull%b\n" "${_D}" "${_R}"
+    else
+        printf "  %bUpdate: sudo -u mempaper git -C %s pull%b\n" "${_D}" "${PROJECT_DIR}" "${_R}"
+    fi
+    printf "  %b         sudo systemctl restart mempaper.service%b\n" "${_D}" "${_R}"
 fi
 printf '\n'
 
