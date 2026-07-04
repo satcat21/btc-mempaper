@@ -330,10 +330,12 @@ else
     ok "config.json already exists"
 fi
 
-# Secure config directory and file (contains password hashes and API keys)
-sudo chmod 700 config/
-[ -f config/config.json ] && sudo chmod 600 config/config.json
-ok "Config permissions secured (dir 700, file 600)"
+# Secure config directory and file (contains password hashes and API keys).
+# Group-readable (750/640) so the mempaper group (pi user) can read the config
+# for tools like the 'mempaper' CLI command, without exposing it to other users.
+sudo chmod 750 config/
+[ -f config/config.json ] && sudo chmod 640 config/config.json
+ok "Config permissions secured (dir 750, file 640 — readable by mempaper group)"
 
 # ── Optional: Create admin account ───────────────────────────────────────────
 echo ""

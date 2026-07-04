@@ -88,7 +88,7 @@ if [ -n "$_LATEST" ] && [ "$_LATEST" != "$_MVER" ]; then
 fi
 printf '\n'
 if [ -n "$_LATEST" ] && [ "$_LATEST" != "$_MVER" ]; then
-    printf "  %bUpdate: cd %s && git pull%b\n" "${_D}" "${PROJECT_DIR}" "${_R}"
+    printf "  %bUpdate: sudo -u mempaper git -C %s pull%b\n" "${_D}" "${PROJECT_DIR}" "${_R}"
 fi
 printf '\n'
 
