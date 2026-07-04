@@ -3454,7 +3454,7 @@ async function _enhanceDisplaySelect() {
     options.forEach(opt => {
         const el = document.createElement('option');
         el.value = opt.device_id;
-        el.textContent = (opt.available ? '✓ ' : '⬇ ') + opt.label;
+        el.textContent = opt.label;
         if (opt.device_id === currentVal) el.selected = true;
         selectEl.appendChild(el);
     });

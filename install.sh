@@ -64,6 +64,7 @@ fi
 python3 - <<'PYEOF'
 W = '\033[1;97m'       # bold bright white — "mem"
 O = '\033[38;5;214m'   # orange            — "paper"
+Y = '\033[1;33m'       # bold yellow       — subtitles (matches step headers)
 R = '\033[0m'
 lines = [
     "  _ __ ___   ___ _ __ ___  _ __   __ _ _ __   ___ _ __",
@@ -75,8 +76,8 @@ lines = [
 s = 26
 for l in lines:
     print(f"{W}{l[:s]}{O}{l[s:]}{R}")
-print(f"\n{O}               Bitcoin Meme Block Clock{R}")
-print(f"\n{O}                      Installer{R}\n")
+print(f"\n{Y}               Bitcoin Meme Block Clock{R}")
+print(f"\n{Y}                      Installer{R}\n")
 PYEOF
 echo ""
 echo "  User:    $SERVICE_USER (service account)"
@@ -208,7 +209,7 @@ sudo apt-mark hold python3 python3-dev python3-venv >/dev/null 2>&1 \
 # Validate that this OS has an entry in the Python version spec file.
 # tools/python_version is a git-managed spec (codename=minor pairs) — not written here.
 _OS_CODENAME=$(. /etc/os-release 2>/dev/null && echo "${VERSION_CODENAME:-}" | tr '[:upper:]' '[:lower:]')
-_VERSION_FILE="${PROJECT_DIR}/tools/python_version"
+_VERSION_FILE="${SCRIPT_DIR}/tools/python_version"
 if [ -n "$_OS_CODENAME" ] && ! grep -qE "^${_OS_CODENAME}=" "$_VERSION_FILE" 2>/dev/null; then
     warn "No Python version entry for OS '${_OS_CODENAME}' in tools/python_version — web update auto-upgrade will not trigger for this OS"
 fi
@@ -444,7 +445,7 @@ else
 fi
 
 # ── SSH login overview (MOTD) ─────────────────────────────────────────────────
-MOTD_SCRIPT="${PROJECT_DIR}/tools/mempaper-motd.sh"
+MOTD_SCRIPT="${SCRIPT_DIR}/tools/mempaper-motd.sh"
 MOTD_LINK="/etc/profile.d/mempaper-motd.sh"
 chmod +x "$MOTD_SCRIPT"
 if sudo ln -sf "$MOTD_SCRIPT" "$MOTD_LINK" 2>/dev/null; then
