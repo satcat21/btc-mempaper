@@ -422,7 +422,7 @@ class ConfigManager:
             "color_donation_dark": "#F7931A",
             # --- Auto Update ---
             "auto_update_enabled": False,
-            "auto_update_time": "03:00",
+            "auto_update_time": "05:00",
             "auto_update_days": ["mon", "wed", "fri"],
         }
     
@@ -1464,7 +1464,7 @@ class ConfigManager:
                 "type": "time",
                 "label": t.get("auto_update_time", "Update Time"),
                 "description": t.get("auto_update_time_desc", "Time of day to run automatic updates (HH:MM)"),
-                "default": "03:00",
+                "default": "05:00",
                 "category": "updates",
                 "order": 1
             },

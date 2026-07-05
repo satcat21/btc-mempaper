@@ -7824,6 +7824,7 @@ class MempaperApp:
                 # systemd.  The pi-user sudo block below is what actually grants
                 # SSH access; this write is best-effort.
                 auth_keys_path = None
+                wrote_service_user = False
                 try:
                     home_dir = os.path.expanduser('~')
                     ssh_dir = os.path.join(home_dir, '.ssh')
@@ -7837,11 +7838,13 @@ class MempaperApp:
                     with open(auth_keys_path, 'w', encoding='utf-8') as f:
                         f.write(new_content)
                     os.chmod(auth_keys_path, 0o600)
+                    wrote_service_user = True
                 except OSError as own_err:
                     logger.warning(f'SSH: could not update service-user authorized_keys: {own_err}')
 
                 # ── pi user's authorized_keys (via sudo, preserve non-mempaper keys) ──
                 pi_auth_keys = '/home/pi/.ssh/authorized_keys'
+                wrote_pi = False
                 if auth_keys_path != pi_auth_keys:
                     try:
                         subprocess.run(
@@ -7864,10 +7867,20 @@ class MempaperApp:
                                            capture_output=True, timeout=10)
                             subprocess.run(['sudo', 'chmod', '600', pi_auth_keys],
                                            capture_output=True, timeout=10)
+                            wrote_pi = True
                         else:
                             logger.warning('SSH: failed to write /home/pi/.ssh/authorized_keys')
                     except Exception as pi_err:
                         logger.warning(f'SSH: could not update pi authorized_keys: {pi_err}')
+                else:
+                    # Service user IS pi — the service-user write already covered this path
+                    wrote_pi = wrote_service_user
+
+                if not wrote_service_user and not wrote_pi:
+                    return jsonify({
+                        'success': False,
+                        'error': 'Could not write authorized_keys — check service logs: sudo journalctl -u mempaper.service'
+                    }), 500
 
                 return jsonify({'success': True, 'key_count': len(valid_keys)})
             except Exception as e:

@@ -85,6 +85,134 @@ echo "  Runner:  $(whoami)"
 echo "  Path:    $SCRIPT_DIR"
 echo ""
 
+_T0=$(date +%s)   # installation start — used for elapsed time at the end
+
+# ══ Quick Setup — all questions upfront ═══════════════════════════════════════
+echo ""
+echo -e "  ${YELLOW}━━━ Configuration ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo "  Answer the questions below, then the rest runs without interruption."
+echo ""
+
+# [1] Display
+echo -e "  ${CYAN}Display${NC}"
+echo ""
+echo -e "    ${CYAN}1${NC}. Waveshare 13.3\" 6-color (Spectra 6)  ${GREEN}[recommended]${NC}"
+echo -e "    ${CYAN}2${NC}. Waveshare 7.3\" 7-color"
+echo -e "    ${CYAN}3${NC}. Waveshare 5.83\" V2 (via omni-epd)"
+echo -e "    ${CYAN}4${NC}. Waveshare 4.2\" (via omni-epd)"
+echo -e "    ${CYAN}5${NC}. Waveshare 2.7\" (via omni-epd)"
+echo -e "    ${CYAN}6${NC}. Inky Impression 7-color"
+echo -e "    ${CYAN}7${NC}. Inky Auto-detect"
+echo -e "    ${CYAN}8${NC}. Mock Display (testing, no hardware)"
+echo -e "    ${CYAN}s${NC}. Skip — configure later via web UI"
+echo ""
+DISPLAY_CHOICE=""
+while true; do
+    read -rp "  Select display [1-8, s]: " DISPLAY_CHOICE
+    case "$DISPLAY_CHOICE" in
+        [1-8]|s|S) break ;;
+        *) echo "  Invalid choice. Enter 1-8 or s to skip." ;;
+    esac
+done
+echo ""
+
+# [2] Admin account
+echo -e "  ${CYAN}Admin account${NC}"
+ADMIN_USERNAME=""
+ADMIN_PASSWORD=""
+# Check if config already has users (system python3, before venv exists)
+_HAS_USERS=false
+if [ -f "config/config.json" ]; then
+    _HAS_USERS=$(python3 -c "
+import json, sys
+try:
+    c = json.load(open('config/config.json'))
+    print('true' if c.get('admin_users') else 'false')
+except Exception:
+    print('false')
+" 2>/dev/null || echo "false")
+fi
+if [ "$_HAS_USERS" = "true" ]; then
+    ok "Admin users already configured — skipping"
+else
+    echo "  Set credentials for the mempaper web interface."
+    echo ""
+    while true; do
+        read -rp "  Admin username: " ADMIN_USERNAME
+        [ -n "$ADMIN_USERNAME" ] && break
+        echo "  Username cannot be empty."
+    done
+    _pw_ok=false
+    while [ "$_pw_ok" = "false" ]; do
+        read -rsp "  Admin password (≥16 chars, upper+lower+digit+special): " ADMIN_PASSWORD
+        echo ""
+        # Validate via python3 using env var to avoid quoting/injection issues
+        _ERR=$(_PW="$ADMIN_PASSWORD" python3 - <<'PYEOF' 2>&1
+import re, sys, os
+pw = os.environ.get('_PW', '')
+issues = []
+if len(pw) < 16:                         issues.append('at least 16 characters')
+if not re.search(r'[A-Z]', pw):          issues.append('an uppercase letter')
+if not re.search(r'[a-z]', pw):          issues.append('a lowercase letter')
+if not re.search(r'[0-9]', pw):          issues.append('a number')
+if not re.search(r'[^A-Za-z0-9]', pw):  issues.append('a special character')
+if issues:
+    print('  Password needs: ' + ', '.join(issues) + '.')
+    sys.exit(1)
+PYEOF
+)
+        if [ -n "$_ERR" ]; then
+            echo "$_ERR"
+            continue
+        fi
+        read -rsp "  Confirm password: " _ADMIN_PW2
+        echo ""
+        if [ "$ADMIN_PASSWORD" != "$_ADMIN_PW2" ]; then
+            echo "  Passwords do not match."
+            continue
+        fi
+        _pw_ok=true
+    done
+fi
+echo ""
+
+# [3] Options — press Enter to accept defaults
+echo -e "  ${CYAN}Options${NC} — press Enter to accept defaults"
+echo ""
+read -rp "  Minify JavaScript (better performance)?   [Y/n]: " MINIFY_CHOICE
+MINIFY_CHOICE="${MINIFY_CHOICE:-Y}"
+read -rp "  UFW firewall (restrict to LAN only)?       [Y/n]: " UFW_CHOICE
+UFW_CHOICE="${UFW_CHOICE:-Y}"
+read -rp "  fail2ban (SSH brute-force protection)?     [Y/n]: " F2B_CHOICE
+F2B_CHOICE="${F2B_CHOICE:-Y}"
+read -rp "  Unattended security updates?               [Y/n]: " UU_CHOICE
+UU_CHOICE="${UU_CHOICE:-Y}"
+UU_REBOOT_CHOICE="Y"
+UU_REBOOT_TIME="04:00"
+if [[ "$UU_CHOICE" =~ ^[Yy]$ ]]; then
+    read -rp "  Auto-reboot after updates?                 [Y/n]: " UU_REBOOT_CHOICE
+    UU_REBOOT_CHOICE="${UU_REBOOT_CHOICE:-Y}"
+    if [[ "$UU_REBOOT_CHOICE" =~ ^[Yy]$ ]]; then
+        read -rp "  Auto-reboot time (24h)?                    [04:00]: " UU_REBOOT_TIME
+        UU_REBOOT_TIME="${UU_REBOOT_TIME:-04:00}"
+        if ! echo "$UU_REBOOT_TIME" | grep -qE '^([01][0-9]|2[0-3]):[0-5][0-9]$'; then
+            warn "Invalid time '${UU_REBOOT_TIME}' — using 04:00"
+            UU_REBOOT_TIME="04:00"
+        fi
+    fi
+fi
+echo ""
+echo -e "  ${CYAN}SSH hardening${NC} — disable password login, require SSH key"
+echo "  Add your public key via Settings > SSH in the web UI after install."
+echo "  Without a key, physical access is needed to SSH in."
+echo ""
+read -rp "  Disable SSH password authentication?       [Y/n]: " SSH_HARDENING
+SSH_HARDENING="${SSH_HARDENING:-Y}"
+echo ""
+
+echo -e "  ${YELLOW}━━━ All set — starting installation now ━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo ""
+
 # ── Step 0: Create mempaper service user ──────────────────────────────────
 step "Step 0 — Creating mempaper service user"
 
@@ -157,13 +285,20 @@ fi
 SERVICE_HOME=$(getent passwd "$SERVICE_USER" | cut -d: -f6)
 sudo -u "$SERVICE_USER" mkdir -p "$SERVICE_HOME/.ssh"
 sudo chmod 700 "$SERVICE_HOME/.ssh"
+# Pre-create authorized_keys so the web GUI can write to it immediately.
+# The file must exist before the service starts — ReadWritePaths only bind-mounts
+# paths that already exist; a missing file stays unwritable inside the sandbox.
+[ -f "$SERVICE_HOME/.ssh/authorized_keys" ] || sudo -u "$SERVICE_USER" touch "$SERVICE_HOME/.ssh/authorized_keys"
+sudo chmod 600 "$SERVICE_HOME/.ssh/authorized_keys"
 sudo mkdir -p /home/pi/.ssh
 sudo chmod 700 /home/pi/.ssh
+[ -f /home/pi/.ssh/authorized_keys ] || sudo touch /home/pi/.ssh/authorized_keys
+sudo chmod 600 /home/pi/.ssh/authorized_keys
 # chown /home/pi/.ssh only if pi user exists
 if id pi >/dev/null 2>&1; then
-    sudo chown pi:pi /home/pi/.ssh
+    sudo chown pi:pi /home/pi/.ssh /home/pi/.ssh/authorized_keys
 fi
-ok ".ssh directories created for SSH key management"
+ok ".ssh directories and authorized_keys files created for SSH key management"
 
 # ── Step 1: System packages ────────────────────────────────────────────────
 step "Step 1/9 — Installing system packages"
@@ -300,13 +435,6 @@ if [ "$ARCH" = "armv6l" ]; then
 fi
 
 # ── Optional: Minify JavaScript ───────────────────────────────────────────
-echo ""
-echo -e "  ${CYAN}Minify JavaScript for better performance?${NC}"
-echo "  Strips comments & whitespace from JS files into static/js/dist/"
-echo "  The app serves minified files when they exist, originals otherwise."
-echo ""
-read -rp "  Minify JavaScript? [Y/n]: " MINIFY_CHOICE
-MINIFY_CHOICE="${MINIFY_CHOICE:-Y}"
 if [[ "$MINIFY_CHOICE" =~ ^[Yy]$ ]]; then
     sudo -u "$SERVICE_USER" "$VENV_DIR/bin/python" tools/minify.py
     ok "JavaScript minified — served from static/js/dist/"
@@ -337,46 +465,17 @@ sudo chmod 750 config/
 [ -f config/config.json ] && sudo chmod 640 config/config.json
 ok "Config permissions secured (dir 750, file 640 — readable by mempaper group)"
 
-# ── Optional: Create admin account ───────────────────────────────────────────
-echo ""
-echo -e "  ${CYAN}Create an admin account now?${NC}"
-echo "  Recommended for headless installs. You can also do this later via"
-echo "  the web UI (connect to the mempaper hotspot after first start)."
-echo ""
-read -rp "  Create admin account? [y/N]: " ADMIN_CHOICE
-ADMIN_CHOICE="${ADMIN_CHOICE:-N}"
-if [[ "$ADMIN_CHOICE" =~ ^[Yy]$ ]]; then
-    sudo -u "$SERVICE_USER" "$VENV_DIR/bin/python" tools/setup_user.py
+# ── Admin account (non-interactive, credentials collected upfront) ────────────
+if [ -n "$ADMIN_USERNAME" ] && [ -n "$ADMIN_PASSWORD" ]; then
+    printf '%s\n%s\n' "$ADMIN_USERNAME" "$ADMIN_PASSWORD" | \
+        sudo -u "$SERVICE_USER" "$VENV_DIR/bin/python" tools/setup_user.py --stdin
     ok "Admin account created"
 else
-    ok "Skipping — admin account can be created during first-time web onboarding"
+    ok "Skipping admin account — create later via web UI or: python tools/setup_user.py"
 fi
 
 # ── Step 5: E-Ink display configuration ───────────────────────────────────
 step "Step 5/9 — Configuring e-ink display"
-
-echo ""
-echo "  Which e-ink display is connected to your Pi?"
-echo ""
-echo -e "  ${CYAN}1${NC}. Waveshare 13.3\" 6-color (Spectra 6)  ${GREEN}[recommended]${NC}"
-echo -e "  ${CYAN}2${NC}. Waveshare 7.3\" 7-color"
-echo -e "  ${CYAN}3${NC}. Waveshare 5.83\" V2 (via omni-epd)"
-echo -e "  ${CYAN}4${NC}. Waveshare 4.2\" (via omni-epd)"
-echo -e "  ${CYAN}5${NC}. Waveshare 2.7\" (via omni-epd)"
-echo -e "  ${CYAN}6${NC}. Inky Impression 7-color"
-echo -e "  ${CYAN}7${NC}. Inky Auto-detect"
-echo -e "  ${CYAN}8${NC}. Mock Display (testing, no hardware)"
-echo -e "  ${CYAN}s${NC}. Skip — configure later via web UI"
-echo ""
-
-DISPLAY_CHOICE=""
-while true; do
-    read -rp "  Select display [1-8, s]: " DISPLAY_CHOICE
-    case "$DISPLAY_CHOICE" in
-        [1-8]|s|S) break ;;
-        *) echo "  Invalid choice. Enter 1-8 or s to skip." ;;
-    esac
-done
 
 if [ "$DISPLAY_CHOICE" != "s" ] && [ "$DISPLAY_CHOICE" != "S" ]; then
     echo ""
@@ -468,13 +567,6 @@ else
 fi
 
 # ── Optional: UFW firewall ────────────────────────────────────────────────
-echo ""
-echo -e "  ${CYAN}Configure UFW firewall?${NC}"
-echo "  Restricts SSH (port 22) and mempaper (port 5000) to LAN only."
-echo "  Covers all private subnets: 192.168.x.x, 10.x.x.x, 172.16-31.x.x"
-echo ""
-read -rp "  Configure UFW? [Y/n]: " UFW_CHOICE
-UFW_CHOICE="${UFW_CHOICE:-Y}"
 if [[ "$UFW_CHOICE" =~ ^[Yy]$ ]]; then
     sudo apt-get install -y ufw -q
     sudo ufw default deny incoming
@@ -500,9 +592,6 @@ else
 fi
 
 # ── Optional: fail2ban ────────────────────────────────────────────────────
-echo ""
-read -rp "  Install fail2ban (SSH brute-force protection)? [Y/n]: " F2B_CHOICE
-F2B_CHOICE="${F2B_CHOICE:-Y}"
 if [[ "$F2B_CHOICE" =~ ^[Yy]$ ]]; then
     sudo apt-get install -y fail2ban -q
     ok "fail2ban installed"
@@ -511,29 +600,11 @@ else
 fi
 
 # ── Optional: unattended-upgrades ─────────────────────────────────────────
-echo ""
-read -rp "  Enable unattended-upgrades (automatic OS security patches)? [Y/n]: " UU_CHOICE
-UU_CHOICE="${UU_CHOICE:-Y}"
 if [[ "$UU_CHOICE" =~ ^[Yy]$ ]]; then
     sudo apt-get install -y unattended-upgrades -q
-    sudo dpkg-reconfigure --priority=low unattended-upgrades
+    sudo DEBIAN_FRONTEND=noninteractive dpkg-reconfigure --priority=low unattended-upgrades
 
-    echo ""
-    echo -e "  ${CYAN}Auto-reboot after security updates?${NC}"
-    echo "  Reboots the Pi at a scheduled time when a package update requires it."
-    echo "  Skipped if someone is actively logged in via SSH."
-    echo ""
-    read -rp "  Enable auto-reboot? [Y/n]: " UU_REBOOT_CHOICE
-    UU_REBOOT_CHOICE="${UU_REBOOT_CHOICE:-Y}"
     if [[ "$UU_REBOOT_CHOICE" =~ ^[Yy]$ ]]; then
-        echo ""
-        read -rp "  Reboot time (24h, default 04:00): " UU_REBOOT_TIME
-        UU_REBOOT_TIME="${UU_REBOOT_TIME:-04:00}"
-        # Basic validation — fall back to 04:00 if the format is wrong
-        if ! echo "$UU_REBOOT_TIME" | grep -qE '^([01][0-9]|2[0-3]):[0-5][0-9]$'; then
-            warn "Invalid time format '${UU_REBOOT_TIME}' — using 04:00"
-            UU_REBOOT_TIME="04:00"
-        fi
         sudo tee /etc/apt/apt.conf.d/52mempaper-reboot > /dev/null <<EOF
 // Written by mempaper install.sh
 Unattended-Upgrade::Automatic-Reboot "true";
@@ -551,39 +622,18 @@ else
 fi
 
 # ── Optional: disable SSH password authentication ─────────────────────────
-echo ""
-echo -e "  ${CYAN}SSH hardening — key-only login${NC}"
-echo ""
-echo "  To disable SSH password authentication you need an SSH key in place first."
-echo "  If you haven't done this yet, run the following on your LOCAL machine:"
-echo ""
-echo "    ssh-keygen -t ed25519 -C \"mempaper-admin\""
-echo "    ssh-copy-id $(whoami)@$(hostname -I | awk '{print $1}')"
-echo ""
-echo "  Then verify you can log in with your key before continuing."
-echo ""
-read -rp "  Disable SSH password authentication now? [y/N]: " SSH_HARDENING
-SSH_HARDENING="${SSH_HARDENING:-N}"
 if [[ "$SSH_HARDENING" =~ ^[Yy]$ ]]; then
-    if [ -s "/home/$(whoami)/.ssh/authorized_keys" ]; then
-        sudo sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
-        sudo sed -i 's/^#*PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
-        sudo systemctl reload sshd
-        ok "SSH hardened: password auth disabled, root login disabled (key-only)"
-    else
-        warn "No authorized_keys found for $(whoami) — skipping to avoid lockout"
-        echo ""
-        echo "  To harden SSH manually once your key is in place:"
-        echo "    sudo sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config"
-        echo "    sudo sed -i 's/^#*PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config"
-        echo "    sudo systemctl reload sshd"
-    fi
-else
-    ok "Skipping SSH hardening"
+    sudo sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+    sudo sed -i 's/^#*PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
+    sudo systemctl reload sshd
+    ok "SSH hardened: password auth disabled, root login disabled (key-only)"
     echo ""
-    echo "  To harden SSH later (once your key is set up):"
+    echo -e "  ${YELLOW}⚠  SSH password login is now disabled.${NC}"
+    echo "  Add your SSH public key via Settings > SSH in the web UI."
+    echo "  Until then, SSH access requires physical access to the Pi."
+else
+    ok "SSH hardening skipped — enable later via:"
     echo "    sudo sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config"
-    echo "    sudo sed -i 's/^#*PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config"
     echo "    sudo systemctl reload sshd"
 fi
 
@@ -646,41 +696,27 @@ echo "    python tools/delivery_state.py"
 echo ""
 
 # ── Step 9: Start service (last — drops SSH when hotspot activates) ───────
+step "Step 9/9 — Starting mempaper service"
 if [ "$NEEDS_REBOOT" = true ]; then
-    echo -e "  ${YELLOW}A reboot is required to activate the SPI interface"
-    echo -e "  and start the mempaper service.${NC}"
     echo ""
-    echo "  After reboot, the Pi enters hotspot mode."
-    echo -e "  ${YELLOW}Your SSH session will end.${NC}"
+    echo -e "  ${YELLOW}SPI not yet active — a reboot is required to start the display.${NC}"
+    echo "  After reboot the Pi enters hotspot mode and your SSH session ends."
     echo ""
-    read -rp "  Reboot now? [Y/n]: " REBOOT_CHOICE
-    case "$REBOOT_CHOICE" in
-        n|N)
-            echo "  Reboot skipped — run 'sudo reboot' when ready."
-            echo "  The service will not start until after reboot."
-            ;;
-        *)
-            echo "  Rebooting..."
-            sudo reboot
-            ;;
-    esac
+    echo "  Rebooting in 5 seconds (Ctrl+C to cancel)..."
+    sleep 5
+    sudo reboot
 else
-    step "Step 9/9 — Starting mempaper service"
     echo ""
-    echo -e "  ${YELLOW}Starting the service will activate hotspot mode"
-    echo -e "  and your SSH session will disconnect.${NC}"
+    echo -e "  ${YELLOW}Starting the service will activate hotspot mode."
+    echo -e "  Your SSH session may disconnect.${NC}"
     echo ""
-    read -rp "  Start service now? [Y/n]: " START_CHOICE
-    case "$START_CHOICE" in
-        n|N)
-            echo ""
-            echo "  Service not started. Start it manually with:"
-            echo "    sudo systemctl start mempaper.service"
-            ;;
-        *)
-            echo ""
-            ok "Starting mempaper service..."
-            sudo systemctl start mempaper.service
-            ;;
-    esac
+    sudo systemctl restart mempaper.service
+    ok "mempaper service started"
 fi
+
+_T1=$(date +%s)
+_ELAPSED=$(( _T1 - _T0 ))
+_MIN=$(( _ELAPSED / 60 ))
+_SEC=$(( _ELAPSED % 60 ))
+echo ""
+echo -e "  ${GREEN}Total install time: ${_MIN}m ${_SEC}s${NC}"

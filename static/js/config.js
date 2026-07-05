@@ -9794,6 +9794,12 @@ function setupNavigationButtons() {
                             pendingLanguageChange = null;
                         }
 
+                        // Save SSH keys if changed — must run before _markClean() so
+                        // savedKeys is updated and _sshIsDirty() returns false.
+                        if (typeof window._sshSaveHook === 'function') {
+                            try { await window._sshSaveHook(); } catch (_) { /* error shown in SSH section */ }
+                        }
+
                         showNotification(window.translations?.configuration_saved || 'Configuration saved successfully!', 'success');
                         _markClean();
                     } else {

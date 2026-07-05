@@ -8,6 +8,7 @@ Usage:
     python tools/setup_user.py              # interactive: list users, add/update one
     python tools/setup_user.py --list       # list existing users and exit
     python tools/setup_user.py --delete <username>  # remove a user
+    python tools/setup_user.py --stdin      # non-interactive: read "username\\npassword" from stdin
 """
 
 from __future__ import annotations
@@ -114,6 +115,29 @@ def cmd_create(pm: SecurePasswordManager) -> None:
         sys.exit(1)
 
 
+def cmd_create_noninteractive(pm: SecurePasswordManager, username: str, password: str) -> None:
+    """Create a user non-interactively (called by install.sh via --stdin)."""
+    import re as _re
+    users = pm.list_users()
+    if username in users:
+        print(f"User '{username}' already exists — skipping.")
+        return
+    issues = []
+    if len(password) < 16:                      issues.append("at least 16 characters")
+    if not _re.search(r'[A-Z]', password):      issues.append("an uppercase letter")
+    if not _re.search(r'[a-z]', password):      issues.append("a lowercase letter")
+    if not _re.search(r'[0-9]', password):      issues.append("a number")
+    if not _re.search(r'[^A-Za-z0-9]', password): issues.append("a special character")
+    if issues:
+        print("Password needs: " + ", ".join(issues) + ".", file=sys.stderr)
+        sys.exit(1)
+    if pm.create_user(username, password):
+        print(f"User '{username}' created successfully.")
+    else:
+        print("Failed to create user.", file=sys.stderr)
+        sys.exit(1)
+
+
 def cmd_delete(pm: SecurePasswordManager, config_manager: ConfigManager, username: str) -> None:
     users = pm.list_users()
     if username not in users:
@@ -148,11 +172,21 @@ def main() -> None:
     )
     parser.add_argument("--list", action="store_true", help="List configured users and exit")
     parser.add_argument("--delete", metavar="USERNAME", help="Delete a user")
+    parser.add_argument("--stdin", action="store_true",
+                        help="Non-interactive create: read 'username\\npassword' from stdin")
     args = parser.parse_args()
 
     config_manager, pm = _get_managers()
 
-    if args.list:
+    if args.stdin:
+        lines = sys.stdin.read().splitlines()
+        username = lines[0].strip() if len(lines) > 0 else ''
+        password = lines[1].strip() if len(lines) > 1 else ''
+        if not username or not password:
+            print("--stdin requires two lines: username\\npassword", file=sys.stderr)
+            sys.exit(1)
+        cmd_create_noninteractive(pm, username, password)
+    elif args.list:
         cmd_list(pm)
     elif args.delete:
         cmd_delete(pm, config_manager, args.delete)
