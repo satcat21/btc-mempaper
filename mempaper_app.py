@@ -372,6 +372,7 @@ class MempaperApp:
         self._display_worker = None           # subprocess.Popen, kept alive
         self._display_worker_lock = threading.Lock()   # one display at a time
         self._display_worker_results = queue.Queue()   # stdout reader → caller
+        self._last_display_error = None       # set on failure, cleared on success
 
         # Flag: an e-ink refresh was requested while the display was busy (e.g. donation during block update)
         self._pending_eink_refresh = False
@@ -2675,6 +2676,7 @@ class MempaperApp:
 
             if result.get("success"):
                 print(f"✅ E-paper display completed in {display_duration:.2f}s")
+                self._last_display_error = None  # clear any previous error
 
                 # Warn if display refresh took abnormally long (likely wrong driver)
                 if display_duration > 80:
@@ -2837,10 +2839,20 @@ class MempaperApp:
             pass
 
     def _emit_display_error(self, message):
+        self._last_display_error = {'message': message, 'timestamp': time.time()}
+        # Auto-disable the display to stop repeated failures (wrong driver, SPI error, etc.)
+        try:
+            if self.config_manager.get('e-ink-display-connected'):
+                self.config_manager.set('e-ink-display-connected', False)
+                self.config_manager.save_config()
+                print(f"⚠️ Display auto-disabled due to error — re-run install.sh to reconfigure.")
+        except Exception as _e:
+            print(f"⚠️ Could not auto-disable display: {_e}")
         if hasattr(self, 'socketio'):
             self.socketio.emit('display_update', {
                 'status': 'error',
-                'message': f'Display error: {message}',
+                'message': message,
+                'display_disabled': True,
                 'timestamp': time.time()
             })
     
@@ -8374,27 +8386,10 @@ class MempaperApp:
 
                 missing = _drivers_missing(device_id)
                 if not missing:
-                    # Drivers exist on disk — but the module may have failed to
-                    # load at startup if the service started before drivers were
-                    # downloaded. Check the runtime flag and restart if needed.
-                    from display.waveshare_display import WAVESHARE_AVAILABLE
-                    if not WAVESHARE_AVAILABLE:
-                        def _delayed_restart():
-                            time.sleep(2)
-                            try:
-                                subprocess.run(
-                                    ['sudo', 'systemctl', 'restart', 'mempaper.service'],
-                                    timeout=30
-                                )
-                            except Exception as e:
-                                print(f"Service restart failed: {e}")
-                        threading.Thread(target=_delayed_restart, daemon=True).start()
-                        return jsonify({
-                            'success': True,
-                            'message': f'Drivers ready. Service restarting to load {DEVICE_CONFIGS[device_id]["name"]}...',
-                            'installed': False,
-                            'restart_required': True
-                        })
+                    # Drivers already on disk — nothing to do. The display worker
+                    # (subprocess) manages its own module state; importing
+                    # waveshare_display here would trigger SPI init in the Flask
+                    # process and contend with the worker, so we don't do that.
                     return jsonify({
                         'success': True,
                         'message': 'Drivers already installed',
@@ -8488,6 +8483,22 @@ class MempaperApp:
                 print(f"Display options error: {e}")
                 traceback.print_exc()
                 return jsonify({'success': False, 'message': str(e)}), 500
+
+        # ── Display Status Endpoint ────────────────────────────────
+
+        @self.app.route('/api/display/status', methods=['GET'])
+        @require_auth(self.auth_manager)
+        def get_display_status():
+            """Return current display error state (if any)."""
+            err = self._last_display_error
+            if err:
+                return jsonify({
+                    'success': True,
+                    'error': err['message'],
+                    'timestamp': err['timestamp'],
+                    'display_disabled': True,
+                })
+            return jsonify({'success': True, 'error': None, 'display_disabled': False})
 
         # ── System Package Update Endpoint ────────────────────────
 

@@ -201,7 +201,7 @@ translations = {
         "background_ready": "Background loading complete",
         "background_error": "Background loading failed",
         "loading_bitcoin_data": "Loading Bitcoin data...",
-        "mempool_error": "⚠️ Mempool connection failed. Fee and block info unavailable.",
+        "mempool_error": "Mempool connection failed. Fee and block info unavailable.",
         
         # Languages
         "english": "English",
@@ -620,6 +620,10 @@ translations = {
         "downloading_drivers": "Downloading drivers for",
         "drivers_installed_restarting": "Drivers installed! Service restarting...",
         "spi_not_enabled": "SPI interface not enabled. Run in terminal and reboot",
+        "no_display_drivers_installed": "No display drivers installed",
+        "run_install_sh_for_display": "Run install.sh again to configure a connected display.",
+        "display_change_via_install": "To change display type, re-run install.sh on the Pi.",
+        "wrong_display_driver_detected": "Wrong display driver detected — re-run install.sh to configure the correct display.",
         "fetching_package_list": "Fetching package list (apt update)...",
         "installing_upgrades": "Installing upgrades (apt upgrade)...",
         "installing_mempaper_deps": "Installing mempaper dependencies...",
@@ -858,7 +862,7 @@ translations = {
         "background_ready": "Hintergrund-Laden abgeschlossen",
         "background_error": "Hintergrund-Laden fehlgeschlagen",
         "loading_bitcoin_data": "Bitcoin-Daten werden geladen...",
-        "mempool_error": "⚠️ Mempool-Verbindung fehlgeschlagen. Gebühren und Blockdaten nicht verfügbar.",
+        "mempool_error": "Mempool-Verbindung fehlgeschlagen. Gebühren und Blockdaten nicht verfügbar.",
         
         # Languages
         "english": "Englisch",
@@ -1281,6 +1285,10 @@ translations = {
         "downloading_drivers": "Treiber werden heruntergeladen für",
         "drivers_installed_restarting": "Treiber installiert! Dienst wird neu gestartet...",
         "spi_not_enabled": "SPI-Schnittstelle nicht aktiviert. Im Terminal ausführen und neu starten",
+        "no_display_drivers_installed": "Keine Display-Treiber installiert",
+        "run_install_sh_for_display": "install.sh erneut ausführen, um ein angeschlossenes Display zu konfigurieren.",
+        "display_change_via_install": "Um den Display-Typ zu ändern, install.sh auf dem Pi erneut ausführen.",
+        "wrong_display_driver_detected": "Falscher Display-Treiber erkannt — install.sh erneut ausführen, um das richtige Display zu konfigurieren.",
         "fetching_package_list": "Paketliste wird abgerufen (apt update)...",
         "installing_upgrades": "Aktualisierungen werden installiert (apt upgrade)...",
         "installing_mempaper_deps": "mempaper-Abhängigkeiten werden installiert...",
@@ -1514,7 +1522,7 @@ translations = {
         "epaper_enabled": "e-Paper: habilitado",
         "epaper_disabled": "e-Paper: deshabilitado",
         "updated": "Actualizado",
-        "mempool_error": "⚠️ Conexión a Mempool fallida. Tarifa y bloque no disponibles.",
+        "mempool_error": "Conexión a Mempool fallida. Tarifa y bloque no disponibles.",
         
         # Languages
         "english": "Inglés",
@@ -1926,6 +1934,10 @@ translations = {
         "downloading_drivers": "Descargando controladores para",
         "drivers_installed_restarting": "¡Controladores instalados! Reiniciando servicio...",
         "spi_not_enabled": "Interfaz SPI no activada. Ejecutar en terminal y reiniciar",
+        "no_display_drivers_installed": "No hay controladores de pantalla instalados",
+        "run_install_sh_for_display": "Ejecuta install.sh de nuevo para configurar una pantalla conectada.",
+        "display_change_via_install": "Para cambiar el tipo de pantalla, vuelve a ejecutar install.sh en el Pi.",
+        "wrong_display_driver_detected": "Controlador de pantalla incorrecto detectado — vuelve a ejecutar install.sh para configurar la pantalla correcta.",
         "fetching_package_list": "Obteniendo lista de paquetes (apt update)...",
         "installing_upgrades": "Instalando actualizaciones (apt upgrade)...",
         "installing_mempaper_deps": "Instalando dependencias de mempaper...",
@@ -2159,7 +2171,7 @@ translations = {
         "epaper_enabled": "e-Paper : activé",
         "epaper_disabled": "e-Paper : désactivé",
         "updated": "Mis à jour",
-        "mempool_error": "⚠️ Connexion Mempool échouée. Infos frais et bloc non disponibles.",
+        "mempool_error": "Connexion Mempool échouée. Infos frais et bloc non disponibles.",
         
         # Languages
         "english": "Anglais",
@@ -2572,6 +2584,10 @@ translations = {
         "downloading_drivers": "Téléchargement des pilotes pour",
         "drivers_installed_restarting": "Pilotes installés ! Redémarrage du service...",
         "spi_not_enabled": "Interface SPI non activée. Exécuter dans le terminal et redémarrer",
+        "no_display_drivers_installed": "Aucun pilote d'écran installé",
+        "run_install_sh_for_display": "Relancez install.sh pour configurer un écran connecté.",
+        "display_change_via_install": "Pour changer le type d'écran, relancez install.sh sur le Pi.",
+        "wrong_display_driver_detected": "Mauvais pilote d'écran détecté — relancez install.sh pour configurer le bon écran.",
         "fetching_package_list": "Récupération de la liste des paquets (apt update)...",
         "installing_upgrades": "Installation des mises à jour (apt upgrade)...",
         "installing_mempaper_deps": "Installation des dépendances mempaper...",
@@ -2810,7 +2826,7 @@ translations = {
         "background_ready": "Caricamento in background completato",
         "background_error": "Caricamento in background fallito",
         "loading_bitcoin_data": "Caricamento dati Bitcoin...",
-        "mempool_error": "⚠️ Connessione Mempool fallita. Informazioni su commissioni e blocchi non disponibili.",
+        "mempool_error": "Connessione Mempool fallita. Informazioni su commissioni e blocchi non disponibili.",
         
         # Languages
         "english": "Inglese",
@@ -3200,6 +3216,10 @@ translations = {
         "downloading_drivers": "Download driver per",
         "drivers_installed_restarting": "Driver installati! Riavvio del servizio...",
         "spi_not_enabled": "Interfaccia SPI non abilitata. Eseguire nel terminale e riavviare",
+        "no_display_drivers_installed": "Nessun driver display installato",
+        "run_install_sh_for_display": "Esegui nuovamente install.sh per configurare un display collegato.",
+        "display_change_via_install": "Per cambiare il tipo di display, esegui di nuovo install.sh sul Pi.",
+        "wrong_display_driver_detected": "Driver display errato rilevato — esegui di nuovo install.sh per configurare il display corretto.",
         "fetching_package_list": "Recupero elenco pacchetti (apt update)...",
         "installing_upgrades": "Installazione aggiornamenti (apt upgrade)...",
         "installing_mempaper_deps": "Installazione dipendenze mempaper...",

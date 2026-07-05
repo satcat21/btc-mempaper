@@ -458,6 +458,22 @@ function closeMemeModal() {
                 );
             });
 
+            // Display error — update hint below the display selector and show notification
+            socket.on('display_update', function(data) {
+                if (data.status !== 'error') return;
+                const t = window.translations || {};
+                const hint = document.getElementById('display-driver-hint');
+                if (hint) _setDisplayHint(hint, 'error');
+                _buildLiveToast(
+                    '<img src="/static/icons/error.svg" alt="" class="toast-title-icon" width="16" height="16"> ' +
+                        (t.toast_error || 'Error'),
+                    t.wrong_display_driver_detected ||
+                        'Wrong display driver detected — re-run install.sh to configure the correct display.',
+                    '#dc3545',
+                    12000
+                );
+            });
+
             // Auto-update service restart — show countdown modal
             socket.on('service_restarting', function(data) {
                 const t = window.translations || {};
@@ -3325,7 +3341,13 @@ function _appendUpdateFailureInfo(dialogEl, rollbackTag, rollbackCommit) {
 
 // ── Display Driver Install ──────────────────────────────────
 
+let _driverInstallInProgress = false;
+
 async function _installDisplayDrivers(deviceId) {
+    // Called from two save paths — ignore the second concurrent call
+    if (_driverInstallInProgress) return;
+    _driverInstallInProgress = true;
+
     // Show installing toast
     const existing = document.getElementById('update-countdown-toast');
     if (existing) existing.remove();
@@ -3367,7 +3389,7 @@ async function _installDisplayDrivers(deviceId) {
                 const spiMsg = window.translations?.spi_not_enabled || 'SPI interface not enabled';
                 const spiCmd = 'sudo raspi-config nonint do_spi 0 && sudo reboot';
                 if (statusEl) statusEl.innerHTML =
-                    `⚠️ ${spiMsg}:<br><code style="font-size:0.8em">${spiCmd}</code>`;
+                    `${spiMsg}:<br><code style="font-size:0.8em">${spiCmd}</code>`;
                 toast.classList.add('update-toast-error');
                 toast.innerHTML += `
                     <button class="update-toast-dismiss" onclick="this.closest('.update-countdown-toast').remove()">
@@ -3407,6 +3429,8 @@ async function _installDisplayDrivers(deviceId) {
                 ${window.translations?.dismiss || 'Dismiss'}
             </button>
         `;
+    } finally {
+        _driverInstallInProgress = false;
     }
 }
 
@@ -3444,38 +3468,63 @@ function _startDriverHealthPolling(toast) {
 
 // Fetches /api/display/options and rebuilds the omni_device_name select with
 // availability badges (✓ ready / ⬇ needs download), plus an inline hint div.
+function _setDisplayHint(hint, state) {
+    // state: 'ok' | 'no_drivers' | 'error'
+    if (state === 'ok') {
+        hint.style.color = 'var(--text-muted,#888)';
+        hint.textContent = window.translations?.display_change_via_install || 'To change display type, re-run install.sh on the Pi.';
+    } else if (state === 'error') {
+        hint.style.color = 'var(--danger,#ef4444)';
+        hint.textContent = window.translations?.wrong_display_driver_detected ||
+            'Wrong display driver detected — re-run install.sh to configure the correct display.';
+    } else {
+        hint.style.color = 'var(--danger,#ef4444)';
+        hint.textContent = window.translations?.run_install_sh_for_display ||
+            'Run install.sh again to configure a connected display.';
+    }
+}
+
 async function _enhanceDisplaySelect() {
     const selectEl = document.querySelector('[data-config-key="omni_device_name"]');
     if (!selectEl || selectEl.tagName !== 'SELECT') return;
 
-    let options;
-    try {
-        const resp = await fetch('/api/display/options');
-        if (!resp.ok) return;
-        const data = await resp.json();
-        if (!data.success || !Array.isArray(data.options)) return;
-        options = data.options;
-    } catch (_) {
-        return;
+    // Display type is set via install.sh only — the select is always locked.
+    const currentVal = selectEl.value;
+    let matchedOption = null;
+    let displayError = null;
+
+    // Fetch driver availability and last error state in parallel
+    const [optionsResp, statusResp] = await Promise.allSettled([
+        fetch('/api/display/options').then(r => r.ok ? r.json() : null).catch(() => null),
+        fetch('/api/display/status').then(r => r.ok ? r.json() : null).catch(() => null),
+    ]);
+
+    const optionsData = optionsResp.value;
+    const statusData = statusResp.value;
+
+    if (optionsData?.success && Array.isArray(optionsData.options)) {
+        matchedOption = optionsData.options.find(o => o.device_id === currentVal && o.available);
+    }
+    if (statusData?.error) {
+        displayError = statusData.error;
     }
 
-    // Map device_id → option metadata for the change listener and save-time check
-    const optionMap = {};
-    options.forEach(o => { optionMap[o.device_id] = o; });
-    window._displayOptionMap = optionMap;
-
-    // Rebuild select options with availability prefix
-    const currentVal = selectEl.value;
     selectEl.innerHTML = '';
-    options.forEach(opt => {
-        const el = document.createElement('option');
-        el.value = opt.device_id;
-        el.textContent = opt.label;
-        if (opt.device_id === currentVal) el.selected = true;
-        selectEl.appendChild(el);
-    });
+    selectEl.disabled = true;
+    selectEl.title = window.translations?.display_change_via_install || 'Change display type by re-running install.sh on the Pi';
 
-    // Add (or reuse) a hint div immediately after the select
+    const opt = document.createElement('option');
+    opt.selected = true;
+    if (matchedOption) {
+        opt.value = currentVal;
+        opt.textContent = matchedOption.label || currentVal;
+    } else {
+        opt.value = '';
+        opt.textContent = window.translations?.no_display_drivers_installed || 'No display drivers installed';
+    }
+    selectEl.appendChild(opt);
+
+    // Hint div below the select
     let hint = document.getElementById('display-driver-hint');
     if (!hint) {
         hint = document.createElement('div');
@@ -3484,19 +3533,13 @@ async function _enhanceDisplaySelect() {
         selectEl.parentNode.insertBefore(hint, selectEl.nextSibling);
     }
 
-    function _updateHint(deviceId) {
-        const opt = optionMap[deviceId];
-        if (!opt) { hint.textContent = ''; return; }
-        if (opt.available) {
-            hint.style.color = '#28a745';
-            hint.innerHTML = '<img src="/static/icons/check.svg" alt="" style="width:13px;height:13px;vertical-align:middle;margin-right:4px;opacity:0.85;filter:invert(44%) sepia(72%) saturate(456%) hue-rotate(97deg) brightness(96%) contrast(97%)"> Drivers ready — display will activate after save';
-        } else {
-            hint.style.color = '#F7931A';
-            hint.innerHTML = '<img src="/static/icons/download.svg" alt="" style="width:13px;height:13px;vertical-align:middle;margin-right:4px;opacity:0.85;filter:invert(62%) sepia(65%) saturate(2028%) hue-rotate(6deg) brightness(100%) contrast(93%)"> Drivers will be downloaded automatically when you save (~15 MB)';
-        }
+    if (displayError) {
+        _setDisplayHint(hint, 'error');
+    } else if (matchedOption) {
+        _setDisplayHint(hint, 'ok');
+    } else {
+        _setDisplayHint(hint, 'no_drivers');
     }
-
-    selectEl.addEventListener('change', e => _updateHint(e.target.value));
 }
 
 // ── System Package Update ────────────────────────────────────
@@ -8569,14 +8612,6 @@ async function saveConfiguration() {
             currentConfig = newConfig;
             window.currentConfig = newConfig; // Make available globally
 
-            // Install display drivers if needed — always call when display is enabled;
-            // the backend is idempotent and returns immediately when nothing is needed.
-            const newDeviceName = formConfig.omni_device_name || newConfig.omni_device_name;
-            const newDisplayEnabled = formConfig['e-ink-display-connected'];
-            if (newDeviceName && newDisplayEnabled) {
-                _installDisplayDrivers(newDeviceName);
-            }
-
             // Language already applied live via setLanguage() on dropdown change — just clear pending flag
             if (languageChanged) {
                 pendingLanguageChange = null;
@@ -9738,14 +9773,6 @@ function setupNavigationButtons() {
 
                         if (languageChanged) {
                             pendingLanguageChange = null;
-                        }
-
-                        // Always trigger driver install when display is enabled — backend is
-                        // idempotent and returns immediately when nothing is needed.
-                        const newDeviceName = formConfig.omni_device_name || currentConfig.omni_device_name;
-                        const newDisplayEnabled = formConfig['e-ink-display-connected'];
-                        if (newDeviceName && newDisplayEnabled) {
-                            _installDisplayDrivers(newDeviceName);
                         }
 
                         showNotification(window.translations?.configuration_saved || 'Configuration saved successfully!', 'success');
