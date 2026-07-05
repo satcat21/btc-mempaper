@@ -7941,7 +7941,7 @@ class MempaperApp:
 
                 # Minimum version that supports web GUI updates — older releases
                 # lack this feature and installing them would lock out the user.
-                min_version = (1, 6, 0)
+                min_version = (2, 0, 0)
 
                 def _parse_version(tag):
                     """Parse 'v1.7.0' into (1, 7, 0) tuple, or None on failure."""

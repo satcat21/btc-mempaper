@@ -279,6 +279,20 @@ if id pi >/dev/null 2>&1; then
     fi
 fi
 
+# ── Checkout latest release tag ───────────────────────────────────────────
+# The repo is cloned from main (to get the latest install.sh), but the installed
+# version should be the latest tagged release so the update-available banner
+# does not appear immediately after a fresh install.
+_LATEST_TAG=$(sudo -u "$SERVICE_USER" git -C "$SCRIPT_DIR" \
+    describe --tags --abbrev=0 2>/dev/null || true)
+if [ -n "$_LATEST_TAG" ]; then
+    sudo -u "$SERVICE_USER" git -C "$SCRIPT_DIR" checkout "$_LATEST_TAG" --quiet 2>/dev/null \
+        && ok "Checked out latest release: $_LATEST_TAG" \
+        || warn "Could not check out tag '$_LATEST_TAG' — continuing from current branch"
+else
+    warn "No release tags found — continuing from current branch"
+fi
+
 # Pre-create .ssh dirs so ReadWritePaths in the service unit takes effect.
 # ProtectSystem=strict silently ignores ReadWritePaths entries that don't exist
 # at service start, which would prevent SSH key writes from the web GUI.
