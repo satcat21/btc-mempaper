@@ -3147,14 +3147,22 @@ async function _performUpdate(tag, updateBtn) {
         pip: window.translations?.installing_python_deps || 'Installing Python dependencies...',
     };
 
+    const _updateLineI18n = {
+        'Re-minifying JavaScript and CSS...':          () => window.translations?.reminifying_js_css,
+        'JavaScript and CSS minified successfully':    () => window.translations?.js_css_minified_success,
+        'Minification failed — app will use source files': () => window.translations?.minification_failed,
+    };
+
     function onUpdateOutput(data) {
+        const t = window.translations || {};
+        const displayLine = (_updateLineI18n[data.line] && _updateLineI18n[data.line]()) || data.line;
         if (data.header) {
             const b = document.createElement('strong');
-            b.textContent = data.line;
+            b.textContent = displayLine;
             logArea.appendChild(b);
             logArea.appendChild(document.createTextNode('\n'));
         } else {
-            logArea.appendChild(document.createTextNode(data.line + '\n'));
+            logArea.appendChild(document.createTextNode(displayLine + '\n'));
         }
         var atBottom = logArea.scrollHeight - logArea.scrollTop - logArea.clientHeight < 40;
         if (atBottom) logArea.scrollTop = logArea.scrollHeight;
