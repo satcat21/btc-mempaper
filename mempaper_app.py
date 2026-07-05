@@ -87,7 +87,7 @@ def _read_reboot_time():
                 content = f.read()
             if 'Automatic-Reboot-Time' not in content:
                 continue
-            m = re.search(r'Automatic-Reboot-Time\s+"(\d{1,2}):(\d{2})"', content)
+            m = re.search(r'^(?!\s*//).*Automatic-Reboot-Time\s+"(\d{1,2}):(\d{2})"', content, re.MULTILINE)
             if m:
                 return int(m.group(1)), int(m.group(2))
         except Exception:
