@@ -219,8 +219,8 @@ def is_wifi_connected(interface):
 
     return False
 
-DNSMASQ_CONF_PATH = "/tmp/mempaper-captive.conf"
-DNSMASQ_PID_PATH  = "/tmp/mempaper-captive.pid"
+DNSMASQ_CONF_PATH = "/tmp/mempaper-captive-dns.conf"
+DNSMASQ_PID_PATH  = "/tmp/mempaper-captive-dns.pid"
 CAPTIVE_IP        = "192.168.12.1"
 
 

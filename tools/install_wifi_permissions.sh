@@ -126,7 +126,10 @@ ${SERVICE_USER} ALL=(root) NOPASSWD: ${APT_INSTALL_WRAPPER}
 ${SERVICE_USER} ALL=(root) NOPASSWD: ${UPGRADE_PYTHON_WRAPPER}
 
 # Service control
+${SERVICE_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} start mempaper.service
+${SERVICE_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} stop mempaper.service
 ${SERVICE_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} restart mempaper.service
+${SERVICE_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} enable mempaper.service
 ${SERVICE_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} daemon-reload
 ${SERVICE_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} reboot
 
