@@ -6455,7 +6455,13 @@ function createColorSelect(value) {
 function _checkRebootWindowConflict(input) {
     const rw = window._rebootWindow;
     const existing = input.parentNode?.querySelector('.reboot-window-warning');
-    if (!rw || !input.value) { if (existing) existing.remove(); return; }
+    if (!rw || !input.value) {
+        if (existing) existing.remove();
+        input.classList.remove('input-invalid');
+        _invalidInputs.delete(input);
+        _updateFormValidity();
+        return;
+    }
     const [h, m] = input.value.split(':').map(Number);
     const candidate  = h * 60 + m;
     const reboot     = rw.hour * 60 + rw.minute;
@@ -6479,9 +6485,14 @@ function _checkRebootWindowConflict(input) {
         } else {
             existing.textContent = msg;
         }
+        input.classList.add('input-invalid');
+        _invalidInputs.add(input);
     } else {
         if (existing) existing.remove();
+        input.classList.remove('input-invalid');
+        _invalidInputs.delete(input);
     }
+    _updateFormValidity();
 }
 
 
