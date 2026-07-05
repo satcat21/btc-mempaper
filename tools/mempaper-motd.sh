@@ -199,6 +199,7 @@ if [ -d "$MEMES_DIR" ]; then
     _MC=$(find "$MEMES_DIR" -maxdepth 1 -type f \
         \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' \
            -o -iname '*.gif' -o -iname '*.webp' \) 2>/dev/null | wc -l | tr -d ' ')
+    _MC=$(python3 -c "print(f'{int(${_MC}):,}')" 2>/dev/null || echo "${_MC}")
 fi
 
 # Mempool URL
