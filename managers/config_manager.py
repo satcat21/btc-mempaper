@@ -179,7 +179,7 @@ class ConfigManager:
             self.file_observer.stop()
             self.file_observer.join()
             self.file_observer = None
-            print("🛑 Config file watching stopped")
+            logging.getLogger(__name__).debug("Config file watching stopped")
     
     def _reload_config_from_file(self):
         """Reload configuration from file and notify callbacks."""

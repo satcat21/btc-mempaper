@@ -481,9 +481,14 @@ ok "Config permissions secured (dir 750, file 640 — readable by mempaper group
 
 # ── Admin account (non-interactive, credentials collected upfront) ────────────
 if [ -n "$ADMIN_USERNAME" ] && [ -n "$ADMIN_PASSWORD" ]; then
+    _admin_rc=0
     printf '%s\n%s\n' "$ADMIN_USERNAME" "$ADMIN_PASSWORD" | \
-        sudo -u "$SERVICE_USER" "$VENV_DIR/bin/python" tools/setup_user.py --stdin
-    ok "Admin account created"
+        sudo -u "$SERVICE_USER" "$VENV_DIR/bin/python" tools/setup_user.py --stdin \
+        || _admin_rc=$?
+    if   [ "$_admin_rc" -eq 0 ]; then ok "Admin account created"
+    elif [ "$_admin_rc" -eq 2 ]; then ok "Admin account already exists — skipping"
+    else err "Failed to create admin account (exit $_admin_rc)"; exit 1
+    fi
 else
     ok "Skipping admin account — create later via web UI or: python tools/setup_user.py"
 fi

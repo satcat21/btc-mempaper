@@ -121,7 +121,7 @@ def cmd_create_noninteractive(pm: SecurePasswordManager, username: str, password
     users = pm.list_users()
     if username in users:
         print(f"User '{username}' already exists — skipping.")
-        return
+        sys.exit(2)
     issues = []
     if len(password) < 16:                      issues.append("at least 16 characters")
     if not _re.search(r'[A-Z]', password):      issues.append("an uppercase letter")
