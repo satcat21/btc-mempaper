@@ -181,6 +181,14 @@ The memes on this display come from **[einundzwanzig-memes.space](https://einund
 
 </details>
 
+### SSH Login Banner
+
+<p align="center">
+  <img src="images/screenshots/ssh-banner.png" alt="SSH Login Banner" width="700"/>
+  <br/>
+  <em>Live system stats on every SSH login — block height, mempool status, memes count, service uptime, and display info.</em>
+</p>
+
 <br/>
 
 ---
