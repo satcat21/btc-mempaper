@@ -28,6 +28,11 @@ imagemagick
 # Captive-portal: wildcard DNS + port redirects for setup hotspot (Android/iOS)
 dnsmasq
 iptables
+# nftables: required by NetworkManager 1.46+ (Debian 13 / Trixie) for
+# ipv4.method=shared on the setup AP — NM calls nft directly on Trixie
+nftables
+# hostapd: creates the setup-hotspot access point directly (mempaper-hostapd.service)
+hostapd
 
 # GPIO (Raspberry Pi)
 python3-gpiozero

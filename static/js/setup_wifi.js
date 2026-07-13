@@ -223,7 +223,7 @@ async function pollConnectStatus(ssid, attempts) {
                 if (!res.ok) {
                     if (tries >= maxAttempts) {
                         clearInterval(interval);
-                        reject(new Error('Timed out waiting for connection result'));
+                        reject(new Error(t('setup_wifi_still_waiting')));
                     }
                     return;
                 }
@@ -236,12 +236,12 @@ async function pollConnectStatus(ssid, attempts) {
                     reject(new Error(data.message || 'Connection failed'));
                 } else if (tries >= maxAttempts) {
                     clearInterval(interval);
-                    reject(new Error('Timed out waiting for connection result'));
+                    reject(new Error(t('setup_wifi_still_waiting')));
                 }
             } catch (e) {
                 if (tries >= maxAttempts) {
                     clearInterval(interval);
-                    reject(new Error('Lost connection to device — check if it joined your network'));
+                    reject(new Error(t('setup_wifi_disconnected_expected')));
                 }
             }
         }, 1500);

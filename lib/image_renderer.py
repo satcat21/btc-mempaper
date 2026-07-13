@@ -24,6 +24,9 @@ import random
 import subprocess
 from datetime import datetime
 from PIL import Image, ImageDraw, ImageFont, ImageOps
+from babel.dates import format_date
+
+from utils.webp_probe_cache import cached_probe
 
 # Probe whether PIL can decode WebP without SIGILL.
 # On ARMv6 with a NEON-compiled libwebp, both encode and decode cause SIGILL
@@ -40,8 +43,7 @@ def _probe_webp_decode() -> bool:
     except Exception:
         return False
 
-_WEBP_PIL_DECODE_SAFE = _probe_webp_decode()
-from babel.dates import format_date
+_WEBP_PIL_DECODE_SAFE = cached_probe('decode_ok', _probe_webp_decode)
 
 from lib.btc_holidays import btc_holidays
 from utils.color_lut import ColorLUT
@@ -51,40 +53,58 @@ from lib.bitaxe_api import BitaxeAPI
 from lib.wallet_balance_api import WalletBalanceAPI
 
 # ---------------------------------------------------------------------------
-# Emoji support — optional pilmoji dependency with persistent disk cache
+# Emoji support — optional pilmoji dependency with persistent disk cache.
 # ---------------------------------------------------------------------------
-try:
-    import hashlib as _hashlib
-    from pilmoji import Pilmoji as _Pilmoji
-    from pilmoji.source import TwitterEmojiSource as _TwitterEmojiSource
+# Loaded lazily (on first text render that actually contains emoji), not at
+# module import: pilmoji pulls in the 'emoji' package's large Unicode tables,
+# ~4s of import cost on a Pi Zero that's wasted on any render that never
+# needs it (e.g. the setup/hotspot QR screen).
+_PILMOJI_AVAILABLE = None  # None = not yet probed
+_Pilmoji = None
+_CachedEmojiSource = None
 
-    class _CachedEmojiSource(_TwitterEmojiSource):
-        """TwitterEmojiSource with a persistent on-disk cache.
 
-        Emoji images are downloaded once from Twitter's CDN and stored under
-        ``cache/emoji_cache/``.  Subsequent renders read from disk, so the
-        app works offline after a warm-up pass.
-        """
-        _CACHE_DIR = os.path.join("cache", "emoji_cache")
+def _ensure_pilmoji_loaded():
+    global _PILMOJI_AVAILABLE, _Pilmoji, _CachedEmojiSource
+    if _PILMOJI_AVAILABLE is not None:
+        return _PILMOJI_AVAILABLE
 
-        def request(self, url: str) -> bytes:
-            os.makedirs(self._CACHE_DIR, exist_ok=True)
-            key = _hashlib.md5(url.encode()).hexdigest() + ".png"
-            cache_file = os.path.join(self._CACHE_DIR, key)
-            if os.path.exists(cache_file):
-                with open(cache_file, "rb") as fh:
-                    return fh.read()
-            data = super().request(url)
-            try:
-                with open(cache_file, "wb") as fh:
-                    fh.write(data)
-            except OSError:
-                pass
-            return data
+    try:
+        import hashlib as _hashlib
+        from pilmoji import Pilmoji as _PilmojiCls
+        from pilmoji.source import TwitterEmojiSource as _TwitterEmojiSource
 
-    _PILMOJI_AVAILABLE = True
-except ImportError:
-    _PILMOJI_AVAILABLE = False
+        class _CachedEmojiSourceCls(_TwitterEmojiSource):
+            """TwitterEmojiSource with a persistent on-disk cache.
+
+            Emoji images are downloaded once from Twitter's CDN and stored under
+            ``cache/emoji_cache/``.  Subsequent renders read from disk, so the
+            app works offline after a warm-up pass.
+            """
+            _CACHE_DIR = os.path.join("cache", "emoji_cache")
+
+            def request(self, url: str) -> bytes:
+                os.makedirs(self._CACHE_DIR, exist_ok=True)
+                key = _hashlib.md5(url.encode()).hexdigest() + ".png"
+                cache_file = os.path.join(self._CACHE_DIR, key)
+                if os.path.exists(cache_file):
+                    with open(cache_file, "rb") as fh:
+                        return fh.read()
+                data = super().request(url)
+                try:
+                    with open(cache_file, "wb") as fh:
+                        fh.write(data)
+                except OSError:
+                    pass
+                return data
+
+        _Pilmoji = _PilmojiCls
+        _CachedEmojiSource = _CachedEmojiSourceCls
+        _PILMOJI_AVAILABLE = True
+    except ImportError:
+        _PILMOJI_AVAILABLE = False
+
+    return _PILMOJI_AVAILABLE
 
 COLOR_SETS = {
     "light": {
@@ -658,7 +678,7 @@ class ImageRenderer:
         if not self._has_emoji(text):
             draw.text(xy, text, font=font, fill=fill)
             return
-        if not _PILMOJI_AVAILABLE:
+        if not _ensure_pilmoji_loaded():
             draw.text(xy, text, font=font, fill=fill)
             return
         try:
@@ -4052,9 +4072,9 @@ class ImageRenderer:
             temp_font = self._get_font(self.font_mono, self._scale_font_size(11, min_value=8))
             bbox = temp_font.getbbox("0")
             cw = bbox[2] - bbox[0]
-            # Top row logic: 2 chars then gap. 
+            # Top row logic: 2 chars then gap.
             # Total width = 46 chars + 23 gaps.
-            # We use gap = 3 (reduced from 6 to fit larger font)
+            # Horizontal gap is 3px (smaller than vertical's 6px) to fit the larger font
             
             _est_horizontal_pairs = 24 if is_wide_screen else 23
             _est_horizontal_chars = _est_horizontal_pairs * 2
@@ -4098,7 +4118,7 @@ class ImageRenderer:
             pair_chars.append(c0 + c1)
             pair_colors.append(block_hash_colors[(2 * i) % total_chars])
 
-        # Legacy two-pass edge construction:
+        # Two-pass edge construction:
         # pass 1: top starts at upper-left and uses first W pairs, then right uses remaining pairs.
         # pass 2: left starts at upper-left and uses first H pairs, then bottom uses remaining pairs.
         top_pairs_chars = pair_chars[:horizontal_pairs]
@@ -4279,7 +4299,7 @@ class ImageRenderer:
         # None
         
         if self.orientation == "vertical":
-            # --- VERTICAL MODE (Legacy Logic) ---
+            # --- VERTICAL MODE (fixed geometry, not auto-scaled like landscape below) ---
             # Draw hash frame centered using measured geometry
             if not skip_hash_frame:
                 self.draw_hash_frame(draw, 12, y+3, block_hash, web_quality=web_quality, center=True)
@@ -4336,7 +4356,6 @@ class ImageRenderer:
             self.draw_hash_frame(draw, 32, y, block_hash, web_quality=web_quality, max_width=max_available_width, center=True)
         
         # Center Block Height Text inside the frame (approx y+15)
-        # User requested: "Can you even further move up the block height?". Old value_y=y+25. New = y+15.
         value_y = y + self._scale_px(15, min_value=5)
         
         x = (self.width - text_width) // 2  # text_width already squeezed+scaled above
@@ -4372,7 +4391,7 @@ class ImageRenderer:
             # Draw fee info in smaller text below block height
             bbox = used_font_block_value.getbbox(formatted_height)
             text_height = bbox[3] - bbox[1]
-            # User requested to fix overlap: Increased gap from 15 to 25
+            # Extra gap avoids overlapping the block height text above
             fee_y = value_y + text_height + self._scale_px(25, min_value=8)
 
             # Fee label always uses bottom color of gradient

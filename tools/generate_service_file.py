@@ -82,8 +82,6 @@ def generate_service_file():
 [Unit]
 Description=mempaper Bitcoin Dashboard
 Documentation=https://github.com/satcat21/btc-mempaper
-After=network-online.target
-Wants=network-online.target
 StartLimitIntervalSec=0
 
 [Service]
@@ -94,7 +92,14 @@ Restart=always
 RestartSec=5
 User={user}
 Group={group}
-Environment="PATH={project_path}/.venv/bin:/usr/local/bin:/usr/bin:/bin"
+SupplementaryGroups=gpio spi i2c netdev
+# Includes /usr/sbin and /sbin: hostapd, dnsmasq, iw, rfkill, iptables, and nft
+# all live there on Debian, and shutil.which() in mempaper_app.py checks this
+# process's own PATH directly (unlike the many 'sudo ...' calls elsewhere,
+# which use sudo's secure_path instead). Without these, shutil.which('hostapd')
+# always returns None and the setup hotspot silently reports "not installed"
+# even when it is.
+Environment="PATH={project_path}/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 Environment="PYTHONPATH={project_path}"
 Environment="PYTHONUNBUFFERED=1"
 Environment="API_RATE_LIMIT_DELAY=3"
@@ -108,6 +113,10 @@ Environment="REQUEST_TIMEOUT=30"
 # 'sudo nmcli' to manage NetworkManager connections (WPA2 hotspot onboarding).
 # The sudo rule is narrowly scoped to /usr/bin/nmcli only (see
 # /etc/sudoers.d/mempaper-wifi installed by install_wifi_permissions.sh).
+# PrivateTmp=true is safe here: the hostapd/dnsmasq config files live under
+# cache/ (part of ReadWritePaths below), which is visible to the independent
+# mempaper-hostapd.service / mempaper-dnsmasq.service units, so this service
+# doesn't need to write anything to /tmp for another unit to see.
 TimeoutStopSec=10
 PrivateTmp=true
 ProtectSystem=strict

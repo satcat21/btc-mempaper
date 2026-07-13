@@ -5,9 +5,9 @@
 # Sets up a fresh Raspberry Pi (Raspberry Pi OS Lite 32-bit, Bookworm or Trixie) as a mempaper device.
 #
 # Usage:
+#   sudo apt install -y git
 #   git clone https://github.com/satcat21/btc-mempaper.git
-#   cd btc-mempaper
-#   bash install.sh
+#   cd btc-mempaper && bash install.sh
 #
 # What it does:
 #   1. Installs system packages (apt-requirements.txt)
@@ -20,8 +20,8 @@
 #   8. Disables WiFi power management (prevents BCM43430 beacon misses)
 #   9. Enables and starts the mempaper service
 #
-# After install the Pi enters hotspot onboarding mode — connect to the
-# mempaper WiFi network and open http://192.168.4.1:5000 to set up.
+# After install the mempaper service starts and the web UI is available at
+# http://<pi-ip>:5000 on your local network.
 # ============================================================================
 
 set -e
@@ -181,8 +181,6 @@ echo -e "  ${CYAN}Options${NC} — press Enter to accept defaults"
 echo ""
 read -rp "  Minify JavaScript (better performance)?   [Y/n]: " MINIFY_CHOICE
 MINIFY_CHOICE="${MINIFY_CHOICE:-Y}"
-read -rp "  UFW firewall (restrict to LAN only)?       [Y/n]: " UFW_CHOICE
-UFW_CHOICE="${UFW_CHOICE:-Y}"
 read -rp "  fail2ban (SSH brute-force protection)?     [Y/n]: " F2B_CHOICE
 F2B_CHOICE="${F2B_CHOICE:-Y}"
 read -rp "  Unattended security updates?               [Y/n]: " UU_CHOICE
@@ -202,6 +200,28 @@ if [[ "$UU_CHOICE" =~ ^[Yy]$ ]]; then
     fi
 fi
 echo ""
+echo -e "  ${CYAN}Persistent logging${NC}"
+echo "  Raspberry Pi OS keeps journal logs in RAM only (lost on every reboot),"
+echo "  to reduce SD card wear. Enabling this writes logs to the SD card"
+echo "  instead (capped at 200M) so 'journalctl -b -1' works after a reboot —"
+echo "  useful for debugging, at the cost of a little extra SD card wear."
+echo ""
+read -rp "  Enable persistent logging?                 [y/N]: " PERSISTENT_LOG_CHOICE
+PERSISTENT_LOG_CHOICE="${PERSISTENT_LOG_CHOICE:-N}"
+echo ""
+echo -e "  ${CYAN}WiFi regulatory domain${NC}"
+echo "  Unlocks WiFi channels/transmit power and lifts the software rfkill"
+echo "  block that otherwise keeps the radio disabled until a country is set —"
+echo "  required for both normal WiFi and the setup hotspot to come up reliably."
+echo ""
+read -rp "  WiFi country code (ISO 3166-1 alpha-2)?    [DE]: " WIFI_COUNTRY
+WIFI_COUNTRY="${WIFI_COUNTRY:-DE}"
+WIFI_COUNTRY=$(echo "$WIFI_COUNTRY" | tr '[:lower:]' '[:upper:]')
+if ! echo "$WIFI_COUNTRY" | grep -qE '^[A-Z]{2}$'; then
+    warn "Invalid country code '${WIFI_COUNTRY}' — using DE"
+    WIFI_COUNTRY="DE"
+fi
+echo ""
 echo -e "  ${CYAN}SSH hardening${NC} — disable password login, require SSH key"
 echo "  Add your public key via Settings > SSH in the web UI after install."
 echo "  Without a key, physical access is needed to SSH in."
@@ -212,6 +232,79 @@ echo ""
 
 echo -e "  ${YELLOW}━━━ All set — starting installation now ━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
+
+# ── System update ─────────────────────────────────────────────────────────
+# Run before any other step so installed packages are current.
+step "System update"
+sudo apt-get update -q
+sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -q
+sudo apt-get install -y locales-all -q
+ok "System updated"
+
+# ── Persistent logging ─────────────────────────────────────────────────────
+# Raspberry Pi OS ships /usr/lib/systemd/journald.conf.d/40-rpi-volatile-storage.conf
+# (Storage=volatile) to reduce SD card wear, so journalctl logs vanish on every
+# reboot by default. Override it with our own /etc/ drop-in (later-sorting
+# filenames win for duplicate systemd conf.d keys, unlike sshd's Include=
+# first-wins behavior) so 'journalctl -u mempaper.service -b -1' etc. work for
+# debugging a previous boot. Capped to avoid unbounded SD card growth.
+step "Persistent logging"
+if [[ "$PERSISTENT_LOG_CHOICE" =~ ^[Yy]$ ]]; then
+    sudo mkdir -p /var/log/journal
+    sudo systemd-tmpfiles --create --prefix /var/log/journal
+    sudo mkdir -p /etc/systemd/journald.conf.d
+    sudo tee /etc/systemd/journald.conf.d/persistent.conf > /dev/null << 'EOF'
+[Journal]
+Storage=persistent
+SystemMaxUse=200M
+EOF
+    sudo systemctl restart systemd-journald
+    ok "Persistent logging enabled (capped at 200M, survives reboots)"
+else
+    ok "Persistent logging skipped (default — logs stay RAM-only, reset on reboot)"
+fi
+
+# ── Netplan permissions ──────────────────────────────────────────────────
+step "Netplan permissions"
+sudo mkdir -p /etc/tmpfiles.d
+sudo tee /etc/tmpfiles.d/mempaper-netplan-perms.conf > /dev/null << 'EOF'
+z /lib/netplan/00-network-manager-all.yaml 0600 root root - -
+EOF
+sudo systemd-tmpfiles --create /etc/tmpfiles.d/mempaper-netplan-perms.conf
+ok "Netplan config permissions fixed"
+
+# ── Cloud-init network reconfiguration ─────────────────────────────────
+step "Cloud-init network reconfiguration"
+sudo mkdir -p /etc/cloud/cloud.cfg.d
+sudo tee /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg > /dev/null << 'EOF'
+network: {config: disabled}
+EOF
+ok "Cloud-init per-boot network reconfiguration disabled"
+
+# NetworkManager calls "netplan generate" internally on startup; if the
+# render differs from disk it triggers a systemd daemon-reload, which can
+# cascade into further reloads and delay NM's own readiness. Rendering here,
+# ordered before NetworkManager.service, keeps NM's internal render a no-op.
+step "Netplan pre-generate (avoids NetworkManager startup reload storm)"
+sudo tee /etc/systemd/system/mempaper-netplan-pregenerate.service > /dev/null << 'EOF'
+[Unit]
+Description=Pre-render netplan config before NetworkManager starts
+DefaultDependencies=no
+After=systemd-udevd.service local-fs.target
+Before=NetworkManager.service
+Wants=systemd-udevd.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/netplan generate
+RemainAfterExit=yes
+
+[Install]
+WantedBy=sysinit.target
+EOF
+sudo systemctl daemon-reload
+sudo systemctl enable mempaper-netplan-pregenerate.service
+ok "Netplan pre-generate service installed"
 
 # ── Step 0: Create mempaper service user ──────────────────────────────────
 step "Step 0 — Creating mempaper service user"
@@ -317,8 +410,6 @@ ok ".ssh directories and authorized_keys files created for SSH key management"
 # ── Step 1: System packages ────────────────────────────────────────────────
 step "Step 1/9 — Installing system packages"
 
-sudo apt-get update -qq
-
 if [ -f apt-requirements.txt ]; then
     # Filter out comments and blank lines
     APT_PKGS=$(grep -v '^\s*#' apt-requirements.txt | grep -v '^\s*$' | tr '\n' ' ')
@@ -326,6 +417,33 @@ if [ -f apt-requirements.txt ]; then
     ok "System packages installed"
 else
     warn "apt-requirements.txt not found — skipping"
+fi
+
+# Mask system dnsmasq so it never holds port 53/67.
+# NM's shared-mode dnsmasq starts its own dnsmasq process for DHCP; if the system
+# dnsmasq service is running it grabs port 53 on all interfaces and prevents NM's
+# instance from starting.  Mask survives future apt-get reinstalls.
+sudo systemctl stop dnsmasq    2>/dev/null || true
+sudo systemctl disable dnsmasq 2>/dev/null || true
+sudo systemctl mask dnsmasq    2>/dev/null || true
+ok "System dnsmasq masked (NM starts its own dnsmasq for shared-mode DHCP)"
+
+# Disable and flush nftables so its inet-filter DROP policy never blocks DHCP.
+# Trixie ships /etc/nftables.conf with 'inet filter input { policy drop }' which
+# silently drops DHCP DISCOVER broadcasts (UDP 67) from hotspot clients even after
+# the service is disabled (the ruleset loaded at boot stays in memory until flushed).
+sudo systemctl stop nftables    2>/dev/null || true
+sudo systemctl disable nftables 2>/dev/null || true
+sudo nft flush ruleset          2>/dev/null || true
+ok "nftables service disabled and ruleset flushed (prevents DHCP drop on Trixie)"
+
+# Disable UFW if active.  UFW's ufw-after-input chain unconditionally drops
+# UDP dport 67 (DHCP broadcasts) before any user allow-rules can accept them,
+# so the setup hotspot's DHCP server can never reply to clients while UFW runs.
+# mempaper manages its own iptables rules for the hotspot; UFW is redundant here.
+if command -v ufw >/dev/null 2>&1; then
+    sudo ufw disable 2>/dev/null || true
+    ok "UFW disabled (its ufw-after-input chain drops UDP/67 DHCP broadcasts)"
 fi
 
 # Ensure python3-venv is available
@@ -540,11 +658,43 @@ sudo systemctl daemon-reload
 sudo systemctl enable mempaper.service
 ok "mempaper.service installed and enabled"
 
+# push behind mempaper.service and deprioritize.
+if systemctl list-unit-files 'tor@*.service' >/dev/null 2>&1 && command -v tor >/dev/null 2>&1; then
+    sudo mkdir -p /etc/systemd/system/tor@default.service.d
+    sudo tee /etc/systemd/system/tor@default.service.d/defer-startup.conf > /dev/null << 'EOF'
+[Unit]
+After=mempaper.service
+
+[Service]
+# Lower CPU/IO priority so tor's slow bootstrap doesn't compete with
+# mempaper's own time-critical startup work running at the same time.
+Nice=15
+IOSchedulingClass=idle
+EOF
+    sudo systemctl daemon-reload
+    ok "tor startup deferred until after mempaper.service, deprioritized"
+fi
+
 # ── Step 7: WiFi/hotspot permissions ───────────────────────────────────────
 step "Step 7/9 — Installing WiFi hotspot permissions"
 
 sudo bash tools/install_wifi_permissions.sh "$SERVICE_USER"
 ok "WiFi permissions installed"
+
+# WiFi regulatory domain: without a country set, the radio can stay
+# soft-blocked by rfkill (or hostapd can fail to select a channel) — on a
+# fresh flash this can prevent both station-mode WiFi and the setup hotspot
+# from ever coming up. raspi-config's do_wifi_country is the officially
+# supported way to set this reliably on both Bookworm and Trixie.
+if command -v raspi-config >/dev/null 2>&1; then
+    sudo raspi-config nonint do_wifi_country "$WIFI_COUNTRY"
+    ok "WiFi country set to ${WIFI_COUNTRY}"
+else
+    warn "raspi-config not found — set WiFi country manually: sudo raspi-config > Localisation Options > WLAN Country"
+fi
+sudo rfkill unblock wifi 2>/dev/null || true
+sudo nmcli radio wifi on 2>/dev/null || true
+ok "WiFi radio unblocked"
 
 # ── Step 8: Disable WiFi power management ────────────────────────────────
 step "Step 8/9 — Disabling WiFi power management"
@@ -585,31 +735,6 @@ else
     warn "Could not install 'mempaper' CLI command — symlink $MEMPAPER_CMD failed"
 fi
 
-# ── Optional: UFW firewall ────────────────────────────────────────────────
-if [[ "$UFW_CHOICE" =~ ^[Yy]$ ]]; then
-    sudo apt-get install -y ufw -q
-    sudo ufw default deny incoming
-    sudo ufw default allow outgoing
-    # Remove any pre-existing broad rules that would override the LAN-only rules below
-    for port in 22 5000; do
-        sudo ufw delete allow "${port}/tcp" 2>/dev/null || true
-        sudo ufw delete allow "${port}"     2>/dev/null || true
-    done
-    for subnet in 192.168.0.0/16 10.0.0.0/8 172.16.0.0/12; do
-        sudo ufw allow from "$subnet" to any port 22
-        sudo ufw allow from "$subnet" to any port 5000
-    done
-    # Allow WireGuard if installed
-    if command -v wg >/dev/null 2>&1; then
-        sudo ufw allow 51820/udp
-        ok "WireGuard detected — UDP 51820 allowed"
-    fi
-    sudo ufw --force enable
-    ok "UFW firewall configured (SSH + port 5000 restricted to LAN only)"
-else
-    ok "Skipping UFW — configure later with: sudo ufw enable"
-fi
-
 # ── Optional: fail2ban ────────────────────────────────────────────────────
 if [[ "$F2B_CHOICE" =~ ^[Yy]$ ]]; then
     sudo apt-get install -y fail2ban -q
@@ -644,12 +769,37 @@ fi
 if [[ "$SSH_HARDENING" =~ ^[Yy]$ ]]; then
     sudo sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
     sudo sed -i 's/^#*PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
+    # Some Raspberry Pi OS images (Imager-preconfigured accounts) provision an
+    # /etc/ssh/sshd_config.d/*.conf drop-in — e.g. cloud-init's 50-cloud-init.conf —
+    # that re-enables password auth for the first-boot account. sshd's Include
+    # directive (near the top of sshd_config) uses first-match-wins semantics,
+    # so a drop-in loaded before our edit above silently overrides it. Write our
+    # own drop-in named to sort first (Include expands *.conf in lexical order)
+    # so it wins the precedence race instead.
+    sudo mkdir -p /etc/ssh/sshd_config.d
+    sudo tee /etc/ssh/sshd_config.d/00-mempaper-hardening.conf > /dev/null << 'EOF'
+# Written by mempaper install.sh. Named to sort first among sshd_config.d
+# drop-ins (e.g. before cloud-init's 50-cloud-init.conf) since sshd applies
+# the first value it encounters for each keyword.
+PasswordAuthentication no
+PermitRootLogin no
+EOF
+    sudo chmod 644 /etc/ssh/sshd_config.d/00-mempaper-hardening.conf
     sudo systemctl reload sshd
-    ok "SSH hardened: password auth disabled, root login disabled (key-only)"
-    echo ""
-    echo -e "  ${YELLOW}⚠  SSH password login is now disabled.${NC}"
-    echo "  Add your SSH public key via Settings > SSH in the web UI."
-    echo "  Until then, SSH access requires physical access to the Pi."
+    # Verify against the actual effective config rather than assuming the
+    # edits above won — catches any other higher-precedence override too.
+    if sudo sshd -T 2>/dev/null | grep -qi '^passwordauthentication no'; then
+        ok "SSH hardened: password auth disabled, root login disabled (key-only)"
+        echo ""
+        echo -e "  ${YELLOW}⚠  SSH password login is now disabled.${NC}"
+        echo "  Add your SSH public key via Settings > SSH in the web UI."
+        echo "  Until then, SSH access requires physical access to the Pi."
+    else
+        warn "SSH hardening written, but password auth is still effectively enabled"
+        echo "  Another /etc/ssh/sshd_config.d/*.conf drop-in is likely overriding it."
+        echo "  Check: sudo sshd -T | grep -i passwordauthentication"
+        echo "         ls /etc/ssh/sshd_config.d/"
+    fi
 else
     ok "SSH hardening skipped — enable later via:"
     echo "    sudo sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config"
@@ -662,48 +812,25 @@ if [ "$DISPLAY_CHOICE" != "8" ] && [ ! -e /dev/spidev0.0 ]; then
     NEEDS_REBOOT=true
 fi
 
-# Derive hotspot credentials from MAC address (same algorithm as mempaper_app.py)
-WIFI_IFACE=$(ip -o link show | awk -F': ' '/wlan/{print $2; exit}')
-if [ -n "$WIFI_IFACE" ]; then
-    MAC=$(cat "/sys/class/net/$WIFI_IFACE/address" 2>/dev/null | tr -d '[:space:]')
-    if [ -n "$MAC" ]; then
-        DIGEST=$(echo -n "$MAC" | sha256sum | awk '{print $1}')
-        SUFFIX=$(printf "%04d" $(( 16#${DIGEST:0:8} % 10000 )))
-        HOTSPOT_SSID="mempaper-$SUFFIX"
-        HOTSPOT_PASS="${DIGEST:8:8}"
-    fi
+# Detect the Pi's current IP on the WiFi interface for the dashboard URL.
+_WIFI_IFACE=$(ip -o link show | awk -F': ' '/wlan/{print $2; exit}')
+_DEVICE_IP=""
+if [ -n "$_WIFI_IFACE" ]; then
+    _DEVICE_IP=$(ip -4 addr show "$_WIFI_IFACE" 2>/dev/null | awk '/inet /{print $2}' | cut -d/ -f1 | head -1)
 fi
 
 echo ""
-echo "  ┌──────────────────────────────────────┐"
-echo "  │     Setup complete — ready to start!  │"
-echo "  └──────────────────────────────────────┘"
+echo "  ┌──────────────────────────────────────────┐"
+echo "  │     Setup complete — ready to start!     │"
+echo "  └──────────────────────────────────────────┘"
 echo ""
-if [ -n "$HOTSPOT_SSID" ]; then
-    echo -e "  ${YELLOW}╔══════════════════════════════════════╗${NC}"
-    echo -e "  ${YELLOW}║  SAVE THESE CREDENTIALS NOW!         ║${NC}"
-    echo -e "  ${YELLOW}║  SSH will disconnect when the         ║${NC}"
-    echo -e "  ${YELLOW}║  service starts hotspot mode.         ║${NC}"
-    echo -e "  ${YELLOW}╚══════════════════════════════════════╝${NC}"
+if [ -n "$_DEVICE_IP" ]; then
+    echo -e "  ${CYAN}Dashboard:${NC}"
+    echo -e "    ${GREEN}http://$_DEVICE_IP:5000${NC}"
     echo ""
-    echo -e "  ${CYAN}WiFi Hotspot Credentials:${NC}"
-    echo -e "    SSID:     ${GREEN}$HOTSPOT_SSID${NC}"
-    echo -e "    Password: ${GREEN}$HOTSPOT_PASS${NC}"
-    echo -e "    Web UI:   ${GREEN}http://10.42.0.1:5000${NC}"
-    echo ""
-    echo "  After the service starts, connect to this"
-    echo "  WiFi from your phone or laptop to set up."
-    echo "  If the URL doesn't work, try the captive"
-    echo "  portal popup or check the e-ink display."
-else
-    echo "  After the service starts it will enter"
-    echo "  hotspot onboarding mode. Check the logs"
-    echo "  for the SSID and password:"
-    echo "    sudo journalctl -u mempaper.service | grep hotspot"
 fi
-echo ""
-echo "  Useful commands (after connecting to hotspot):"
-echo "    sudo journalctl -u mempaper.service -f   # live logs"
+echo "  Useful commands:"
+echo "    sudo journalctl -u mempaper.service -f    # live logs"
 echo "    sudo systemctl restart mempaper.service   # restart"
 echo "    sudo systemctl status mempaper.service    # status"
 echo ""
@@ -714,21 +841,16 @@ echo "  To prepare for delivery (factory reset):"
 echo "    python tools/delivery_state.py"
 echo ""
 
-# ── Step 9: Start service (last — drops SSH when hotspot activates) ───────
+# ── Step 9: Start service ─────────────────────────────────────────────────
 step "Step 9/9 — Starting mempaper service"
 if [ "$NEEDS_REBOOT" = true ]; then
     echo ""
-    echo -e "  ${YELLOW}SPI not yet active — a reboot is required to start the display.${NC}"
-    echo "  After reboot the Pi enters hotspot mode and your SSH session ends."
+    echo -e "  ${YELLOW}SPI not yet active — rebooting to enable it.${NC}"
     echo ""
     echo "  Rebooting in 5 seconds (Ctrl+C to cancel)..."
     sleep 5
     sudo reboot
 else
-    echo ""
-    echo -e "  ${YELLOW}Starting the service will activate hotspot mode."
-    echo -e "  Your SSH session may disconnect.${NC}"
-    echo ""
     sudo systemctl restart mempaper.service
     ok "mempaper service started"
 fi

@@ -225,8 +225,7 @@ class BlockRewardMonitor:
             
             # Get addresses from block reward monitoring table
             monitored_addresses = []
-            
-            # New table format
+
             block_reward_table = config.get("block_reward_addresses_table", []) if isinstance(config, dict) else []
             for entry in block_reward_table:
                 if isinstance(entry, dict) and "address" in entry:
@@ -560,9 +559,17 @@ class BlockRewardMonitor:
                 )
             except Exception as e:
                 print(f"⚠️ WebSocket error: {e}")
-                if self.running:
-                    print("⚙️ Reconnecting in 30 seconds...")
-                    time.sleep(30)
+
+            # run_forever() returns normally on an ordinary connection failure
+            # (DNS error, refused connection) — it doesn't raise, it just calls
+            # _on_error/_on_close and returns. Without this delay outside the
+            # except block, a sustained outage (e.g. the whole onboarding
+            # window before WiFi is configured) turns this into a tight loop
+            # doing a fresh synchronous DNS lookup hundreds of times a minute,
+            # starving the single CPU core other startup threads need.
+            if self.running:
+                print("⚙️ Reconnecting in 30 seconds...")
+                time.sleep(30)
     
     def _on_open(self, ws):
         """WebSocket connection opened."""

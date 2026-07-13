@@ -45,6 +45,7 @@ from utils.color_lut import ColorLUT
 from managers.secure_cache_manager import SecureCacheManager
 from managers.auth_manager import AuthManager, require_auth, require_web_auth, allow_public_or_auth, require_rate_limit, require_mobile_auth
 from managers.mobile_token_manager import MobileTokenManager
+from utils.webp_probe_cache import cached_probe
 
 # Privacy utilities for secure logging
 try:
@@ -72,7 +73,7 @@ def _probe_webp_encoding():
     except Exception:
         return False
 
-_WEBP_ENCODING_OK = _probe_webp_encoding()
+_WEBP_ENCODING_OK = cached_probe('encode_ok', _probe_webp_encoding)
 if not _WEBP_ENCODING_OK:
     print("⚠️  WebP encoding disabled (SIGILL on ARMv6 + NEON-compiled libwebp). Falling back to PNG.")
 
@@ -129,6 +130,7 @@ class MempaperApp:
 
         # Setup-mode flag used by delivery onboarding flow
         self.setup_mode_flag_path = os.path.join("cache", "setup_mode.json")
+        # Delivery mode flag: written by delivery_state.py before shipping.
         self._startup_timestamp = time.time()
 
         # Wi-Fi recovery state (runtime fallback into setup mode after sustained outage)
@@ -144,6 +146,16 @@ class MempaperApp:
         self._saved_wifi_known = None
         # Set to True after user submits credentials so recovery monitor probes immediately
         self._wifi_connect_pending = False
+        # Signaled when _startup_wifi_check() finishes (success or failure), so the
+        # recovery monitor's startup grace can end early instead of always waiting
+        # its full fixed timeout even when the hotspot came up in a few seconds.
+        self._startup_wifi_check_done = threading.Event()
+        # Set for the duration of apply_wifi_credentials_background() so the recovery
+        # monitor doesn't race it — both threads independently manage the hotspot
+        # lifecycle, and without this the monitor can unmanage/re-manage wlan0 or
+        # restart hostapd/dnsmasq mid-connect-attempt, emptying NM's scan cache right
+        # before 'nmcli device wifi connect' runs ("No network with SSID ... found").
+        self._manual_wifi_connect_in_progress = False
         # Set to True once the hotspot onboarding screen has been shown; prevents re-renders
         # every time the recovery monitor restores the hotspot after a failed probe.
         self._onboarding_hotspot_screen_shown = False
@@ -152,6 +164,11 @@ class MempaperApp:
         # Timestamp of the last time iw reported a station associated to our AP.
         # Used to suppress probes for a grace window after the phone screen goes off.
         self._last_ap_station_seen_ts = 0.0
+        self._active_hotspot_interface = None  # set when hotspot is up, used to remove INPUT rule on teardown
+        # Backoff state for restarting just the captive-portal dnsmasq when it
+        # dies but the NM hotspot connection itself is still up.
+        self._last_captive_reinit_try = 0.0
+        self._captive_reinit_failures = 0
         
         # Initialize configuration manager
         self.config_manager = ConfigManager(config_path)
@@ -431,13 +448,14 @@ class MempaperApp:
         print("✅ mempaper application initialized successfully")
 
     def _has_saved_wifi_connections(self):
-        """Return True if NetworkManager has at least one saved Wi-Fi connection.
+        """Return True if NetworkManager has at least one saved client Wi-Fi connection.
 
+        Excludes the mempaper-setup AP profile — it is not a client network.
         Caches the last successful result so a transient nmcli timeout or error
         while NM is busy reconnecting does not falsely appear as 'no saved
         networks' and trigger an immediate hotspot switch.
         """
-        result = self._nmcli_read(['-t', '-f', 'TYPE', 'connection', 'show'])
+        result = self._nmcli_read(['-t', '-f', 'NAME,TYPE', 'connection', 'show'])
         if result is None or result.returncode != 0:
             # nmcli can time out while NM is busy with a rescan/reconnect.
             # Use the cached value rather than defaulting to False.
@@ -446,9 +464,58 @@ class MempaperApp:
                       + str(self._saved_wifi_known))
                 return self._saved_wifi_known
             return False
-        has = any(line.strip() == 'wifi' for line in result.stdout.splitlines())
+        has = False
+        client_wifi = []
+        for line in result.stdout.splitlines():
+            parts = line.strip().rsplit(':', 1)  # rsplit: TYPE is always the last field
+            if len(parts) < 2:
+                continue
+            name, conn_type = parts[0], parts[1]
+            if conn_type not in ('wifi', '802-11-wireless'):
+                continue
+            if self._is_setup_hotspot_connection(name):
+                continue  # don't count our own AP profile as a saved client network
+            client_wifi.append(name)
+            has = True
+        if client_wifi:
+            print(f'📶 Saved client WiFi profiles in NM: {", ".join(client_wifi)}')
+        else:
+            print('📶 No saved client WiFi profiles in NM')
         self._saved_wifi_known = has
         return has
+
+    def _has_saved_wifi_connections_on_disk(self):
+        """Check for saved WiFi profiles via a root-owned wrapper, without nmcli.
+
+        Returns True/False, or None if the wrapper isn't installed (caller
+        should fall back to the nmcli-based check in that case).
+        """
+        wrapper = '/usr/local/bin/mempaper-has-saved-wifi'
+        if not os.path.exists(wrapper):
+            return None
+        try:
+            result = subprocess.run(['sudo', wrapper], capture_output=True, timeout=10)
+        except Exception:
+            return None
+        return result.returncode == 0
+
+    def _wait_for_nm_ready(self, max_attempts=12):
+        """Poll until NetworkManager's D-Bus service actually responds, with back-off.
+
+        Returns the detected WiFi interface name once ready, or None if NM
+        never responded within the attempt budget.
+        """
+        interface = None
+        for wait in range(max_attempts):
+            interface = self._detect_wifi_interface()
+            if interface:
+                probe = self._nmcli_read(['-t', '-f', 'RUNNING', 'general', 'status'])
+                if probe is not None and probe.returncode == 0:
+                    return interface
+            delay = min(wait + 1, 5)
+            print(f'⏳ Waiting for NetworkManager to be ready (attempt {wait + 1}/{max_attempts}, retry in {delay}s)...')
+            time.sleep(delay)
+        return None
 
     def _startup_wifi_check(self):
         """Called once at startup.
@@ -465,21 +532,35 @@ class MempaperApp:
         if shutil.which('nmcli') is None:
             return
 
+        # Lift a persisted software rfkill block before anything else.  This
+        # can survive a reboot (e.g. NetworkManager.state's WirelessEnabled
+        # saved as false) independent of the WiFi country code, and blocks
+        # both station-mode WiFi and the hostapd setup AP identically.
+        # Under heavy boot-time system load this call can itself time out;
+        # an uncaught TimeoutExpired here would crash this whole thread
+        # before ever reaching the saved-networks check or hotspot bring-up
+        # below, silently leaving the device with no way to onboard.
+        if shutil.which('rfkill'):
+            try:
+                subprocess.run(['sudo', 'rfkill', 'unblock', 'wifi'], capture_output=True, timeout=5)
+            except subprocess.TimeoutExpired:
+                print('⚠️ rfkill unblock timed out — continuing anyway')
+
+        # With nothing saved to reconnect to, we only need to tell NM to
+        # release the interface — no need to wait for it to be ready first.
+        fs_interface = self._detect_wifi_interface_fs_only()
+        if fs_interface and self._has_saved_wifi_connections_on_disk() is False:
+            print('📶 No saved Wi-Fi networks on disk — starting setup hotspot without waiting for NetworkManager')
+            if not self._bring_up_setup_hotspot_with_retry(fs_interface):
+                self._write_setup_mode_flag(True, ssid=self._setup_ssid_from_mac(fs_interface), interface=fs_interface)
+                print('⚠️ Hotspot failed at startup — recovery monitor will retry')
+            return
+
         # Wait for NetworkManager to become operational.  On the Pi Zero W it
         # can take 10-30s after systemd starts the service before nmcli
         # commands actually succeed.
-        interface = None
-        for wait in range(12):  # up to ~60s (0+1+2+...+10 ≈ 55s with sleeps)
-            interface = self._detect_wifi_interface()
-            if interface:
-                # Verify NM is actually responding (not just that /sys/class/net exists)
-                probe = self._nmcli_read(['-t', '-f', 'RUNNING', 'general', 'status'])
-                if probe is not None and probe.returncode == 0:
-                    break
-            delay = min(wait + 1, 5)
-            print(f'⏳ Waiting for NetworkManager to be ready (attempt {wait + 1}/12, retry in {delay}s)...')
-            time.sleep(delay)
-        else:
+        interface = self._wait_for_nm_ready()
+        if interface is None:
             print('⚠️ NetworkManager not ready after retries — will rely on recovery monitor')
             return
 
@@ -487,6 +568,7 @@ class MempaperApp:
         # an old autoconnect profile could mask a real outage or broadcast the
         # wrong SSID before the app had a chance to recreate it.
         self._cleanup_legacy_setup_hotspots()
+
         status = self._current_wifi_status(interface)
         if status.get('connected'):
             print('📡 Wi-Fi connected at startup — skipping setup hotspot')
@@ -616,7 +698,9 @@ class MempaperApp:
 
         # Persist via secure config manager (handles encrypted fields)
         if self.config_manager.secure_manager:
-            self.config_manager.secure_manager.save_secure_config(full_cfg)
+            if not self.config_manager.secure_manager.save_secure_config(full_cfg):
+                print('❌ Failed to persist cleared admin credentials to disk — '
+                      'device will still show as configured after reboot!')
         else:
             cfg_path = os.path.join('config', 'config.json')
             with open(cfg_path, 'w', encoding='utf-8') as f:
@@ -715,6 +799,24 @@ class MempaperApp:
                 return iface
         return 'wlan0'
 
+    def _detect_wifi_interface_fs_only(self):
+        """Find the WiFi interface via /sys/class/net, without nmcli.
+
+        Returns None (rather than guessing 'wlan0') when nothing is found.
+        """
+        preferred = '/sys/class/net/wlan0'
+        if os.path.exists(preferred):
+            return 'wlan0'
+
+        net_root = '/sys/class/net'
+        if not os.path.isdir(net_root):
+            return None
+
+        for iface in sorted(os.listdir(net_root)):
+            if os.path.isdir(os.path.join(net_root, iface, 'wireless')):
+                return iface
+        return None
+
     def _has_ap_station(self, interface):
         """Return True if at least one client device is associated with our AP.
 
@@ -732,6 +834,73 @@ class MempaperApp:
             return bool(result.returncode == 0 and result.stdout.strip())
         except Exception:
             return False
+
+    def _scan_wifi_via_iw(self, interface, own_ssid=None):
+        """Scan for nearby WiFi networks by parsing 'iw scan' output directly.
+
+        Do NOT rely on 'nmcli device wifi list' to report the results: nmcli
+        only reports scan results for devices NetworkManager currently
+        manages, and while the setup hotspot is active this interface has
+        been explicitly unmanaged ('nmcli device set <iface> managed no') so
+        hostapd can bind it — nmcli silently returns zero networks in that
+        state even though the kernel-level scan itself succeeds. Parsing
+        'iw scan' output ourselves works regardless of NM's managed state.
+
+        Returns [] on any failure so callers can fall back to nmcli.
+        """
+        if shutil.which('iw') is None:
+            return []
+        try:
+            result = subprocess.run(
+                ['sudo', 'iw', 'dev', interface, 'scan', 'passive'],
+                capture_output=True, text=True, timeout=15,
+            )
+        except Exception:
+            return []
+        if result.returncode != 0 or not result.stdout:
+            return []
+
+        networks = []
+        seen = set()
+        current = None
+        for line in result.stdout.splitlines():
+            stripped = line.strip()
+            if line.startswith('BSS '):
+                if current and current.get('ssid') and current['ssid'] not in seen:
+                    seen.add(current['ssid'])
+                    networks.append(current)
+                current = {'ssid': '', 'signal': 0, 'security': ''}
+                continue
+            if current is None:
+                continue
+            if stripped.startswith('signal:'):
+                try:
+                    dbm = float(stripped.split(':', 1)[1].strip().split()[0])
+                    # Rough dBm→percent mapping matching typical WiFi-manager
+                    # conventions (-100 dBm = 0%, -50 dBm and better = 100%).
+                    current['signal'] = max(0, min(100, int(2 * (dbm + 100))))
+                except (ValueError, IndexError):
+                    pass
+            elif stripped.startswith('SSID:'):
+                ssid = stripped.split(':', 1)[1].strip()
+                if ssid:
+                    current['ssid'] = ssid
+            elif stripped.startswith('RSN:'):
+                current['security'] = 'WPA2'
+            elif stripped.startswith('WPA:') and not current['security']:
+                current['security'] = 'WPA'
+        if current and current.get('ssid') and current['ssid'] not in seen:
+            seen.add(current['ssid'])
+            networks.append(current)
+
+        if own_ssid:
+            networks = [n for n in networks if n['ssid'] != own_ssid]
+
+        for n in networks:
+            n['open'] = not n['security']
+            n['in_use'] = False
+        networks.sort(key=lambda n: n.get('signal', 0), reverse=True)
+        return networks
 
     def _nmcli(self, args, timeout=25):
         """Run nmcli with sudo for write operations (connection add/delete/up/down, radio)."""
@@ -792,7 +961,7 @@ class MempaperApp:
             name      = parts[0].strip()
             uuid      = parts[1].strip()
             conn_type = parts[2].strip()
-            if conn_type != 'wifi':
+            if conn_type not in ('wifi', '802-11-wireless'):
                 continue
 
             is_setup = (
@@ -840,14 +1009,23 @@ class MempaperApp:
         return {'connected': False, 'connection': '', 'status_known': True}
 
     def _mac_digest(self, interface):
-        """Return the hex SHA-256 digest of the interface MAC address."""
-        mac_path = f'/sys/class/net/{interface}/address'
+        """Return the hex SHA-256 digest of the interface permanent MAC address.
+
+        Uses perm_address (the hardware-burned-in MAC) so the derived SSID and
+        password are stable regardless of NM MAC randomization on the client
+        connection that was active when install.sh ran.
+        """
         mac_address = '00:00:00:00:00:00'
-        try:
-            with open(mac_path, 'r', encoding='utf-8') as f:
-                mac_address = f.read().strip().lower()
-        except OSError:
-            pass
+        for candidate in (f'/sys/class/net/{interface}/perm_address',
+                          f'/sys/class/net/{interface}/address'):
+            try:
+                with open(candidate, 'r', encoding='utf-8') as f:
+                    val = f.read().strip().lower()
+                if val and val != '00:00:00:00:00:00':
+                    mac_address = val
+                    break
+            except OSError:
+                continue
         return hashlib.sha256(mac_address.replace(':', '').encode('utf-8')).hexdigest()
 
     def _setup_ssid_from_mac(self, interface):
@@ -864,69 +1042,57 @@ class MempaperApp:
         digest = self._mac_digest(interface)
         return digest[8:16]   # 8 lowercase hex chars, always valid WPA2
 
+    # Fixed static address for the setup hotspot — assigned directly via 'ip addr
+    # add' (not NM), so it's always known up front rather than detected after
+    # the fact.
+    _HOTSPOT_IP   = '10.42.0.1'
+    _HOTSPOT_CIDR = '10.42.0.1/24'
+
+    # NetworkManager conf.d override marking wlan0 unmanaged; written on
+    # reset, removed once WiFi credentials are applied (see below).
+    _WLAN0_UNMANAGED_CONF = '/etc/NetworkManager/conf.d/99-mempaper-wlan0-unmanaged.conf'
+
     def _bring_up_setup_hotspot(self, interface):
         ssid     = self._setup_ssid_from_mac(interface)
         password = self._setup_password_from_mac(interface)
-        print(f'📶 Setup hotspot: WPA2 AP "{ssid}" (password derived from device MAC)')
+        print(f'📶 Setup hotspot: open AP "{ssid}" — portal password required for setup access')
 
-        # Aggressively remove every profile that could collide before adding a new one.
+        # Remove any stale NM AP-mode profile for this SSID before hostapd binds it.
         self._cleanup_legacy_setup_hotspots(ssid=ssid)
-        self._nmcli(['radio', 'wifi', 'on'])
-        # Disconnect the interface from any active client connection so NM is
-        # not fighting over wlan0 when we try to switch it to AP mode.
-        self._nmcli(['device', 'disconnect', interface])
 
-        # Create the base AP profile.  autoconnect=no prevents NM from activating
-        # the incomplete profile between add and the security modify below.
-        add = self._nmcli([
-            'connection', 'add',
-            'type', 'wifi',
-            'ifname', interface,
-            'con-name', 'mempaper-setup',
-            'autoconnect', 'no',
-            'ssid', ssid,
-            '802-11-wireless.mode', 'ap',
-            '802-11-wireless.band', 'bg',
-            'ipv4.method', 'shared',
-            'ipv6.method', 'ignore',
-            'connection.autoconnect-priority', '-999',
-        ])
-        if add is None or add.returncode != 0:
-            err = (add.stderr.strip() if add and add.stderr else '') or (add.stdout.strip() if add else 'no result')
-            print(f'❌ Wi-Fi recovery: failed to create hotspot profile — {err}')
+        # Track the interface immediately so a failure partway through this
+        # method still lets _bring_down_setup_hotspot() restore NM management.
+        self._active_hotspot_interface = interface
+
+        # Release the interface from NetworkManager so hostapd can bind it —
+        # NM and hostapd cannot both manage the same interface at once.
+        self._nmcli(['device', 'set', interface, 'managed', 'no'])
+        subprocess.run(['sudo', 'ip', 'link', 'set', interface, 'up'],
+                       capture_output=True, timeout=10)
+        subprocess.run(['sudo', 'ip', 'addr', 'flush', 'dev', interface],
+                       capture_output=True, timeout=10)
+        addr = subprocess.run(
+            ['sudo', 'ip', 'addr', 'add', self._HOTSPOT_CIDR, 'dev', interface],
+            capture_output=True, text=True, timeout=10,
+        )
+        if addr.returncode != 0:
+            err = (addr.stderr or addr.stdout or '').strip()
+            print(f'❌ Setup hotspot: failed to assign {self._HOTSPOT_CIDR} to {interface} — {err}')
+            self._nmcli(['device', 'set', interface, 'managed', 'yes'])
             return False
 
-        # Apply WPA2-PSK security in a separate modify step.  Some NM versions
-        # silently drop wifi-sec.* parameters when passed to connection add for
-        # AP-mode connections; doing it via modify guarantees they are stored.
-        sec = self._nmcli([
-            'connection', 'modify', 'mempaper-setup',
-            'wifi-sec.key-mgmt', 'wpa-psk',
-            'wifi-sec.psk',      password,
-            'wifi-sec.proto',    'rsn',   # WPA2 only (not WPA1)
-            'wifi-sec.pairwise', 'ccmp',  # AES
-            'wifi-sec.group',    'ccmp',  # AES
-        ])
-        if sec is None or sec.returncode != 0:
-            err = (sec.stderr.strip() if sec and sec.stderr else '') or (sec.stdout.strip() if sec else 'no result')
-            print(f'⚠️ Wi-Fi recovery: security modify warning — {err}')
-            # Non-fatal: continue and try to bring up; NM may still apply WPA2
-
-        up = self._nmcli(['connection', 'up', 'mempaper-setup'])
-        if up is None or up.returncode != 0:
-            err = (up.stderr.strip() if up and up.stderr else '') or (up.stdout.strip() if up else 'no result')
-            print(f'❌ Wi-Fi recovery: failed to enable setup hotspot — {err}')
+        # Open AP — no WPA2. A derived password gates access to the /setup page
+        # instead. hostapd (not NM's own AP-mode) creates the AP for reliability
+        # across driver/kernel combinations.
+        if not self._start_hostapd(interface, ssid):
+            self._nmcli(['device', 'set', interface, 'managed', 'yes'])
             return False
 
         # Redirect port 80/443 → Flask port so captive-portal probes
         # (which hit port 80) actually reach our /generate_204 handler.
         self._add_captive_portal_redirect(interface)
 
-        # Start wildcard DNS so all domain lookups resolve to the hotspot IP.
-        # Must be AFTER AP is up so we can detect the assigned IP.
-        time.sleep(1)  # give NM a moment to assign the IP
-        hotspot_ip = self._get_hotspot_ip(interface)
-        self._start_captive_dns(interface, hotspot_ip)
+        self._start_captive_dns(interface, self._HOTSPOT_IP)
 
         self._write_setup_mode_flag(True, ssid=ssid, interface=interface)
         print(f"📶 Wi-Fi recovery: setup hotspot enabled ({ssid})")
@@ -943,21 +1109,54 @@ class MempaperApp:
         self._onboarding_hotspot_screen_shown = False
         self._stop_captive_dns()
         self._remove_captive_portal_redirect()
+        self._stop_hostapd()
+        interface = self._active_hotspot_interface
+        if interface:
+            subprocess.run(['sudo', 'ip', 'addr', 'flush', 'dev', interface],
+                           capture_output=True, timeout=10)
+            self._nmcli(['device', 'set', interface, 'managed', 'yes'])
         self._cleanup_legacy_setup_hotspots()
-        self._nmcli(['connection', 'down', 'mempaper-setup'])
-        self._nmcli(['connection', 'delete', 'mempaper-setup'])
         self._write_setup_mode_flag(False)
 
-    def _add_captive_portal_redirect(self, interface):
-        """Add iptables PREROUTING rules to redirect port 80/443 → Flask port.
+    def _release_hotspot_for_probe(self, interface):
+        """Stop hostapd/dnsmasq and hand the interface back to NM so it can
+        scan/connect, without clearing the setup-mode flag.
 
-        Android (and some iOS) captive-portal probes hit port 80.  Without this
-        redirect they get "connection refused" and the OS drops the network.
+        Used when probing for a saved network while still in setup mode; the
+        caller re-arms the hotspot via _bring_up_setup_hotspot() if the probe
+        fails, or fully tears down via _bring_down_setup_hotspot() if it succeeds.
         """
+        self._stop_captive_dns()
+        self._remove_captive_portal_redirect()
+        self._stop_hostapd()
+        subprocess.run(['sudo', 'ip', 'addr', 'flush', 'dev', interface],
+                       capture_output=True, timeout=10)
+        self._nmcli(['device', 'set', interface, 'managed', 'yes'])
+
+    def _add_captive_portal_redirect(self, interface):
+        """Add iptables rules for the captive portal:
+          - PREROUTING REDIRECT: port 80/443 → Flask port (captive-portal probes)
+          - INPUT ACCEPT: DHCP (UDP 67), DNS (UDP 53), Flask port (TCP)
+            (belt+suspenders when nftables service is active with policy drop)
+        """
+        self._active_hotspot_interface = interface
         if not shutil.which('iptables'):
             print('⚠️ iptables not installed — captive-portal port redirect unavailable (install: sudo apt install iptables)')
             return
         port = self._get_web_port()
+        # Allow DHCP broadcasts from hotspot clients through any active firewall.
+        for proto, dport in [('udp', 67), ('udp', 53), ('tcp', port)]:
+            try:
+                result = subprocess.run(
+                    ['sudo', 'iptables', '-t', 'filter', '-I', 'INPUT',
+                     '-i', interface, '-p', proto, '--dport', str(dport),
+                     '-j', 'ACCEPT'],
+                    capture_output=True, text=True, timeout=10,
+                )
+                if result.returncode != 0:
+                    print(f'⚠️ iptables INPUT accept {proto}/{dport} failed: {(result.stderr or result.stdout).strip()}')
+            except Exception as e:
+                print(f'⚠️ iptables INPUT accept {proto}/{dport} error: {e}')
         for src_port in (80, 443):
             try:
                 result = subprocess.run(
@@ -970,11 +1169,58 @@ class MempaperApp:
                     print(f'⚠️ iptables redirect {src_port}→{port} failed: {(result.stderr or result.stdout).strip()}')
             except Exception as e:
                 print(f'⚠️ iptables redirect {src_port}→{port} error: {e}')
-        print(f"🔀 Captive-portal redirect: ports 80/443 → {port}")
+        print(f"🔀 Captive-portal redirect: ports 80/443 → {port}, INPUT accept {port}")
+
+        # On Debian Trixie, the default nftables ruleset uses an 'inet filter input'
+        # chain (NOT the iptables-nft 'ip filter' chain) with policy drop.  The two
+        # namespaces are independent, so our iptables rule above doesn't protect
+        # traffic in the native nftables chain.  Insert a rule there directly.
+        self._nft_hotspot_handle = None
+        if shutil.which('nft'):
+            import re as _re
+            try:
+                r = subprocess.run(
+                    ['sudo', 'nft', 'insert', 'rule', 'inet', 'filter', 'input',
+                     'iifname', interface, 'accept'],
+                    capture_output=True, text=True, timeout=10,
+                )
+                if r.returncode == 0:
+                    lr = subprocess.run(
+                        ['sudo', 'nft', '-a', 'list', 'chain', 'inet', 'filter', 'input'],
+                        capture_output=True, text=True, timeout=10,
+                    )
+                    for line in (lr.stdout or '').splitlines():
+                        if f'iifname "{interface}" accept' in line or f'iifname {interface} accept' in line:
+                            m = _re.search(r'#\s*handle\s+(\d+)', line)
+                            if m:
+                                self._nft_hotspot_handle = m.group(1)
+                                print(f'🔒 nft inet filter input: accept {interface} (handle {self._nft_hotspot_handle})')
+                                break
+                else:
+                    print(f'⚠️ nft INPUT accept failed (rc={r.returncode}): {(r.stderr or r.stdout or "").strip()}'
+                          f' — run install_wifi_permissions.sh to add sudoers entry for nft')
+            except Exception as e:
+                print(f'⚠️ nft accept rule error: {e}')
 
     def _remove_captive_portal_redirect(self):
-        """Remove all mempaper captive-portal iptables PREROUTING rules."""
+        """Remove all mempaper captive-portal iptables rules (PREROUTING + INPUT)."""
         port = self._get_web_port()
+        interface = self._active_hotspot_interface
+        # Remove INPUT accept rules added for DHCP, DNS, and Flask port
+        if interface:
+            for proto, dport in [('udp', 67), ('udp', 53), ('tcp', port)]:
+                for _ in range(5):
+                    try:
+                        result = subprocess.run(
+                            ['sudo', 'iptables', '-t', 'filter', '-D', 'INPUT',
+                             '-i', interface, '-p', proto, '--dport', str(dport),
+                             '-j', 'ACCEPT'],
+                            capture_output=True, timeout=10,
+                        )
+                        if result.returncode != 0:
+                            break
+                    except Exception:
+                        break
         for src_port in (80, 443):
             # Delete until no matching rule remains (handles duplicates)
             for _ in range(5):
@@ -990,110 +1236,221 @@ class MempaperApp:
                 except Exception:
                     break
 
-    # ── Captive-portal DNS (standalone dnsmasq wildcard) ────────
+        # Remove the nft inet filter input rule if we inserted one.
+        handle = getattr(self, '_nft_hotspot_handle', None)
+        if shutil.which('nft'):
+            import re as _re
+            if handle:
+                try:
+                    subprocess.run(
+                        ['sudo', 'nft', 'delete', 'rule', 'inet', 'filter', 'input',
+                         'handle', handle],
+                        capture_output=True, timeout=10,
+                    )
+                except Exception:
+                    pass
+                self._nft_hotspot_handle = None
+            elif interface:
+                # Fallback scan (handles app restart while hotspot was active)
+                try:
+                    lr = subprocess.run(
+                        ['sudo', 'nft', '-a', 'list', 'chain', 'inet', 'filter', 'input'],
+                        capture_output=True, text=True, timeout=10,
+                    )
+                    for line in (lr.stdout or '').splitlines():
+                        if f'iifname "{interface}" accept' in line or f'iifname {interface} accept' in line:
+                            m = _re.search(r'#\s*handle\s+(\d+)', line)
+                            if m:
+                                subprocess.run(
+                                    ['sudo', 'nft', 'delete', 'rule', 'inet', 'filter', 'input',
+                                     'handle', m.group(1)],
+                                    capture_output=True, timeout=10,
+                                )
+                except Exception:
+                    pass
+
+    # ── Setup hotspot AP (hostapd) + captive-portal DNS/DHCP (dnsmasq) ───────
     #
-    # Run our own dnsmasq on a non-standard port (5353) that resolves
-    # ALL domains to the hotspot IP.  iptables redirects incoming DNS
-    # (UDP 53) to this port, bypassing any NM-managed DNS that would
-    # try to forward to an upstream that doesn't exist.
+    # Both run as on-demand systemd units (mempaper-hostapd.service,
+    # mempaper-dnsmasq.service — installed by install_wifi_permissions.sh),
+    # started/stopped/restarted here via 'sudo systemctl'. systemd supervises
+    # the actual processes: crash-restart, journald logging, and clean shutdown.
     #
-    # This is the same approach as AxeOS/ESP-IDF captive portals and
-    # is critical for Android/iOS: without instant DNS responses, the
-    # OS times out the connectivity check and drops the network.
+    #   AP:   hostapd on the interface handed to it by _bring_up_setup_hotspot
+    #         (NM releases the interface first via 'nmcli device set managed no').
+    #   DNS:  dnsmasq, port 53 (system dnsmasq is masked at install time so
+    #         there's no conflict), wildcard address=/#/<ip> resolves all
+    #         domains to the Pi.
+    #   DHCP: dnsmasq, port 67, range <ip>.10-200, option 114 for Android 11+
+    #         captive-portal popup, router/DNS pointing at the hotspot IP.
+    #   DoT:  TCP 853 FORWARD REJECT forces Android 9+ to fall back to plain
+    #         UDP DNS instead of timing out on a TLS handshake.
 
-    _CAPTIVE_DNS_PORT = 5353
-    _CAPTIVE_DNS_CONF = '/tmp/mempaper-captive-dns.conf'
-    _CAPTIVE_DNS_PID  = '/tmp/mempaper-captive-dns.pid'
+    # Under the project's own cache/ dir, not /tmp: mempaper.service's
+    # ProtectSystem=strict makes /tmp read-only unless PrivateTmp=true is also
+    # set, and PrivateTmp gives this service a /tmp namespace-private to
+    # itself — invisible to the independent mempaper-hostapd.service /
+    # mempaper-dnsmasq.service units that need to read these files. cache/ is
+    # already in this service's ReadWritePaths and has no such isolation.
+    _HOSTAPD_CONF     = os.path.join('cache', 'mempaper-hostapd.conf')
+    _CAPTIVE_DNS_CONF = os.path.join('cache', 'mempaper-captive-dns.conf')
 
-    def _start_captive_dns(self, interface, hotspot_ip):
-        """Start a wildcard dnsmasq and redirect DNS traffic to it."""
-        self._stop_captive_dns()
+    def _hostapd_active(self):
+        """Return True if mempaper-hostapd.service is currently running."""
+        result = subprocess.run(
+            ['systemctl', 'is-active', '--quiet', 'mempaper-hostapd.service'], timeout=5,
+        )
+        return result.returncode == 0
 
-        if not shutil.which('dnsmasq'):
-            print('⚠️ dnsmasq not installed — captive-portal DNS unavailable')
-            return
+    def _captive_dnsmasq_active(self):
+        """Return True if mempaper-dnsmasq.service is currently running."""
+        result = subprocess.run(
+            ['systemctl', 'is-active', '--quiet', 'mempaper-dnsmasq.service'], timeout=5,
+        )
+        return result.returncode == 0
+
+    def _wifi_country_code(self):
+        """Return the OS-configured WiFi regulatory country code (e.g. 'DE').
+
+        Read via 'iw reg get' (no root needed) rather than raspi-config, since
+        the service user may not have permission to invoke raspi-config.
+        Falls back to 'US' — the most channel/power-restrictive common
+        default — if no regulatory domain is set, rather than leaving hostapd
+        without a country_code (which can prevent it from selecting a channel
+        at all on some regulatory-domain-unaware installs).
+        """
+        if shutil.which('iw'):
+            try:
+                result = subprocess.run(['iw', 'reg', 'get'], capture_output=True, text=True, timeout=5)
+                for line in (result.stdout or '').splitlines():
+                    line = line.strip()
+                    if line.startswith('country '):
+                        code = line.split()[1].rstrip(':')
+                        if len(code) == 2 and code.isalpha():
+                            return code.upper()
+            except Exception:
+                pass
+        return 'US'
+
+    def _start_hostapd(self, interface, ssid):
+        """Write the hostapd config and (re)start mempaper-hostapd.service."""
+        if not shutil.which('hostapd'):
+            print('⚠️ hostapd not installed — setup hotspot unavailable')
+            return False
 
         conf = (
-            f'port={self._CAPTIVE_DNS_PORT}\n'
-            f'listen-address={hotspot_ip}\n'
-            f'bind-interfaces\n'
-            f'address=/#/{hotspot_ip}\n'
-            f'no-resolv\n'
-            f'no-poll\n'
-            f'no-dhcp-interface=\n'
+            f'interface={interface}\n'
+            f'driver=nl80211\n'
+            f'ssid={ssid}\n'
+            f'hw_mode=g\n'
+            f'channel=6\n'  # explicit channel avoids brcmfmac auto-select failure on kernel 6.6+
+            f'country_code={self._wifi_country_code()}\n'
+            f'ieee80211d=1\n'  # advertise the country IE so clients honor the regulatory limits
+            f'ieee80211n=1\n'
+            f'wmm_enabled=1\n'
+            f'auth_algs=1\n'
+            f'wpa=0\n'  # open AP — captive-portal password gates /setup instead
+            f'ignore_broadcast_ssid=0\n'
         )
         try:
-            with open(self._CAPTIVE_DNS_CONF, 'w', encoding='utf-8') as f:
+            with open(self._HOSTAPD_CONF, 'w', encoding='utf-8') as f:
                 f.write(conf)
         except OSError as e:
-            print(f'⚠️ Could not write captive DNS config: {e}')
-            return
+            print(f'❌ Setup hotspot: could not write hostapd config — {e}')
+            return False
 
+        result = subprocess.run(
+            ['sudo', 'systemctl', 'restart', 'mempaper-hostapd.service'],
+            capture_output=True, text=True, timeout=15,
+        )
+        if result.returncode != 0:
+            err = (result.stderr or result.stdout or '').strip()
+            print(f'❌ Setup hotspot: failed to start hostapd — {err}')
+            return False
+
+        time.sleep(1)
+        active = subprocess.run(
+            ['systemctl', 'is-active', '--quiet', 'mempaper-hostapd.service'], timeout=5,
+        )
+        if active.returncode != 0:
+            log = subprocess.run(
+                ['journalctl', '-u', 'mempaper-hostapd.service', '-n', '20', '--no-pager'],
+                capture_output=True, text=True, timeout=5,
+            )
+            print(f'❌ Setup hotspot: hostapd exited immediately — {(log.stdout or "").strip()[-400:]}')
+            return False
+
+        print(f'✅ Setup hotspot AP started ("{ssid}" on {interface})')
+        return True
+
+    def _stop_hostapd(self):
+        subprocess.run(['sudo', 'systemctl', 'stop', 'mempaper-hostapd.service'],
+                       capture_output=True, timeout=15)
         try:
+            os.remove(self._HOSTAPD_CONF)
+        except OSError:
+            pass
+
+    def _start_captive_dns(self, interface, hotspot_ip):
+        """Write the dnsmasq config and (re)start mempaper-dnsmasq.service."""
+        if not shutil.which('dnsmasq'):
+            print('⚠️ dnsmasq not installed — captive-portal DNS/DHCP unavailable')
+        else:
+            port   = self._get_web_port()
+            prefix = hotspot_ip.rsplit('.', 1)[0]
+            conf = (
+                f'interface={interface}\n'
+                f'bind-dynamic\n'
+                f'address=/#/{hotspot_ip}\n'
+                f'no-resolv\n'
+                f'dhcp-range={prefix}.10,{prefix}.200,255.255.255.0,12h\n'
+                f'dhcp-option=option:router,{hotspot_ip}\n'
+                f'dhcp-option=option:dns-server,{hotspot_ip}\n'
+                f'dhcp-option=114,http://{hotspot_ip}:{port}/\n'
+            )
+            try:
+                with open(self._CAPTIVE_DNS_CONF, 'w', encoding='utf-8') as f:
+                    f.write(conf)
+            except OSError as e:
+                print(f'⚠️ Could not write dnsmasq config: {e}')
+                return
+
             result = subprocess.run(
-                ['sudo', 'dnsmasq',
-                 f'--conf-file={self._CAPTIVE_DNS_CONF}',
-                 f'--pid-file={self._CAPTIVE_DNS_PID}'],
-                capture_output=True, text=True, timeout=10,
+                ['sudo', 'systemctl', 'restart', 'mempaper-dnsmasq.service'],
+                capture_output=True, text=True, timeout=15,
             )
             if result.returncode != 0:
-                print(f'⚠️ dnsmasq failed: {(result.stderr or result.stdout).strip()}')
+                err = (result.stderr or result.stdout or '').strip()
+                print(f'⚠️ dnsmasq failed to start: {err}')
                 return
-        except Exception as e:
-            print(f'⚠️ dnsmasq launch error: {e}')
-            return
 
-        # Redirect incoming DNS (UDP 53) to our dnsmasq port
+            time.sleep(1)
+            active = subprocess.run(
+                ['systemctl', 'is-active', '--quiet', 'mempaper-dnsmasq.service'], timeout=5,
+            )
+            if active.returncode != 0:
+                print('⚠️ dnsmasq exited immediately — DHCP unavailable '
+                      '(check: journalctl -u mempaper-dnsmasq.service)')
+                return
+
+            print(f'✅ Captive-portal DNS+DHCP started (all domains → {hotspot_ip}, DHCP {prefix}.10-200)')
+
+        # Block DNS-over-TLS (TCP 853 FORWARD) so Android 9+ falls back to plain
+        # UDP DNS quickly instead of timing out on a TLS handshake.
         if shutil.which('iptables'):
             try:
-                result = subprocess.run(
-                    ['sudo', 'iptables', '-t', 'nat', '-A', 'PREROUTING',
-                     '-i', interface, '-p', 'udp', '--dport', '53',
-                     '-j', 'REDIRECT', '--to-port', str(self._CAPTIVE_DNS_PORT)],
-                    capture_output=True, text=True, timeout=10,
-                )
-                if result.returncode != 0:
-                    print(f'⚠️ DNS iptables redirect failed: {(result.stderr or result.stdout).strip()}')
-            except Exception as e:
-                print(f'⚠️ DNS iptables redirect error: {e}')
-
-            # Reject DNS-over-TLS (TCP 853) so Android 9+ falls back to plain
-            # UDP DNS immediately instead of timing out waiting for a TLS server
-            # that doesn't exist on the hotspot.
-            try:
-                result = subprocess.run(
+                subprocess.run(
                     ['sudo', 'iptables', '-t', 'filter', '-I', 'FORWARD',
                      '-i', interface, '-p', 'tcp', '--dport', '853',
                      '-j', 'REJECT'],
-                    capture_output=True, text=True, timeout=10,
-                )
-                if result.returncode != 0:
-                    print(f'⚠️ DoT block failed: {(result.stderr or result.stdout).strip()}')
-            except Exception as e:
-                print(f'⚠️ DoT block error: {e}')
-        else:
-            print('⚠️ iptables not installed — DNS redirect unavailable')
-
-        print(f'✅ Captive-portal DNS started (all domains → {hotspot_ip}, '
-              f'port 53 → {self._CAPTIVE_DNS_PORT})')
-
-    def _stop_captive_dns(self):
-        """Stop the captive-portal dnsmasq and remove iptables DNS redirect."""
-        # Remove iptables DNS redirect (UDP 53)
-        for _ in range(5):
-            try:
-                result = subprocess.run(
-                    ['sudo', 'iptables', '-t', 'nat', '-D', 'PREROUTING',
-                     '-p', 'udp', '--dport', '53',
-                     '-j', 'REDIRECT', '--to-port', str(self._CAPTIVE_DNS_PORT)],
                     capture_output=True, timeout=10,
                 )
-                if result.returncode != 0:
-                    break
             except Exception:
-                break
+                pass
 
-        # Remove DNS-over-TLS block (TCP 853)
+    def _stop_captive_dns(self):
+        """Stop the captive-portal dnsmasq and remove all iptables rules it added."""
+        # Remove DNS-over-TLS FORWARD block
         for _ in range(5):
             try:
                 result = subprocess.run(
@@ -1106,49 +1463,26 @@ class MempaperApp:
             except Exception:
                 break
 
-        # Kill dnsmasq
-        if os.path.exists(self._CAPTIVE_DNS_PID):
-            try:
-                with open(self._CAPTIVE_DNS_PID, 'r') as f:
-                    pid = f.read().strip()
-                if pid:
-                    subprocess.run(['sudo', 'kill', pid],
-                                   capture_output=True, timeout=5)
-            except (OSError, subprocess.TimeoutExpired):
-                pass
-        subprocess.run(['sudo', 'pkill', '-f', self._CAPTIVE_DNS_CONF],
-                       capture_output=True, timeout=5)
-        for path in (self._CAPTIVE_DNS_CONF, self._CAPTIVE_DNS_PID):
-            try:
-                os.remove(path)
-            except OSError:
-                pass
+        subprocess.run(['sudo', 'systemctl', 'stop', 'mempaper-dnsmasq.service'],
+                       capture_output=True, timeout=15)
+        try:
+            os.remove(self._CAPTIVE_DNS_CONF)
+        except OSError:
+            pass
 
     def _get_web_port(self):
         """Return the configured HTTP port (default 5000)."""
         return int(self.config.get('web_port', 5000))
 
     def _get_hotspot_ip(self, interface):
-        """Detect the actual IP assigned to the hotspot AP interface.
+        """Return the hotspot AP's IP address.
 
-        Tries (in order):
-          1. nmcli connection show  — most reliable, uses the NM profile
-          2. ip addr show <iface>   — works even without nmcli
-          3. Fallback to 10.42.0.1 (NetworkManager shared default)
+        We assign _HOTSPOT_IP ourselves via 'ip addr add' when bringing up the
+        hotspot, so it's always known up front. The kernel-parse fallback below
+        is only a defensive check in case the interface somehow ended up with a
+        different address.
         """
         import re
-
-        # 1. Ask NetworkManager for the address it handed to the profile.
-        result = self._nmcli_read(['-t', '-f', 'IP4.ADDRESS', 'connection', 'show', 'mempaper-setup'])
-        if result and result.returncode == 0:
-            for line in result.stdout.splitlines():
-                # format: IP4.ADDRESS[1]:10.42.0.1/24
-                if 'IP4.ADDRESS' in line:
-                    addr = line.split(':', 1)[-1].strip().split('/')[0]
-                    if addr:
-                        return addr
-
-        # 2. Parse the kernel interface address.
         try:
             res = subprocess.run(
                 ['ip', '-4', 'addr', 'show', interface],
@@ -1157,13 +1491,10 @@ class MempaperApp:
             if res.returncode == 0:
                 m = re.search(r'inet (\d+\.\d+\.\d+\.\d+)/', res.stdout)
                 if m:
-                    addr = m.group(1)
-                    return addr
+                    return m.group(1)
         except Exception:
             pass
-
-        # 3. NetworkManager shared default.
-        return '10.42.0.1'
+        return self._HOTSPOT_IP
 
     def _display_onboarding_hotspot_screen(self, ssid, password, interface):
         """Render the two-QR hotspot screen and push it to the e-ink display.
@@ -1177,7 +1508,10 @@ class MempaperApp:
         time.sleep(2)
         port       = self._get_web_port()
         hotspot_ip = self._get_hotspot_ip(interface)
-        portal_url = f'http://{hotspot_ip}:{port}/setup'
+        # Include the portal password as a URL key so scanning QR2 grants immediate
+        # access without manual password entry.  The password is still shown in text so
+        # users without a QR scanner can type it in the captive portal page.
+        portal_url = f'http://{hotspot_ip}:{port}/setup?key={password}'
         try:
             delivery_eink = os.path.join('cache', 'delivery_eink.png')
             if os.path.exists(delivery_eink):
@@ -1250,8 +1584,16 @@ class MempaperApp:
         # The e-ink display worker takes ~40s to render.  Start the 60s
         # countdown from when the image was submitted to the display, so the
         # total on-screen time is ~60s, not render_time + 60s.
-        with self._display_worker_lock:
-            pass  # lock released = display finished
+        #
+        # Bounded wait, not an unconditional 'with': the vendor Waveshare
+        # driver's busy-pin polling loop has no timeout of its own, and a
+        # hardware-level hang there would otherwise block every other e-ink
+        # update indefinitely.
+        acquired = self._display_worker_lock.acquire(timeout=90)
+        if acquired:
+            self._display_worker_lock.release()
+        else:
+            print('⚠️ Display worker lock timeout after 90s — e-ink hardware may be stuck; continuing anyway')
         elapsed = time.time() - render_start
         remaining = max(0, 60 - elapsed)
         print(f'📺 Connected screen on e-ink (render took {elapsed:.0f}s, waiting {remaining:.0f}s more)')
@@ -1316,8 +1658,14 @@ class MempaperApp:
         venv_pip = os.path.join(project_dir, '.venv', 'bin', 'pip')
         if os.path.exists(venv_pip) and os.path.exists(requirements_file):
             try:
+                # --disable-pip-version-check: without it, pip makes an HTTP call to
+                # PyPI to check for a newer pip release on nearly every invocation,
+                # even for this purely local package listing. Right after boot, while
+                # NetworkManager is still finishing DHCP/DNS, that call can't resolve
+                # and burns the full 30s timeout below for no reason — this is a
+                # local-only check and never needs the network at all.
                 result = subprocess.run(
-                    [venv_pip, 'list', '--format=freeze'],
+                    [venv_pip, 'list', '--format=freeze', '--disable-pip-version-check'],
                     capture_output=True, text=True, timeout=30
                 )
                 installed_pip = {}
@@ -1340,7 +1688,7 @@ class MempaperApp:
                 if missing_pip:
                     print(f'📦 Dependency check: missing pip packages: {", ".join(missing_pip)}')
                     result = subprocess.run(
-                        [venv_pip, 'install'] + missing_pip,
+                        [venv_pip, 'install', '--disable-pip-version-check'] + missing_pip,
                         capture_output=True, timeout=600
                     )
                     if result.returncode == 0:
@@ -1384,6 +1732,16 @@ class MempaperApp:
                 f"(threshold: {outage_seconds}s + {min_attempts} attempts)"
             )
 
+            # Wait for _startup_wifi_check to finish before the first poll —
+            # without this grace, the recovery monitor races with startup and
+            # both call _bring_up_setup_hotspot simultaneously, causing a
+            # dnsmasq port-67 conflict that silently kills DHCP. Waiting on the
+            # event rather than sleeping the full fixed duration lets the
+            # common case (hotspot already up in a few seconds) start
+            # monitoring immediately; startup_grace_seconds is now just the
+            # worst-case fallback if the event is never set for some reason.
+            self._startup_wifi_check_done.wait(timeout=startup_grace_seconds)
+
             while True:
                 try:
                     now = time.time()
@@ -1425,15 +1783,43 @@ class MempaperApp:
 
                     disconnected_for = now - self._wifi_disconnect_since
 
+                    # A manual connect attempt from the setup page (apply_wifi_credentials_background)
+                    # is actively tearing down/rebuilding the hotspot and negotiating a client
+                    # connection right now — stand down completely rather than racing it. Without
+                    # this, both threads independently manage wlan0/hostapd/dnsmasq and can empty
+                    # NM's scan cache moments before the other's 'nmcli device wifi connect' runs.
+                    if self._manual_wifi_connect_in_progress:
+                        time.sleep(max(2, min(5, poll_seconds)))
+                        continue
+
                     if self._is_setup_mode_enabled():
-                        # If the setup flag is set but the hotspot is not actually broadcasting
-                        # (e.g. NM rejected it at boot), bring it up unconditionally.
-                        hotspot_actually_up = self._is_setup_hotspot_connection(active_connection)
+                        # If the setup flag is set but hostapd is not actually running
+                        # (e.g. it crashed or was never started), bring it up
+                        # unconditionally. If hostapd is up but dnsmasq died, only
+                        # dnsmasq is restarted below — see the comment there for why.
+                        hotspot_actually_up = self._hostapd_active()
+                        captive_portal_up = self._captive_dnsmasq_active()
                         if not hotspot_actually_up:
                             print('📶 Setup mode flagged but hotspot not active — bringing up')
                             self._bring_up_setup_hotspot(interface)
+                            self._captive_reinit_failures = 0
                             time.sleep(max(5, poll_seconds))
                             continue
+                        if not captive_portal_up:
+                            # dnsmasq died but hostapd (the AP itself) is still up —
+                            # restart only dnsmasq, without touching the Wi-Fi interface,
+                            # so an already-attached client isn't dropped. Backoff avoids
+                            # hammering a persistent failure.
+                            reinit_backoff = min(30 * (2 ** self._captive_reinit_failures), 300)
+                            if now - self._last_captive_reinit_try >= reinit_backoff:
+                                self._last_captive_reinit_try = now
+                                self._captive_reinit_failures += 1
+                                print('📶 Hotspot active but captive portal not running — restarting dnsmasq only')
+                                hotspot_ip = self._get_hotspot_ip(interface)
+                                self._start_captive_dns(interface, hotspot_ip)
+                            time.sleep(max(5, poll_seconds))
+                            continue
+                        self._captive_reinit_failures = 0
 
                         # Immediate probe if user just submitted credentials via setup page.
                         pending = self._wifi_connect_pending
@@ -1478,7 +1864,7 @@ class MempaperApp:
                             and now - self._wifi_last_setup_probe_try >= probe_interval
                         ):
                             self._wifi_last_setup_probe_try = now
-                            self._nmcli(['connection', 'down', 'mempaper-setup'])
+                            self._release_hotspot_for_probe(interface)
                             # After switching from AP back to station mode the radio
                             # needs a fresh scan to discover available networks.
                             time.sleep(3)
@@ -1539,8 +1925,9 @@ class MempaperApp:
                     ):
                         # Final re-check: NM may have just reconnected between our
                         # reconnect attempt above and this trigger (race condition).
-                        # Bringing up the hotspot calls `nmcli device disconnect`
-                        # which would rip out a freshly-recovered connection.
+                        # Bringing up the hotspot releases the interface from NM
+                        # ('nmcli device set managed no'), which would rip out a
+                        # freshly-recovered connection.
                         recheck = self._current_wifi_status(interface)
                         if recheck.get('connected'):
                             print('📡 Wi-Fi recovered before hotspot trigger — aborting hotspot switch')
@@ -2384,7 +2771,7 @@ class MempaperApp:
         """
         try:
             # Must use sudo to see system-owned connections
-            result = self._nmcli(['-t', '-f', 'NAME,TYPE', 'connection', 'show'])
+            result = self._nmcli(['-t', '-f', 'NAME,UUID,TYPE', 'connection', 'show'])
             if result is None:
                 print('⚠️ WiFi cleanup: nmcli command failed to execute')
                 return
@@ -2397,31 +2784,131 @@ class MempaperApp:
             deleted = []
             failed = []
             for line in result.stdout.splitlines():
-                parts = line.strip().split(':', 1)
-                if len(parts) < 2:
+                # Format: NAME:UUID:TYPE — rsplit from right so SSIDs with colons are handled
+                parts = line.strip().rsplit(':', 2)
+                if len(parts) < 3:
                     continue
-                name, conn_type = parts[0], parts[1]
+                name, uuid, conn_type = parts[0], parts[1], parts[2]
                 if conn_type not in ('wifi', '802-11-wireless'):
                     continue
                 if name.startswith('mempaper-setup'):
                     continue
                 print(f'🧹 Deleting WiFi profile: {name}')
+                # Try by name first; fall back to UUID for Pi Imager "immutable" profiles
                 r = self._nmcli(['connection', 'delete', name])
+                if r is None or r.returncode != 0:
+                    r = self._nmcli(['connection', 'delete', 'uuid', uuid])
                 if r is not None and r.returncode == 0:
                     deleted.append(name)
                 else:
                     err = (r.stderr or r.stdout or '').strip() if r else 'no result'
                     failed.append(f'{name}: {err}')
-                    print(f'⚠️ Failed to delete WiFi profile {name}: {err}')
+                    print(f'⚠️ Failed to delete WiFi profile {name} ({uuid}): {err}')
 
             if deleted:
                 print(f'🧹 Deleted {len(deleted)} WiFi profile(s): {", ".join(deleted)}')
             elif not failed:
                 print('ℹ️ No saved WiFi profiles to delete')
+            if failed:
+                # nmcli refused — likely netplan-managed Pi Imager connections.
+                # Fall back to the scoped wrapper that removes NM files + netplan YAML.
+                wrapper = '/usr/local/bin/mempaper-clear-wifi'
+                if os.path.exists(wrapper):
+                    print(f'⚠️ nmcli delete failed for {len(failed)} profile(s) — trying wrapper…')
+                    r = subprocess.run(['sudo', wrapper], capture_output=True, text=True)
+                    if r.returncode == 0:
+                        print('🧹 WiFi profiles cleared via wrapper')
+                    else:
+                        print(f'❌ Wrapper failed: {(r.stderr or r.stdout or "").strip()}')
+                else:
+                    print('❌ WiFi clear wrapper not installed — re-run install_wifi_permissions.sh')
         except Exception as e:
             print(f'⚠️ WiFi cleanup failed: {e}')
             import traceback
             traceback.print_exc()
+
+        self._disable_cloudinit_network_config()
+        self._write_wlan0_unmanaged_override()
+
+    def _disable_cloudinit_network_config(self):
+        """Stop cloud-init from re-applying network config (incl. saved WiFi) on every boot.
+
+        Raspberry Pi Imager preconfigures WiFi via a cloud-init NoCloud
+        datasource seeded from /boot/firmware/, and Raspberry Pi OS
+        deliberately re-applies that datasource's network config on EVERY
+        boot (not cloud-init's usual one-shot behavior) so the same SD image
+        works if moved to different hardware. Without this, the WiFi clearing
+        above is silently undone by cloud-init on the very next boot, before
+        _has_saved_wifi_connections() ever gets a chance to see "no networks".
+        """
+        conf_dir  = '/etc/cloud/cloud.cfg.d'
+        conf_path = f'{conf_dir}/99-disable-network-config.cfg'
+        subprocess.run(['sudo', 'mkdir', '-p', conf_dir], capture_output=True, timeout=10)
+        r = subprocess.run(
+            ['sudo', 'tee', conf_path],
+            input='network: {config: disabled}\n',
+            capture_output=True, text=True, timeout=10,
+        )
+        if r.returncode == 0:
+            print('🧹 Disabled cloud-init network re-application (WiFi clear survives reboot now)')
+        else:
+            err = (r.stderr or r.stdout or '').strip()
+            print(f'⚠️ Could not disable cloud-init network config: {err}')
+
+    def _is_root_readonly(self):
+        """Check if / is mounted read-only."""
+        try:
+            with open('/proc/mounts') as f:
+                for line in f:
+                    parts = line.split()
+                    if len(parts) >= 4 and parts[1] == '/':
+                        return 'ro' in parts[3].split(',')
+        except Exception:
+            pass
+        return False
+
+    def _write_wlan0_unmanaged_override(self):
+        """Mark wlan0 unmanaged for NetworkManager, effective next reboot."""
+        conf_dir = os.path.dirname(self._WLAN0_UNMANAGED_CONF)
+        was_readonly = self._is_root_readonly()
+        if was_readonly:
+            subprocess.run(['sudo', 'mount', '-o', 'remount,rw', '/'], capture_output=True, timeout=10)
+        subprocess.run(['sudo', 'mkdir', '-p', conf_dir], capture_output=True, timeout=10)
+        r = subprocess.run(
+            ['sudo', 'tee', self._WLAN0_UNMANAGED_CONF],
+            input='[keyfile]\nunmanaged-devices=interface-name:wlan0\n',
+            capture_output=True, text=True, timeout=10,
+        )
+        if was_readonly:
+            subprocess.run(['sudo', 'mount', '-o', 'remount,ro', '/'], capture_output=True, timeout=10)
+        if r.returncode == 0:
+            print('🧹 wlan0 pre-declared unmanaged for next boot (hotspot won\'t wait on NetworkManager)')
+        else:
+            err = (r.stderr or r.stdout or '').strip()
+            print(f'⚠️ Could not write wlan0 unmanaged override: {err}')
+
+    def _remove_wlan0_unmanaged_override(self):
+        """Undo _write_wlan0_unmanaged_override() and reload NM immediately."""
+        if not os.path.exists(self._WLAN0_UNMANAGED_CONF):
+            return
+        was_readonly = self._is_root_readonly()
+        if was_readonly:
+            subprocess.run(['sudo', 'mount', '-o', 'remount,rw', '/'], capture_output=True, timeout=10)
+        r = subprocess.run(['sudo', 'rm', '-f', self._WLAN0_UNMANAGED_CONF],
+                            capture_output=True, text=True, timeout=10)
+        if was_readonly:
+            subprocess.run(['sudo', 'mount', '-o', 'remount,ro', '/'], capture_output=True, timeout=10)
+        if r.returncode != 0:
+            err = (r.stderr or r.stdout or '').strip()
+            print(f'⚠️ Could not remove wlan0 unmanaged override: {err}')
+            return
+        reload_result = subprocess.run(['sudo', 'nmcli', 'general', 'reload', 'conf'],
+                                        capture_output=True, text=True, timeout=15)
+        if reload_result.returncode == 0:
+            print('🧹 Removed wlan0 unmanaged override and reloaded NetworkManager config')
+        else:
+            err = (reload_result.stderr or reload_result.stdout or '').strip()
+            print(f'⚠️ Removed wlan0 unmanaged override but NM reload failed: {err}')
 
     def _setup_instant_startup(self):
         """
@@ -2455,7 +2942,15 @@ class MempaperApp:
 
         # Start Wi-Fi check immediately in a separate thread so the hotspot
         # comes up as fast as possible (critical for first-boot / delivery reset).
-        threading.Thread(target=self._startup_wifi_check, daemon=True).start()
+        def _startup_wifi_check_wrapper():
+            # Signals _startup_wifi_check_done regardless of how this exits, so
+            # the recovery monitor's startup grace (below) can end as soon as
+            # this finishes instead of always waiting the full fixed timeout.
+            try:
+                self._startup_wifi_check()
+            finally:
+                self._startup_wifi_check_done.set()
+        threading.Thread(target=_startup_wifi_check_wrapper, daemon=True).start()
 
         # Start remaining background processing after a minimal delay
         background_delay = self.config.get("background_processing_delay", 0.5)
@@ -4250,7 +4745,10 @@ class MempaperApp:
                         try:
                             web_img.save(self.current_webp_image_path, format='WEBP', quality=82, method=4)
                         except Exception:
-                            pass
+                            try:
+                                os.remove(self.current_webp_image_path)
+                            except OSError:
+                                pass
                 if eink_img is not None:
                     eink_img.save(self.current_eink_image_path, compress_level=1)
             except Exception as e:
@@ -4417,6 +4915,14 @@ class MempaperApp:
                     web_img_patched.save(self.current_image_path, compress_level=1)
                 except Exception as e:
                     print(f"⚠️ Background web image save failed: {e}")
+                if _WEBP_ENCODING_OK:
+                    try:
+                        web_img_patched.save(self.current_webp_image_path, format='WEBP', quality=82, method=4)
+                    except Exception:
+                        try:
+                            os.remove(self.current_webp_image_path)
+                        except OSError:
+                            pass
             self._deferred_save_cache_metadata()
         threading.Thread(target=_persist, daemon=True).start()
 
@@ -4846,19 +5352,22 @@ class MempaperApp:
 
         def scan_wifi_networks(interface):
             import time as _time
-            import shutil as _shutil
 
-            # In AP mode nmcli rescan is blocked by NM; use 'iw' for a fresh
-            # passive scan instead, then fall back to the cached NM results.
-            if _shutil.which('iw'):
-                subprocess.run(
-                    ['sudo', 'iw', 'dev', interface, 'scan', 'passive'],
-                    capture_output=True, timeout=15,
-                )
-                _time.sleep(2)   # give NM a moment to pick up new scan results
-            else:
-                run_nmcli(['device', 'wifi', 'rescan', 'ifname', interface])
-                _time.sleep(2)
+            # Get our own hotspot SSID so we can exclude it from the list
+            own_ssid = self._setup_ssid_from_mac(interface) if self._is_setup_mode_enabled() else None
+
+            # Parse 'iw scan' output directly rather than reading results back
+            # via nmcli: the interface is unmanaged ('managed no') while the
+            # setup hotspot is active so hostapd can bind it, and nmcli
+            # reports zero networks for devices it doesn't manage even though
+            # the kernel-level scan succeeds.
+            iw_networks = self._scan_wifi_via_iw(interface, own_ssid=own_ssid)
+            if iw_networks:
+                return iw_networks
+
+            # Fallback: nmcli (works when the interface is NM-managed)
+            run_nmcli(['device', 'wifi', 'rescan', 'ifname', interface])
+            _time.sleep(2)
 
             result = run_nmcli([
                 '-t',
@@ -4872,9 +5381,6 @@ class MempaperApp:
             ])
             if result is None or result.returncode != 0:
                 return []
-
-            # Get our own hotspot SSID so we can exclude it from the list
-            own_ssid = self._setup_ssid_from_mac(interface) if self._is_setup_mode_enabled() else None
 
             networks = []
             seen = set()
@@ -4931,114 +5437,104 @@ class MempaperApp:
 
         def apply_wifi_credentials_background(interface, ssid, password, hidden):
             """Runs in a background thread AFTER the HTTP response has been sent."""
-            _wifi_connect_state['status'] = 'connecting'
-            _wifi_connect_state['message'] = f'Connecting to {ssid}...'
+            # _manual_wifi_connect_in_progress is set by the route handler before
+            # this thread is even started (see setup_wifi_connect() below) — not
+            # here — so the recovery monitor can never observe it as still False
+            # while a connect attempt is already underway.
+            try:
+                _wifi_connect_state['status'] = 'connecting'
+                _wifi_connect_state['message'] = f'Connecting to {ssid}...'
 
-            # Short delay so the HTTP response definitely leaves the socket first.
-            time.sleep(1)
+                # Short delay so the HTTP response definitely leaves the socket first.
+                time.sleep(1)
 
-            # Fully tear down the hotspot: remove iptables redirects, delete ALL
-            # stale mempaper-setup profiles (there can be many duplicates), and
-            # free wlan0 for client mode.
-            print(f'📶 Tearing down setup hotspot to connect to {ssid}...')
-            self._stop_captive_dns()
-            self._remove_captive_portal_redirect()
-            self._cleanup_legacy_setup_hotspots()
-            # Ensure the interface is fully disconnected from AP mode
-            self._nmcli(['device', 'disconnect', interface])
+                # A delivery-reset boot can bring the hotspot up before NetworkManager
+                # itself has finished starting — wait for it here rather than let the
+                # nmcli calls below fail against a not-yet-ready NM.
+                if self._wait_for_nm_ready() is None:
+                    print('⚠️ NetworkManager not ready — aborting connect, restoring hotspot')
+                    _wifi_connect_state['status'] = 'failed'
+                    _wifi_connect_state['message'] = 'Device is still starting up — please try again in a minute.'
+                    self._bring_up_setup_hotspot(interface)
+                    return
 
-            # The radio needs time to transition from AP back to managed/station
-            # mode.  On RPi Zero W this can take several seconds.
-            print('⏳ Waiting for radio to transition from AP to client mode...')
-            time.sleep(5)
+                # Fully tear down the hotspot: stop hostapd/dnsmasq, remove iptables
+                # redirects, delete ALL stale mempaper-setup profiles (there can be
+                # many duplicates), and free the interface for client mode. Doesn't
+                # clear the setup-mode flag — _bring_up_setup_hotspot() restores it
+                # below if this connection attempt fails.
+                print(f'📶 Tearing down setup hotspot to connect to {ssid}...')
+                self._remove_wlan0_unmanaged_override()
+                self._release_hotspot_for_probe(interface)
+                self._cleanup_legacy_setup_hotspots()
 
-            # Force a fresh scan so NM discovers nearby networks after the
-            # radio has been in AP mode (no scan results exist yet).
-            self._nmcli(['device', 'wifi', 'rescan', 'ifname', interface])
-            time.sleep(3)
+                # The radio needs time to transition from AP back to managed/station
+                # mode.  On RPi Zero W this can take several seconds.
+                print('⏳ Waiting for radio to transition from AP to client mode...')
+                time.sleep(5)
 
-            # 'nmcli device wifi connect' creates a new NM profile which requires
-            # settings.modify.system — must use sudo nmcli, not plain nmcli.
-            connect_cmd = ['device', 'wifi', 'connect', ssid, 'ifname', interface]
-            if password:
-                connect_cmd += ['password', password]
-            if hidden:
-                connect_cmd += ['hidden', 'yes']
-
-            # Try up to 3 times — the first attempt often fails because the
-            # radio hasn't fully settled after AP teardown.
-            max_attempts = 3
-            connect_result = None
-            for attempt in range(1, max_attempts + 1):
-                print(f'📡 WiFi connect attempt {attempt}/{max_attempts} to {ssid}...')
-                connect_result = self._nmcli(connect_cmd, timeout=45)
-                if connect_result is not None and connect_result.returncode == 0:
-                    print(f'✅ nmcli connect command succeeded on attempt {attempt}')
-                    break
-                error_hint = ''
-                if connect_result is not None:
-                    error_hint = (connect_result.stderr or connect_result.stdout or '').strip()
-                print(f'⚠️ WiFi connect attempt {attempt} failed: {error_hint}')
-                if attempt < max_attempts:
-                    # Rescan and retry after a short delay
-                    time.sleep(5)
-                    self._nmcli(['device', 'wifi', 'rescan', 'ifname', interface])
-                    time.sleep(3)
-
-            if connect_result is None or connect_result.returncode != 0:
-                error_msg = 'Failed to connect to Wi-Fi network'
-                if connect_result is not None and connect_result.stderr:
-                    error_msg = connect_result.stderr.strip() or error_msg
-                elif connect_result is not None and connect_result.stdout:
-                    error_msg = connect_result.stdout.strip() or error_msg
-                print(f'❌ WiFi connect failed after {max_attempts} attempts: {error_msg}')
-                _wifi_connect_state['status'] = 'failed'
-                _wifi_connect_state['message'] = error_msg
-                # Restore hotspot so user can try again.
-                self._bring_up_setup_hotspot(interface)
-                return
-
-            # Give NetworkManager a moment to fully establish the connection
-            # (DHCP lease, DNS, etc.).
-            print('⏳ Waiting for DHCP/DNS to settle...')
-            time.sleep(8)
-
-            # Poll for connection status (NM may still be negotiating)
-            connected = False
-            final_status = {}
-            for poll in range(6):
-                final_status = current_wifi_status(interface)
-                if final_status.get('connected'):
-                    connected = True
-                    break
+                # Force a fresh scan so NM discovers nearby networks after the
+                # radio has been in AP mode (no scan results exist yet).
+                self._nmcli(['device', 'wifi', 'rescan', 'ifname', interface])
                 time.sleep(3)
 
-            if connected:
-                try:
-                    if os.path.exists(self.setup_mode_flag_path):
-                        os.remove(self.setup_mode_flag_path)
-                except OSError:
-                    pass
-                _wifi_connect_state['status'] = 'connected'
-                _wifi_connect_state['connection'] = final_status.get('connection', ssid)
-                _wifi_connect_state['message'] = f'Connected to {final_status.get("connection", ssid)}'
-                print(f'✅ Setup Wi-Fi connected to {final_status.get("connection", ssid)}')
-                # Clean up all leftover mempaper-setup profiles
-                self._cleanup_legacy_setup_hotspots()
-                self._nmcli(['connection', 'delete', 'mempaper-setup'])
-                if self.e_ink_enabled:
-                    threading.Thread(
-                        target=self._display_onboarding_connected_screen,
-                        daemon=True,
-                    ).start()
-            else:
-                # nmcli reported success but device status doesn't show connected.
-                # The profile IS saved — try activating it by name as a last resort.
-                print(f'⚠️ nmcli succeeded but device not connected yet — trying connection up by name...')
-                self._nmcli(['connection', 'up', ssid, 'ifname', interface], timeout=30)
-                time.sleep(10)
-                final_status = current_wifi_status(interface)
-                if final_status.get('connected'):
+                # 'nmcli device wifi connect' creates a new NM profile which requires
+                # settings.modify.system — must use sudo nmcli, not plain nmcli.
+                connect_cmd = ['device', 'wifi', 'connect', ssid, 'ifname', interface]
+                if password:
+                    connect_cmd += ['password', password]
+                if hidden:
+                    connect_cmd += ['hidden', 'yes']
+
+                # Try up to 3 times — the first attempt often fails because the
+                # radio hasn't fully settled after AP teardown.
+                max_attempts = 3
+                connect_result = None
+                for attempt in range(1, max_attempts + 1):
+                    print(f'📡 WiFi connect attempt {attempt}/{max_attempts} to {ssid}...')
+                    connect_result = self._nmcli(connect_cmd, timeout=45)
+                    if connect_result is not None and connect_result.returncode == 0:
+                        print(f'✅ nmcli connect command succeeded on attempt {attempt}')
+                        break
+                    error_hint = ''
+                    if connect_result is not None:
+                        error_hint = (connect_result.stderr or connect_result.stdout or '').strip()
+                    print(f'⚠️ WiFi connect attempt {attempt} failed: {error_hint}')
+                    if attempt < max_attempts:
+                        # Rescan and retry after a short delay
+                        time.sleep(5)
+                        self._nmcli(['device', 'wifi', 'rescan', 'ifname', interface])
+                        time.sleep(3)
+
+                if connect_result is None or connect_result.returncode != 0:
+                    error_msg = 'Failed to connect to Wi-Fi network'
+                    if connect_result is not None and connect_result.stderr:
+                        error_msg = connect_result.stderr.strip() or error_msg
+                    elif connect_result is not None and connect_result.stdout:
+                        error_msg = connect_result.stdout.strip() or error_msg
+                    print(f'❌ WiFi connect failed after {max_attempts} attempts: {error_msg}')
+                    _wifi_connect_state['status'] = 'failed'
+                    _wifi_connect_state['message'] = error_msg
+                    # Restore hotspot so user can try again.
+                    self._bring_up_setup_hotspot(interface)
+                    return
+
+                # Give NetworkManager a moment to fully establish the connection
+                # (DHCP lease, DNS, etc.).
+                print('⏳ Waiting for DHCP/DNS to settle...')
+                time.sleep(8)
+
+                # Poll for connection status (NM may still be negotiating)
+                connected = False
+                final_status = {}
+                for poll in range(6):
+                    final_status = current_wifi_status(interface)
+                    if final_status.get('connected'):
+                        connected = True
+                        break
+                    time.sleep(3)
+
+                if connected:
                     try:
                         if os.path.exists(self.setup_mode_flag_path):
                             os.remove(self.setup_mode_flag_path)
@@ -5047,7 +5543,8 @@ class MempaperApp:
                     _wifi_connect_state['status'] = 'connected'
                     _wifi_connect_state['connection'] = final_status.get('connection', ssid)
                     _wifi_connect_state['message'] = f'Connected to {final_status.get("connection", ssid)}'
-                    print(f'✅ Setup Wi-Fi connected via fallback: {final_status.get("connection", ssid)}')
+                    print(f'✅ Setup Wi-Fi connected to {final_status.get("connection", ssid)}')
+                    # Clean up all leftover mempaper-setup profiles
                     self._cleanup_legacy_setup_hotspots()
                     self._nmcli(['connection', 'delete', 'mempaper-setup'])
                     if self.e_ink_enabled:
@@ -5056,9 +5553,35 @@ class MempaperApp:
                             daemon=True,
                         ).start()
                 else:
-                    _wifi_connect_state['status'] = 'failed'
-                    _wifi_connect_state['message'] = 'Connection attempt did not complete — check credentials'
-                    self._bring_up_setup_hotspot(interface)
+                    # nmcli reported success but device status doesn't show connected.
+                    # The profile IS saved — try activating it by name as a last resort.
+                    print(f'⚠️ nmcli succeeded but device not connected yet — trying connection up by name...')
+                    self._nmcli(['connection', 'up', ssid, 'ifname', interface], timeout=30)
+                    time.sleep(10)
+                    final_status = current_wifi_status(interface)
+                    if final_status.get('connected'):
+                        try:
+                            if os.path.exists(self.setup_mode_flag_path):
+                                os.remove(self.setup_mode_flag_path)
+                        except OSError:
+                            pass
+                        _wifi_connect_state['status'] = 'connected'
+                        _wifi_connect_state['connection'] = final_status.get('connection', ssid)
+                        _wifi_connect_state['message'] = f'Connected to {final_status.get("connection", ssid)}'
+                        print(f'✅ Setup Wi-Fi connected via fallback: {final_status.get("connection", ssid)}')
+                        self._cleanup_legacy_setup_hotspots()
+                        self._nmcli(['connection', 'delete', 'mempaper-setup'])
+                        if self.e_ink_enabled:
+                            threading.Thread(
+                                target=self._display_onboarding_connected_screen,
+                                daemon=True,
+                            ).start()
+                    else:
+                        _wifi_connect_state['status'] = 'failed'
+                        _wifi_connect_state['message'] = 'Connection attempt did not complete — check credentials'
+                        self._bring_up_setup_hotspot(interface)
+            finally:
+                self._manual_wifi_connect_in_progress = False
         
         # Add CORS headers to all responses (MUST BE FIRST)
         @self.app.after_request
@@ -5184,6 +5707,19 @@ class MempaperApp:
                 return redirect(url_for('dashboard'))
 
             setup_data = setup_mode_payload()
+            interface  = setup_data.get('interface', 'wlan0')
+
+            url_key = request.args.get('key', '')
+            key_valid = bool(url_key) and url_key == self._setup_password_from_mac(interface)
+
+            # Show password gate until the correct key has been submitted.
+            if not session.get('portal_authenticated'):
+                return render_template(
+                    'setup_portal_gate.html',
+                    dark_mode=self.config.get('color_mode_dark', True),
+                    prefill_key=(url_key if key_valid else ''),
+                )
+
             # Collect setup_* keys from all languages for client-side i18n
             setup_i18n = {}
             for lang_code, lang_dict in translations.items():
@@ -5217,10 +5753,33 @@ class MempaperApp:
         @self.app.route('/library/test/success.html')  # iOS
         @self.app.route('/success.txt')                # macOS Sonoma
         @self.app.route('/canonical.html')             # Windows 11
+        def _absolute_setup_url():
+            """Build an absolute http://<hotspot-ip>:<port>/setup URL.
+
+            Redirecting with a bare '/setup' (Flask's default relative
+            url_for()) leaves the browser on whatever external host it was
+            probing (e.g. www.msftconnecttest.com) — the page still loads
+            (DNS/iptables route it to us either way), but every relative
+            /static/... asset request then also carries that external host,
+            gets caught by captive_portal_catch_all() below, and is bounced
+            back to /setup instead of actually being served — the page
+            renders with no CSS/JS. An absolute URL corrects the browser's
+            host immediately so assets load normally afterward.
+            """
+            interface = detect_wifi_interface()
+            hotspot_ip = self._get_hotspot_ip(interface)
+            port = self._get_web_port()
+            return f'http://{hotspot_ip}:{port}/setup'
+
         def captive_portal_redirect():
+            # No-store: prevents a client that cached this response on a
+            # previous captive network from skipping the probe on ours.
             if setup_mode_enabled():
-                return redirect(url_for('setup_wifi_page'), code=302)
-            return '', 204
+                resp = redirect(_absolute_setup_url(), code=302)
+            else:
+                resp = self.app.response_class(status=204)
+            resp.headers['Cache-Control'] = 'no-store, must-revalidate'
+            return resp
 
         @self.app.before_request
         def captive_portal_catch_all():
@@ -5232,16 +5791,37 @@ class MempaperApp:
             local_hosts = {'192.168.12.1', '10.42.0.1', 'localhost', '127.0.0.1'}
             if host in local_hosts:
                 return None
-            # Let /setup and /api/setup through even when the Host header is
-            # still an external domain (e.g. connectivitycheck.gstatic.com).
-            # Captive-portal browsers follow our 302 redirect but keep the
-            # external host, so blocking them here creates a redirect loop.
+            # Let /setup, /api/setup, and /static through even when the Host
+            # header is still an external domain (e.g. connectivitycheck.gstatic.com):
+            # /setup and /api/setup because captive-portal browsers can still
+            # follow our 302 while keeping the external host (blocking them
+            # here would create a redirect loop), and /static so CSS/JS/icons
+            # referenced by relative URLs actually load instead of being
+            # bounced back to /setup on every asset request.
             if request.path == '/setup' or request.path.startswith('/setup/') \
-                    or request.path.startswith('/api/setup'):
+                    or request.path.startswith('/api/setup') \
+                    or request.path.startswith('/static/'):
                 return None
             # Everything else (captive-portal probes via external domains) →
-            # redirect to setup page
-            return redirect(url_for('setup_wifi_page'), code=302)
+            # redirect to setup page. No-store for the same reason as
+            # captive_portal_redirect() above.
+            resp = redirect(_absolute_setup_url(), code=302)
+            resp.headers['Cache-Control'] = 'no-store, must-revalidate'
+            return resp
+
+        @self.app.route('/api/setup/portal-auth', methods=['POST'])
+        def setup_portal_auth():
+            """Validate the captive-portal password and mark the session as authenticated."""
+            if not setup_mode_enabled():
+                return jsonify({'success': False, 'message': 'Setup mode not active'}), 403
+            data      = request.json or {}
+            key       = data.get('key', '')
+            setup_data = setup_mode_payload()
+            interface  = setup_data.get('interface', 'wlan0')
+            if key == self._setup_password_from_mac(interface):
+                session['portal_authenticated'] = True
+                return jsonify({'success': True})
+            return jsonify({'success': False, 'message': 'Incorrect password'}), 401
 
         @self.app.route('/api/setup/wifi/scan', methods=['GET'])
         def setup_wifi_scan():
@@ -5291,6 +5871,14 @@ class MempaperApp:
             _wifi_connect_state['status'] = 'connecting'
             _wifi_connect_state['message'] = f'Connecting to {ssid}...'
             _wifi_connect_state['connection'] = ''
+            # Set here, synchronously, rather than as the background thread's
+            # first line: otherwise the recovery monitor can see
+            # _wifi_connect_pending below before the not-yet-started thread
+            # sets this flag, and run its own _release_hotspot_for_probe()
+            # concurrently with the one about to start — both threads tearing
+            # down/rebuilding the hotspot and connecting at once, corrupting
+            # NM's scan cache ("No network with SSID '<ssid>' found").
+            self._manual_wifi_connect_in_progress = True
             self._wifi_connect_pending = True  # signal recovery monitor to probe immediately on failure
             threading.Thread(
                 target=apply_wifi_credentials_background,
@@ -7574,24 +8162,6 @@ class MempaperApp:
 
                 iface = self._detect_wifi_interface()
 
-                # Trigger rescan
-                if shutil.which('iw'):
-                    subprocess.run(
-                        ['sudo', 'iw', 'dev', iface, 'scan', 'passive'],
-                        capture_output=True, timeout=15,
-                    )
-                    _time.sleep(2)
-                else:
-                    self._nmcli(['device', 'wifi', 'rescan', 'ifname', iface])
-                    _time.sleep(2)
-
-                result = self._nmcli_read([
-                    '-t', '-f', 'IN-USE,SSID,SIGNAL,SECURITY',
-                    'device', 'wifi', 'list', 'ifname', iface,
-                ])
-                if result is None or result.returncode != 0:
-                    return jsonify({'success': False, 'error': 'Scan failed'}), 500
-
                 # Get saved connection SSIDs to mark which are already saved
                 saved_result = self._nmcli(['-t', '-f', 'NAME,TYPE', 'connection', 'show'])
                 saved_ssids = set()
@@ -7601,6 +8171,29 @@ class MempaperApp:
                         if len(parts) >= 2 and parts[1] in ('wifi', '802-11-wireless'):
                             if not self._is_setup_hotspot_connection(parts[0]):
                                 saved_ssids.add(parts[0].strip())
+
+                own_ssid = self._setup_ssid_from_mac(iface) if hasattr(self, '_setup_ssid_from_mac') else None
+
+                # Parse 'iw scan' output directly rather than reading results
+                # back via nmcli: nmcli reports zero networks for devices it
+                # doesn't currently manage (e.g. if the setup hotspot happens
+                # to be active), even though the kernel-level scan succeeds.
+                iw_networks = self._scan_wifi_via_iw(iface, own_ssid=own_ssid)
+                if iw_networks:
+                    for n in iw_networks:
+                        n['saved'] = n['ssid'] in saved_ssids
+                    return jsonify({'success': True, 'networks': iw_networks})
+
+                # Fallback: nmcli (works when the interface is NM-managed)
+                self._nmcli(['device', 'wifi', 'rescan', 'ifname', iface])
+                _time.sleep(2)
+
+                result = self._nmcli_read([
+                    '-t', '-f', 'IN-USE,SSID,SIGNAL,SECURITY',
+                    'device', 'wifi', 'list', 'ifname', iface,
+                ])
+                if result is None or result.returncode != 0:
+                    return jsonify({'success': False, 'error': 'Scan failed'}), 500
 
                 networks = []
                 seen = set()
@@ -7615,7 +8208,6 @@ class MempaperApp:
                     if not ssid or ssid in seen:
                         continue
                     # Skip our own hotspot
-                    own_ssid = self._setup_ssid_from_mac(iface) if hasattr(self, '_setup_ssid_from_mac') else None
                     if own_ssid and ssid == own_ssid:
                         continue
                     seen.add(ssid)

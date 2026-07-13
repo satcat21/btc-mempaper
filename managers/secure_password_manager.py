@@ -15,8 +15,6 @@ Key Features:
 
 import getpass
 import logging
-import secrets
-import string
 import sys
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError, HashingError
@@ -241,27 +239,13 @@ class SecurePasswordManager:
             logger.info("Admin password already configured")
             return True
 
-        logger.info("No admin user found - starting first-time setup")
-
-        # When running as a systemd service there is no TTY — fall back to
-        # auto-creating an admin account with a random temporary password so
-        # the service starts successfully. The password is logged to journalctl
-        # and must be changed on first login via the web dashboard.
         if not sys.stdin.isatty():
-            alphabet = string.ascii_letters + string.digits
-            temp_password = ''.join(secrets.choice(alphabet) for _ in range(16))
-            if self.create_user("admin", temp_password):
-                logger.warning("=" * 60)
-                logger.warning("FIRST-TIME SETUP (no TTY detected)")
-                logger.warning("Auto-created admin account:")
-                logger.warning("  Username: admin")
-                logger.warning(f"  Password: {temp_password}")
-                logger.warning("Change this password via the web dashboard.")
-                logger.warning("=" * 60)
-                return True
-            else:
-                logger.error("Failed to auto-create admin account")
-                return False
+            logger.info(
+                "No admin user configured and no TTY available — create one "
+                "via the setup portal (while in setup mode) or "
+                "'tools/setup_user.py' over SSH."
+            )
+            return True
 
         # Stop config file watching to avoid console prompt issues
         if hasattr(self.config_manager, 'stop_file_watching'):

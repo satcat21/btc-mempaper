@@ -2,7 +2,7 @@
 
 ## OVERVIEW
 
-The mempaper application uses a unified secure cache system that encrypts all sensitive cache data into a single `cache.secure.json` file. This replaces the previous system of individual JSON cache files that contained sensitive Bitcoin addresses and transaction data in plain text.
+The mempaper application uses a unified secure cache system that encrypts all sensitive cache data — Bitcoin addresses, balances, and transaction data — into a single `cache.secure.json` file, so nothing sensitive is ever written to disk in plain text.
 
 ---
 
@@ -40,21 +40,18 @@ The unified cache stores three types of sensitive data:
 - Bitcoin addresses being monitored for mining rewards
 - Coinbase transaction counts per address
 - Block sync heights and scan progress
-- **Previously:** `block_reward_cache.json`
 
 ### 2. Wallet Balance Cache (`wallet_balance_cache`)
 
 - Wallet addresses with current balances
 - XPUB balance summaries
 - Address comments and metadata
-- **Previously:** `wallet_balance_cache.json`
 
 ### 3. Optimized Balance Cache (`optimized_balance_cache`)
 
 - XPUB-derived address caches
 - Performance optimization data for balance monitoring
 - Gap limit detection results
-- **Previously:** `optimized_balance_cache.json`
 
 ---
 
@@ -96,13 +93,13 @@ cache/
 
 #### 2. BlockRewardCache (`block_reward_cache.py`)
 
-- **Updated** -- Now uses `SecureCacheManager` when available
+- **Storage** -- Uses `SecureCacheManager` when available
 - **Fallback** -- Individual file cache if secure cache unavailable
-- **Migration** -- Automatic detection and use of secure storage
+- **Detection** -- Automatically detects and uses secure storage when present
 
 #### 3. WalletBalanceAPI (`wallet_balance_api.py`)
 
-- **Updated** -- Integrates with unified cache for wallet data
+- **Storage** -- Integrates with the unified cache for wallet data
 - **Compatibility** -- Works with async cache for address derivation
 - **Dual Mode** -- Uses both unified cache (wallet data) and async cache (addresses)
 

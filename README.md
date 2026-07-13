@@ -272,22 +272,17 @@ These components are the same regardless of which display you choose:
 
 **Raspberry Pi (one-click installer)**
 
-On a fresh Raspberry Pi OS, run these once before cloning:
+On a fresh Raspberry Pi OS, paste this single command:
 
 ```bash
-sudo apt update && sudo apt upgrade -y
-sudo apt install -y git locales-all
-```
-
-Then clone and run the installer:
-
-```bash
-git clone https://github.com/satcat21/btc-mempaper.git
-cd btc-mempaper
-bash install.sh
+sudo apt install -y git \
+&& git clone https://github.com/satcat21/btc-mempaper.git \
+&& cd btc-mempaper && bash install.sh
 ```
 
 Run as your normal user (e.g. `pi`) — **not** as root. The script uses `sudo` internally where needed.
+
+The installer asks all configuration questions upfront (display, admin account, optional security features), then runs the full system update and installs everything without further interruption.
 
 The installer takes care of everything:
 - Creates the `mempaper` service account
@@ -297,14 +292,14 @@ The installer takes care of everything:
 - Configures the e-ink display (interactive prompt)
 - Generates and installs the `mempaper.service` systemd unit
 - Sets up Wi-Fi hotspot permissions
-- Optionally configures UFW firewall and fail2ban
+- Optionally configures fail2ban
 - Starts the service
 
 When the service starts the Pi enters **hotspot onboarding mode**. Connect to the `mempaper-XXXX` Wi-Fi network from your phone or laptop, then open [http://10.42.0.1:5000](http://10.42.0.1:5000) to complete setup.
 
 **Service management after install:**
 ```bash
-sudo journalctl -u mempaper.service -f       # live logs
+sudo journalctl -u mempaper.service -f        # live logs
 sudo systemctl restart mempaper.service       # restart after config changes
 sudo systemctl status mempaper.service        # status
 ```
@@ -359,25 +354,11 @@ pip install -r requirements.txt
   ```
   > **Important:** Verify key login works in a second terminal **before** closing your current session, or you will be locked out.
 
-  **Restrict SSH to LAN only (firewall):**
+  **Restrict SSH to LAN only:**
 
-  The `sshd_config` changes above disable password login but don't restrict *which IPs* can reach SSH. Without an explicit firewall rule, LAN-only access relies entirely on your router not forwarding port 22 — fine for typical home deployment, but fragile. Lock it down on the device itself with `ufw`:
+  The `sshd_config` changes above disable password login. For home deployments, your router's NAT already blocks inbound connections from the internet — that is sufficient for the typical threat model.
 
-  ```bash
-  sudo apt install ufw -y
-
-  # Allow SSH only from private LAN ranges
-  sudo ufw allow from 10.0.0.0/8 to any port 22
-  sudo ufw allow from 172.16.0.0/12 to any port 22
-  sudo ufw allow from 192.168.0.0/16 to any port 22
-
-  # Allow mempaper web UI from anywhere
-  sudo ufw allow 5000/tcp
-
-  sudo ufw --force enable
-  ```
-
-  > For standard home router setups NAT already blocks inbound SSH, but explicit rules are the safer default.
+  > **Note:** Do not install UFW on mempaper devices. UFW's built-in chains drop DHCP broadcast packets (UDP/67) before user allow-rules can fire, which breaks the setup hotspot for users connecting for the first time. mempaper manages its own iptables rules for the hotspot.
 
   **Verify installation:**
 
@@ -390,7 +371,7 @@ pip install -r requirements.txt
   - `mempaper.service` runs on boot
   - On power-on, app first attempts normal Wi-Fi connection
   - If no Wi-Fi is available after startup grace, app starts setup hotspot automatically
-  - User connects to `mempaper-XXXX`, opens `http://192.168.12.1:5000`, enters Wi-Fi credentials
+  - User connects to `mempaper-XXXX`, opens `http://10.42.0.1:5000`, enters Wi-Fi credentials
   - On successful connection, setup hotspot is disabled and normal operation resumes automatically
 
 6. **Disable Wi-Fi Power Saving (Raspberry Pi Zero W)**
@@ -482,7 +463,7 @@ At next boot, `mempaper.service` automatically enables setup hotspot if Wi-Fi ca
 
 ### Onboarding / First-Time Setup
 
-When a customer powers on a freshly prepared device for the first time, the following onboarding flow guides them through WiFi configuration and admin account creation -- no SSH or technical knowledge required.
+When a user powers on a freshly prepared device for the first time, the following onboarding flow guides them through WiFi configuration and admin account creation -- no SSH or technical knowledge required.
 
 #### Step 1 -- Delivery State (E-Ink)
 
@@ -492,10 +473,10 @@ The device ships with the delivery-state image on the e-ink display.
 
 #### Step 2 -- Setup Hotspot (E-Ink)
 
-On first boot, the device detects that no WiFi is configured and automatically starts a WPA2 setup hotspot. **This takes between 90 seconds and 2 minutes 21 seconds** -- the Pi needs to boot, initialize the WiFi radio, and switch to AP mode. Once ready, the e-ink display refreshes and shows the hotspot SSID, password, and a QR code to connect.
+On first boot, the device detects that no WiFi is configured and automatically starts an open setup hotspot. **This takes between 90 seconds and 2 minutes 21 seconds** -- the Pi needs to boot, initialize the WiFi radio, and switch to AP mode. Once ready, the e-ink display refreshes and shows the hotspot SSID and a QR code to connect.
 
 - **SSID:** `mempaper-XXXX` (4-digit suffix derived from the device MAC)
-- **Security:** WPA2 (password = 8 hex chars derived from device MAC)
+- **Security:** Open AP (no WiFi password — a portal password shown on the e-ink display gates access to the setup page)
 - Scan the QR code with your phone to connect automatically
 
 > **Tip:** Wait until the e-ink display updates from the delivery-state image to the hotspot screen before trying to connect. If the display does not refresh after 2 minutes, the hotspot may have failed to start -- simply power-cycle the device and try again.

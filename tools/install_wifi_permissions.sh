@@ -37,9 +37,10 @@ NMCLI_BIN="$(which nmcli    2>/dev/null || echo /usr/bin/nmcli)"
 IW_BIN="$(which iw          2>/dev/null || echo /usr/sbin/iw)"
 IPTABLES_BIN="$(which iptables 2>/dev/null || echo /usr/sbin/iptables)"
 SYSTEMCTL_BIN="$(which systemctl 2>/dev/null || echo /usr/bin/systemctl)"
-DNSMASQ_BIN="$(which dnsmasq 2>/dev/null || echo /usr/sbin/dnsmasq)"
+IP_BIN="$(which ip          2>/dev/null || echo /usr/sbin/ip)"
+RFKILL_BIN="$(which rfkill  2>/dev/null || echo /usr/sbin/rfkill)"
+NFT_BIN="$(which nft       2>/dev/null || echo /usr/sbin/nft)"
 KILL_BIN="$(which kill      2>/dev/null || echo /bin/kill)"
-PKILL_BIN="$(which pkill    2>/dev/null || echo /usr/bin/pkill)"
 MOUNT_BIN="$(which mount    2>/dev/null || echo /bin/mount)"
 APT_GET_BIN="$(which apt-get 2>/dev/null || echo /usr/bin/apt-get)"
 APT_BIN="$(which apt       2>/dev/null || echo /usr/bin/apt)"
@@ -47,6 +48,7 @@ TEE_BIN="$(which tee        2>/dev/null || echo /usr/bin/tee)"
 CAT_BIN="$(which cat        2>/dev/null || echo /bin/cat)"
 CHMOD_BIN="$(which chmod    2>/dev/null || echo /bin/chmod)"
 MKDIR_BIN="$(which mkdir    2>/dev/null || echo /bin/mkdir)"
+RM_BIN="$(which rm         2>/dev/null || echo /bin/rm)"
 
 # Install apt wrapper script — installs only packages from apt-requirements.txt,
 # accepts no arguments so the sudoers rule cannot be exploited to install arbitrary packages.
@@ -79,6 +81,107 @@ chown root:root "${UPGRADE_PYTHON_WRAPPER}"
 chmod 755 "${UPGRADE_PYTHON_WRAPPER}"
 echo "✅  Python upgrade wrapper installed: ${UPGRADE_PYTHON_WRAPPER}"
 
+# Install WiFi clear wrapper — removes ALL saved client WiFi profiles including
+# netplan-managed ones (Pi Imager creates these as netplan-wlan0-SSID).
+# nmcli connection delete refuses to remove netplan-managed connections because
+# NM marks them as externally managed; direct file deletion + reload is required.
+# Accepts optional --no-reload flag: deletes files and strips netplan YAML but
+# skips daemon reload and netplan apply so SSH stays connected; changes take
+# effect on next reboot. Useful when running over a WiFi SSH session.
+CLEAR_WIFI_WRAPPER="/usr/local/bin/mempaper-clear-wifi"
+cat > "${CLEAR_WIFI_WRAPPER}" <<'WRAPPER'
+#!/bin/bash
+# Remove all saved client WiFi profiles, including netplan-managed ones.
+# Usage: mempaper-clear-wifi [--no-reload]
+#   --no-reload  Delete files and strip netplan YAML but skip daemon reload
+#                and netplan apply. SSH stays connected; takes effect on reboot.
+
+NO_RELOAD=0
+for arg in "$@"; do
+    [ "$arg" = "--no-reload" ] && NO_RELOAD=1
+done
+
+DELETED=0
+
+# Step 1: Delete NM connection files directly for wifi-type connections.
+# Handles Pi Imager netplan-wlan0-* profiles that nmcli refuses to delete.
+for DIR in /etc/NetworkManager/system-connections /run/NetworkManager/system-connections; do
+    [ -d "$DIR" ] || continue
+    for F in "$DIR"/*.nmconnection; do
+        [ -f "$F" ] || continue
+        TYPE=$(awk -F= '/^type[[:space:]]*=/{gsub(/[[:space:]]/,"",$2); print $2; exit}' "$F")
+        NAME=$(awk -F= '/^id[[:space:]]*=/{sub(/^[[:space:]]*/,"",$2); print $2; exit}' "$F")
+        [ "$TYPE" = "wifi" ] || continue
+        case "$NAME" in mempaper-setup*) continue ;; esac
+        echo "Removing NM connection file: $F ($NAME)"
+        rm -f "$F" && DELETED=$((DELETED+1))
+    done
+done
+
+# Step 2: Reload NM so removed files take effect immediately (skipped with --no-reload).
+# Omitting this keeps the active WiFi connection alive so an SSH session survives;
+# NM will start clean from disk on next reboot.
+if [ "$NO_RELOAD" = "0" ]; then
+    nmcli connection reload 2>/dev/null || true
+fi
+
+# Step 3: Remove wifis section from netplan configs so they are not recreated at boot.
+# This is a plain file edit — no daemon interaction, safe with --no-reload.
+for YAML in /etc/netplan/*.yaml; do
+    [ -f "$YAML" ] || continue
+    grep -q 'wifis:' "$YAML" 2>/dev/null || continue
+    python3 - "$YAML" <<'PYEOF'
+import sys, yaml
+path = sys.argv[1]
+with open(path) as f:
+    data = yaml.safe_load(f) or {}
+net = data.get('network', {})
+if 'wifis' not in net:
+    sys.exit(0)
+del net['wifis']
+with open(path, 'w') as f:
+    yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
+print('Removed wifis section from ' + path)
+PYEOF
+done
+
+# Step 4: Apply netplan changes if netplan is present (skipped with --no-reload).
+if [ "$NO_RELOAD" = "0" ]; then
+    command -v netplan >/dev/null 2>&1 && netplan apply 2>/dev/null || true
+fi
+
+if [ "$NO_RELOAD" = "1" ]; then
+    echo "WiFi config cleared (deferred) — $DELETED file(s) removed, takes effect after reboot"
+else
+    echo "WiFi clear complete — removed $DELETED connection file(s)"
+fi
+WRAPPER
+chown root:root "${CLEAR_WIFI_WRAPPER}"
+chmod 755 "${CLEAR_WIFI_WRAPPER}"
+echo "✅  WiFi clear wrapper installed: ${CLEAR_WIFI_WRAPPER}"
+
+# Saved-WiFi-check wrapper — root-owned since connection files aren't
+# readable by the service user. Exit 0 = a saved network exists, 1 = none.
+HAS_SAVED_WIFI_WRAPPER="/usr/local/bin/mempaper-has-saved-wifi"
+cat > "${HAS_SAVED_WIFI_WRAPPER}" <<'WRAPPER'
+#!/bin/bash
+for DIR in /etc/NetworkManager/system-connections /run/NetworkManager/system-connections; do
+    [ -d "$DIR" ] || continue
+    for F in "$DIR"/*.nmconnection; do
+        [ -f "$F" ] || continue
+        TYPE=$(awk -F= '/^type[[:space:]]*=/{gsub(/[[:space:]]/,"",$2); print $2; exit}' "$F")
+        NAME=$(awk -F= '/^id[[:space:]]*=/{sub(/^[[:space:]]*/,"",$2); print $2; exit}' "$F")
+        [ "$TYPE" = "wifi" ] || continue
+        case "$NAME" in mempaper-setup*) continue ;; esac
+        exit 0
+    done
+done
+exit 1
+WRAPPER
+chown root:root "${HAS_SAVED_WIFI_WRAPPER}"
+chmod 755 "${HAS_SAVED_WIFI_WRAPPER}"
+echo "✅  Saved-WiFi-check wrapper installed: ${HAS_SAVED_WIFI_WRAPPER}"
+
 cat > "${SUDOERS_FILE}" <<EOF
 # mempaper sudoers rules — generated by tools/install_wifi_permissions.sh
 # Rules are scoped to the exact commands mempaper runs. See docs/SECURITY_GUIDE.md.
@@ -96,14 +199,54 @@ ${SERVICE_USER} ALL=(root) NOPASSWD: ${IPTABLES_BIN} -t nat -D PREROUTING *
 # Captive-portal filter rules: block DNS-over-TLS leakage from clients
 ${SERVICE_USER} ALL=(root) NOPASSWD: ${IPTABLES_BIN} -t filter -I FORWARD *
 ${SERVICE_USER} ALL=(root) NOPASSWD: ${IPTABLES_BIN} -t filter -D FORWARD *
+# Captive-portal INPUT rules: allow hotspot clients through to Flask port (Trixie nftables firewall)
+${SERVICE_USER} ALL=(root) NOPASSWD: ${IPTABLES_BIN} -t filter -I INPUT *
+${SERVICE_USER} ALL=(root) NOPASSWD: ${IPTABLES_BIN} -t filter -D INPUT *
 
-# Captive-portal DNS: dnsmasq on-demand, scoped to known temp paths
-${SERVICE_USER} ALL=(root) NOPASSWD: ${DNSMASQ_BIN} --conf-file=/tmp/mempaper-captive-dns.conf --pid-file=/tmp/mempaper-captive-dns.pid
+# Hotspot DHCP: stop/start system dnsmasq at runtime so NM can bind port 53/67.
+# Without these, the sudo call fails silently and dnsmasq keeps port 53, preventing
+# NM from starting its own dnsmasq instance for ipv4.method=shared DHCP.
+${SERVICE_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} stop dnsmasq
+${SERVICE_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} start dnsmasq
+${SERVICE_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} stop dnsmasq.service
+${SERVICE_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} start dnsmasq.service
 
-# Stop captive-portal dnsmasq by PID (numeric PID only — no signal flags, blocks kill -9 and kill PID 1)
-${SERVICE_USER} ALL=(root) NOPASSWD: ${KILL_BIN} [1-9][0-9]*
-# Stop captive-portal dnsmasq by process match (scoped to known config path)
-${SERVICE_USER} ALL=(root) NOPASSWD: ${PKILL_BIN} -f /tmp/mempaper-captive-dns.conf
+# Hotspot firewall: add/remove an accept rule for the AP interface in the
+# native nftables 'inet filter input' chain (Debian Trixie default policy drop).
+# iptables-nft rules go into a separate 'ip filter' namespace and do NOT protect
+# against the inet filter DROP — only direct nft commands do.
+${SERVICE_USER} ALL=(root) NOPASSWD: ${NFT_BIN} insert rule inet filter input iifname * accept
+${SERVICE_USER} ALL=(root) NOPASSWD: ${NFT_BIN} delete rule inet filter input handle *
+${SERVICE_USER} ALL=(root) NOPASSWD: ${NFT_BIN} -a list chain inet filter input
+
+# DHCP option 114 (RFC 8910): write captive portal URL into NM's dnsmasq-shared.d
+# so Android 11+ detects the portal immediately via DHCP instead of HTTP probing.
+${SERVICE_USER} ALL=(root) NOPASSWD: ${MKDIR_BIN} -p /etc/NetworkManager/dnsmasq-shared.d
+${SERVICE_USER} ALL=(root) NOPASSWD: ${TEE_BIN} /etc/NetworkManager/dnsmasq-shared.d/mempaper-captive.conf
+${SERVICE_USER} ALL=(root) NOPASSWD: ${RM_BIN} -f /etc/NetworkManager/dnsmasq-shared.d/mempaper-captive.conf
+
+# Setup hotspot: interface handoff between NetworkManager (station mode) and
+# hostapd (AP mode). mempaper releases the interface before starting hostapd
+# and hands it back to NM when the hotspot tears down.
+${SERVICE_USER} ALL=(root) NOPASSWD: ${IP_BIN} link set * up
+${SERVICE_USER} ALL=(root) NOPASSWD: ${IP_BIN} addr add * dev *
+${SERVICE_USER} ALL=(root) NOPASSWD: ${IP_BIN} addr flush dev *
+
+# WiFi radio unblock: lifts a persisted software rfkill soft-block at startup
+# (e.g. NetworkManager.state's WirelessEnabled saved as false across a
+# reboot) so the radio doesn't come up disabled independent of the
+# one-time country-code fix applied at install time.
+${SERVICE_USER} ALL=(root) NOPASSWD: ${RFKILL_BIN} unblock wifi
+
+# Setup hotspot: start/stop/restart the hostapd (AP) and dnsmasq (DHCP/DNS)
+# systemd units. systemd supervises the actual processes (crash-restart,
+# journald logging) — mempaper only ever asks it to start/stop/restart.
+${SERVICE_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} start mempaper-hostapd.service
+${SERVICE_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} stop mempaper-hostapd.service
+${SERVICE_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} restart mempaper-hostapd.service
+${SERVICE_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} start mempaper-dnsmasq.service
+${SERVICE_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} stop mempaper-dnsmasq.service
+${SERVICE_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} restart mempaper-dnsmasq.service
 
 # Remount root filesystem rw/ro around apt operations (read-only Pi OS root partition)
 ${SERVICE_USER} ALL=(root) NOPASSWD: ${MOUNT_BIN} -o remount\,rw /
@@ -124,6 +267,29 @@ ${SERVICE_USER} ALL=(root) NOPASSWD: ${APT_INSTALL_WRAPPER}
 # Python minor-version upgrade wrapper — unholds, upgrades, rebuilds venv.
 # Scoped to a single fixed script path; cannot install arbitrary packages.
 ${SERVICE_USER} ALL=(root) NOPASSWD: ${UPGRADE_PYTHON_WRAPPER}
+
+# WiFi profile clear wrapper — deletes all saved client WiFi profiles including
+# Pi Imager netplan-managed connections that nmcli refuses to remove directly.
+# --no-reload variant keeps SSH alive; changes take effect on next reboot.
+${SERVICE_USER} ALL=(root) NOPASSWD: ${CLEAR_WIFI_WRAPPER}
+${SERVICE_USER} ALL=(root) NOPASSWD: ${CLEAR_WIFI_WRAPPER} --no-reload
+
+# Filesystem-only saved-WiFi check — lets startup skip waiting on
+# NetworkManager entirely when there's nothing saved to reconnect to.
+${SERVICE_USER} ALL=(root) NOPASSWD: ${HAS_SAVED_WIFI_WRAPPER}
+
+# Pre-declare / undo wlan0 as NetworkManager-unmanaged around a factory
+# reset, so hotspot bring-up doesn't need to wait for NM's D-Bus readiness.
+${SERVICE_USER} ALL=(root) NOPASSWD: ${MKDIR_BIN} -p /etc/NetworkManager/conf.d
+${SERVICE_USER} ALL=(root) NOPASSWD: ${TEE_BIN} /etc/NetworkManager/conf.d/99-mempaper-wlan0-unmanaged.conf
+${SERVICE_USER} ALL=(root) NOPASSWD: ${RM_BIN} -f /etc/NetworkManager/conf.d/99-mempaper-wlan0-unmanaged.conf
+
+# Disable cloud-init's per-boot network re-application after a WiFi clear —
+# Raspberry Pi Imager's NoCloud datasource re-injects the original WiFi
+# network from /boot/firmware/ on every boot otherwise, silently undoing the
+# clear above before the app's own "no saved networks" check ever runs.
+${SERVICE_USER} ALL=(root) NOPASSWD: ${MKDIR_BIN} -p /etc/cloud/cloud.cfg.d
+${SERVICE_USER} ALL=(root) NOPASSWD: ${TEE_BIN} /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg
 
 # Service control
 ${SERVICE_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} start mempaper.service
@@ -223,17 +389,51 @@ echo ""
 if ! command -v dnsmasq >/dev/null 2>&1; then
     echo "📦  Installing dnsmasq for captive-portal DNS..."
     apt-get install -y dnsmasq >/dev/null 2>&1 || true
-    # Disable the system dnsmasq service — we only run it on-demand
-    systemctl stop dnsmasq 2>/dev/null || true
-    systemctl disable dnsmasq 2>/dev/null || true
 fi
-# Make sure the system dnsmasq service doesn't interfere
-if systemctl is-enabled dnsmasq 2>/dev/null | grep -q enabled; then
-    systemctl stop dnsmasq 2>/dev/null || true
-    systemctl disable dnsmasq 2>/dev/null || true
-    echo "✅  System dnsmasq disabled (mempaper runs its own on-demand)"
+# Stop, disable, and MASK the system dnsmasq service so it can never auto-start
+# (masking survives 'apt-get install dnsmasq' re-runs, unlike plain disable).
+# mempaper runs its own dnsmasq under mempaper-dnsmasq.service (installed below).
+systemctl stop dnsmasq 2>/dev/null || true
+systemctl disable dnsmasq 2>/dev/null || true
+systemctl mask dnsmasq 2>/dev/null || true
+echo "✅  System dnsmasq masked (mempaper-dnsmasq.service owns DHCP/DNS for the setup hotspot)"
+
+# --- Setup hotspot AP (hostapd) ------------------------------------------------
+# hostapd creates the setup-hotspot access point directly
+if ! command -v hostapd >/dev/null 2>&1; then
+    echo "📦  Installing hostapd for the setup hotspot..."
+    apt-get install -y hostapd >/dev/null 2>&1 || true
 fi
-echo "✅  dnsmasq available for captive-portal DNS"
+# Stop, disable, and MASK the system hostapd service so it never auto-starts
+# or conflicts with mempaper-hostapd.service (which takes over wlan0 only
+# while the setup hotspot is active).
+systemctl stop hostapd 2>/dev/null || true
+systemctl disable hostapd 2>/dev/null || true
+systemctl mask hostapd 2>/dev/null || true
+echo "✅  System hostapd masked (mempaper-hostapd.service owns the setup hotspot AP)"
+
+# Install the two on-demand systemd units mempaper starts/stops for the setup
+# hotspot. Neither is enabled — mempaper_app.py controls them directly via
+# 'systemctl start|stop|restart' (see sudoers rules above).
+#
+# __PROJECT_DIR__ is substituted here rather than hardcoded in the template:
+# these units read their hostapd/dnsmasq config from <project>/cache/, the
+# same path mempaper_app.py writes it to (not /tmp — mempaper.service's
+# ProtectSystem=strict+PrivateTmp would put a /tmp write in a namespace
+# private to that service, invisible to these independent units).
+sed "s|__PROJECT_DIR__|${PROJECT_DIR}|g" "${SCRIPT_DIR}/mempaper-hostapd.service" > /etc/systemd/system/mempaper-hostapd.service
+sed "s|__PROJECT_DIR__|${PROJECT_DIR}|g" "${SCRIPT_DIR}/mempaper-dnsmasq.service" > /etc/systemd/system/mempaper-dnsmasq.service
+systemctl daemon-reload
+echo "✅  mempaper-hostapd.service and mempaper-dnsmasq.service installed"
+
+# Disable nftables systemd service so its inet-filter DROP policy never loads.
+# Trixie's default /etc/nftables.conf creates an 'inet filter input' chain with
+# policy drop, which silently kills DHCP DISCOVER broadcasts (UDP 67) from
+# hotspot clients. NM's iptables-nft NAT and DHCP rules use separate 'ip nat'
+# and 'ip filter' tables (policy accept) — they work correctly without this service.
+systemctl stop nftables    2>/dev/null || true
+systemctl disable nftables 2>/dev/null || true
+echo "✅  nftables service disabled (prevents DHCP broadcast drop on Trixie)"
 
 # --- Integrated mode cleanup -------------------------------------------------
 echo "🔧 Enforcing integrated service mode (no separate onboarding service)…"

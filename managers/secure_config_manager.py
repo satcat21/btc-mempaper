@@ -17,6 +17,7 @@ import os
 import json
 import hashlib
 import base64
+import subprocess
 import time
 from typing import Dict, Any, List, Optional
 from cryptography.fernet import Fernet
@@ -218,53 +219,77 @@ class SecureConfigManager:
             print(f"⚠️ Decryption failed: {e}")
             return None
     
+    def _is_root_readonly(self) -> bool:
+        """Check if / is mounted read-only."""
+        try:
+            with open('/proc/mounts') as f:
+                for line in f:
+                    parts = line.split()
+                    if len(parts) >= 4 and parts[1] == '/':
+                        return 'ro' in parts[3].split(',')
+        except Exception:
+            pass
+        return False
+
     def save_secure_config(self, config: Dict[str, Any]) -> bool:
         """
         Save configuration with sensitive fields encrypted.
-        
+
         Args:
             config: Configuration dictionary
-            
+
         Returns:
             True if saved successfully
         """
+        # Some Pi images run with / mounted read-only (e.g. raspi-config's
+        # overlay filesystem); remount rw for the duration of the write so
+        # this doesn't silently fail and leave stale data on disk.
+        was_readonly = self._is_root_readonly()
+        if was_readonly:
+            subprocess.run(['sudo', 'mount', '-o', 'remount,rw', '/'], capture_output=True, timeout=10)
         try:
             # Separate sensitive and non-sensitive data
             secure_config = {}
             public_config = {}
-            
+
             for key, value in config.items():
                 if key in self.sensitive_fields:
                     secure_config[key] = value
                 else:
                     public_config[key] = value
-            
+
             # Save public config as regular JSON
             with open(self.config_file, 'w') as f:
                 json.dump(public_config, f, indent=2)
-            
-            # Save encrypted sensitive config
-            if secure_config:
-                encrypted_config = {
-                    '_encrypted': True,
-                    '_version': '1.0',
-                    'data': self._encrypt_data(secure_config)
-                }
-                
-                with open(self.encrypted_config_file, 'w') as f:
-                    json.dump(encrypted_config, f, indent=2)
-                
-                # Set restrictive permissions
-                os.chmod(self.encrypted_config_file, 0o600)
-            
+
+            # Always (re)write the encrypted file, even when secure_config is
+            # empty. Skipping the write when there's nothing sensitive left
+            # (e.g. a factory/delivery-state reset that clears admin_users
+            # with no other sensitive field to keep the dict non-empty) would
+            # leave stale credentials sitting in the old encrypted file.
+            encrypted_config = {
+                '_encrypted': True,
+                '_version': '1.0',
+                'data': self._encrypt_data(secure_config)
+            }
+
+            with open(self.encrypted_config_file, 'w') as f:
+                json.dump(encrypted_config, f, indent=2)
+
+            # Set restrictive permissions
+            os.chmod(self.encrypted_config_file, 0o600)
+
             print(f"🔒 Saved secure configuration:")
             print(f"   📄 Public data: {self.config_file}")
             print(f"   🔐 Encrypted data: {self.encrypted_config_file}")
             return True
-            
+
         except Exception as e:
             print(f"❌ Error saving secure config: {e}")
             return False
+        finally:
+            if was_readonly:
+                subprocess.run(['sudo', 'mount', '-o', 'remount,ro', '/'], capture_output=True, timeout=10)
     
     def load_secure_config(self) -> Optional[Dict[str, Any]]:
         """

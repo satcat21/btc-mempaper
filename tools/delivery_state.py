@@ -5,7 +5,7 @@ Delivery State Script — Auslieferungszustand
 Renders a clean "factory default" dashboard image using static/memes/0.jpg as
 the meme and zeroed-out placeholder values, then pushes it to the e-ink display.
 
-Run this before shipping a device to a customer:
+Run this before shipping a device to a user:
 
     python tools/delivery_state.py
 
@@ -22,6 +22,9 @@ import shutil
 import json
 import importlib.util
 import subprocess
+import signal
+import glob
+import datetime
 
 # ── Path setup ──────────────────────────────────────────────────────────────
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -43,7 +46,6 @@ MEME_PATH        = os.path.join(ROOT_DIR, "static", "memes", "0.jpg")
 OUTPUT_WEB_PATH  = os.path.join(ROOT_DIR, "cache", "delivery_web.png")
 OUTPUT_EINK_PATH = os.path.join(ROOT_DIR, "cache", "delivery_eink.png")
 
-HOTSPOT_CONNECTION_NAME = "mempaper-setup"
 SETUP_MODE_FLAG_PATH = os.path.join(ROOT_DIR, "cache", "setup_mode.json")
 MEMPAPER_SERVICE = "mempaper.service"
 
@@ -51,6 +53,98 @@ REQUIRED_PYTHON_MODULES = [
     "babel",
     "PIL",
 ]
+
+LOG_PATH = "/tmp/delivery_state.log"
+
+
+class _Tee:
+    """Mirror writes to multiple streams — used to tee stdout/stderr to a log file
+    so the full run is readable after SSH disconnects during WiFi clearing."""
+    def __init__(self, *streams):
+        self._streams = streams
+    def write(self, data):
+        for s in self._streams:
+            try:
+                s.write(data)
+            except Exception:
+                pass
+    def flush(self):
+        for s in self._streams:
+            try:
+                s.flush()
+            except Exception:
+                pass
+    def fileno(self):
+        return self._streams[0].fileno()
+
+
+def _verify_wifi_state():
+    """Dump NM connections, connection files, and netplan YAML state.
+
+    Called after clear_saved_wifi_connections() so we can confirm the clear
+    actually worked.  Output goes to LOG_PATH (readable after SSH recovery).
+    """
+    print("📋 WiFi state verification:")
+
+    # 1. Live NM connection list
+    r = subprocess.run(
+        ["nmcli", "-t", "-f", "NAME,UUID,TYPE", "connection", "show"],
+        capture_output=True, text=True,
+    )
+    if r.returncode == 0:
+        wifi_lines = []
+        for line in r.stdout.splitlines():
+            parts = line.strip().rsplit(":", 2)
+            if len(parts) == 3 and parts[2] in ("wifi", "802-11-wireless"):
+                wifi_lines.append(line.strip())
+        if wifi_lines:
+            print(f"   ⚠️  NM still has {len(wifi_lines)} WiFi profile(s):")
+            for ln in wifi_lines:
+                print(f"      {ln}")
+        else:
+            print("   ✅ NM: no WiFi connections remaining")
+    else:
+        print(f"   ⚠️  nmcli query failed: {r.stderr.strip()}")
+
+    # 2. .nmconnection files still on disk
+    wifi_files = []
+    for d in ("/etc/NetworkManager/system-connections",
+              "/run/NetworkManager/system-connections"):
+        if not os.path.isdir(d):
+            continue
+        for fn in os.listdir(d):
+            if not fn.endswith(".nmconnection"):
+                continue
+            fp = os.path.join(d, fn)
+            try:
+                with open(fp) as fh:
+                    content = fh.read()
+                if "type=wifi" in content or "type = wifi" in content:
+                    wifi_files.append(fp)
+            except OSError:
+                pass
+    if wifi_files:
+        print(f"   ⚠️  .nmconnection files still on disk:")
+        for f in wifi_files:
+            print(f"      {f}")
+    else:
+        print("   ✅ NM connection files: none")
+
+    # 3. Netplan YAMLs still containing a wifis: section
+    wifis_in_yaml = []
+    for path in glob.glob("/etc/netplan/*.yaml"):
+        try:
+            with open(path) as fh:
+                if "wifis:" in fh.read():
+                    wifis_in_yaml.append(path)
+        except OSError:
+            pass
+    if wifis_in_yaml:
+        print(f"   ⚠️  Netplan YAML still has 'wifis:' section:")
+        for p in wifis_in_yaml:
+            print(f"      {p}")
+    else:
+        print("   ✅ Netplan: no 'wifis:' section")
 
 
 def is_root_user():
@@ -91,256 +185,6 @@ def start_service():
         print("ℹ️  mempaper service already running")
 
 
-def run_cmd(cmd, check=False):
-    return subprocess.run(cmd, check=check, capture_output=True, text=True)
-
-# ---------------------------------------------------------------------------
-# nmcli wrapper — uses 'sudo nmcli' when not already root so that
-# hotspot creation (settings.modify.system) works for normal service users.
-# The install_wifi_permissions.sh script drops a matching passwordless
-# sudoers rule at /etc/sudoers.d/mempaper-wifi.
-# ---------------------------------------------------------------------------
-_USE_SUDO_NMCLI = (not is_root_user())
-
-def nmcli_cmd(*args):
-    base = ["sudo", "nmcli"] if _USE_SUDO_NMCLI else ["nmcli"]
-    return subprocess.run(base + list(args), capture_output=True, text=True)
-
-def _print_cmd_error(prefix, result):
-    if result is None:
-        print(f"⚠️  {prefix}: command did not execute")
-        return
-    stderr = (result.stderr or "").strip()
-    stdout = (result.stdout or "").strip()
-    if stderr:
-        print(f"⚠️  {prefix}: {stderr}")
-    elif stdout:
-        print(f"⚠️  {prefix}: {stdout}")
-    else:
-        print(f"⚠️  {prefix}: failed with exit code {result.returncode}")
-
-
-def write_setup_mode_flag(enabled, ssid=None, interface=None):
-    os.makedirs(os.path.dirname(SETUP_MODE_FLAG_PATH), exist_ok=True)
-
-    if not enabled:
-        try:
-            if os.path.exists(SETUP_MODE_FLAG_PATH):
-                os.remove(SETUP_MODE_FLAG_PATH)
-        except OSError:
-            pass
-        return
-
-    payload = {
-        "enabled": True,
-        "ssid": ssid,
-        "interface": interface,
-        "timestamp": int(time.time()),
-    }
-    try:
-        with open(SETUP_MODE_FLAG_PATH, "w", encoding="utf-8") as f:
-            json.dump(payload, f, indent=2)
-    except OSError as e:
-        print(f"⚠️  Could not write setup mode flag: {e}")
-
-def detect_wifi_interface():
-    if shutil.which("nmcli") is not None:
-        result = nmcli_cmd("-t", "-f", "DEVICE,TYPE,STATE", "device", "status")
-        if result.returncode == 0:
-            for line in result.stdout.splitlines():
-                parts = line.strip().split(":")
-                if len(parts) < 2:
-                    continue
-                device, dev_type = parts[0], parts[1]
-                if device and dev_type == "wifi":
-                    return device
-
-    preferred = "/sys/class/net/wlan0"
-    if os.path.exists(preferred):
-        return "wlan0"
-
-    net_root = "/sys/class/net"
-    if not os.path.isdir(net_root):
-        return None
-
-    for iface in sorted(os.listdir(net_root)):
-        if os.path.isdir(os.path.join(net_root, iface, "wireless")):
-            return iface
-
-    return None
-
-
-def wait_for_wifi_interface(timeout_seconds=30, poll_seconds=2):
-    deadline = time.time() + max(0, timeout_seconds)
-    while time.time() <= deadline:
-        interface = detect_wifi_interface()
-        if interface:
-            return interface
-        time.sleep(max(1, poll_seconds))
-    return None
-
-def get_mac_address(interface):
-    mac_path = f"/sys/class/net/{interface}/address"
-    try:
-        with open(mac_path, "r", encoding="utf-8") as f:
-            return f.read().strip().lower()
-    except OSError:
-        return "00:00:00:00:00:00"
-
-def hotspot_suffix_from_mac(mac_address):
-    raw = mac_address.replace(":", "")
-    digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()
-    return f"{int(digest[:8], 16) % 10000:04d}"
-
-def build_hotspot_ssid(interface, prefix="mempaper"):
-    mac = get_mac_address(interface)
-    suffix = hotspot_suffix_from_mac(mac)
-    return f"{prefix}-{suffix}"
-
-def build_hotspot_password(interface):
-    """Derive deterministic 8-char WPA2 password from MAC address (matches mempaper_app.py)."""
-    mac = get_mac_address(interface)
-    raw = mac.replace(":", "")
-    digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()
-    return digest[8:16]  # 8 lowercase hex chars
-
-def is_wifi_connected(interface):
-    status = run_cmd(["nmcli", "-t", "-f", "DEVICE,TYPE,STATE", "device", "status"])
-    if status.returncode != 0:
-        return False
-
-    for line in status.stdout.splitlines():
-        parts = line.strip().split(":")
-        if len(parts) < 3:
-            continue
-        device, dev_type, state = parts[0], parts[1], parts[2]
-        if device == interface and dev_type == "wifi" and state.startswith("connected"):
-            return True
-
-    return False
-
-DNSMASQ_CONF_PATH = "/tmp/mempaper-captive-dns.conf"
-DNSMASQ_PID_PATH  = "/tmp/mempaper-captive-dns.pid"
-CAPTIVE_IP        = "192.168.12.1"
-
-
-def start_captive_dns(interface):
-    """Start a dnsmasq instance that resolves all domains to the hotspot IP,
-    triggering the OS captive-portal popup on connecting devices."""
-    stop_captive_dns()  # clean up any stale instance
-    if shutil.which("dnsmasq") is None:
-        print("⚠️  dnsmasq not found — captive-portal DNS unavailable")
-        print("   Install with: sudo apt install -y dnsmasq")
-        return
-
-    conf = (
-        f"interface={interface}\n"
-        f"bind-interfaces\n"
-        f"dhcp-range={interface},192.168.12.100,192.168.12.200,12h\n"
-        f"address=/#/{CAPTIVE_IP}\n"  # resolve everything to Pi IP
-        f"no-resolv\n"
-        f"no-poll\n"
-        f"log-queries\n"
-    )
-    try:
-        with open(DNSMASQ_CONF_PATH, "w", encoding="utf-8") as f:
-            f.write(conf)
-    except OSError as e:
-        print(f"⚠️  Could not write dnsmasq config: {e}")
-        return
-
-    result = run_cmd([
-        "sudo", "dnsmasq",
-        "--conf-file=" + DNSMASQ_CONF_PATH,
-        "--pid-file=" + DNSMASQ_PID_PATH,
-    ])
-    if result.returncode == 0:
-        print("✅  Captive-portal dnsmasq started")
-    else:
-        print(f"⚠️  dnsmasq failed to start: {result.stderr.strip() or result.stdout.strip()}")
-
-
-def stop_captive_dns():
-    """Stop the captive-portal dnsmasq instance."""
-    pid_file = DNSMASQ_PID_PATH
-    if os.path.exists(pid_file):
-        try:
-            with open(pid_file, "r", encoding="utf-8") as f:
-                pid = f.read().strip()
-            if pid:
-                run_cmd(["sudo", "kill", pid])
-        except OSError:
-            pass
-        try:
-            os.remove(pid_file)
-        except OSError:
-            pass
-    # Also kill any stale instance by config file reference
-    run_cmd(["sudo", "pkill", "-f", DNSMASQ_CONF_PATH])
-    if os.path.exists(DNSMASQ_CONF_PATH):
-        try:
-            os.remove(DNSMASQ_CONF_PATH)
-        except OSError:
-            pass
-
-
-def bring_up_hotspot(interface, ssid, password):
-    nmcli_cmd("radio", "wifi", "on")
-    nmcli_cmd("connection", "down", HOTSPOT_CONNECTION_NAME)
-    nmcli_cmd("connection", "delete", HOTSPOT_CONNECTION_NAME)
-
-    print(f'\U0001f4f6 Setup hotspot: WPA2 AP "{ssid}" (password derived from device MAC)')
-    nmcli_cmd("connection", "add", "type", "wifi", "ifname", interface,
-              "con-name", HOTSPOT_CONNECTION_NAME, "autoconnect", "yes", "ssid", ssid)
-    nmcli_cmd("connection", "modify", HOTSPOT_CONNECTION_NAME,
-              "802-11-wireless.mode", "ap",
-              "802-11-wireless.band", "bg",
-              "ipv4.method", "shared",
-              "ipv6.method", "ignore",
-              "connection.autoconnect-priority", "-999")
-    nmcli_cmd("connection", "modify", HOTSPOT_CONNECTION_NAME,
-              "wifi-sec.key-mgmt", "wpa-psk",
-              "wifi-sec.psk",      password,
-              "wifi-sec.proto",    "rsn",   # WPA2 only
-              "wifi-sec.pairwise", "ccmp",  # AES
-              "wifi-sec.group",    "ccmp")  # AES
-    up = nmcli_cmd("connection", "up", HOTSPOT_CONNECTION_NAME)
-    if up.returncode != 0:
-        _print_cmd_error("Failed to activate WPA2 hotspot", up)
-    else:
-        start_captive_dns(interface)
-        add_captive_portal_redirect(interface)
-    return up.returncode == 0
-
-def add_captive_portal_redirect(interface, flask_port=5000):
-    """Add iptables rules to redirect port 80/443 → Flask port on the hotspot interface.
-
-    Android captive-portal probes hit port 80; without this redirect they get
-    connection-refused and the OS drops the Wi-Fi network.
-    """
-    for src_port in (80, 443):
-        _sudo("iptables", "-t", "nat", "-A", "PREROUTING",
-              "-i", interface, "-p", "tcp", "--dport", str(src_port),
-              "-j", "REDIRECT", "--to-port", str(flask_port))
-    print(f"🔀 Captive-portal redirect: ports 80/443 → {flask_port}")
-
-def remove_captive_portal_redirect(flask_port=5000):
-    """Remove captive-portal iptables PREROUTING rules."""
-    for src_port in (80, 443):
-        for _ in range(5):
-            r = _sudo("iptables", "-t", "nat", "-D", "PREROUTING",
-                      "-p", "tcp", "--dport", str(src_port),
-                      "-j", "REDIRECT", "--to-port", str(flask_port))
-            if r.returncode != 0:
-                break
-
-def bring_down_hotspot():
-    stop_captive_dns()
-    remove_captive_portal_redirect()
-    nmcli_cmd("connection", "down", HOTSPOT_CONNECTION_NAME)
-    nmcli_cmd("connection", "delete", HOTSPOT_CONNECTION_NAME)
-
-
 def clear_admin_users():
     """Remove all admin users from config (including encrypted config.secure.json).
 
@@ -371,7 +215,9 @@ def clear_admin_users():
     # Write directly through the secure config manager so both config.json
     # (public fields) and config.secure.json (encrypted fields) are updated.
     if cm.secure_manager:
-        cm.secure_manager.save_secure_config(full_cfg)
+        if not cm.secure_manager.save_secure_config(full_cfg):
+            print("❌ Failed to persist cleared admin credentials to disk — "
+                  "device will still show as configured after reboot!")
     else:
         # No encryption — plain JSON fallback
         cfg_path = os.path.join(ROOT_DIR, "config", "config.json")
@@ -385,126 +231,189 @@ def clear_admin_users():
     print(f"✅ Cleared admin credentials: {', '.join(removed)}")
 
 
-def clear_saved_wifi_connections():
-    """Delete all saved client-mode WiFi profiles from NetworkManager.
+def clear_authorized_keys():
+    """Remove only the mempaper-managed SSH key block from authorized_keys.
 
-    This gives the customer device a factory-fresh NM state so that on first boot
-    ``_has_saved_wifi_connections()`` returns False and the setup hotspot starts
-    immediately instead of waiting out the 45-second startup grace window.
+    Lines outside the '# BEGIN mempaper-managed' / '# END mempaper-managed'
+    block are preserved verbatim — manually-added keys survive the reset.
+    SSH reads authorized_keys fresh on every connection so no daemon reload
+    is needed.  The service user's file is owned by that user; the pi user's
+    file is written via 'sudo tee' (already in NOPASSWD sudoers).
     """
-    if shutil.which("nmcli") is None:
-        print("⚠️  nmcli not found — skipping WiFi profile cleanup")
-        return
+    import pwd
 
-    result = nmcli_cmd("-t", "-f", "NAME,TYPE", "connection", "show")
-    if result.returncode != 0:
-        print("⚠️  Could not list NM connections — skipping WiFi profile cleanup")
-        return
+    _BLOCK_START = "# BEGIN mempaper-managed"
+    _BLOCK_END   = "# END mempaper-managed"
 
-    deleted = []
-    errors = []
-    for line in result.stdout.splitlines():
-        parts = line.strip().split(":", 1)
-        if len(parts) < 2:
-            continue
-        name, conn_type = parts[0], parts[1]
-        if conn_type != "wifi":
-            continue
-        # Leave our own setup profile alone (the app manages it at runtime)
-        if name == HOTSPOT_CONNECTION_NAME or name.startswith("mempaper-setup"):
-            continue
-        r = nmcli_cmd("connection", "delete", name)
-        if r.returncode == 0:
-            deleted.append(name)
-        else:
-            errors.append(f"'{name}': {(r.stderr or r.stdout or '').strip()}")
+    def _strip_block(content):
+        """Return content with the mempaper block removed; None if no change needed."""
+        if _BLOCK_START not in content:
+            return None  # nothing to remove
+        lines = content.splitlines(keepends=True)
+        out, in_block = [], False
+        for line in lines:
+            s = line.strip()
+            if s == _BLOCK_START:
+                in_block = True
+                continue
+            if s == _BLOCK_END:
+                in_block = False
+                continue
+            if not in_block:
+                out.append(line)
+        return "".join(out)
 
-    if deleted:
-        print(f"🧹 Cleared {len(deleted)} saved WiFi profile(s): {', '.join(deleted)}")
+    cleared = []
+    skipped = []
+    failed  = []
+
+    # ── Service user's own authorized_keys ───────────────────────────────
+    try:
+        service_home = pwd.getpwnam(os.environ.get("USER", "mempaper")).pw_dir
+    except KeyError:
+        service_home = os.path.expanduser("~")
+    own_keys = os.path.join(service_home, ".ssh", "authorized_keys")
+    if os.path.exists(own_keys):
+        try:
+            content = open(own_keys, "r", encoding="utf-8").read()
+            cleaned = _strip_block(content)
+            if cleaned is None:
+                skipped.append(own_keys)
+            else:
+                open(own_keys, "w", encoding="utf-8").write(cleaned)
+                cleared.append(own_keys)
+        except OSError as e:
+            failed.append(f"{own_keys} ({e})")
     else:
-        print("ℹ️  No saved client WiFi profiles to clear")
-    for e in errors:
-        print(f"⚠️  Could not delete WiFi profile {e}")
+        skipped.append(f"{own_keys} (absent)")
+
+    # ── pi user's authorized_keys (via sudo tee) ──────────────────────────
+    pi_keys = "/home/pi/.ssh/authorized_keys"
+    if os.path.exists(pi_keys):
+        try:
+            r = subprocess.run(
+                ([] if is_root_user() else ["sudo"]) + ["cat", pi_keys],
+                capture_output=True, text=True
+            )
+            if r.returncode == 0:
+                cleaned = _strip_block(r.stdout)
+                if cleaned is None:
+                    skipped.append(pi_keys)
+                else:
+                    w = subprocess.run(
+                        ([] if is_root_user() else ["sudo"]) + ["tee", pi_keys],
+                        input=cleaned, capture_output=True, text=True
+                    )
+                    if w.returncode == 0:
+                        cleared.append(pi_keys)
+                    else:
+                        failed.append(f"{pi_keys} ({(w.stderr or w.stdout).strip()})")
+            else:
+                failed.append(f"{pi_keys} (read failed: {(r.stderr or r.stdout).strip()})")
+        except OSError as e:
+            failed.append(f"{pi_keys} ({e})")
+    else:
+        skipped.append(f"{pi_keys} (absent)")
+
+    if cleared:
+        print(f"✅ Cleared mempaper SSH keys from: {', '.join(cleared)}")
+    if skipped:
+        print(f"ℹ️  No mempaper SSH keys found in: {', '.join(skipped)}")
+    if failed:
+        for f in failed:
+            print(f"⚠️  Could not clear authorized_keys: {f}")
 
 
-def connect_saved_wifi(interface):
-    nmcli_cmd("connection", "down", HOTSPOT_CONNECTION_NAME)
-    nmcli_cmd("device", "connect", interface)
-    time.sleep(6)
-    return is_wifi_connected(interface)
+def clear_saved_wifi_connections():
+    """Delete all saved client-mode WiFi profile files from disk.
 
-def run_wifi_onboarding(password, prefix, timeout_seconds):
-    # Password parameter is kept for backward compatibility but ignored.
+    Uses the mempaper-clear-wifi wrapper with --no-reload so NM's in-memory
+    state (and the active WiFi connection) is untouched — SSH stays connected.
+    The .nmconnection files and any netplan wifis: section are removed from
+    disk; changes take effect on next reboot.  The delivery_mode flag (written
+    later in main()) ensures the app starts its hotspot immediately on that
+    reboot regardless of any residual NM state.
+    """
+    wrapper = "/usr/local/bin/mempaper-clear-wifi"
+    if not (shutil.which(wrapper) or os.path.exists(wrapper)):
+        print("❌ WiFi clear wrapper not installed — run:")
+        print("   sudo bash tools/install_wifi_permissions.sh mempaper")
+        return
 
-    if shutil.which("nmcli") is None:
-        print("❌ nmcli not found. Install/enable NetworkManager first.")
-        print("   sudo apt install network-manager")
-        return False
+    _cmd = ([] if is_root_user() else ["sudo"]) + [wrapper, "--no-reload"]
+    r = subprocess.run(_cmd, capture_output=True, text=True)
+    if r.returncode == 0:
+        out = (r.stdout or "").strip()
+        print(f"🧹 {out}" if out else "🧹 WiFi config cleared (deferred — takes effect after reboot)")
+    else:
+        err = (r.stderr or r.stdout or "").strip()
+        print(f"❌ WiFi clear wrapper failed: {err}")
+        print("   Re-run: sudo bash tools/install_wifi_permissions.sh mempaper")
 
-    if _USE_SUDO_NMCLI:
-        print("ℹ️  Running as non-root — using 'sudo nmcli' for hotspot management")
 
-    interface = detect_wifi_interface()
-    if not interface:
-        print("❌ No Wi-Fi interface found (expected wlan0)")
-        return False
+def disable_cloudinit_network_config():
+    """Stop cloud-init from re-applying network config (incl. saved WiFi) on every boot.
 
-    if is_wifi_connected(interface):
-        print("✅ Wi-Fi already connected — no setup hotspot needed")
-        start_service()
-        return True
+    Raspberry Pi Imager preconfigures WiFi via a cloud-init NoCloud datasource
+    seeded from /boot/firmware/, and Raspberry Pi OS deliberately re-applies
+    that datasource's network config on EVERY boot (not cloud-init's usual
+    one-shot behavior), so the same SD image works if moved to different
+    hardware. Without this, clear_saved_wifi_connections() above is silently
+    undone by cloud-init the next time the device boots, before the app's own
+    "no saved networks" check ever runs.
+    """
+    conf_dir  = "/etc/cloud/cloud.cfg.d"
+    conf_path = f"{conf_dir}/99-disable-network-config.cfg"
+    _sudo("mkdir", "-p", conf_dir)
+    r = subprocess.run(
+        ([] if is_root_user() else ["sudo"]) + ["tee", conf_path],
+        input="network: {config: disabled}\n",
+        capture_output=True, text=True,
+    )
+    if r.returncode == 0:
+        print("🧹 Disabled cloud-init network re-application (WiFi clear survives reboot now)")
+    else:
+        err = (r.stderr or r.stdout or "").strip()
+        print(f"⚠️ Could not disable cloud-init network config: {err}")
 
-    ssid = build_hotspot_ssid(interface, prefix=prefix)
-    password = build_hotspot_password(interface)
 
-    if not bring_up_hotspot(interface, ssid, password):
-        print("\u274c Could not start setup hotspot")
-        return False
+def _is_root_readonly():
+    """Check if / is mounted read-only."""
+    try:
+        with open("/proc/mounts") as f:
+            for line in f:
+                parts = line.split()
+                if len(parts) >= 4 and parts[1] == "/":
+                    return "ro" in parts[3].split(",")
+    except Exception:
+        pass
+    return False
 
-    write_setup_mode_flag(True, ssid=ssid, interface=interface)
 
-    start_service()
+def write_wlan0_unmanaged_override():
+    """Mark wlan0 unmanaged for NetworkManager, effective next reboot.
 
-    print()
-    print("\U0001f4f6 Setup hotspot active")
-    print(f"   SSID:     {ssid}")
-    print(f"   Password: {password}")
-    print(f"   Security: WPA2")
-    print("   Open the dashboard via: http://192.168.12.1:5000")
-    print("   Script will automatically switch to normal mode once Wi-Fi connects.")
-    print()
+    Removed again by mempaper_app.py once WiFi credentials are applied.
+    """
+    conf_dir  = "/etc/NetworkManager/conf.d"
+    conf_path = f"{conf_dir}/99-mempaper-wlan0-unmanaged.conf"
+    was_readonly = _is_root_readonly()
+    if was_readonly:
+        _sudo("mount", "-o", "remount,rw", "/")
+    _sudo("mkdir", "-p", conf_dir)
+    r = subprocess.run(
+        ([] if is_root_user() else ["sudo"]) + ["tee", conf_path],
+        input="[keyfile]\nunmanaged-devices=interface-name:wlan0\n",
+        capture_output=True, text=True,
+    )
+    if was_readonly:
+        _sudo("mount", "-o", "remount,ro", "/")
+    if r.returncode == 0:
+        print("🧹 wlan0 pre-declared unmanaged for next boot (hotspot won't wait on NetworkManager)")
+    else:
+        err = (r.stderr or r.stdout or "").strip()
+        print(f"⚠️ Could not write wlan0 unmanaged override: {err}")
 
-    start_ts = time.time()
-    last_reconnect_try = 0.0
-
-    while True:
-        now = time.time()
-
-        if timeout_seconds > 0 and (now - start_ts) >= timeout_seconds:
-            print("⏱️  Onboarding timeout reached; leaving setup hotspot active")
-            return False
-
-        if is_wifi_connected(interface):
-            print("✅ Wi-Fi connected successfully")
-            break
-
-        # Periodically pause AP and let NetworkManager try known client networks.
-        if now - last_reconnect_try >= 45:
-            last_reconnect_try = now
-            print("🔎 Checking whether saved Wi-Fi credentials can connect…")
-            if connect_saved_wifi(interface):
-                print("✅ Switched from setup hotspot to client Wi-Fi")
-                break
-            bring_up_hotspot(interface, ssid, password)
-            write_setup_mode_flag(True, ssid=ssid, interface=interface)
-
-        time.sleep(10)
-
-    bring_down_hotspot()
-    write_setup_mode_flag(False)
-    start_service()
-    print("✅ Setup hotspot disabled, normal operation mode active")
-    return True
 
 # ── Load config ──────────────────────────────────────────────────────────────
 def load_config():
@@ -625,6 +534,19 @@ def main():
     )
     args = parser.parse_args()
 
+    # Ignore SIGHUP so the script survives SSH disconnect when WiFi is cleared.
+    signal.signal(signal.SIGHUP, signal.SIG_IGN)
+
+    # Mirror all output to a log file so the full run is readable after SSH
+    # disconnects (which happens when WiFi is cleared mid-script).
+    try:
+        _log_fh = open(LOG_PATH, "w", encoding="utf-8", buffering=1)
+        _log_fh.write(f"# delivery_state.py  {datetime.datetime.now().isoformat()}\n")
+        sys.stdout = _Tee(sys.__stdout__, _log_fh)
+        sys.stderr = _Tee(sys.__stderr__, _log_fh)
+    except Exception as e:
+        print(f"⚠️  Could not open log file {LOG_PATH}: {e}")
+
     print("=" * 55)
     print("  mempaper — Auslieferungszustand / Delivery State")
     print("=" * 55)
@@ -643,6 +565,20 @@ def main():
     if not args.no_display:
         show_on_eink(image_path)
 
+    # Disable UFW so DHCP works on the setup hotspot.
+    # UFW's ufw-after-input chain drops UDP/67 broadcasts before user allow-rules
+    # can accept them, making it impossible for dnsmasq to reply to DHCP DISCOVERs.
+    print()
+    print("🔒 Disabling UFW (prevents DHCP on setup hotspot)…")
+    if shutil.which("ufw"):
+        r = _sudo("ufw", "disable")
+        if r.returncode == 0:
+            print("✅ UFW disabled")
+        else:
+            print(f"⚠️  ufw disable failed (non-fatal): {(r.stderr or r.stdout or '').strip()}")
+    else:
+        print("ℹ️  UFW not installed — nothing to do")
+
     # Clear any leftover setup-mode flag so the app starts fresh
     try:
         if os.path.exists(SETUP_MODE_FLAG_PATH):
@@ -656,46 +592,85 @@ def main():
     print("🧹 Clearing admin users…")
     clear_admin_users()
 
-    # Remove saved client WiFi profiles so the customer device has a clean NM
+    print()
+    print("🧹 Clearing SSH authorized keys…")
+    clear_authorized_keys()
+
+    # Remove saved client WiFi profiles so the user device has a clean NM
     # state: on first boot _has_saved_wifi_connections() returns False and the
     # setup hotspot starts immediately (no 45s grace-window delay).
     print()
     print("🧹 Clearing saved WiFi profiles…")
     clear_saved_wifi_connections()
+    disable_cloudinit_network_config()
+    write_wlan0_unmanaged_override()
+    _verify_wifi_state()
+
+    # Pre-write setup_mode.json so the Wi-Fi recovery monitor treats setup
+    # mode as already enabled from the very first boot tick.  Without this,
+    # if _startup_wifi_check exits early (e.g. NM timeout), the recovery
+    # monitor falls back to the 90s startup grace window before starting the
+    # hotspot.  Cleared by _bring_down_setup_hotspot() after user setup.
+    cache_dir = os.path.join(ROOT_DIR, "cache")
+    setup_mode_flag = os.path.join(cache_dir, "setup_mode.json")
+    try:
+        # Detect WiFi interface for the flag (informational only — the app
+        # re-derives the SSID from the MAC address when it brings up the hotspot).
+        wifi_iface = "wlan0"
+        net_root = "/sys/class/net"
+        if os.path.isdir(net_root):
+            for iface in sorted(os.listdir(net_root)):
+                if os.path.isdir(os.path.join(net_root, iface, "wireless")):
+                    wifi_iface = iface
+                    break
+        # Derive SSID using the same MAC digest logic as the app.
+        try:
+            mac = ""
+            for _mac_path in (f"/sys/class/net/{wifi_iface}/perm_address",
+                               f"/sys/class/net/{wifi_iface}/address"):
+                try:
+                    _v = open(_mac_path).read().strip().lower()
+                    if _v and _v != "00:00:00:00:00:00":
+                        mac = _v
+                        break
+                except OSError:
+                    continue
+            digest = hashlib.sha256(mac.replace(":", "").encode()).hexdigest()
+            ssid = f"mempaper-{int(digest[:8], 16) % 10000:04d}"
+        except Exception:
+            ssid = "mempaper-0000"
+        with open(setup_mode_flag, "w", encoding="utf-8") as f:
+            json.dump({"enabled": True, "ssid": ssid, "interface": wifi_iface}, f)
+        print(f"✅ Setup mode flag pre-written → recovery monitor starts hotspot immediately on boot ({ssid} on {wifi_iface})")
+    except OSError as e:
+        print(f"⚠️  Could not write setup mode flag: {e}")
 
     # Ensure mempaper.service is enabled for automatic hotspot on next boot
-    print()
-    print("🔧 Ensuring mempaper.service is enabled…")
     result = subprocess.run(
         ["systemctl", "is-enabled", "--quiet", MEMPAPER_SERVICE],
         capture_output=True
     )
     if result.returncode != 0:
         _sudo("systemctl", "enable", MEMPAPER_SERVICE)
-        print("✅  mempaper.service enabled")
-    else:
-        print("✅  mempaper.service already enabled")
+        print("✅ mempaper.service enabled")
+
+    # Flush all pending writes to the SD card before the user powers off.
+    # setup_mode.json and the removed .nmconnection files live in page cache
+    # until sync; a hard power cut before this flush leaves the device in an
+    # inconsistent state (flag missing, old WiFi profile still on disk).
+    print()
+    print("💾 Syncing filesystem to SD card…")
+    subprocess.run(["sync"], check=False)
+    print("✅ Filesystem synced — safe to power off")
 
     print()
     print("✅ Delivery state applied. Device is ready to ship.")
     print()
-    print("   When the customer powers it on:")
-    print("     • If no Wi-Fi is saved → app automatically starts setup hotspot")
-    print( "       - SSID:     mempaper-XXXX  (4-digit suffix derived from device MAC)")
-    print( "       - Security: WPA2  (password = 8 hex chars derived from device MAC)")
-    print( "       - Scan the QR code on the e-ink display to join & open the setup page")
-    print("     • Device connects to home Wi-Fi → hotspot disappears")
-    print("     • Dashboard starts automatically and updates on new blocks")
+    print("   Power on → hotspot starts → e-ink shows SSID, password, and QR code.")
+    print("   User scans QR, opens http://10.42.0.1:5000, enters password to set up WiFi.")
     print()
-    print("   Useful WiFi commands:")
-    print("     • Show saved WiFi networks:")
-    print("         nmcli -f NAME,TYPE connection show | grep wifi")
-    print("     • Delete a specific WiFi:")
-    print("         sudo nmcli connection delete \"<SSID>\"")
-    print("     • Delete ALL saved WiFi networks:")
-    print("         nmcli -t -f UUID,TYPE connection show | grep wifi | cut -d: -f1 | xargs -I{} sudo nmcli connection delete uuid {}")
-    print()
-    print("   To shut down: sudo shutdown -h now")
+    print(f"   To shut down: sudo shutdown -h now")
+    print(f"   Full run log: sudo cat {LOG_PATH}")
 
 if __name__ == "__main__":
     main()

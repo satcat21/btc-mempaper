@@ -153,9 +153,9 @@ def render_hotspot_screen(ssid, password, portal_url, config):
 
     SZ_TITLE = max(40, base * 48 // 480)
     SZ_SUB   = max(17, base * 20 // 480)
-    SZ_STEP  = max(15, base * 18 // 480)
-    SZ_DATA  = max(13, base * 16 // 480)
-    SZ_MONO  = max(12, base * 14 // 480)
+    SZ_STEP  = max(16, base * 20 // 480)   # slightly larger for readability
+    SZ_DATA  = max(15, base * 18 // 480)   # larger → QRs shrink to accommodate
+    SZ_MONO  = max(13, base * 16 // 480)   # larger → easier to read on small screens
 
     f_title = _font('RobotoCondensed-Bold.ttf', SZ_TITLE)
     f_sub   = _font('Roboto-Regular.ttf',       SZ_SUB)
@@ -171,16 +171,20 @@ def render_hotspot_screen(ssid, password, portal_url, config):
     y += SZ_SUB + PAD
 
     # ── Two vertically-stacked QR sections ────────────────────────────────
+    # Hotspot is open (no WPA2).  QR1 connects; QR2 opens setup with portal
+    # Password pre-filled so no manual entry is needed when scanning.  The password is
+    # shown as text for users who cannot scan QR2.
+    clean_url = portal_url.split('?')[0]   # e.g. http://10.42.0.1:5000/setup
     sections = [
         {
-            'qr_data': f'WIFI:T:WPA;S:{ssid};P:{password};;',
+            'qr_data': f'WIFI:T:nopass;S:{ssid};;',
             'step':    '[1] Join WiFi',
-            'lines':   [(ssid, f_data, FG), (f'Password: {password}', f_mono, MUTED)],
+            'lines':   [(ssid, f_data, FG)],
         },
         {
             'qr_data': portal_url,
             'step':    '[2] Open setup page',
-            'lines':   [(portal_url, f_mono, FG)],
+            'lines':   [(clean_url, f_mono, FG), (f'Password: {password}', f_data, FG)],
         },
     ]
 
@@ -249,14 +253,15 @@ def stamp_qr_codes_on_image(base_img, ssid, password, portal_url, config,
         dark = bool(config.get('color_mode_dark', True))
     block_height_area = int(config.get('block_height_area', 180))
 
-    BG    = (0, 0, 0) if dark else (255, 255, 255)
-    FG    = (255, 255, 255) if dark else (30, 30, 30)
-    MUTED = (180, 180, 180) if dark else (100, 100, 100)
+    BG     = (0, 0, 0) if dark else (255, 255, 255)
+    FG     = (255, 255, 255) if dark else (30, 30, 30)
+    MUTED  = (180, 180, 180) if dark else (100, 100, 100)
+    ORANGE = (247, 147, 26)
 
-    # Scale font sizes relative to display
+    # Scale font sizes relative to display — slightly larger so text below QRs is readable
     base = min(W, H)
-    SZ_LABEL = max(12, base * 14 // 480)
-    SZ_MONO  = max(10, base * 11 // 480)
+    SZ_LABEL = max(13, base * 16 // 480)
+    SZ_MONO  = max(12, base * 14 // 480)
 
     f_label = _font('Roboto-Bold.ttf', SZ_LABEL)
     f_mono  = _font('IBMPlexMono-Medium.ttf', SZ_MONO)
@@ -291,18 +296,19 @@ def stamp_qr_codes_on_image(base_img, ssid, password, portal_url, config,
     qr_y    = label_y + label_h + 4
     info_y  = qr_y + qr_size + 4
 
-    # ── Left: WiFi QR ──
-    _centered(draw, left_cx, label_y, '1. Connect to WiFi', f_label, FG)
-    wifi_uri = f'WIFI:T:WPA;S:{ssid};P:{password};;'
-    img.paste(_qr_image(wifi_uri, qr_size, False, ec), (left_cx - qr_size // 2, qr_y))
-    for i, line in enumerate([f'WiFi: {ssid}', f'Password: {password}']):
-        _centered(draw, left_cx, info_y + i * (info_line_h + 2), line, f_mono, MUTED)
+    clean_url = portal_url.split('?')[0]   # e.g. http://10.42.0.1:5000/setup
 
-    # ── Right: Setup page QR ──
+    # ── Left: WiFi QR (open network — no WPA2 password) ──
+    _centered(draw, left_cx, label_y, '1. Connect to WiFi', f_label, FG)
+    wifi_uri = f'WIFI:T:nopass;S:{ssid};;'
+    img.paste(_qr_image(wifi_uri, qr_size, False, ec), (left_cx - qr_size // 2, qr_y))
+    _centered(draw, left_cx, info_y, f'WiFi: {ssid}', f_mono, FG)
+
+    # ── Right: Setup page QR (URL includes portal key for direct access) ──
     _centered(draw, right_cx, label_y, '2. Open setup page', f_label, FG)
     img.paste(_qr_image(portal_url, qr_size, False, ec), (right_cx - qr_size // 2, qr_y))
-    _centered(draw, right_cx, info_y, 'Setup page:', f_mono, MUTED)
-    _centered(draw, right_cx, info_y + info_line_h + 2, portal_url, f_mono, MUTED)
+    _centered(draw, right_cx, info_y, clean_url, f_mono, FG)
+    _centered(draw, right_cx, info_y + info_line_h + 2, f'Password: {password}', f_mono, FG)
 
     os.makedirs(_CACHE_DIR, exist_ok=True)
     path = os.path.join(_CACHE_DIR, 'onboarding_hotspot.png')

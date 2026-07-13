@@ -1,0 +1,21 @@
+# /etc/systemd/system/mempaper-hostapd.service
+# Setup-hotspot access point (hostapd). Installed by install_wifi_permissions.sh.
+#
+# Not enabled/autostarted — mempaper_app.py starts/stops this unit on demand
+# via 'sudo systemctl start|stop|restart mempaper-hostapd.service' while the
+# onboarding/recovery setup hotspot is active. The interface is released from
+# NetworkManager ('nmcli device set <iface> managed no') before this unit
+# starts, and handed back to NM when it stops.
+
+[Unit]
+Description=mempaper setup-hotspot access point (hostapd)
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/sbin/hostapd __PROJECT_DIR__/cache/mempaper-hostapd.conf
+Restart=on-failure
+RestartSec=2
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mempaper-hostapd

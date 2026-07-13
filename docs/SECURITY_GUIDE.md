@@ -100,7 +100,7 @@ sudo systemctl restart ssh
 
 ### From `pi` user to `mempaper` user
 
-If you installed mempaper before the `mempaper` service user was introduced, re-run the installer:
+If your installation runs as the `pi` user instead of the dedicated `mempaper` service user, re-run the installer to switch it over:
 
 ```bash
 cd ~/btc-mempaper
@@ -128,13 +128,13 @@ sudo -u mempaper .venv/bin/python tools/configure_display.py 1
 
 ### Update the donation webhook URL
 
-The webhook endpoint now requires a per-installation secret token in the URL. After updating:
+The donation webhook endpoint requires a per-installation secret token in the URL. To (re)configure it:
 
 1. Open **Settings → Lightning Donations**
-2. Copy the new webhook URL (it now includes a 64-character token)
+2. Copy the webhook URL (it includes a 64-character token)
 3. Update the webhook URL in your LNbits Pay Link settings
 
-The old `/api/donation-webhook` URL will return HTTP 410 with a message explaining the change.
+Requests to the bare `/api/donation-webhook` URL (without a valid token) return HTTP 410.
 
 ---
 

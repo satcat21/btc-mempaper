@@ -4,8 +4,6 @@ Configuration Manager Module
 Handles loading, saving, and validation of configuration settings
 for the mempaper application with web interface support, dynamic reloading,
 and optional encryption for sensitive data.
-
-Version: 2.1 - Added secure configuration support
 """
 
 import json
@@ -381,7 +379,6 @@ class ConfigManager:
             "display_height": 480,
             "e-ink-display-connected": True,
             "omni_device_name": "epd7in3f",  # Default to native Waveshare 7.3" driver
-            "admin_username": "admin",
             "public_dashboard": False,
             # --- Info block config additions ---
             "show_btc_price_block": True,
@@ -538,8 +535,6 @@ class ConfigManager:
             if setting in config:
                 validated[setting] = bool(config[setting])
 
-        # Note: Removed simple list settings - wallet addresses now use table format only
-        
         # Special handling for wallet_balance_addresses_with_comments (list of objects)
         if "wallet_balance_addresses_with_comments" in config:
             if isinstance(config["wallet_balance_addresses_with_comments"], list):

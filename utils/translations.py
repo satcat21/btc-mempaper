@@ -553,6 +553,8 @@ translations = {
         "setup_reset_success": "Device reset successful. The page will reload shortly.",
         "setup_found_networks": "Found {count} networks",
         "setup_no_networks": "No networks found",
+        "setup_wifi_still_waiting": "Still waiting on mempaper — check its e-ink display for the result.",
+        "setup_wifi_disconnected_expected": "Your phone disconnected from mempaper’s WiFi — that’s expected. Give it about a minute, then check your mempaper’s e-ink display: it will either show the new connection details, or the mempaper-XXXX hotspot will reappear if it couldn’t connect — reconnect your phone to it to try again.",
 
         # Software & System Update
         "software_update": "Software Update",
@@ -1221,6 +1223,8 @@ translations = {
         "setup_reset_success": "Gerät erfolgreich zurückgesetzt. Die Seite wird in Kürze neu geladen.",
         "setup_found_networks": "{count} Netzwerke gefunden",
         "setup_no_networks": "Keine Netzwerke gefunden",
+        "setup_wifi_still_waiting": "Warte noch auf mempaper — überprüfen Sie das E-Ink-Display für das Ergebnis.",
+        "setup_wifi_disconnected_expected": "Ihr Telefon hat die Verbindung zum WLAN von mempaper getrennt — das ist normal. Warten Sie etwa eine Minute und schauen Sie dann auf das E-Ink-Display Ihres mempaper: Es zeigt entweder die neuen Verbindungsdaten an, oder der Hotspot mempaper-XXXX erscheint erneut, falls die Verbindung fehlgeschlagen ist — verbinden Sie Ihr Telefon dann erneut damit, um es noch einmal zu versuchen.",
 
         # Software- & System-Update
         "software_update": "Software-Update",
@@ -1873,6 +1877,8 @@ translations = {
         "setup_reset_success": "Dispositivo restablecido correctamente. La página se recargará en breve.",
         "setup_found_networks": "{count} redes encontradas",
         "setup_no_networks": "No se encontraron redes",
+        "setup_wifi_still_waiting": "Todavía esperando a mempaper — consulte su pantalla e-ink para ver el resultado.",
+        "setup_wifi_disconnected_expected": "Su teléfono se desconectó del WiFi de mempaper — esto es normal. Espere aproximadamente un minuto y luego revise la pantalla e-ink de su mempaper: mostrará los nuevos datos de conexión, o el hotspot mempaper-XXXX reaparecerá si no pudo conectarse — vuelva a conectar su teléfono a él para intentarlo de nuevo.",
 
         # Actualización de Software y Sistema
         "software_update": "Actualización de Software",
@@ -2526,6 +2532,8 @@ translations = {
         "setup_reset_success": "Appareil réinitialisé avec succès. La page se rechargera bientôt.",
         "setup_found_networks": "{count} reseaux trouves",
         "setup_no_networks": "Aucun reseau trouve",
+        "setup_wifi_still_waiting": "Toujours en attente de mempaper — consultez son écran e-ink pour voir le résultat.",
+        "setup_wifi_disconnected_expected": "Votre téléphone s'est déconnecté du WiFi de mempaper — c'est normal. Attendez environ une minute, puis consultez l'écran e-ink de votre mempaper : il affichera soit les nouvelles informations de connexion, soit le hotspot mempaper-XXXX réapparaîtra s'il n'a pas pu se connecter — reconnectez votre téléphone à celui-ci pour réessayer.",
 
         # Mise à jour Logicielle et Système
         "software_update": "Mise à jour logicielle",
@@ -3161,6 +3169,8 @@ translations = {
         "setup_reset_success": "Dispositivo ripristinato con successo. La pagina si ricaricherà a breve.",
         "setup_found_networks": "{count} reti trovate",
         "setup_no_networks": "Nessuna rete trovata",
+        "setup_wifi_still_waiting": "Ancora in attesa di mempaper — controlla il display e-ink per il risultato.",
+        "setup_wifi_disconnected_expected": "Il tuo telefono si è disconnesso dal WiFi di mempaper — è normale. Attendi circa un minuto, poi controlla il display e-ink del tuo mempaper: mostrerà i nuovi dati di connessione, oppure l'hotspot mempaper-XXXX riapparirà se non è riuscito a connettersi — riconnetti il telefono ad esso per riprovare.",
 
         # Aggiornamento Software e Sistema
         "software_update": "Aggiornamento Software",

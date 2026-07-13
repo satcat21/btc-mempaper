@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>mempaper - Setup</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="icon" type="image/png" href="/static/favicon.png">
+    <link rel="stylesheet" href="/static/css/theme.css">
+    <link rel="stylesheet" href="/static/css/login.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body{% if dark_mode %} class="dark-mode"{% endif %}>
+    <div class="login-container">
+        <div class="login-header">
+            <h1>mem<span class="brand-accent">paper</span></h1>
+            <p style="color: var(--text-muted); margin: 0 0 4px;">WiFi Setup</p>
+            <p style="color: var(--text-muted); font-size: 0.85em; margin: 0;">Enter the password shown on your mempaper display.</p>
+        </div>
+
+        <div id="gate-error" class="error-message" style="display:none;"></div>
+
+        <div class="form-group">
+            <label class="form-label" for="pin-input">Password</label>
+            <input type="text" id="pin-input" class="form-input"
+                   placeholder="Password" value="{{ prefill_key|default('') }}"
+                   autocomplete="off" autocapitalize="none" autocorrect="off"
+                   maxlength="8" inputmode="text">
+            <div class="form-description">The password is displayed below the QR codes on your mempaper screen.</div>
+        </div>
+
+        <button id="pin-submit" class="login-button">Login</button>
+    </div>
+    <script>
+    (function () {
+        var input  = document.getElementById('pin-input');
+        var btn    = document.getElementById('pin-submit');
+        var errBox = document.getElementById('gate-error');
+
+        function showError(msg) {
+            errBox.textContent = msg;
+            errBox.style.display = '';
+        }
+
+        async function submit() {
+            errBox.style.display = 'none';
+            var pin = input.value.trim().toLowerCase();
+            if (!pin) { showError('Please enter the password.'); input.focus(); return; }
+            btn.disabled = true;
+            btn.textContent = 'Checking…';
+            try {
+                var r = await fetch('/api/setup/portal-auth', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ key: pin }),
+                });
+                if (r.ok) {
+                    window.location.href = '/setup';
+                } else {
+                    showError('Incorrect password. Please check your mempaper display.');
+                    btn.disabled = false;
+                    btn.textContent = 'Login';
+                    input.select();
+                }
+            } catch (e) {
+                showError('Connection error — try again.');
+                btn.disabled = false;
+                btn.textContent = 'Login';
+            }
+        }
+
+        btn.addEventListener('click', submit);
+        input.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') submit();
+        });
+
+        // Server-side prefill (setup_wifi_page() passing the QR-code's ?key=)
+        // already fills the field above. Client-side fallback here only for
+        // cases the server didn't see the key itself (e.g. a stale bookmarked
+        // URL reused after the session was cleared) — pre-fill only, no
+        // auto-submit, so the user always sees and confirms the password
+        // rather than being silently carried past this page.
+        if (!input.value) {
+            var urlKey = new URLSearchParams(window.location.search).get('key');
+            if (urlKey) input.value = urlKey;
+        }
+        if (input.value) {
+            input.select();
+        } else {
+            input.focus();
+        }
+    })();
+    </script>
+</body>
+</html>
