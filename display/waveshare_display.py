@@ -193,7 +193,6 @@ class WaveshareDisplay:
             self.module_name = 'epd13in3E'  # Correct module name
         
         self.enabled = self.config.get("e-ink-display-connected", True)
-        self.skip_clear = self.config.get("skip_clear_display", True)  # Skip clear by default (saves ~31s)
         
         # Determine color support based on module
         self.supports_orange = self.module_name == 'epd7in3f'  # Only 7.3F has orange
@@ -424,15 +423,17 @@ class WaveshareDisplay:
         
         return None
 
-    def display_image(self, image_path, message=None, process_vertical=True):
+    def display_image(self, image_path, message=None, process_vertical=True, force_clear=False):
         """
         Display an image on the e-paper display.
-        
+
         Args:
             image_path (str): Path to the image file
             message (str, optional): Text message to overlay
             process_vertical (bool): Whether to process vertical orientation
-            
+            force_clear (bool): Force the pre-draw clear pass for this call
+                (used for boot/install refreshes); clearing is skipped otherwise
+
         Returns:
             bool: True if successful, False otherwise
         """
@@ -523,8 +524,8 @@ class WaveshareDisplay:
                 # Initialize display
                 self._call_epd_init()
 
-                # Clear display (optional - skipping saves ~31s)
-                if not self.skip_clear:
+                # Clear display is skipped by default (saves ~31s); force_clear overrides this
+                if force_clear:
                     self._call_epd_clear()
 
                 # Display the image

@@ -8,7 +8,7 @@ drivers and GPIO libraries are only initialised once, saving ~10s per block.
 
 Protocol (newline-delimited JSON over stdin/stdout):
   Startup:   worker writes {"status": "ready"}
-  Command:   caller writes {"image_path": "cache/current_eink.png"}
+  Command:   caller writes {"image_path": "cache/current_eink.png", "force_clear": false}
   Result:    worker writes {"success": true}  or  {"success": false, "error": "..."}
 """
 
@@ -66,8 +66,10 @@ def main():
             sys.stdout.flush()
             continue
 
+        force_clear = cmd.get("force_clear", False)
+
         try:
-            success = display.display_image(image_path)
+            success = display.display_image(image_path, force_clear=force_clear)
             if success:
                 sys.stdout.write(json.dumps({"success": True}) + "\n")
             else:

@@ -362,6 +362,11 @@ class MempaperApp:
         self.current_block_hash = None
         self.current_meme_path = None  # Cache current meme for config-triggered regeneration
         self.image_is_current = False
+
+        # Forces a full e-ink clear on the next display push. Set when this is
+        # the first start since a real reboot, or install.sh dropped its marker
+        # file — a plain service restart otherwise stays on the fast (no-clear) path.
+        self._force_full_refresh = False
         
         # E-ink display tracking to prevent unnecessary updates
         self.last_eink_block_height = None
@@ -2686,11 +2691,15 @@ class MempaperApp:
             if boot_id in boot_records:
                 print(f'🔄 Power-cycle reset check: skipped (service restart on same boot)')
                 return False
-            # New boot — record it
+            # New boot — record it, and remember to force a full e-ink clear
+            # once startup finishes, so power-cycling the device is visibly
+            # confirmed instead of leaving the user unsure it's alive.
             boot_records[boot_id] = now
+            self._force_full_refresh = True
         else:
             # Fallback (non-Linux): use timestamp as key (old behavior)
             boot_records[str(int(now))] = now
+            self._force_full_refresh = True
 
         # Persist updated boot records and force filesystem sync so the data
         # survives the next hard power-off without corrupting the SD card.
@@ -2724,6 +2733,20 @@ class MempaperApp:
 
         return False
 
+    FORCE_REFRESH_MARKER_PATH = os.path.join('cache', 'force_full_refresh')
+
+    def _check_force_refresh_marker(self):
+        """Consume the one-shot marker install.sh drops before its final
+        service restart, forcing a full e-ink clear so a completed install is
+        visibly confirmed even when no reboot happened."""
+        if os.path.exists(self.FORCE_REFRESH_MARKER_PATH):
+            try:
+                os.remove(self.FORCE_REFRESH_MARKER_PATH)
+            except OSError:
+                pass
+            self._force_full_refresh = True
+            print('🔄 Force-refresh marker found — will do a full e-ink clear after startup')
+
     def _execute_factory_reset(self):
         """Full factory reset: clear data, delete WiFi, render delivery image.
 
@@ -2751,7 +2774,7 @@ class MempaperApp:
                 # GPIO conflicts with the already-running display subprocess.
                 if self.e_ink_enabled:
                     print('🖥️ Factory reset: pushing delivery image to e-ink...')
-                    self._display_on_epaper_async(image_path, None, None)
+                    self._display_on_epaper_async(image_path, None, None, force_full_refresh=True)
             except Exception as e:
                 print(f'⚠️ Could not render delivery image: {e}')
 
@@ -2919,6 +2942,11 @@ class MempaperApp:
         4. Update interface when ready
         """
 
+        # Consume the install.sh force-refresh marker before the power-cycle
+        # check below, so a factory reset (which forces its own refresh for
+        # the delivery image) always wins if both happen to coincide.
+        self._check_force_refresh_marker()
+
         # Check for multi-power-cycle reset FIRST (before anything else).
         # If triggered, run synchronously so WiFi profiles are deleted BEFORE
         # the WiFi check thread tries to connect to them.
@@ -2927,6 +2955,10 @@ class MempaperApp:
             if self._check_power_cycle_reset():
                 factory_reset_triggered = True
                 self._execute_factory_reset()
+                # The delivery-image push above already forces its own full
+                # refresh — don't let the boot-refresh logic in
+                # _run_background_startup() re-push the stale dashboard image.
+                self._force_full_refresh = False
 
         # Check if we have a cached image to show immediately
         has_cached_image = (os.path.exists(self.current_image_path) and
@@ -3100,8 +3132,24 @@ class MempaperApp:
                 self._generate_new_image(
                     self.current_block_height,
                     self.current_block_hash,
-                    use_new_meme=True
+                    use_new_meme=True,
+                    force_full_refresh=self._force_full_refresh
                 )
+            elif (self._force_full_refresh and self.e_ink_enabled
+                  and not self._onboarding_connected_active
+                  and os.path.exists(self.current_eink_image_path)):
+                # Cached image is already current for this block, but we still
+                # owe the user a full-clear push to confirm the device came
+                # back up after a reboot or a fresh install.
+                print("🔄 Forcing full e-ink refresh after reboot/install...")
+                threading.Thread(
+                    target=self._display_on_epaper_async,
+                    args=(self.current_eink_image_path, self.current_block_height, self.current_block_hash),
+                    kwargs={"force_full_refresh": True},
+                    daemon=True
+                ).start()
+
+            self._force_full_refresh = False  # consumed — one-shot per boot/install
 
             print("✅ Background initialization completed!")
             
@@ -3114,8 +3162,12 @@ class MempaperApp:
                     'timestamp': time.time()
                 })
 
-    def _display_on_epaper_async(self, image_path, block_height=None, block_hash=None):
-        """Display image on e-Paper via persistent worker process."""
+    def _display_on_epaper_async(self, image_path, block_height=None, block_hash=None, force_full_refresh=False):
+        """Display image on e-Paper via persistent worker process.
+
+        force_full_refresh forces the pre-draw clear pass for this push only
+        (used for boot/install/factory-reset); clearing is skipped otherwise.
+        """
         import subprocess
         import sys
 
@@ -3139,7 +3191,10 @@ class MempaperApp:
                     return
 
                 try:
-                    worker.stdin.write(json.dumps({"image_path": image_path}) + "\n")
+                    worker.stdin.write(json.dumps({
+                        "image_path": image_path,
+                        "force_clear": force_full_refresh,
+                    }) + "\n")
                     worker.stdin.flush()
                 except Exception as e:
                     print(f"❌ Failed to send command to display worker: {e}")
@@ -4950,7 +5005,7 @@ class MempaperApp:
         threading.Thread(target=_post_block_tasks, daemon=True).start()
         return True
 
-    def _generate_new_image(self, block_height: int, block_hash: str, skip_epaper: bool = False, use_new_meme: bool = True, force_eink: bool = False):
+    def _generate_new_image(self, block_height: int, block_hash: str, skip_epaper: bool = False, use_new_meme: bool = True, force_eink: bool = False, force_full_refresh: bool = False):
         """Generate a new dashboard image and cache it."""
         print(f"⚙️ Generating dashboard image for block {block_height}...")
 
@@ -5036,6 +5091,7 @@ class MempaperApp:
                 threading.Thread(
                     target=self._display_on_epaper_async,
                     args=(self.current_eink_image_path, block_height, block_hash),
+                    kwargs={"force_full_refresh": force_full_refresh},
                     daemon=True
                 ).start()
         
