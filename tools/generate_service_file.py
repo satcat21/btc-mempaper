@@ -82,7 +82,13 @@ def generate_service_file():
 [Unit]
 Description=mempaper Bitcoin Dashboard
 Documentation=https://github.com/satcat21/btc-mempaper
-StartLimitIntervalSec=0
+# Cap crash-loop restarts at 5 within a 5-minute window instead of retrying
+# forever every RestartSec — an unbounded loop would otherwise hammer the
+# SD card and CPU indefinitely if the app ever got stuck failing to start.
+# After the limit trips the unit is marked failed; `systemctl reset-failed
+# mempaper && systemctl start mempaper` restarts it once the cause is fixed.
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=simple

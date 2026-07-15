@@ -26,6 +26,8 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 import platform
 import uuid
 
+from utils.atomic_io import atomic_write_json
+
 
 class SecureConfigManager:
     """Lightweight encryption for sensitive configuration data."""
@@ -259,8 +261,7 @@ class SecureConfigManager:
                     public_config[key] = value
 
             # Save public config as regular JSON
-            with open(self.config_file, 'w') as f:
-                json.dump(public_config, f, indent=2)
+            atomic_write_json(self.config_file, public_config, indent=2)
 
             # Always (re)write the encrypted file, even when secure_config is
             # empty. Skipping the write when there's nothing sensitive left
@@ -273,11 +274,7 @@ class SecureConfigManager:
                 'data': self._encrypt_data(secure_config)
             }
 
-            with open(self.encrypted_config_file, 'w') as f:
-                json.dump(encrypted_config, f, indent=2)
-
-            # Set restrictive permissions
-            os.chmod(self.encrypted_config_file, 0o600)
+            atomic_write_json(self.encrypted_config_file, encrypted_config, mode=0o600, indent=2)
 
             print(f"🔒 Saved secure configuration:")
             print(f"   📄 Public data: {self.config_file}")

@@ -515,7 +515,6 @@ If the device is in hotspot/setup mode (e.g. stored WiFi unavailable), the setup
 - Bitaxe miner configuration
 - Donation history and webhook URLs
 - Mempool authentication
-- Mobile app tokens
 
 The device remains in setup mode so the user can reconfigure WiFi and create a new admin account.
 
@@ -692,8 +691,7 @@ btc-mempaper/
 |   |-- secure_config_manager.py Encrypted configuration storage
 |   |-- secure_password_manager.py   Argon2id password hashing
 |   |-- secure_cache_manager.py  Encrypted cache files
-|   |-- unified_secure_cache.py  Unified cache encryption
-|   +-- mobile_token_manager.py  Mobile API token management
+|   +-- unified_secure_cache.py  Unified cache encryption
 |
 |-- utils/                       Utilities & Helpers
 |   |-- translations.py          Multi-language support (en, de, es, it, fr)

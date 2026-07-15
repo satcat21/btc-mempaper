@@ -42,10 +42,9 @@ from managers.config_manager import ConfigManager
 from utils.technical_config import TechnicalConfig, build_mempool_api_url
 from utils.security_config import SecurityConfig
 from utils.color_lut import ColorLUT
-from managers.secure_cache_manager import SecureCacheManager
-from managers.auth_manager import AuthManager, require_auth, require_web_auth, allow_public_or_auth, require_rate_limit, require_mobile_auth
-from managers.mobile_token_manager import MobileTokenManager
+from managers.auth_manager import AuthManager, require_auth, require_web_auth, allow_public_or_auth, require_rate_limit
 from utils.webp_probe_cache import cached_probe
+from utils.atomic_io import atomic_write_json
 
 # Privacy utilities for secure logging
 try:
@@ -281,13 +280,7 @@ class MempaperApp:
         
         # Initialize authentication manager with config_manager for secure password handling
         self.auth_manager = AuthManager(self.config_manager)
-        
-        # Initialize secure cache manager for mobile token storage
-        self.secure_cache_manager = SecureCacheManager("cache/mobile_tokens.json")
-        
-        # Initialize mobile token manager for Flutter app authentication
-        self.mobile_token_manager = MobileTokenManager(self.secure_cache_manager)
-        
+
         # Initialize block notification subscription tracking
         self.block_notification_subscribers = set()  # Track clients subscribed to block notifications
         
@@ -2108,12 +2101,10 @@ class MempaperApp:
     def _save_donations(self):
         """Persist donation history to disk."""
         try:
-            os.makedirs(os.path.dirname(self._donations_file), exist_ok=True)
-            with open(self._donations_file, "w", encoding="utf-8") as f:
-                json.dump({
-                    "history": self._donation_history,
-                    "latest_donation_block_height": self._latest_donation_block_height,
-                }, f, ensure_ascii=False, indent=2)
+            atomic_write_json(self._donations_file, {
+                "history": self._donation_history,
+                "latest_donation_block_height": self._latest_donation_block_height,
+            }, ensure_ascii=False, indent=2)
         except Exception as e:
             print(f"⚠️ Could not save donations file: {e}")
 
@@ -2703,15 +2694,10 @@ class MempaperApp:
             boot_records[str(int(now))] = now
             self._pending_boot_refresh = True
 
-        # Persist updated boot records and force filesystem sync so the data
-        # survives the next hard power-off without corrupting the SD card.
+        # Persist updated boot records atomically (temp file + os.replace, both
+        # fsync'd) so a power loss mid-write never leaves a truncated/corrupt file.
         try:
-            os.makedirs(os.path.dirname(self.BOOT_TIMESTAMPS_PATH), exist_ok=True)
-            with open(self.BOOT_TIMESTAMPS_PATH, 'w', encoding='utf-8') as f:
-                json.dump(boot_records, f)
-                f.flush()
-                os.fsync(f.fileno())
-            os.sync()  # flush all pending filesystem writes to SD card
+            atomic_write_json(self.BOOT_TIMESTAMPS_PATH, boot_records)
         except OSError:
             pass
 
@@ -3818,8 +3804,7 @@ class MempaperApp:
                 'displayed_bitaxe_data': getattr(self, 'displayed_bitaxe_data', None)
             }
             
-            with open(self.cache_metadata_path, 'w') as f:
-                json.dump(metadata, f, indent=2)
+            atomic_write_json(self.cache_metadata_path, metadata, indent=2)
             self._last_disk_save_time = time.time()
             self._disk_save_pending = False
         except Exception as e:
@@ -6064,9 +6049,11 @@ class MempaperApp:
                         return '', 304
 
                 response = send_file(served_path, mimetype=served_mime)
-                # must-revalidate (not immutable) so the browser checks ETag when the
-                # image file changes (config saves regenerate the image for the same block).
-                response.headers['Cache-Control'] = 'public, max-age=3600, must-revalidate'
+                # no-cache forces an ETag revalidation on every load (cheap — a 304 with
+                # no body) instead of trusting a max-age window, so a mid-block regen
+                # (config save, donation, wallet update) is never served stale from the
+                # browser's own HTTP cache under the same "/image?v=<block_height>" URL.
+                response.headers['Cache-Control'] = 'no-cache, must-revalidate'
                 if os.path.exists(served_path):
                     response.headers['ETag'] = etag
 
@@ -6535,267 +6522,6 @@ class MempaperApp:
                 'latest': self._latest_donation,
             })
 
-        # Mobile API Token Endpoints
-        @self.app.route('/api/mobile/token/generate', methods=['POST'])
-        @require_auth(self.auth_manager)
-        def generate_mobile_token():
-            """Generate a new API token for mobile app authentication."""
-            try:
-                data = request.json or {}
-                device_name = data.get('device_name', 'Unknown Device')
-                validity_days = data.get('validity_days', 90)
-                
-                # Validate input
-                if not device_name or len(device_name.strip()) == 0:
-                    return jsonify({'success': False, 'message': 'Device name is required'}), 400
-                
-                if not isinstance(validity_days, int) or validity_days < 1 or validity_days > 365:
-                    return jsonify({'success': False, 'message': 'Validity days must be between 1 and 365'}), 400
-                
-                token = self.mobile_token_manager.generate_token(device_name.strip(), validity_days)
-                
-                if token:
-                    return jsonify({
-                        'success': True,
-                        'token': token,
-                        'device_name': device_name.strip(),
-                        'validity_days': validity_days,
-                        'message': f'Token generated for {device_name.strip()}'
-                    })
-                else:
-                    return jsonify({'success': False, 'message': 'Failed to generate token'}), 500
-                    
-            except Exception as e:
-                return jsonify({'success': False, 'message': str(e)}), 400
-
-        @self.app.route('/api/mobile/token/validate', methods=['POST'])
-        def validate_mobile_token():
-            """Validate a mobile API token."""
-            try:
-                data = request.json or {}
-                token = data.get('token', '')
-                
-                if not token:
-                    return jsonify({'success': False, 'message': 'Token is required'}), 400
-                
-                is_valid = self.mobile_token_manager.validate_token(token)
-                
-                if is_valid:
-                    return jsonify({
-                        'success': True,
-                        'valid': True,
-                        'message': 'Token is valid'
-                    })
-                else:
-                    return jsonify({
-                        'success': True,
-                        'valid': False,
-                        'message': 'Token is invalid or expired'
-                    })
-                    
-            except Exception as e:
-                return jsonify({'success': False, 'message': str(e)}), 400
-
-        @self.app.route('/api/mobile/token/list', methods=['GET'])
-        @require_auth(self.auth_manager)
-        def list_mobile_tokens():
-            """List all active mobile tokens."""
-            try:
-                tokens = self.mobile_token_manager.list_tokens()
-                return jsonify({
-                    'success': True,
-                    'tokens': tokens,
-                    'count': len(tokens)
-                })
-            except Exception as e:
-                return jsonify({'success': False, 'message': str(e)}), 500
-
-        @self.app.route('/api/mobile/token/revoke', methods=['POST'])
-        @require_auth(self.auth_manager)
-        def revoke_mobile_token():
-            """Revoke a specific mobile token."""
-            try:
-                data = request.json or {}
-                token_preview = data.get('token_preview', '')
-                
-                if not token_preview:
-                    return jsonify({'success': False, 'message': 'Token preview is required'}), 400
-                
-                # Find the full token by preview
-                tokens = self.mobile_token_manager.tokens
-                target_token = None
-                
-                for token in tokens:
-                    preview = token[:8] + '...' + token[-4:]
-                    if preview == token_preview:
-                        target_token = token
-                        break
-                
-                if target_token:
-                    revoked = self.mobile_token_manager.revoke_token(target_token)
-                    if revoked:
-                        return jsonify({
-                            'success': True,
-                            'message': 'Token revoked successfully'
-                        })
-                    else:
-                        return jsonify({'success': False, 'message': 'Failed to revoke token'}), 500
-                else:
-                    return jsonify({'success': False, 'message': 'Token not found'}), 404
-                    
-            except Exception as e:
-                return jsonify({'success': False, 'message': str(e)}), 400
-
-        @self.app.route('/api/mobile/auth', methods=['POST'])
-        def mobile_authenticate():
-            """Authenticate using mobile API token and return session info."""
-            try:
-                data = request.json or {}
-                token = data.get('token', '')
-                
-                if not token:
-                    return jsonify({'success': False, 'message': 'Token is required'}), 400
-                
-                is_valid = self.mobile_token_manager.validate_token(token)
-                
-                if is_valid:
-                    # Create a temporary session for mobile access
-                    session['mobile_authenticated'] = True
-                    session['mobile_token'] = token
-                    session['authentication_time'] = time.time()
-                    
-                    return jsonify({
-                        'success': True,
-                        'message': 'Mobile authentication successful',
-                        'session_info': {
-                            'authenticated': True,
-                            'mobile': True,
-                            'timestamp': time.time()
-                        }
-                    })
-                else:
-                    return jsonify({
-                        'success': False,
-                        'message': 'Invalid or expired token'
-                    }), 401
-                    
-            except Exception as e:
-                return jsonify({'success': False, 'message': str(e)}), 400
-
-        # Mobile Block Data API Endpoints
-        @self.app.route('/api/mobile/block/current', methods=['GET'])
-        @require_mobile_auth(self.mobile_token_manager)
-        def get_current_block_mobile():
-            """Get current block information for mobile widget."""
-            try:
-                # Get current block data from mempool
-                if hasattr(self, 'mempool_websocket') and self.mempool_websocket:
-                    current_block = self.mempool_websocket.get_current_block()
-                else:
-                    # Fallback to API
-                    current_block = self.mempool_api.get_latest_block()
-                
-                if current_block:
-                    # Format for mobile widget
-                    mobile_data = {
-                        'block_height': current_block.get('height'),
-                        'block_hash': current_block.get('id', '')[:16] + '...',  # Truncated for mobile
-                        'timestamp': current_block.get('timestamp'),
-                        'total_fees_btc': current_block.get('extras', {}).get('totalFees', 0) / 100000000,  # Convert sats to BTC
-                        'median_fee_sat_vb': current_block.get('extras', {}).get('medianFee', 0),
-                        'tx_count': current_block.get('tx_count', 0),
-                        'size': current_block.get('size', 0),
-                        'weight': current_block.get('weight', 0)
-                    }
-                    
-                    return jsonify({
-                        'success': True,
-                        'block': mobile_data,
-                        'timestamp': time.time()
-                    })
-                else:
-                    return jsonify({'success': False, 'message': 'Block data not available'}), 503
-                    
-            except Exception as e:
-                return jsonify({'success': False, 'message': str(e)}), 500
-
-        @self.app.route('/api/mobile/price/current', methods=['GET'])
-        @require_mobile_auth(self.mobile_token_manager)
-        def get_current_price_mobile():
-            """Get current Bitcoin price for mobile widget."""
-            try:
-                # Get price data from BTC price API
-                price_data = self.btc_price_api.get_bitcoin_price()
-                
-                if price_data:
-                    mobile_price_data = {
-                        'usd_price': price_data.get('usd_price'),
-                        'price_in_selected_currency': price_data.get('price_in_selected_currency'),
-                        'currency': price_data.get('currency', 'USD'),
-                        'moscow_time': price_data.get('moscow_time'),
-                        'timestamp': time.time()
-                    }
-                    
-                    return jsonify({
-                        'success': True,
-                        'price': mobile_price_data
-                    })
-                else:
-                    return jsonify({'success': False, 'message': 'Price data not available'}), 503
-                    
-            except Exception as e:
-                return jsonify({'success': False, 'message': str(e)}), 500
-
-        @self.app.route('/api/mobile/widget/data', methods=['GET'])
-        @require_mobile_auth(self.mobile_token_manager)
-        def get_widget_data_mobile():
-            """Get all widget data in one request for mobile efficiency."""
-            try:
-                widget_data = {
-                    'success': True,
-                    'timestamp': time.time(),
-                    'block': None,
-                    'price': None,
-                    'status': 'ok'
-                }
-                
-                # Get block data
-                try:
-                    if hasattr(self, 'mempool_websocket') and self.mempool_websocket:
-                        current_block = self.mempool_websocket.get_current_block()
-                    else:
-                        current_block = self.mempool_api.get_latest_block()
-                    
-                    if current_block:
-                        widget_data['block'] = {
-                            'height': current_block.get('height'),
-                            'hash': current_block.get('id', '')[:16] + '...',
-                            'timestamp': current_block.get('timestamp'),
-                            'total_fees_btc': current_block.get('extras', {}).get('totalFees', 0) / 100000000,
-                            'median_fee_sat_vb': current_block.get('extras', {}).get('medianFee', 0),
-                            'tx_count': current_block.get('tx_count', 0)
-                        }
-                except Exception as e:
-                    print(f"Failed to get block data for widget: {e}")
-                
-                # Get price data
-                try:
-                    price_data = self.btc_price_api.get_bitcoin_price()
-                    if price_data:
-                        widget_data['price'] = {
-                            'usd_price': price_data.get('usd_price'),
-                            'price_in_selected_currency': price_data.get('price_in_selected_currency'),
-                            'currency': price_data.get('currency', 'USD'),
-                            'moscow_time': price_data.get('moscow_time')
-                        }
-                except Exception as e:
-                    print(f"Failed to get price data for widget: {e}")
-                
-                return jsonify(widget_data)
-                
-            except Exception as e:
-                return jsonify({'success': False, 'message': str(e)}), 500
-        
         @self.app.route('/api/session/status', methods=['GET'])
         def session_status():
             """Get current session status and remaining time."""

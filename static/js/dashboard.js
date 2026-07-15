@@ -122,8 +122,6 @@ function setupSocketHandlers() {
         tempImg.onload = function() {
             dashboardImg.src = data.image;
             lastImageUpdate = new Date();
-            // Persist so F5 restores the latest image instead of the stale server-rendered URL
-            try { localStorage.setItem('mempaper_last_image', data.image); } catch (e) {}
         };
         
         tempImg.onerror = function() {
@@ -653,21 +651,11 @@ function refreshCurrentImage() {
 
 // Request initial image when page loads
 document.addEventListener('DOMContentLoaded', async function() {
-    const dashboardImg = document.getElementById("dashboard");
-
-    // Immediately restore the last known image from localStorage.
-    // The server-rendered src is a stale URL (/image?v=old_block) — the base64
-    // image stored here is always the latest one the browser has actually seen.
-    try {
-        const cached = localStorage.getItem('mempaper_last_image');
-        if (cached && cached.startsWith('data:image/png;base64,')) {
-            dashboardImg.src = cached;
-            lastImageUpdate = new Date();
-        }
-    } catch (e) {}
-
-    // Always request the latest image via WebSocket on load so we stay current
-    // (previously skipped when a server URL was present — that caused stale images)
+    // The server-rendered <img src="/image?v=..."> is already current (rendered
+    // fresh per-request, and /image now revalidates via ETag instead of trusting
+    // a cache window). Still request the latest image via WebSocket as a
+    // safety net in case a regeneration lands in the gap between page render
+    // and socket connect.
     setTimeout(() => {
         if (socket.connected) {
             socket.emit('request_latest_image');

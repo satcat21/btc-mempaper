@@ -13,6 +13,8 @@ import threading
 import time
 from typing import Dict, Any, List, Callable, Optional
 
+from utils.atomic_io import atomic_write_json
+
 # File watching functionality (install with: pip install watchdog)
 try:
     from watchdog.observers import Observer
@@ -473,9 +475,8 @@ class ConfigManager:
             
             # Save new configuration
             with self.config_lock:
-                with open(self.config_path, 'w', encoding='utf-8') as f:
-                    json.dump(validated_config, f, indent=2, ensure_ascii=False)
-                
+                atomic_write_json(self.config_path, validated_config, indent=2, ensure_ascii=False)
+
                 # Update in-memory config with the newly saved config
                 self.config = validated_config
             

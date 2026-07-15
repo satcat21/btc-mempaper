@@ -17,6 +17,7 @@ import json
 import threading
 from typing import Dict, Any, Optional
 from managers.secure_config_manager import SecureConfigManager
+from utils.atomic_io import atomic_write_json
 
 
 class SecureCacheManager:
@@ -101,12 +102,8 @@ class SecureCacheManager:
                         'data': self.secure_manager._encrypt_data(cache_data)
                     }
                     
-                    with open(self.encrypted_cache_file, 'w') as f:
-                        json.dump(encrypted_cache, f, indent=2)
-                    
-                    # Set restrictive permissions
-                    os.chmod(self.encrypted_cache_file, 0o600)
-                    
+                    atomic_write_json(self.encrypted_cache_file, encrypted_cache, mode=0o600, indent=2)
+
                     print(f" Saved encrypted cache: {self.encrypted_cache_file}")
                     return True
                 else:
