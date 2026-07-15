@@ -844,11 +844,11 @@ echo ""
 # ── Step 9: Start service ─────────────────────────────────────────────────
 step "Step 9/9 — Starting mempaper service"
 
-# Drop a one-shot marker so the app forces a full e-ink clear on this start,
-# confirming the install went through even when a reboot isn't needed
-# (a plain "systemctl restart" alone wouldn't otherwise trigger one).
+# Drop a one-shot marker so the app pushes a fast e-ink refresh on this
+# start, confirming the install went through even when a reboot isn't
+# needed (a plain "systemctl restart" alone wouldn't otherwise trigger one).
 sudo -u "$SERVICE_USER" mkdir -p "$SCRIPT_DIR/cache"
-sudo -u "$SERVICE_USER" touch "$SCRIPT_DIR/cache/force_full_refresh"
+sudo -u "$SERVICE_USER" touch "$SCRIPT_DIR/cache/boot_refresh_pending"
 
 if [ "$NEEDS_REBOOT" = true ]; then
     echo ""

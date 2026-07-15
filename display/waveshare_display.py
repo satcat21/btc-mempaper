@@ -423,7 +423,7 @@ class WaveshareDisplay:
         
         return None
 
-    def display_image(self, image_path, message=None, process_vertical=True, force_clear=False):
+    def display_image(self, image_path, message=None, process_vertical=True):
         """
         Display an image on the e-paper display.
 
@@ -431,8 +431,6 @@ class WaveshareDisplay:
             image_path (str): Path to the image file
             message (str, optional): Text message to overlay
             process_vertical (bool): Whether to process vertical orientation
-            force_clear (bool): Force the pre-draw clear pass for this call
-                (used for boot/install refreshes); clearing is skipped otherwise
 
         Returns:
             bool: True if successful, False otherwise
@@ -524,9 +522,8 @@ class WaveshareDisplay:
                 # Initialize display
                 self._call_epd_init()
 
-                # Clear display is skipped by default (saves ~31s); force_clear overrides this
-                if force_clear:
-                    self._call_epd_clear()
+                # Clear display before drawing is skipped (saves ~31s); the fast
+                # partial-refresh push is sufficient without a full clear pass
 
                 # Display the image
                 buffer_data = self.epd.getbuffer(img)
