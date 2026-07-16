@@ -3054,7 +3054,7 @@ async function _loadUpdateData(selectEl, updateBtn, versionEl, notesContainer) {
                 const t = window.translations || {};
                 const msg = (t.update_available_hint || 'Update {version} available').replace('{version}', latestTag);
                 _buildLiveToast(
-                    '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 -960 960 960" fill="#F7931A" style="vertical-align:middle;margin-right:4px"><path d="M240-120v-80l40-40H160q-33 0-56.5-23.5T80-320v-440q0-33 23.5-56.5T160-840h320v80H160v440h640v-120h80v120q0 33-23.5 56.5T800-240H680l40 40v80H240Zm360-240L400-560l56-56 104 103v-327h80v327l104-103 56 56-200 200Z"/></svg> ' + (t.software_update || 'Software Update'),
+                    '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 -960 960 960" fill="currentColor" style="vertical-align:middle;margin-right:4px"><path d="M240-120v-80l40-40H160q-33 0-56.5-23.5T80-320v-440q0-33 23.5-56.5T160-840h320v80H160v440h640v-120h80v120q0 33-23.5 56.5T800-240H680l40 40v80H240Zm360-240L400-560l56-56 104 103v-327h80v327l104-103 56 56-200 200Z"/></svg> ' + (t.software_update || 'Software Update'),
                     msg,
                     '#F7931A',
                     8000
@@ -4294,7 +4294,7 @@ function _getNavTooltipEl() {
     }
     return el;
 }
-function _attachNavTooltip(pill, nav) {
+function _attachNavTooltip(pill) {
     if (!_navHoverCapable) return;
     const tooltipEl = _getNavTooltipEl();
     pill.addEventListener('mouseenter', () => {
@@ -4303,13 +4303,10 @@ function _attachNavTooltip(pill, nav) {
         const rect = pill.getBoundingClientRect();
         tooltipEl.textContent = text;
         tooltipEl.style.left = (rect.left + rect.width / 2) + 'px';
-        if (nav.classList.contains('stuck')) {
-            tooltipEl.style.top = (rect.bottom + 6) + 'px';
-            tooltipEl.style.transform = 'translateX(-50%)';
-        } else {
-            tooltipEl.style.top = (rect.top - 6) + 'px';
-            tooltipEl.style.transform = 'translate(-50%, -100%)';
-        }
+        // Always above the pill, regardless of whether the nav is pinned —
+        // desktop users expect a consistent tooltip position.
+        tooltipEl.style.top = (rect.top - 6) + 'px';
+        tooltipEl.style.transform = 'translate(-50%, -100%)';
         tooltipEl.classList.add('visible');
     });
     pill.addEventListener('mouseleave', () => {
@@ -4356,7 +4353,7 @@ function buildSectionNav(grid) {
 
         pill.dataset.tooltip = cat.label;
         pill.setAttribute('aria-label', cat.label);
-        _attachNavTooltip(pill, nav);
+        _attachNavTooltip(pill);
 
         const label = document.createElement('span');
         label.className = 'section-nav-label';
@@ -9993,12 +9990,12 @@ function showBlockToast(blockData) {
     // Check if toast already exists for this block (for enrichment updates)
     let toast = document.getElementById(toastId);
     const isUpdate = toast !== null;
-    
+    const isDark = document.body.classList.contains('dark-mode');
+
     if (!toast) {
         // Create new toast element
         toast = document.createElement('div');
         toast.id = toastId;
-        const isDark = document.body.classList.contains('dark-mode');
         const toastBg = isDark ? 'rgba(30, 30, 36, 0.92)' : 'rgba(255, 255, 255, 0.95)';
         const toastColor = isDark ? '#e8e8ec' : '#1a1a2e';
         const toastBorder = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.1)';
@@ -10105,8 +10102,13 @@ function showBlockToast(blockData) {
     }
     
     // Update content (works for both new and enriched data)
+    // Title/reward accents need to be darker & more saturated in light mode —
+    // the dark-mode gold/light-green pair reads fine on the dark glass card
+    // but is nearly illegible on the light card's near-white background.
+    const titleAccent = isDark ? '#FFD700' : '#B7791F';
+    const rewardAccent = isDark ? '#90EE90' : '#15803D';
     contentDiv.innerHTML = `
-        <div style="font-weight: bold; font-size: 16px; margin-bottom: 8px; color: #FFD700;">
+        <div style="font-weight: bold; font-size: 16px; margin-bottom: 8px; color: ${titleAccent};">
             New Block ${heightFormatted}
         </div>
         <div style="margin-bottom: 4px;">
@@ -10119,7 +10121,7 @@ function showBlockToast(blockData) {
             <span style="opacity: 0.8;">Pool:</span> <span style="font-weight: 500;">${blockData.pool_name}</span>
         </div>
         <div style="margin-bottom: 4px;">
-            <span style="opacity: 0.8;">Reward:</span> <span style="font-weight: 500; color: #90EE90;">${rewardFormatted} BTC</span>
+            <span style="opacity: 0.8;">Reward:</span> <span style="font-weight: 500; color: ${rewardAccent};">${rewardFormatted} BTC</span>
             <span style="font-size: 12px; opacity: 0.7;">(+${feesFormatted} fees)</span>
         </div>
         <div>

@@ -46,10 +46,28 @@
         return el;
     };
 
+    // Dark-mode-tuned accent colors read poorly as text on the light theme's
+    // near-white card (contrast as low as ~2.3:1 for the brand orange). Swap
+    // in AA-safe equivalents when the light theme is active; anything not in
+    // this map (e.g. per-user donation/section colors, already split by
+    // theme via _getLiveToastColor) passes through unchanged.
+    var _lightModeColorMap = {
+        '#f7931a': '#b7791f', // brand orange
+        '#22c55e': '#15803d', // green-500
+        '#28a745': '#15803d', // bootstrap green
+        '#17a2b8': '#0e7490', // info cyan
+        '#ef4444': '#dc2626'  // red-500
+    };
+    function _adaptTitleColor(color, isDark) {
+        if (isDark || !color) return color;
+        return _lightModeColorMap[color.toLowerCase()] || color;
+    }
+
     // Build and display a glass-card toast in the shared upper-right container
     window._buildLiveToast = function (titleText, bodyHtml, titleColor, autoDismissMs) {
         if (autoDismissMs === undefined) autoDismissMs = 6000;
         const isDark      = document.body.classList.contains('dark-mode');
+        titleColor = _adaptTitleColor(titleColor, isDark);
         const toastBg     = isDark ? 'rgba(30, 30, 36, 0.92)'  : 'rgba(255, 255, 255, 0.95)';
         const toastColor  = isDark ? '#e8e8ec'                  : '#1a1a2e';
         const toastBorder = isDark ? 'rgba(255, 255, 255, 0.08)': 'rgba(0, 0, 0, 0.1)';

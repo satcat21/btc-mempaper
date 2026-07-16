@@ -229,6 +229,7 @@ The scoped sudoers file (`/etc/sudoers.d/mempaper-wifi`) grants exactly:
 | `dnsmasq --conf-file=/tmp/mempaper-captive-dns.conf ...` | On-demand DNS for captive portal |
 | `kill [PID]` / `pkill -f /tmp/mempaper-captive-dns.conf` | Stop captive-portal dnsmasq |
 | `mount -o remount,rw/ro /` | Remount root for apt on read-only Pi OS |
+| `mount -o remount,rw/ro /boot/firmware` | Remount boot partition for apt (initramfs-tools writes here) |
 | `apt update / upgrade -y / autoremove -y` | System package maintenance (SSH admin use) |
 | `/usr/local/bin/mempaper-apt-install` | Install packages from `apt-requirements.txt` only |
 | `systemctl restart mempaper.service` | Restart after software update |

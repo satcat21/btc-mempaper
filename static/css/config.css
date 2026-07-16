@@ -2653,6 +2653,25 @@ body.dark-mode .wifi-badge-saved {
     max-height: 200px;
     overflow-y: auto;
     word-break: break-word;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-color) transparent;
+}
+
+.update-release-notes::-webkit-scrollbar {
+    width: 6px;
+}
+
+.update-release-notes::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.update-release-notes::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 3px;
+}
+
+.update-release-notes::-webkit-scrollbar-thumb:hover {
+    background: var(--text-muted);
 }
 
 .update-release-notes h1,

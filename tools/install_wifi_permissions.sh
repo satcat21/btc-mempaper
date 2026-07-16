@@ -252,6 +252,12 @@ ${SERVICE_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} restart mempaper-dnsmasq.s
 ${SERVICE_USER} ALL=(root) NOPASSWD: ${MOUNT_BIN} -o remount\,rw /
 ${SERVICE_USER} ALL=(root) NOPASSWD: ${MOUNT_BIN} -o remount\,ro /
 
+# Remount /boot/firmware rw/ro around apt operations — it's a separate mount
+# point from / on Raspberry Pi OS, and apt upgrades that touch initramfs-tools
+# write there directly (not covered by remounting / above).
+${SERVICE_USER} ALL=(root) NOPASSWD: ${MOUNT_BIN} -o remount\,rw /boot/firmware
+${SERVICE_USER} ALL=(root) NOPASSWD: ${MOUNT_BIN} -o remount\,ro /boot/firmware
+
 # System package updates (for SSH admin maintenance via 'ssh mempaper@<ip>')
 ${SERVICE_USER} ALL=(root) NOPASSWD: ${APT_BIN} update
 ${SERVICE_USER} ALL=(root) NOPASSWD: ${APT_BIN} upgrade -y

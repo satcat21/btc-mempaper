@@ -9001,17 +9001,23 @@ class MempaperApp:
             if getattr(self, '_apt_running', False):
                 return jsonify({'success': False, 'message': 'System update already in progress'}), 409
 
-            def _is_root_readonly():
-                """Check if / is mounted read-only."""
+            def _is_mount_readonly(mount_point):
+                """Check if the given mount point is mounted read-only."""
                 try:
                     with open('/proc/mounts') as f:
                         for line in f:
                             parts = line.split()
-                            if len(parts) >= 4 and parts[1] == '/':
+                            if len(parts) >= 4 and parts[1] == mount_point:
                                 return 'ro' in parts[3].split(',')
                 except Exception:
                     pass
                 return False
+
+            # /boot/firmware is a separate mount point from / on Raspberry Pi
+            # OS and is not covered by remounting / read-write. If it stays
+            # read-only, initramfs-tools' post-install hook fails to write the
+            # new initramfs there, which makes dpkg (and apt upgrade) fail.
+            _remount_targets = ['/', '/boot/firmware']
 
             def _emit(event, data):
                 if self.socketio:
@@ -9019,19 +9025,21 @@ class MempaperApp:
 
             def _run_apt():
                 self._apt_running = True
-                was_readonly = False
+                readonly_targets = []
                 try:
-                    # Check if root filesystem is read-only and remount rw if needed
-                    if _is_root_readonly():
-                        was_readonly = True
+                    # Check each filesystem that may be read-only and remount rw if needed
+                    targets_to_remount = [t for t in _remount_targets if _is_mount_readonly(t)]
+                    if targets_to_remount:
                         _emit('apt_output', {'line': self.translations.get('remounting_filesystem', 'Remounting filesystem...'), 'phase': 'prepare', 'header': True})
-                        rc = subprocess.call(['sudo', 'mount', '-o', 'remount,rw', '/'])
-                        if rc != 0:
-                            _emit('apt_done', {
-                                'success': False,
-                                'error': self.translations.get('remount_failed', 'Failed to remount filesystem read-write')
-                            })
-                            return
+                        for target in targets_to_remount:
+                            rc = subprocess.call(['sudo', 'mount', '-o', 'remount,rw', target])
+                            if rc != 0:
+                                _emit('apt_done', {
+                                    'success': False,
+                                    'error': self.translations.get('remount_failed', 'Failed to remount filesystem read-write')
+                                })
+                                return
+                            readonly_targets.append(target)
 
                     phase_labels = {
                         'update': self.translations.get('fetching_package_list', 'Fetching package list (apt update)...'),
@@ -9061,7 +9069,11 @@ class MempaperApp:
                             })
                             return
 
-                    # Ensure all packages from apt-requirements.txt are installed
+                    # Ensure all packages from apt-requirements.txt are installed.
+                    # Must go through the scoped mempaper-apt-install wrapper — the
+                    # sudoers file only grants NOPASSWD for that exact wrapper path
+                    # (accepts no arguments, reads apt-requirements.txt itself), not
+                    # for 'apt-get install' invoked directly with a package list.
                     project_dir = os.path.dirname(os.path.abspath(__file__))
                     apt_req_file = os.path.join(project_dir, 'apt-requirements.txt')
                     if os.path.exists(apt_req_file):
@@ -9073,7 +9085,7 @@ class MempaperApp:
                         if apt_pkgs:
                             _emit('apt_output', {'line': self.translations.get('installing_mempaper_deps', 'Installing mempaper dependencies...'), 'phase': 'deps', 'header': True})
                             proc = subprocess.Popen(
-                                ['sudo', 'apt-get', 'install', '-y', '--no-upgrade'] + apt_pkgs,
+                                ['sudo', '/usr/local/bin/mempaper-apt-install'],
                                 stdout=subprocess.PIPE,
                                 stderr=subprocess.STDOUT,
                                 text=True,
@@ -9090,10 +9102,11 @@ class MempaperApp:
                     print(f"System update error: {e}")
                     _emit('apt_done', {'success': False, 'error': str(e)})
                 finally:
-                    # Restore read-only if it was read-only before
-                    if was_readonly:
+                    # Restore read-only for whichever mounts were read-only before
+                    if readonly_targets:
                         _emit('apt_output', {'line': self.translations.get('restoring_readonly', 'Restoring read-only filesystem...'), 'phase': 'cleanup', 'header': True})
-                        subprocess.call(['sudo', 'mount', '-o', 'remount,ro', '/'])
+                        for target in reversed(readonly_targets):
+                            subprocess.call(['sudo', 'mount', '-o', 'remount,ro', target])
                     self._apt_running = False
 
             threading.Thread(target=_run_apt, daemon=True).start()
