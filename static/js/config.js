@@ -2534,10 +2534,12 @@ function _loadSavedWifi() {
 
                 const isPending = conn.uuid === _wifiPendingPreferredUuid;
 
+                const savedSecurityIcon = `<span class="wifi-security-icon ${conn.open ? 'wifi-security-icon--open' : 'wifi-security-icon--secured'}" title="${conn.open ? (t.wifi_open || 'Open') : (t.wifi_secured || 'Secured')}"></span>`;
+
                 row.innerHTML = `
                     <div class="wifi-row-info">
                         <button type="button" class="wifi-btn-icon wifi-btn-prefer${isPending ? ' wifi-prefer-active' : ''}" title="${t.wifi_set_preferred || 'Set as preferred'}">★</button>
-                        <span class="wifi-ssid">${_escHtml(conn.ssid)}</span>
+                        <span class="wifi-ssid">${savedSecurityIcon}${_escHtml(conn.ssid)}</span>
                         ${conn.active ? `<span class="wifi-badge wifi-badge-connected">${t.wifi_connected || 'Connected'}</span>` : ''}
                         ${isPending ? `<span class="wifi-badge wifi-badge-preferred">${t.wifi_preferred || 'Preferred'}</span>` : ''}
                     </div>
@@ -2778,17 +2780,17 @@ function _scanWifi() {
                 const signalBars = net.signal >= 70 ? '▂▄▆█' : net.signal >= 50 ? '▂▄▆' : net.signal >= 30 ? '▂▄' : '▂';
                 const savedLabel = net.saved ? ` <span class="wifi-badge wifi-badge-saved">${t.wifi_saved || 'Saved'}</span>` : '';
                 const connectedLabel = net.in_use ? ` <span class="wifi-badge wifi-badge-connected">${t.wifi_connected || 'Connected'}</span>` : '';
-                const lockIcon = net.open ? '' : '🔒 ';
+                const securityIcon = `<span class="wifi-security-icon ${net.open ? 'wifi-security-icon--open' : 'wifi-security-icon--secured'}" title="${net.open ? (t.wifi_open || 'Open') : (t.wifi_secured || 'Secured')}"></span>`;
 
                 html += `
                     <div class="wifi-scan-row${net.saved ? ' wifi-scan-saved' : ''}" data-ssid="${_escHtml(net.ssid)}" data-open="${net.open}">
                         <div class="wifi-row-info">
-                            <span class="wifi-ssid">${lockIcon}${_escHtml(net.ssid)}</span>
+                            <span class="wifi-ssid">${securityIcon}${_escHtml(net.ssid)}</span>
                             ${connectedLabel}${savedLabel}
                         </div>
                         <div class="wifi-row-actions">
                             <span class="wifi-signal" title="${net.signal}%">${signalBars}</span>
-                            ${!net.saved ? `<button type="button" class="wifi-btn wifi-btn-add-scan">+ ${t.wifi_add_short || 'Add'}</button>` : ''}
+                            ${(!net.saved && !net.in_use) ? `<button type="button" class="wifi-btn wifi-btn-add-scan">+ ${t.wifi_add_short || 'Add'}</button>` : ''}
                         </div>
                     </div>
                 `;
@@ -7072,6 +7074,11 @@ function addWalletTableRow(tbody, entry) {
         if (container && container._updateTableVisibility) {
             container._updateTableVisibility();
         }
+        // Invalidate the cached balance preview — it reflects the address list
+        // as it was at last fetch, which no longer matches after a removal.
+        // Without this the preview keeps showing the old (now-wrong) total.
+        window._previewData.wallet = null;
+        if (window._refreshWalletPreview) window._refreshWalletPreview(null);
         tbody.parentElement.parentElement.dispatchEvent(new Event('change', { bubbles: true }));
     });
     
@@ -7435,6 +7442,10 @@ function addBitaxeTableRow(tbody, entry) {
         if (container && container._updateTableVisibility) {
             container._updateTableVisibility();
         }
+        // Invalidate the cached hashrate/diff preview — it reflects the miner list
+        // as it was at last fetch, which no longer matches after a removal.
+        window._previewData.bitaxe = null;
+        if (window._refreshBitaxePreview) window._refreshBitaxePreview(null);
         container.dispatchEvent(new Event('change', { bubbles: true }));
     });
 
@@ -7817,11 +7828,6 @@ async function fetchBitaxeMinerInfo(ip, bestDiffCell, hashrateCell) {
                 if (hashrateCell) {
                     hashrateCell.textContent = formatBitaxeHashrate(data.hashrate_avg_ghs);
                     hashrateCell.style.color = 'var(--accent)';
-                    // Update column header with the timeframe label (e.g. "Hashrate (5m avg)")
-                    if (data.hashrate_avg_label && data.hashrate_avg_label !== 'current') {
-                        const th = hashrateCell.closest('table')?.querySelector('.bitaxe-hashrate-header');
-                        if (th) th.textContent = `${window.translations?.bitaxe_table_hashrate || 'Hashrate'} (${data.hashrate_avg_label})`;
-                    }
                 }
             } else {
                 if (bestDiffCell)  { bestDiffCell.textContent  = 'Offline'; bestDiffCell.style.color  = '#ff6b6b'; }

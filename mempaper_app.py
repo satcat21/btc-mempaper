@@ -20,6 +20,7 @@ import traceback
 import urllib3
 import os
 import sys
+import signal
 import logging
 import subprocess
 import hashlib
@@ -387,9 +388,10 @@ class MempaperApp:
         
         # Persistent e-ink display worker (avoids ~10s Python startup per block)
         self._display_worker = None           # subprocess.Popen, kept alive
-        self._display_worker_lock = threading.Lock()   # one display at a time
+        self._display_worker_lock = threading.Lock()   # one display at a time; acquired non-blocking (see _display_on_epaper_async)
         self._display_worker_results = queue.Queue()   # stdout reader → caller
         self._last_display_error = None       # set on failure, cleared on success
+        self._consecutive_display_failures = 0  # reset on success; auto-disable only after DISPLAY_FAILURE_DISABLE_THRESHOLD in a row
 
         # Flag: an e-ink refresh was requested while the display was busy (e.g. donation during block update)
         self._pending_eink_refresh = False
@@ -3090,6 +3092,17 @@ class MempaperApp:
                 elif cached_bh and current_bh and cached_bh == current_bh:
                     print(f"[STARTUP] Block unchanged: {current_bh} - cache is valid")
                     self.image_is_current = True
+                elif not cached_bh and current_bh:
+                    # No prior cache at all (fresh install / factory reset) — bootstrap
+                    # from the current chain tip instead of leaving current_block_height
+                    # unset. Otherwise the "regenerate real image" branch below never
+                    # fires (it requires current_block_height), and the only thing that
+                    # reaches the e-ink display is the text-only startup placeholder,
+                    # wasting a refresh cycle before the real dashboard image is ready.
+                    print(f"⚙️ [STARTUP] No prior cache — bootstrapping from current block {current_bh}")
+                    self.current_block_height = block_info.get('block_height')
+                    self.current_block_hash = block_info.get('block_hash')
+                    self.image_is_current = False
             except Exception as e:
                 print(f"[STARTUP] Failed to check current block: {e}")
                 self.image_is_current = False
@@ -3161,10 +3174,21 @@ class MempaperApp:
                 return
 
         def display_in_worker():
-            display_start = time.time()
-            print(f"⚙️ Starting e-paper display for block {block_height} at {time.strftime('%H:%M:%S')}")
+            # Non-blocking: if a display is already running, don't queue a second
+            # worker call right behind it. Two full hardware refreshes back-to-back
+            # (e.g. a settings change firing moments after a block-triggered refresh)
+            # can leave the panel's BUSY line stuck, hanging the driver indefinitely —
+            # that's what caused a 120s timeout that required a service restart to
+            # clear on 2026-07-16. Just remember to refresh once more when free.
+            if not self._display_worker_lock.acquire(blocking=False):
+                self._pending_eink_refresh = True
+                print(f"📌 Display busy — queued refresh for block {block_height}")
+                return
 
-            with self._display_worker_lock:
+            try:
+                display_start = time.time()
+                print(f"⚙️ Starting e-paper display for block {block_height} at {time.strftime('%H:%M:%S')}")
+
                 try:
                     worker = self._get_or_start_display_worker()
                 except Exception as e:
@@ -3177,7 +3201,7 @@ class MempaperApp:
                     worker.stdin.flush()
                 except Exception as e:
                     print(f"❌ Failed to send command to display worker: {e}")
-                    self._display_worker = None  # force restart next time
+                    self._kill_display_worker(worker)  # force restart next time
                     self._emit_display_error(str(e))
                     return
 
@@ -3188,53 +3212,74 @@ class MempaperApp:
                     print(f"❌ E-paper display timed out after 120s")
                     print(f"   The selected display driver '{device_name}' may be incorrect.")
                     print(f"   Run: python tools/configure_display.py")
-                    self._display_worker = None  # worker may be stuck; restart next time
+                    # Kill the stuck worker rather than abandoning it — an orphaned
+                    # process still holds the GPIO lines (e.g. RST), so the next
+                    # worker's driver import fails with "GPIO busy"/"pin already in
+                    # use" and silently falls back to no-hardware mode from then on.
+                    self._kill_display_worker(worker)
                     self._emit_display_error(
                         f'Display timed out after 120s. The driver "{device_name}" may be incorrect. '
                         f'Check Settings → Display.'
                     )
                     return
 
-            display_duration = time.time() - display_start
+                display_duration = time.time() - display_start
 
-            if result.get("worker_died"):
-                print(f"❌ Display worker died unexpectedly")
-                self._display_worker = None
-                self._emit_display_error("Worker process died")
-                return
+                if result.get("worker_died"):
+                    print(f"❌ Display worker died unexpectedly")
+                    self._kill_display_worker(worker)
+                    self._emit_display_error("Worker process died")
+                    return
 
-            if result.get("success"):
-                print(f"✅ E-paper display completed in {display_duration:.2f}s")
-                self._last_display_error = None  # clear any previous error
+                if result.get("success"):
+                    print(f"✅ E-paper display completed in {display_duration:.2f}s")
+                    self._last_display_error = None  # clear any previous error
+                    self._consecutive_display_failures = 0
 
-                # Warn if display refresh took abnormally long (likely wrong driver)
-                if display_duration > 80:
-                    device_name = self.config.get("omni_device_name", "unknown")
-                    print(f"⚠️ Display refresh took {display_duration:.0f}s — this is unusually slow.")
-                    print(f"   The selected display driver '{device_name}' may be incorrect.")
-                    print(f"   Run: python tools/configure_display.py")
-                    if hasattr(self, 'socketio') and self.socketio:
+                    # Warn if display refresh took abnormally long (likely wrong driver)
+                    if display_duration > 80:
+                        device_name = self.config.get("omni_device_name", "unknown")
+                        print(f"⚠️ Display refresh took {display_duration:.0f}s — this is unusually slow.")
+                        print(f"   The selected display driver '{device_name}' may be incorrect.")
+                        print(f"   Run: python tools/configure_display.py")
+                        if hasattr(self, 'socketio') and self.socketio:
+                            self.socketio.emit('display_update', {
+                                'status': 'warning',
+                                'message': f'Display refresh took {display_duration:.0f}s (expected ~40s). '
+                                           f'The display driver "{device_name}" may be incorrect. '
+                                           f'Check Settings → Display.',
+                                'block_height': block_height,
+                                'timestamp': time.time()
+                            })
+
+                    # Update block tracking if this result is still current
+                    if block_height and block_hash:
+                        current_height = getattr(self, 'last_eink_block_height', 0) or 0
+                        latest_block = getattr(self, 'current_block_height', 0) or 0
+                        if int(block_height) >= int(current_height):
+                            self.last_eink_block_height = block_height
+                            self.last_eink_block_hash = block_hash
+                            # Only log if this is actually the latest block (avoid confusion)
+                            if int(block_height) >= int(latest_block):
+                                print(f"💾 E-ink display tracking updated: Block {block_height}")
+
+                    if hasattr(self, 'socketio'):
                         self.socketio.emit('display_update', {
-                            'status': 'warning',
-                            'message': f'Display refresh took {display_duration:.0f}s (expected ~40s). '
-                                       f'The display driver "{device_name}" may be incorrect. '
-                                       f'Check Settings → Display.',
+                            'status': 'success',
+                            'message': f'Display updated in {display_duration:.1f}s',
                             'block_height': block_height,
                             'timestamp': time.time()
                         })
-
-                # Update block tracking if this result is still current
-                if block_height and block_hash:
-                    current_height = getattr(self, 'last_eink_block_height', 0) or 0
-                    latest_block = getattr(self, 'current_block_height', 0) or 0
-                    if int(block_height) >= int(current_height):
-                        self.last_eink_block_height = block_height
-                        self.last_eink_block_hash = block_hash
-                        # Only log if this is actually the latest block (avoid confusion)
-                        if int(block_height) >= int(latest_block):
-                            print(f"💾 E-ink display tracking updated: Block {block_height}")
-
-                # Execute any refresh that was queued while we were busy
+                else:
+                    error = result.get("error", "unknown error")
+                    print(f"⚠️ E-paper display failed after {display_duration:.2f}s: {error}")
+                    if result.get("traceback"):
+                        for line in result["traceback"].splitlines():
+                            print(f"   {line}")
+                    self._emit_display_error(error)
+            finally:
+                self._display_worker_lock.release()
+                # Run any refresh that came in while we were busy, now that we're free.
                 if getattr(self, '_pending_eink_refresh', False):
                     self._pending_eink_refresh = False
                     print(f"📌 Executing pending e-ink refresh...")
@@ -3244,22 +3289,33 @@ class MempaperApp:
                         daemon=True
                     ).start()
 
-                if hasattr(self, 'socketio'):
-                    self.socketio.emit('display_update', {
-                        'status': 'success',
-                        'message': f'Display updated in {display_duration:.1f}s',
-                        'block_height': block_height,
-                        'timestamp': time.time()
-                    })
-            else:
-                error = result.get("error", "unknown error")
-                print(f"⚠️ E-paper display failed after {display_duration:.2f}s: {error}")
-                if result.get("traceback"):
-                    for line in result["traceback"].splitlines():
-                        print(f"   {line}")
-                self._emit_display_error(error)
-
         threading.Thread(target=display_in_worker, daemon=True).start()
+
+    def _kill_display_worker(self, proc):
+        """Terminate a stuck/failed display worker and clear the reference.
+
+        Must be used instead of just setting self._display_worker = None: the
+        worker's atexit/SIGTERM handler releases its GPIO claims (RST, DC, CS,
+        PWR) on the way out. Abandoning the Popen object without killing the
+        process leaves it running as an orphan that still holds those pins, so
+        the next worker's driver import fails with "GPIO busy" and the display
+        silently falls back to no-hardware mode for the rest of the process's life.
+        """
+        self._display_worker = None
+        if proc is None:
+            return
+        try:
+            if proc.poll() is None:
+                proc.terminate()
+                proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            try:
+                proc.kill()
+                proc.wait(timeout=5)
+            except Exception:
+                pass
+        except Exception:
+            pass
 
     def _get_or_start_display_worker(self):
         """Return the running display worker, starting it if necessary."""
@@ -3367,21 +3423,42 @@ class MempaperApp:
         except Exception:
             pass
 
+    # Consecutive display failures (timeout, worker died, etc.) before auto-disabling.
+    # A single failure is often a one-off hiccup (transient hardware busy-line stall,
+    # a killed subprocess) rather than a real misconfiguration — give it a few natural
+    # retries (one per new block) before giving up and requiring manual reconfiguration.
+    DISPLAY_FAILURE_DISABLE_THRESHOLD = 3
+
     def _emit_display_error(self, message):
         self._last_display_error = {'message': message, 'timestamp': time.time()}
-        # Auto-disable the display to stop repeated failures (wrong driver, SPI error, etc.)
-        try:
-            if self.config_manager.get('e-ink-display-connected'):
-                self.config_manager.set('e-ink-display-connected', False)
-                self.config_manager.save_config()
-                print(f"⚠️ Display auto-disabled due to error — re-run install.sh to reconfigure.")
-        except Exception as _e:
-            print(f"⚠️ Could not auto-disable display: {_e}")
+        self._consecutive_display_failures = getattr(self, '_consecutive_display_failures', 0) + 1
+
+        if self._consecutive_display_failures < self.DISPLAY_FAILURE_DISABLE_THRESHOLD:
+            print(f"⚠️ Display error ({self._consecutive_display_failures}/{self.DISPLAY_FAILURE_DISABLE_THRESHOLD} "
+                  f"before auto-disable): {message}")
+        else:
+            # Auto-disable the display to stop repeated failures (wrong driver, SPI error, etc.)
+            try:
+                if self.config_manager.get('e-ink-display-connected'):
+                    self.config_manager.set('e-ink-display-connected', False)
+                    self.config_manager.save_config()
+                    # save_config() suppresses this process's own file-watcher for a couple
+                    # of seconds (to avoid the self-reload it would otherwise trigger), so the
+                    # usual external-change callback that refreshes self.e_ink_enabled never
+                    # fires here. Without this, self.e_ink_enabled stays True in memory even
+                    # though the config now says the display is disabled, and every future
+                    # block keeps retrying (and re-failing) a display that's supposedly off.
+                    self.e_ink_enabled = False
+                    self.config['e-ink-display-connected'] = False
+                    print(f"⚠️ Display auto-disabled after {self._consecutive_display_failures} consecutive "
+                          f"failures — re-run install.sh to reconfigure.")
+            except Exception as _e:
+                print(f"⚠️ Could not auto-disable display: {_e}")
         if hasattr(self, 'socketio'):
             self.socketio.emit('display_update', {
                 'status': 'error',
                 'message': message,
-                'display_disabled': True,
+                'display_disabled': not self.e_ink_enabled,
                 'timestamp': time.time()
             })
     
@@ -4711,31 +4788,35 @@ class MempaperApp:
     def _run_wallet_refresh_process(self, block_height, block_hash, startup_mode=False):
         """Run wallet refresh in separate process to avoid gunicorn timeouts."""
         try:
-            from managers.config_manager import ConfigManager
             from lib.image_renderer import ImageRenderer
             from utils.translations import translations
-            
-            config_manager = ConfigManager()
-            config = config_manager.get_current_config()
+
+            config = self.config_manager.get_current_config()
             image_renderer = ImageRenderer(config, translations)
             
             fresh_wallet_data = image_renderer.wallet_api.fetch_wallet_balances(startup_mode=startup_mode, current_block=block_height)
+
+            # fetch_wallet_balances() already persists the result itself on success
+            # (see update_cache() call at the end of that method) and deliberately
+            # skips persisting when it returns an {"error": ...} dict — e.g. it lost
+            # the non-blocking fetch lock to a concurrent call, or this block was
+            # already scanned. Blindly re-persisting here regardless of outcome used
+            # to overwrite a good cache with that near-empty error dict whenever the
+            # fetch was skipped, which could pin a newly-added wallet's balance at 0
+            # indefinitely if its real scan kept losing that race.
+            if not isinstance(fresh_wallet_data, dict) or fresh_wallet_data.get('error'):
+                return
+
             cached_wallet_data = image_renderer.wallet_api.get_cached_wallet_balances()
-            
-            if not isinstance(fresh_wallet_data, dict):
-                fresh_wallet_data = {}
             if not isinstance(cached_wallet_data, dict):
                 cached_wallet_data = {}
-            
+
             fresh_btc = fresh_wallet_data.get("total_btc", 0)
             cached_btc = cached_wallet_data.get("total_btc", 0)
-            
+
             if fresh_btc != cached_btc:
                 print(f"⚙️ Wallet balance changed: {cached_btc:.8f} → {fresh_btc:.8f} BTC")
-            
-            # Always update cache to keep timestamp fresh
-            image_renderer.wallet_api.update_cache(fresh_wallet_data)
-                
+
         except Exception as e:
             print(f"❌ Wallet refresh failed: {e}")
             traceback.print_exc()
@@ -4880,7 +4961,7 @@ class MempaperApp:
 
         # Pre-rendered image matches! Use it instantly.
         age = time.time() - pr['timestamp']
-        if age > 600:  # Too old (>10 min), data may be stale
+        if age > 3600:
             print(f"⚠️ Pre-rendered image for block {block_height} is {age:.0f}s old, regenerating")
             return False
 
@@ -7804,11 +7885,12 @@ class MempaperApp:
                     if self._is_setup_hotspot_connection(name):
                         continue
 
-                    # Get connection details (SSID and autoconnect-priority)
+                    # Get connection details (SSID, autoconnect-priority, security)
                     detail = self._nmcli_read(['connection', 'show', uuid])
                     ssid = name
                     priority = 0
                     autoconnect = True
+                    key_mgmt = ''
                     if detail and detail.returncode == 0:
                         for prop in detail.stdout.splitlines():
                             if '802-11-wireless.ssid:' in prop:
@@ -7820,6 +7902,8 @@ class MempaperApp:
                                     pass
                             elif 'connection.autoconnect:' in prop:
                                 autoconnect = prop.split(':', 1)[1].strip().lower() == 'yes'
+                            elif '802-11-wireless-security.key-mgmt:' in prop:
+                                key_mgmt = prop.split(':', 1)[1].strip()
 
                     connections.append({
                         'name': name,
@@ -7828,6 +7912,7 @@ class MempaperApp:
                         'priority': priority,
                         'autoconnect': autoconnect,
                         'active': name == active_connection,
+                        'open': key_mgmt in ('', '--'),
                     })
 
                 # Sort by priority (highest first), then by name
@@ -7936,15 +8021,33 @@ class MempaperApp:
 
                 iface = self._detect_wifi_interface()
 
-                # Get saved connection SSIDs to mark which are already saved
-                saved_result = self._nmcli(['-t', '-f', 'NAME,TYPE', 'connection', 'show'])
-                saved_ssids = set()
+                # Get saved connection profiles, resolved to their *actual* SSID.
+                # A profile's name can differ from its SSID (NM appends a
+                # disambiguation suffix like "-1" on name conflicts, or a profile
+                # can simply be renamed) — comparing against the name directly
+                # missed those cases, including the currently-connected network
+                # whenever its profile name didn't happen to match its SSID.
+                saved_result = self._nmcli(['-t', '-f', 'NAME,UUID,TYPE', 'connection', 'show'])
+                profile_ssids = {}  # profile name -> real SSID
                 if saved_result and saved_result.returncode == 0:
                     for line in saved_result.stdout.splitlines():
-                        parts = line.strip().split(':', 1)
-                        if len(parts) >= 2 and parts[1] in ('wifi', '802-11-wireless'):
-                            if not self._is_setup_hotspot_connection(parts[0]):
-                                saved_ssids.add(parts[0].strip())
+                        parts = line.strip().split(':', 2)
+                        if len(parts) < 3:
+                            continue
+                        name, uuid, conn_type = parts[0], parts[1], parts[2]
+                        if conn_type not in ('wifi', '802-11-wireless'):
+                            continue
+                        if self._is_setup_hotspot_connection(name):
+                            continue
+                        ssid = name
+                        detail = self._nmcli_read(['-t', '-f', '802-11-wireless.ssid', 'connection', 'show', uuid])
+                        if detail and detail.returncode == 0:
+                            for dline in detail.stdout.splitlines():
+                                if dline.startswith('802-11-wireless.ssid:'):
+                                    ssid = dline.split(':', 1)[1].strip() or name
+                                    break
+                        profile_ssids[name] = ssid
+                saved_ssids = set(profile_ssids.values())
 
                 own_ssid = self._setup_ssid_from_mac(iface) if hasattr(self, '_setup_ssid_from_mac') else None
 
@@ -7954,8 +8057,18 @@ class MempaperApp:
                 # to be active), even though the kernel-level scan succeeds.
                 iw_networks = self._scan_wifi_via_iw(iface, own_ssid=own_ssid)
                 if iw_networks:
+                    # A raw 'iw scan' has no concept of NetworkManager's connection
+                    # state, so _scan_wifi_via_iw() can't know which network (if any)
+                    # is currently active — cross-reference against nmcli separately,
+                    # resolving the active profile's name to its real SSID too.
+                    current_status = self._current_wifi_status(iface)
+                    current_ssid = None
+                    if current_status.get('connected'):
+                        active_name = current_status.get('connection')
+                        current_ssid = profile_ssids.get(active_name, active_name)
                     for n in iw_networks:
                         n['saved'] = n['ssid'] in saved_ssids
+                        n['in_use'] = bool(current_ssid) and n['ssid'] == current_ssid
                     return jsonify({'success': True, 'networks': iw_networks})
 
                 # Fallback: nmcli (works when the interface is NM-managed)
@@ -9359,6 +9472,39 @@ class MempaperApp:
         # Arm the initial timer on startup.
         _schedule()
 
+    def _flush_pending_caches_on_shutdown(self):
+        """Persist any debounced-but-not-yet-written cache state.
+
+        The unified secure cache (wallet balances, block-reward sync height,
+        optimized-balance monitoring) and cache metadata both debounce disk
+        writes and rely on a background thread to flush within ~60s / one
+        pre-cache cycle. A `systemctl restart` sends SIGTERM directly with no
+        grace period for that thread to run, so without this, a wallet balance
+        (or other state) updated shortly before a restart can be silently lost
+        — the app comes back up showing whatever was last written to disk.
+        """
+        print("🛑 Shutdown signal received — flushing pending cache writes...")
+        try:
+            from managers.unified_secure_cache import get_unified_cache
+            get_unified_cache().flush()
+        except Exception as e:
+            print(f"⚠️ Failed to flush unified cache on shutdown: {e}")
+        try:
+            if getattr(self, '_disk_save_pending', False):
+                self._write_cache_metadata_to_disk()
+        except Exception as e:
+            print(f"⚠️ Failed to flush cache metadata on shutdown: {e}")
+
+    def _install_shutdown_flush_handler(self):
+        """Flush pending cache writes before the process exits on SIGTERM."""
+        def _handler(signum, frame):
+            self._flush_pending_caches_on_shutdown()
+            os._exit(0)
+        try:
+            signal.signal(signal.SIGTERM, _handler)
+        except Exception as e:
+            print(f"⚠️ Could not install shutdown flush handler: {e}")
+
     def run(self, host='0.0.0.0', port=5000, debug=False):
         """
         Run the Flask application.
@@ -9369,6 +9515,7 @@ class MempaperApp:
             debug (bool): Enable debug mode
         """
         print(f"🚀 Starting mempaper server on {host}:{port}")
+        self._install_shutdown_flush_handler()
 
         # Run Flask app
         if self.socketio:

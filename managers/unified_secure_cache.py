@@ -257,13 +257,26 @@ class UnifiedSecureCache:
     def clear_cache(self, cache_type: CacheType) -> None:
         """
         Clear all data for a specific cache type.
-        
+
         Args:
             cache_type: Type of cache to clear
         """
         with self.cache_lock:
             self.cache_data[cache_type] = {}
             self._save_cache(force=True)
+
+    def flush(self) -> None:
+        """Write a pending debounced update to disk immediately, if there is one.
+
+        The background flush thread (see _start_flush_thread) normally does this
+        within 60s, but a process shutdown (e.g. SIGTERM from systemctl restart)
+        doesn't wait for that thread — call this from a shutdown handler so a
+        recent update (a wallet balance, a synced block height, etc.) isn't
+        silently lost in favor of whatever was last written to disk.
+        """
+        with self.cache_lock:
+            if self._save_pending:
+                self._write_cache_to_disk()
 
     def get_cache_info(self) -> Dict[str, Any]:
         """Get information about the unified cache."""

@@ -25,10 +25,22 @@ def main():
     from display.waveshare_display import WaveshareDisplay
     from managers.config_manager import ConfigManager
 
-    config = ConfigManager().config
+    config_manager = ConfigManager()
+    config_manager._stop_file_watching()  # one-shot read; this worker never picks up live config changes
+    config = config_manager.config
     display = WaveshareDisplay(config=config)
 
+    _cleanup_done = False
+
     def _cleanup():
+        # Guard against running twice: the SIGTERM handler calls this explicitly,
+        # then its sys.exit(0) triggers this same atexit-registered function again.
+        # The second call hits an already-released GPIO pin and logs a spurious
+        # "cannot set state of pin GPIO17" / "LED is closed or uninitialized" error.
+        nonlocal _cleanup_done
+        if _cleanup_done:
+            return
+        _cleanup_done = True
         try:
             display.cleanup()
         except Exception:

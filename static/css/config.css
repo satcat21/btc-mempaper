@@ -265,17 +265,12 @@ body.dark-mode .section-nav-pill:not(.active) .section-nav-icon {
     50%      { opacity: 0.5; transform: scale(0.75); }
 }
 
-/* Desktop: wrap pills so all are visible, hide toggle */
+/* Desktop: keep pills on a single row (never wrap) and hide the mobile toggle. */
 @media (min-width: 768px) {
     .section-nav {
         margin: 0 -24px;
         padding-left: 24px;
         padding-right: 24px;
-    }
-
-    .section-nav-track {
-        flex-wrap: wrap;
-        overflow-x: visible;
     }
 
     .section-nav-pill {
@@ -2099,6 +2094,35 @@ body.dark-mode .meme-lazy:not(.loaded) {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+/* Security icon rendered as a solid currentColor silhouette (CSS mask) so it
+   always matches the SSID text color and needs no separate dark-mode filter. */
+.wifi-security-icon {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+    background-color: currentColor;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-position: center;
+    mask-position: center;
+    -webkit-mask-size: contain;
+    mask-size: contain;
+}
+
+.wifi-security-icon--open {
+    -webkit-mask-image: url('/static/icons/wifi.svg');
+    mask-image: url('/static/icons/wifi.svg');
+}
+
+.wifi-security-icon--secured {
+    -webkit-mask-image: url('/static/icons/secured_wifi.svg');
+    mask-image: url('/static/icons/secured_wifi.svg');
 }
 
 .wifi-badge {
