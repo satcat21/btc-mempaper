@@ -91,12 +91,7 @@ translations = {
         # Display Settings
         "language": "Language",
         "language_desc": "Interface language for the dashboard",
-        
-        "web_orientation": "Web Orientation",
-        "web_orientation_desc": "Orientation for the web dashboard",
-        "eink_orientation": "E-ink Orientation",
-        "eink_orientation_desc": "Orientation for the E-ink display",
-        
+
         "width": "Width",
         "width_desc": "Display width in pixels",
         "height": "Height", 
@@ -759,10 +754,6 @@ translations = {
         # Display Settings
         "language": "Sprache",
         "language_desc": "Sprache der Benutzeroberfläche",
-        "web_orientation": "Web-Ausrichtung",
-        "web_orientation_desc": "Ausrichtung für das Web-Dashboard",
-        "eink_orientation": "E-Ink-Ausrichtung",
-        "eink_orientation_desc": "Ausrichtung für das E-Ink-Display",
         "width": "Breite",
         "width_desc": "Display-Breite in Pixeln",
         "height": "Höhe",
@@ -1429,10 +1420,6 @@ translations = {
         # Display Settings
         "language": "Idioma",
         "language_desc": "Idioma de la interfaz del panel",
-        "web_orientation": "Orientación Web",
-        "web_orientation_desc": "Orientación para el panel web",
-        "eink_orientation": "Orientación E-ink",
-        "eink_orientation_desc": "Orientación para la pantalla E-ink",
         "width": "Ancho",
         "width_desc": "Ancho de la pantalla en píxeles",
         "height": "Alto",
@@ -2083,10 +2070,6 @@ translations = {
         # Display Settings
         "language": "Langue",
         "language_desc": "Langue de l'interface du tableau de bord",
-        "web_orientation": "Orientation Web",
-        "web_orientation_desc": "Orientation pour le tableau de bord web",
-        "eink_orientation": "Orientation E-ink",
-        "eink_orientation_desc": "Orientation pour l'affichage E-ink",
         "width": "Largeur",
         "width_desc": "Largeur de l'affichage en pixels",
         "height": "Hauteur",
@@ -2738,10 +2721,6 @@ translations = {
         # Display Settings
         "language": "Lingua",
         "language_desc": "Lingua dell'interfaccia della dashboard",
-        "web_orientation": "Orientamento Web",
-        "web_orientation_desc": "Orientamento per la dashboard web",
-        "eink_orientation": "Orientamento E-ink",
-        "eink_orientation_desc": "Orientamento per il display E-ink",
         "width": "Larghezza",
         "width_desc": "Larghezza del display in pixel",
         "height": "Altezza",

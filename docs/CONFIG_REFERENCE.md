@@ -10,8 +10,6 @@ These settings can be modified via the Web Dashboard (recommended) or by editing
 | Web Label | Config Key | Type | Description | Allowed Values / Examples |
 | :--- | :--- | :--- | :--- | :--- |
 | **Language** | `language` | Select | Interface language | `en` (English), `de` (German), `es` (Spanish), `fr` (French), `it` (Italian) |
-| **Web Orientation** | `web_orientation` | Toggle | Web dashboard orientation | `vertical` (Portrait), `horizontal` (Landscape) |
-| **E-ink Orientation** | `eink_orientation` | Toggle | E-ink display orientation | `vertical` (Portrait), `horizontal` (Landscape) |
 | **Color Mode** | `color_mode_dark` | Switch | Dark theme for dashboard | `true` (Dark), `false` (Light) |
 | **E-Ink Dark Mode** | `eink_dark_mode` | Switch | Invert colors for E-ink | `true` (Inverted/Night), `false` (Standard) |
 | **Prioritize Large Memes** | `prioritize_large_scaled_meme` | Switch | Maximize meme size vs info blocks | `true` (Large Memes), `false` (Balanced) |

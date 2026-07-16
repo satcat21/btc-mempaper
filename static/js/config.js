@@ -5073,7 +5073,7 @@ function createFormField(key, field, value) {
     }
 
     // Skip adding label for self-managed interfaces and pure info boxes
-    const skipLabel = field.type === 'meme_management' || field.type === 'donation_history' || field.type === 'info_text' || field.type === 'open_url_button' || field.type === 'connection_check' || field.type === 'mempool_actions';
+    const skipLabel = field.type === 'meme_management' || field.type === 'donation_history' || field.type === 'info_text' || field.type === 'open_url_button' || field.type === 'connection_check' || field.type === 'mempool_actions' || field.type === 'hidden';
     if (!skipLabel) {
         const label = document.createElement('label');
         label.className = 'form-label';
@@ -5478,11 +5478,11 @@ function createFormField(key, field, value) {
         }
 
         case 'hidden':
-            // Create hidden input that won't be displayed
+            // Create hidden input; hide the whole row so no empty label/description gap shows
+            formGroup.style.display = 'none';
             input = document.createElement('input');
             input.type = 'hidden';
             input.value = value !== undefined && value !== null ? value : '';
-            input.style.display = 'none';
             break;
             
         case 'hidden_boolean':
