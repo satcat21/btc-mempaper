@@ -103,6 +103,10 @@ body.dark-mode {
     box-sizing: border-box;
 }
 
+html {
+    overflow-x: hidden;
+}
+
 body {
     font-family: var(--font-sans);
     background: var(--bg-primary);

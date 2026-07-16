@@ -4349,7 +4349,7 @@ function buildSectionNav(grid) {
     const toggle = document.createElement('button');
     toggle.type = 'button';
     toggle.className = 'section-nav-toggle';
-    toggle.innerHTML = '<span class="section-nav-toggle-icon">▼</span>';
+    toggle.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" fill="currentColor" class="section-nav-toggle-icon"><path d="M480-344 240-584l56-56 184 184 184-184 56 56-240 240Z"/></svg>';
     toggle.addEventListener('click', () => {
         nav.classList.toggle('expanded');
     });
@@ -4378,9 +4378,10 @@ function buildSectionNav(grid) {
     nav.addEventListener('touchend', () => { _ntRelaying = false; _ntX = null; }, { passive: true });
     nav.addEventListener('touchcancel', () => { _ntRelaying = false; _ntX = null; }, { passive: true });
 
-    // Insert before config-container
-    const container = document.getElementById('config-container');
-    container.parentNode.insertBefore(nav, container);
+    // Insert inside the sticky top bar, right after the header, so nav scrolls
+    // pinned together with the title instead of alone.
+    const stickyTopBar = document.querySelector('.sticky-top-bar');
+    stickyTopBar.appendChild(nav);
 
     // ── IntersectionObserver for active state ──
     const pills = track.querySelectorAll('.section-nav-pill');

@@ -35,6 +35,22 @@
         padding: 32px 24px;
         padding-bottom: 0px;
     }
+
+    /* Keep the section-nav full-bleed edges in sync with .container's
+       padding, which only widens to 24px at this breakpoint (not 768px). */
+    .section-nav {
+        margin: 0 -24px;
+        padding-left: 24px;
+        padding-right: 24px;
+    }
+}
+
+/* ── Sticky top bar (header + section nav pinned together) ───── */
+.sticky-top-bar {
+    position: sticky;
+    top: 0;
+    z-index: 10001;
+    background: var(--bg-primary);
 }
 
 /* ── Header ─────────────────────────────────────────────────── */
@@ -80,9 +96,7 @@
 
 /* ── Section Navigation Bar ─────────────────────────────────── */
 .section-nav {
-    position: sticky;
-    top: 0;
-    z-index: 10001;
+    position: relative;
     background: var(--bg-primary);
     padding: 10px 0 8px;
     border-bottom: 1px solid var(--border-color);
@@ -113,31 +127,42 @@
     display: none;
 }
 
-/* Mobile expand/collapse toggle */
+/* Mobile expand/collapse toggle — a semicircle bump hanging off the nav's
+   bottom border: flat edge flush with the border line so the curved edge
+   reads as a continuation of it, not a separate floating chip. Same shape
+   in collapsed and expanded (top:100% tracks the nav's own box height,
+   which grows when wrapped), only the icon rotates. */
 .section-nav-toggle {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 100%;
-    padding: 4px 0 0;
-    border: none;
-    background: none;
+    position: absolute;
+    top: calc(100% - 1px);
+    left: 50%;
+    transform: translateX(-50%);
+    width: 32px;
+    height: 16px;
+    padding: 0;
+    border: 1px solid var(--border-color);
+    border-top: none;
+    border-radius: 0 0 16px 16px;
+    background: var(--bg-primary);
     color: var(--text-secondary);
-    font-size: 0.7rem;
+    font-size: 0.65rem;
     cursor: pointer;
-    gap: 4px;
-    opacity: 0.6;
-    transition: opacity 0.2s ease;
     touch-action: pan-x;
+    z-index: 1;
+    transition: border-color 0.2s ease, color 0.2s ease;
 }
 
 .section-nav-toggle:hover {
-    opacity: 1;
+    color: var(--text-primary);
 }
 
 .section-nav-toggle-icon {
+    width: 16px;
+    height: 16px;
     transition: transform 0.2s ease;
-    font-size: 0.6rem;
 }
 
 .section-nav.expanded .section-nav-toggle-icon {
@@ -265,14 +290,14 @@ body.dark-mode .section-nav-pill:not(.active) .section-nav-icon {
     50%      { opacity: 0.5; transform: scale(0.75); }
 }
 
-/* Desktop: keep pills on a single row (never wrap) and hide the mobile toggle. */
+/* Desktop: keep pills on a single row (never wrap) and hide the mobile toggle.
+   Wrapping was tried here, but the active pill's label changes its width
+   (see .section-nav-label above), which changes the wrap count, which changes
+   the sticky nav's height, which shifts updateActiveFromScroll()'s navBottom
+   reading — flipping the active pill back and forth in a feedback loop that
+   visibly "wobbles" the scroll position. A single non-wrapping row keeps the
+   nav's height constant regardless of which pill is active, so it can't happen. */
 @media (min-width: 768px) {
-    .section-nav {
-        margin: 0 -24px;
-        padding-left: 24px;
-        padding-right: 24px;
-    }
-
     .section-nav-pill {
         padding: 7px 14px;
         font-size: 0.82rem;
@@ -3166,9 +3191,11 @@ body.dark-mode .modal-title-icon {
 
 /* ── Preview card shadows (light / dark config-page theme) ─── */
 .preview-card-light {
+    border-radius: 8px;
     box-shadow: 0 4px 22px rgba(0,0,0,.45), 0 0 10px rgba(255,255,255,.10);
 }
 .preview-card-dark {
+    border-radius: 8px;
     box-shadow: 0 4px 22px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.14);
 }
 

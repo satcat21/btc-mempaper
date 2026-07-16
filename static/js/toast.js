@@ -34,6 +34,15 @@
         // Ensure container is the last body child so it paints above nav elements
         // whose backdrop-filter creates competing stacking contexts
         if (el.nextSibling) document.body.appendChild(el);
+
+        // On mobile, keep the toast stack clear of the config page's sticky
+        // section-nav so it doesn't cover the pill track and block horizontal
+        // drags on it. Desktop keeps the original fixed top:20px position.
+        const nav = document.querySelector('.section-nav');
+        el.style.top = (nav && window.matchMedia('(max-width: 999px)').matches)
+            ? (nav.getBoundingClientRect().bottom + 8) + 'px'
+            : '20px';
+
         return el;
     };
 
