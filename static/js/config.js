@@ -4280,6 +4280,43 @@ function _showUpdateNavIndicator(hasUpdate, latestTag) {
 // ── Section Navigation Bar ──────────────────────────────────────────
 let _sectionNavObserver = null;
 
+// Shared tooltip element for nav pills, appended to <body> so it renders
+// outside the horizontally-scrollable track (which can't be escaped by a
+// pseudo-element — see .section-nav-tooltip in config.css for why).
+const _navHoverCapable = window.matchMedia('(hover: hover)').matches;
+function _getNavTooltipEl() {
+    let el = document.getElementById('section-nav-tooltip');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'section-nav-tooltip';
+        el.className = 'section-nav-tooltip';
+        document.body.appendChild(el);
+    }
+    return el;
+}
+function _attachNavTooltip(pill, nav) {
+    if (!_navHoverCapable) return;
+    const tooltipEl = _getNavTooltipEl();
+    pill.addEventListener('mouseenter', () => {
+        const text = pill.dataset.tooltip;
+        if (!text || pill.classList.contains('active')) return;
+        const rect = pill.getBoundingClientRect();
+        tooltipEl.textContent = text;
+        tooltipEl.style.left = (rect.left + rect.width / 2) + 'px';
+        if (nav.classList.contains('stuck')) {
+            tooltipEl.style.top = (rect.bottom + 6) + 'px';
+            tooltipEl.style.transform = 'translateX(-50%)';
+        } else {
+            tooltipEl.style.top = (rect.top - 6) + 'px';
+            tooltipEl.style.transform = 'translate(-50%, -100%)';
+        }
+        tooltipEl.classList.add('visible');
+    });
+    pill.addEventListener('mouseleave', () => {
+        tooltipEl.classList.remove('visible');
+    });
+}
+
 function buildSectionNav(grid) {
     // Remove previous nav if re-rendering
     const old = document.getElementById('section-nav');
@@ -4319,6 +4356,7 @@ function buildSectionNav(grid) {
 
         pill.dataset.tooltip = cat.label;
         pill.setAttribute('aria-label', cat.label);
+        _attachNavTooltip(pill, nav);
 
         const label = document.createElement('span');
         label.className = 'section-nav-label';
@@ -4334,9 +4372,11 @@ function buildSectionNav(grid) {
                 const renderFn = window._lazySectionRenderMap.get(catId);
                 if (renderFn) renderFn();
             }
-            // Scroll so section top is just above the nav bottom (ensures it becomes active)
-            const navHeight = nav.offsetHeight - 2;
-            const top = target.getBoundingClientRect().top + window.pageYOffset - navHeight;
+            // Scroll so section top clears the whole pinned bar (header + nav
+            // now stick together — nav's own height alone under-reserves the
+            // offset, overshooting past the section's actual start).
+            const stickyBarHeight = stickyTopBar.offsetHeight - 2;
+            const top = target.getBoundingClientRect().top + window.pageYOffset - stickyBarHeight;
             window.scrollTo({ top, behavior: 'smooth' });
         });
 
@@ -4350,8 +4390,18 @@ function buildSectionNav(grid) {
     toggle.type = 'button';
     toggle.className = 'section-nav-toggle';
     toggle.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" fill="currentColor" class="section-nav-toggle-icon"><path d="M480-344 240-584l56-56 184 184 184-184 56 56-240 240Z"/></svg>';
+    const t = window.translations || {};
+    const setToggleLabel = () => {
+        const expanded = nav.classList.contains('expanded');
+        toggle.setAttribute('aria-expanded', String(expanded));
+        toggle.setAttribute('aria-label', expanded
+            ? (t.nav_collapse || 'Collapse navigation')
+            : (t.nav_expand || 'Show all sections'));
+    };
+    setToggleLabel();
     toggle.addEventListener('click', () => {
         nav.classList.toggle('expanded');
+        setToggleLabel();
     });
     nav.appendChild(toggle);
 
@@ -4437,11 +4487,15 @@ function buildSectionNav(grid) {
         }
     }, { passive: true });
 
-    // Detect when nav becomes stuck at the top to flip tooltip direction
+    // Detect when the sticky top bar becomes pinned, to flip tooltip direction.
+    // Must live in normal flow OUTSIDE .sticky-top-bar — inserting it inside
+    // the wrapper (next to nav) would make it travel with the pinned bar
+    // instead of marking the original scroll position, so it would never
+    // report leaving the viewport.
     const sentinel = document.createElement('div');
     sentinel.style.height = '1px';
     sentinel.style.visibility = 'hidden';
-    nav.parentNode.insertBefore(sentinel, nav);
+    stickyTopBar.parentNode.insertBefore(sentinel, stickyTopBar);
     const stickyObs = new IntersectionObserver(([e]) => {
         nav.classList.toggle('stuck', !e.isIntersecting);
     }, { threshold: 0 });

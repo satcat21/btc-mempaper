@@ -826,9 +826,11 @@ class ImageRenderer:
         # Ensure fee_data is a dict
         if fee_data is None:
             fee_data = {}
-            
-        if block_height != self.last_block_height:
-            # New block detected, update cache
+
+        is_new_block = block_height != self.last_block_height
+        has_data = bool(self.block_fee_cache.get(block_height, {}).get('fee_data'))
+        if is_new_block or not has_data:
+            # New block detected, or retrying a height whose fee fetch previously failed
             self.block_fee_cache[block_height] = {
                 'fee_data': fee_data,
                 'fee_color': fee_color
@@ -839,7 +841,7 @@ class ImageRenderer:
                 oldest = sorted(self.block_fee_cache.keys())[0]
                 del self.block_fee_cache[oldest]
             self.last_block_height = block_height
-        # If not a new block, do not update cache
+        # Otherwise, we already have usable data for this height — keep it
 
     def get_fee_colors_for_gradient(self, block_height):
         """
@@ -2873,6 +2875,7 @@ class ImageRenderer:
         shared_data = {
             "holiday_info": holiday_info,
             "configured_fee": configured_fee,
+            "precached_fee": precached_fee,
             "api_block_height": api_block_height,
             "meme_path": content_path,
             "btc_price_data": btc_price_data,
@@ -3046,6 +3049,7 @@ class ImageRenderer:
         shared_data = {
             "holiday_info": holiday_info,
             "configured_fee": configured_fee,
+            "precached_fee": precached_fee,
             "api_block_height": api_block_height,
             "meme_path": meme_path,
             "btc_price_data": btc_price_data,
@@ -3112,6 +3116,7 @@ class ImageRenderer:
         
         holiday_info = shared_data["holiday_info"]
         configured_fee = shared_data["configured_fee"]
+        precached_fee = shared_data.get("precached_fee")
         api_block_height = shared_data["api_block_height"]
         meme_path = shared_data["meme_path"]
         # btc_price_data = shared_data["btc_price_data"]
@@ -3323,7 +3328,7 @@ class ImageRenderer:
             self._render_block_info_with_data(block_info_img, block_info_draw, block_height, block_hash, font_block_label,
                                             font_block_value, mempool_api, configured_fee,
                                             api_block_height, web_quality, y_override=10,
-                                            skip_hash_frame=skip_hash_frame)
+                                            skip_hash_frame=skip_hash_frame, precached_fee=precached_fee)
             
             # --- 3. Render Center Content (Holiday + Info Blocks) ---
             # Calculate available vertical space
@@ -3969,7 +3974,7 @@ class ImageRenderer:
         self._render_block_info_with_data(img, draw, block_height, block_hash, font_block_label,
                                         font_block_value, mempool_api, configured_fee,
                                         api_block_height, web_quality,
-                                        skip_hash_frame=skip_hash_frame)
+                                        skip_hash_frame=skip_hash_frame, precached_fee=precached_fee)
 
         return img
     
@@ -4205,23 +4210,29 @@ class ImageRenderer:
     def _render_block_info_with_data(self, img, draw, block_height, block_hash, font_block_label,
                                     font_block_value, mempool_api, configured_fee,
                                     api_block_height, web_quality, y_override=None,
-                                    skip_hash_frame=False):
+                                    skip_hash_frame=False, precached_fee=None):
         """
         Render block information using pre-collected fee and block data.
-        
+
         Args:
             skip_hash_frame: If True, skip drawing the decorative hash border.
                             Used for pre-rendering where hash is not yet known.
+            precached_fee: Already-fetched fee recommendations dict, reused instead
+                            of an extra API call when refreshing the gradient cache.
         """
         # Use pre-collected data instead of making new API calls
         if api_block_height is not None:
             display_block_height = str(api_block_height)
         else:
             display_block_height = str(block_height)
-        
-        # Update fee cache only if block height changed
-        if self._block_fee_cache["current"]["height"] != display_block_height:
-            fee_data = mempool_api.get_fee_recommendations() if mempool_api else None
+
+        # Refresh the fee cache if the block height changed, or if the entry for
+        # this height has no usable fee data (e.g. a prior fetch for this same
+        # height failed/timed out) — otherwise a single transient API failure
+        # permanently locks the gradient to grey until the next block.
+        _cached_fee_data = self.block_fee_cache.get(display_block_height, {}).get('fee_data')
+        if self._block_fee_cache["current"]["height"] != display_block_height or not _cached_fee_data:
+            fee_data = precached_fee or (mempool_api.get_fee_recommendations() if mempool_api else None)
             # Compute fee_color or use a default
             fee_color = self.get_color("fee", web_quality) if hasattr(self, 'get_color') else "gray"
             self._update_block_fee_cache(display_block_height, fee_data, fee_color)

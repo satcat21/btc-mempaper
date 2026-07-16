@@ -199,35 +199,24 @@
     }
 }
 
-/* Instant CSS tooltip — only on devices with hover (mouse), not touch */
-@media (hover: hover) {
-    .section-nav-pill[data-tooltip]:not(.active)::after {
-        content: attr(data-tooltip);
-        position: absolute;
-        bottom: calc(100% + 6px);
-        left: 50%;
-        transform: translateX(-50%);
-        background: var(--bg-card);
-        color: var(--text-primary);
-        border: 1px solid var(--border-color);
-        border-radius: 6px;
-        padding: 4px 8px;
-        font-size: 0.72rem;
-        font-weight: 500;
-        white-space: nowrap;
-        pointer-events: none;
-        opacity: 0;
-        z-index: 110;
-    }
+.section-nav-tooltip {
+    position: fixed;
+    background: var(--bg-card);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 0.72rem;
+    font-weight: 500;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    z-index: 100050;
+    transition: opacity 0.15s ease;
+}
 
-    .section-nav.stuck .section-nav-pill[data-tooltip]:not(.active)::after {
-        bottom: auto;
-        top: calc(100% + 6px);
-    }
-
-    .section-nav-pill[data-tooltip]:not(.active):hover::after {
-        opacity: 1;
-    }
+.section-nav-tooltip.visible {
+    opacity: 1;
 }
 
 .section-nav-pill.active {
