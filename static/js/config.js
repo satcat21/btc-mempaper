@@ -1,3 +1,11 @@
+function _formatDonationTime(timestamp) {
+    if (!timestamp) return '—';
+    const d = new Date(timestamp + 'Z');
+    const dateStr = d.toLocaleDateString();
+    const timeStr = d.toLocaleTimeString();
+    return `<span class="donation-time-date">${dateStr},</span> <span class="donation-time-clock">${timeStr}</span>`;
+}
+
 // ── Form-level input validation ───────────────────────────────
 // Shared regexes
 const _RE_IPV4        = /^\d{1,3}(\.\d{1,3}){3}$/;
@@ -8,16 +16,111 @@ const _RE_BTC_OR_XPUB = /^([13][a-km-zA-HJ-NP-Z1-9]{25,34}|bc1[a-z0-9]{6,87}|[a-
 const _RE_BTC_ADDR    = /^([13][a-km-zA-HJ-NP-Z1-9]{25,34}|bc1[a-z0-9]{6,87})$/;
 const _RE_HEX_COLOR   = /^#[0-9A-Fa-f]{6}$/;
 
+// ── Checksum validation for Bitcoin addresses / xpub-ypub-zpub ─────────────
+const _B58_ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+
+// Decode a base58 string into its raw bytes (no checksum stripping). Returns
+// null if the string contains characters outside the base58 alphabet.
+function _base58Decode(str) {
+    let num = 0n;
+    for (const ch of str) {
+        const idx = _B58_ALPHABET.indexOf(ch);
+        if (idx === -1) return null;
+        num = num * 58n + BigInt(idx);
+    }
+    let hex = num.toString(16);
+    if (hex.length % 2) hex = '0' + hex;
+    const bytes = [];
+    if (num > 0n) {
+        for (let i = 0; i < hex.length; i += 2) bytes.push(parseInt(hex.substr(i, 2), 16));
+    }
+    let leadingZeros = 0;
+    for (const ch of str) { if (ch === '1') leadingZeros++; else break; }
+    return new Uint8Array([...new Array(leadingZeros).fill(0), ...bytes]);
+}
+
+async function _sha256(bytes) {
+    return new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+}
+
+// Verify a base58check-encoded string (legacy P2PKH/P2SH addresses, and
+// xpub/ypub/zpub/… extended keys all use this scheme): last 4 bytes must equal
+// the first 4 bytes of SHA256(SHA256(payload)).
+async function _isValidBase58Check(str) {
+    const decoded = _base58Decode(str);
+    if (!decoded || decoded.length < 5) return false;
+    const payload = decoded.slice(0, -4);
+    const checksum = decoded.slice(-4);
+    const hash = await _sha256(await _sha256(payload));
+    for (let i = 0; i < 4; i++) if (hash[i] !== checksum[i]) return false;
+    return true;
+}
+
+// Bech32 (BIP-173) / Bech32m (BIP-350) checksum verification for bc1… segwit
+// addresses — a different, non-hash-based checksum scheme from base58check,
+// so it needs its own implementation. Reference algorithm from the BIPs.
+const _BECH32_CHARSET = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
+
+function _bech32Polymod(values) {
+    const GEN = [0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3];
+    let chk = 1;
+    for (const v of values) {
+        const b = chk >>> 25;
+        chk = ((chk & 0x1ffffff) << 5) ^ v;
+        for (let i = 0; i < 5; i++) if ((b >>> i) & 1) chk ^= GEN[i];
+    }
+    return chk >>> 0;
+}
+
+function _bech32HrpExpand(hrp) {
+    const ret = [];
+    for (let i = 0; i < hrp.length; i++) ret.push(hrp.charCodeAt(i) >> 5);
+    ret.push(0);
+    for (let i = 0; i < hrp.length; i++) ret.push(hrp.charCodeAt(i) & 31);
+    return ret;
+}
+
+function _isValidBech32(addr) {
+    const lower = addr.toLowerCase();
+    if (addr !== lower && addr !== addr.toUpperCase()) return false; // mixed case not allowed
+    const pos = lower.lastIndexOf('1');
+    if (pos < 1 || pos + 7 > lower.length) return false;
+    const hrp = lower.substring(0, pos);
+    const data = [];
+    for (const ch of lower.substring(pos + 1)) {
+        const idx = _BECH32_CHARSET.indexOf(ch);
+        if (idx === -1) return false;
+        data.push(idx);
+    }
+    const values = _bech32HrpExpand(hrp).concat(data);
+    const polymod = _bech32Polymod(values);
+    return polymod === 1 || polymod === 0x2bc830a3; // bech32 (v0) or bech32m (v1+/taproot)
+}
+
+// Combined format + checksum check. Returns true (fully valid), false (fails
+// the basic shape check), or 'checksum' (right shape, wrong checksum — most
+// often a typo) so callers can show a more specific error message.
+async function _checkBtcKeyOrAddress(val, formatRegex) {
+    if (!formatRegex.test(val)) return false;
+    const checksumOk = val.startsWith('bc1') ? _isValidBech32(val) : await _isValidBase58Check(val);
+    return checksumOk ? true : 'checksum';
+}
+
+async function _isValidBtcAddressOrXpub(val) { return _checkBtcKeyOrAddress(val, _RE_BTC_OR_XPUB); }
+async function _isValidBtcAddress(val)       { return _checkBtcKeyOrAddress(val, _RE_BTC_ADDR); }
+
 // Set of currently-invalid input elements (auto-cleaned when element leaves DOM)
 const _invalidInputs = new Set();
 
-function _validationMsg(regex) {
+function _validationMsg(validator) {
     const t = window.translations || {};
-    if (regex === _RE_SSH_KEY)     return t.validation_ssh_key     || 'Invalid SSH public key (expected: ssh-ed25519 AAAA… or ssh-rsa AAAA…)';
-    if (regex === _RE_IPV4)        return t.validation_ipv4        || 'Invalid IP address (expected: 192.168.x.x)';
-    if (regex === _RE_BTC_OR_XPUB) return t.validation_btc_or_xpub || 'Invalid Bitcoin address or extended public key (xpub / zpub)';
-    if (regex === _RE_BTC_ADDR)    return t.validation_btc_addr    || 'Invalid Bitcoin address';
-    if (regex === _RE_HEX_COLOR)   return t.validation_hex_color   || 'Invalid color (expected: #RRGGBB)';
+    if (validator === _RE_SSH_KEY)             return t.validation_ssh_key     || 'Invalid SSH public key (expected: ssh-ed25519 AAAA… or ssh-rsa AAAA…)';
+    if (validator === _RE_IPV4)                return t.validation_ipv4        || 'Invalid IP address (expected: 192.168.x.x)';
+    if (validator === _RE_BTC_OR_XPUB
+        || validator === _isValidBtcAddressOrXpub) return t.validation_btc_or_xpub || 'Invalid Bitcoin address or extended public key (xpub / zpub)';
+    if (validator === _RE_BTC_ADDR
+        || validator === _isValidBtcAddress)   return t.validation_btc_addr    || 'Invalid Bitcoin address';
+    if (validator === _RE_HEX_COLOR)           return t.validation_hex_color   || 'Invalid color (expected: #RRGGBB)';
     return t.validation_invalid || 'Invalid value';
 }
 
@@ -42,10 +145,7 @@ function _updateFormValidity() {
     });
 }
 
-// Mark an input valid or invalid; pass allowEmpty=true to treat empty value as valid.
-function _validateInput(el, regex, allowEmpty = true) {
-    const val = el.value.trim();
-    const valid = val === '' ? allowEmpty : regex.test(val);
+function _applyValidationResult(el, valid, msg) {
     el.classList.toggle('input-invalid', !valid);
 
     // Find or create the error message span that lives right after the input
@@ -55,12 +155,198 @@ function _validateInput(el, regex, allowEmpty = true) {
         errEl.className = 'input-error-msg';
         el.insertAdjacentElement('afterend', errEl);
     }
-    errEl.textContent = valid ? '' : _validationMsg(regex);
+    errEl.textContent = valid ? '' : msg;
     errEl.hidden = valid;
 
     if (valid) { _invalidInputs.delete(el); } else { _invalidInputs.add(el); }
     _updateFormValidity();
-    return valid;
+}
+
+// Mark an input valid or invalid; pass allowEmpty=true to treat empty value as valid.
+// `validator` is either a RegExp (tested synchronously — format-only checks) or an
+// async function `(val) => Promise<true|false|'checksum'>` for checks that need real
+// crypto (base58check / bech32 checksum verification), which resolves the input's
+// valid/invalid state shortly after typing rather than blocking the keystroke.
+// 'checksum' means the shape matched but the checksum didn't — usually a typo.
+function _validateInput(el, validator, allowEmpty = true) {
+    const val = el.value.trim();
+    if (val === '') {
+        _applyValidationResult(el, allowEmpty, _validationMsg(validator));
+        return allowEmpty;
+    }
+    if (validator instanceof RegExp) {
+        const valid = validator.test(val);
+        _applyValidationResult(el, valid, _validationMsg(validator));
+        return valid;
+    }
+    // Async validator — apply the result once the checksum check resolves.
+    const t = window.translations || {};
+    validator(val).then(result => {
+        const valid = result === true;
+        const msg = result === 'checksum'
+            ? (t.validation_checksum || 'Checksum does not match — please check for typos')
+            : _validationMsg(validator);
+        _applyValidationResult(el, valid, msg);
+    });
+    return true; // optimistic pending state; _invalidInputs updates once resolved
+}
+
+// Auto-trim on blur — pasted keys/addresses often carry a trailing space or
+// newline from the clipboard, which shouldn't affect validation or matter for
+// saving. Re-fires 'input' so validation and dirty-state tracking re-run
+// against the cleaned-up value.
+function _trimOnBlur(el) {
+    el.addEventListener('blur', () => {
+        const trimmed = el.value.trim();
+        if (el.value !== trimmed) {
+            el.value = trimmed;
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+    });
+}
+
+function _createMaskIcon(iconPath, size = 16) {
+    const el = document.createElement('span');
+    el.className = 'themed-mask-icon';
+    el.style.width = size + 'px';
+    el.style.height = size + 'px';
+    el.style.webkitMaskImage = `url('${iconPath}')`;
+    el.style.maskImage = `url('${iconPath}')`;
+    return el;
+}
+
+// ── Address privacy masking ────────────────────────────────────────────────
+// Shows a "zpub6r****…****roaa" preview over an address/xpub input while it
+// isn't focused, so a sensitive value isn't fully visible at a glance while
+// scrolling or screen-sharing — clicking it reveals the full value for
+// editing.
+const _MASK_PREFIX_LEN = 6;
+const _MASK_SUFFIX_LEN = 2;
+const _MASK_MIN_STARS = 3;
+
+// Measures the real rendered width (px) of one monospace character
+const _monoCharWidthCache = {};
+function _monoCharWidthPx(referenceEl) {
+    const cs = getComputedStyle(referenceEl);
+    const fontKey = `${cs.fontSize} ${cs.fontFamily}`;
+    if (_monoCharWidthCache[fontKey]) return _monoCharWidthCache[fontKey];
+    if (!_monoCharWidthPx._canvas) _monoCharWidthPx._canvas = document.createElement('canvas');
+    const ctx = _monoCharWidthPx._canvas.getContext('2d');
+    ctx.font = fontKey;
+    const width = ctx.measureText('0').width || 8;
+    _monoCharWidthCache[fontKey] = width;
+    return width;
+}
+
+// Builds the masked preview, sizing the run of '*' to fill however much of
+// the column is actually available
+function _maskAddressPreview(val, availableWidthPx, fontReferenceEl) {
+    const minLen = _MASK_PREFIX_LEN + _MASK_SUFFIX_LEN + _MASK_MIN_STARS;
+    if (!val || val.length <= minLen) return val; // too short to usefully mask
+
+    const hiddenLen = val.length - _MASK_PREFIX_LEN - _MASK_SUFFIX_LEN;
+    let starCount = hiddenLen; // fallback if width can't be measured: show it all
+    if (availableWidthPx > 0 && fontReferenceEl) {
+        const charWidth = _monoCharWidthPx(fontReferenceEl);
+        if (charWidth > 0) {
+            const maxChars = Math.floor(availableWidthPx / charWidth);
+            starCount = maxChars - _MASK_PREFIX_LEN - _MASK_SUFFIX_LEN;
+        }
+    }
+    starCount = Math.max(_MASK_MIN_STARS, Math.min(starCount, hiddenLen));
+
+    return val.slice(0, _MASK_PREFIX_LEN) + '*'.repeat(starCount) + val.slice(-_MASK_SUFFIX_LEN);
+}
+
+function _addAddressMaskOverlay(inputEl) {
+    const wrapper = document.createElement('span');
+    wrapper.style.cssText = 'position:relative; display:block;';
+    inputEl.parentNode.insertBefore(wrapper, inputEl);
+    wrapper.appendChild(inputEl);
+
+    const overlay = document.createElement('span');
+    overlay.className = 'address-mask-overlay';
+    overlay.style.cssText = `
+        position: absolute; inset: 0; display: none; align-items: center;
+        padding: 7px; font-family: var(--font-mono, monospace); font-size: 0.85rem;
+        color: var(--text-primary); background: var(--bg-input);
+        border-radius: var(--radius-sm); cursor: text;
+        white-space: nowrap; overflow: hidden; text-overflow: clip;
+    `;
+    overlay.title = window.translations?.click_to_reveal || 'Click to view/edit the full value';
+
+    function updateOverlay() {
+        const val = inputEl.value.trim();
+        if (val) {
+            // inputEl stays laid out (only the overlay itself toggles display),
+            // so its clientWidth is a reliable stand-in for the overlay's own
+            // width even while the overlay is currently hidden. Subtract the
+            // overlay's own left+right padding (7px each) to get the actual
+            // space available for text.
+            const availablePx = inputEl.clientWidth - 14;
+            overlay.textContent = _maskAddressPreview(val, availablePx, overlay);
+        } else {
+            overlay.textContent = '';
+        }
+        overlay.style.display = (!val || document.activeElement === inputEl) ? 'none' : 'flex';
+    }
+
+    inputEl.addEventListener('input', updateOverlay);
+    inputEl.addEventListener('blur', updateOverlay);
+    inputEl.addEventListener('focus', () => { overlay.style.display = 'none'; });
+    overlay.addEventListener('click', () => inputEl.focus());
+
+    // Re-measure when the column width actually changes (window resize,
+    // orientation change, sidebar toggle, etc.) so the star count stays
+    // matched to the available space rather than the width at creation time.
+    if (typeof ResizeObserver !== 'undefined') {
+        new ResizeObserver(updateOverlay).observe(wrapper);
+    } else {
+        window.addEventListener('resize', updateOverlay);
+    }
+
+    // Code elsewhere that sets inputEl.value directly (e.g. populating a
+    // pre-created empty row from cached data) doesn't fire an 'input' event,
+    // so the overlay wouldn't otherwise notice the new value — expose a manual
+    // refresh hook for those call sites.
+    inputEl._refreshAddressMask = updateOverlay;
+
+    wrapper.appendChild(overlay);
+    updateOverlay();
+}
+
+// ── Wallet balance privacy toggle ───────────────────────────────────────────
+// One global on/off switch (persisted across reloads) covering every balance
+// figure in the wallet table, regardless of which code path last wrote it
+// (initial render, cached-balance load, or a live websocket update) — all of
+// them go through _setWalletBalanceText so a single toggle keeps them in sync.
+window._walletBalancesHidden = localStorage.getItem('mempaper_hide_wallet_balances') === '1';
+
+function _setWalletBalanceText(el, formattedValue) {
+    el.dataset.realValue = formattedValue;
+    el.textContent = window._walletBalancesHidden ? '******' : formattedValue;
+}
+
+function _refreshAllWalletBalanceDisplays() {
+    document.querySelectorAll('.wallet-balance-display').forEach(el => {
+        if (el.dataset.realValue !== undefined) {
+            el.textContent = window._walletBalancesHidden ? '******' : el.dataset.realValue;
+        }
+    });
+}
+
+function _toggleWalletBalanceVisibility(iconEl) {
+    window._walletBalancesHidden = !window._walletBalancesHidden;
+    localStorage.setItem('mempaper_hide_wallet_balances', window._walletBalancesHidden ? '1' : '0');
+    _refreshAllWalletBalanceDisplays();
+    if (iconEl) {
+        const newIconPath = window._walletBalancesHidden ? '/static/icons/visibility_off.svg' : '/static/icons/visibility.svg';
+        iconEl.style.webkitMaskImage = `url('${newIconPath}')`;
+        iconEl.style.maskImage = `url('${newIconPath}')`;
+        iconEl.title = window._walletBalancesHidden
+            ? (window.translations?.show_balances || 'Show balances')
+            : (window.translations?.hide_balances || 'Hide balances');
+    }
 }
 
 // Intercept clicks on the save buttons when validation errors exist.
@@ -76,6 +362,16 @@ function _setupValidationClickInterceptor() {
                 e.stopImmediatePropagation();
                 e.preventDefault();
                 _scrollToFirstError();
+                const t = window.translations || {};
+                const firstErrEl = [..._invalidInputs].find(el => document.contains(el))
+                    ?.nextElementSibling;
+                const detail = (firstErrEl && firstErrEl.classList.contains('input-error-msg'))
+                    ? firstErrEl.textContent : '';
+                _buildLiveToast(
+                    t.validation_save_blocked_title || 'Fix invalid fields before saving',
+                    [detail || (t.validation_save_blocked_body || 'One or more fields have invalid values.')],
+                    '#ef4444', 6000
+                );
             }
         }, true /* capture phase */);
     });
@@ -88,9 +384,18 @@ function _setupValidationClickInterceptor() {
 fetch('/static/icons/check.svg').catch(() => {});
 fetch('/static/icons/add.svg').catch(() => {});
 
-// Reload after a service restart, persisting the update tag so the new page can show a toast.
-function _reloadAfterRestart(tag) {
-    if (tag) sessionStorage.setItem('mempaper_updated_to', tag);
+// Reload after a service restart, persisting enough state so the new page can
+// show the right toast: a software update takes priority (its own toast already
+// names the version — no need for a second one); otherwise tell the user whether
+// this was a full reboot (new boot_id) or just a same-boot service restart, since
+// only a reboot reliably pushes an e-ink refresh, and either can be triggered from
+// the CLI as much as from this page's buttons.
+function _reloadAfterRestart(tag, isReboot) {
+    if (tag) {
+        sessionStorage.setItem('mempaper_updated_to', tag);
+    } else {
+        sessionStorage.setItem('mempaper_action_done', isReboot ? 'reboot' : 'restart');
+    }
     location.reload();
 }
 
@@ -332,7 +637,7 @@ function closeMemeModal() {
                         const display = rows[i].querySelector('.wallet-balance-display');
                         if (display) {
                             const bal = addrInfo.balance_btc || addrInfo.balance || addrInfo.cached_balance || 0;
-                            display.textContent = bal.toFixed(8);
+                            _setWalletBalanceText(display, bal.toFixed(8));
                             display.style.color = 'var(--accent)';
                             display.style.opacity = '1';
                             display.title = 'Live balance data';
@@ -420,8 +725,7 @@ function closeMemeModal() {
                     if (tbody.rows.length === 1 && tbody.rows[0].cells.length === 1) {
                         tbody.innerHTML = '';
                     }
-                    const ts = donation.timestamp
-                        ? new Date(donation.timestamp + 'Z').toLocaleString() : '—';
+                    const ts = _formatDonationTime(donation.timestamp);
                     const bh = donation.block_height != null ? donation.block_height.toLocaleString() : '—';
                     const sats = (donation.amount_sats || 0).toLocaleString();
                     const msg = donation.message
@@ -3881,25 +4185,130 @@ function createDeviceControlSection() {
     rebootBtn.addEventListener('click', async () => {
         const ok = await showConfirmModal({
             title: t.reboot_device || 'Reboot Device',
-            message: t.reboot_device_confirm || 'Reboot the entire device? This takes about 1 min 21 sec. The page will reload when the service is back.',
+            message: t.reboot_device_confirm || 'Reboot the entire device? This can take a couple of minutes (Wi-Fi reconnect time varies). The page will reload when the service is back.',
             confirmText: t.reboot || 'Reboot',
             cancelText: t.cancel || 'Cancel',
             danger: true,
             icon: '/static/icons/reboot.svg',
         });
         if (!ok) return;
-        _performSystemAction('/api/system/reboot', t.reboot_device || 'Reboot Device', 81);
+        // A full device reboot (OS boot + service startup + Wi-Fi reconnect) can run
+        // noticeably longer than a plain service restart, but how long varies a lot
+        // run to run (Wi-Fi/DNS reconnect is the long pole and isn't consistent) — so
+        // start checking for real early (30s in) rather than waiting almost the whole
+        // estimate, and give polling a long runway after that before giving up with
+        // "Service not responding".
+        _performSystemAction('/api/system/reboot', t.reboot_device || 'Reboot Device', 180, 270, 30);
+    });
+
+    // Shutdown / Power Off button
+    const shutdownBtn = document.createElement('button');
+    shutdownBtn.type = 'button';
+    shutdownBtn.className = 'device-control-btn device-control-btn-danger';
+    shutdownBtn.innerHTML = `<span class="device-control-icon"><span style="display:inline-block;width:18px;height:18px;background-color:currentColor;-webkit-mask-image:url('/static/icons/power_off.svg');mask-image:url('/static/icons/power_off.svg');-webkit-mask-size:contain;mask-size:contain;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;vertical-align:middle"></span></span> ${t.shutdown_device || 'Shutdown'}`;
+
+    shutdownBtn.addEventListener('click', async () => {
+        const ok = await showConfirmModal({
+            title: t.shutdown_device || 'Shutdown Device',
+            message: t.shutdown_device_confirm ||
+                'Shut down the device completely? Unlike reboot, it will NOT start back up on its own — ' +
+                'you\'ll need to disconnect and reconnect power (or use a physical power switch) to turn it back on.',
+            confirmText: t.shutdown || 'Shut Down',
+            cancelText: t.cancel || 'Cancel',
+            danger: true,
+            icon: '/static/icons/power_off.svg',
+        });
+        if (!ok) return;
+        _performShutdown();
     });
 
     wrapper.appendChild(restartBtn);
     wrapper.appendChild(rebootBtn);
+    wrapper.appendChild(shutdownBtn);
     formGroup.appendChild(wrapper);
     return formGroup;
 }
 
-function _performSystemAction(apiUrl, title, estimatedSeconds) {
+// Shutdown has no "come back online" phase to poll for, unlike restart/reboot —
+// it counts down to an estimated safe-to-unplug point and then stops, and tells
+// the rest of the page's reconnect logic to give up entirely (see _shuttingDown
+// guards on attemptConfigReconnect and the visibilitychange handler).
+function _performShutdown() {
+    const t = window.translations || {};
+
+    window._shuttingDown = true;
+    if (window.configSocket) {
+        window.configSocket.disconnect();
+    }
+
+    fetch('/api/system/shutdown', { method: 'POST', credentials: 'same-origin' })
+        .catch(() => { /* connection will drop shortly regardless */ });
+
+    const overlay = document.createElement('div');
+    overlay.className = 'confirm-modal-overlay';
+    document.documentElement.style.setProperty('--scroll-y', `-${window.scrollY}px`);
+    document.body.classList.add('modal-open');
+
+    const dialog = document.createElement('div');
+    dialog.className = 'confirm-modal-dialog';
+
+    const heading = document.createElement('h3');
+    heading.className = 'confirm-modal-title';
+    heading.innerHTML = `<img src="/static/icons/power_off.svg" alt="" class="modal-title-icon"> ${t.shutdown_device || 'Shutdown Device'}`;
+
+    const countdown = document.createElement('div');
+    countdown.className = 'restart-countdown';
+
+    // Estimated time for a clean shutdown to actually finish (services stopped,
+    // filesystems synced/unmounted) — generous relative to mempaper.service's own
+    // 10s TimeoutStopSec, to leave real margin before telling the user it's safe.
+    const shutdownSeconds = 30;
+
+    const countdownNumber = document.createElement('div');
+    countdownNumber.className = 'restart-countdown-number';
+    countdownNumber.textContent = _fmtCountdown(shutdownSeconds);
+
+    const countdownLabel = document.createElement('div');
+    countdownLabel.className = 'restart-countdown-label';
+    countdownLabel.textContent = t.shutting_down || 'Shutting down…';
+
+    const progressBar = document.createElement('div');
+    progressBar.className = 'restart-progress-bar';
+    const progressFill = document.createElement('div');
+    progressFill.className = 'restart-progress-fill';
+    progressBar.appendChild(progressFill);
+
+    countdown.appendChild(countdownNumber);
+    countdown.appendChild(countdownLabel);
+
+    dialog.appendChild(heading);
+    dialog.appendChild(countdown);
+    dialog.appendChild(progressBar);
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+
+    requestAnimationFrame(() => overlay.classList.add('visible'));
+
+    let remaining = shutdownSeconds;
+    const interval = setInterval(() => {
+        remaining--;
+        if (remaining >= 0) {
+            countdownNumber.textContent = _fmtCountdown(remaining);
+            progressFill.style.transform = 'scaleX(' + (1 - remaining / shutdownSeconds) + ')';
+        }
+        if (remaining <= 0) {
+            clearInterval(interval);
+            countdownNumber.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="restart-check-icon" viewBox="0 -960 960 960" fill="#28a745"><path d="M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z"/></svg>';
+            countdownNumber.classList.add('restart-countdown-success');
+            countdownLabel.textContent = t.safe_to_disconnect || 'It is now safe to disconnect the power.';
+            progressFill.style.transform = 'scaleX(1)';
+        }
+    }, 1000);
+}
+
+function _performSystemAction(apiUrl, title, estimatedSeconds, maxPollAttempts, pollStartSeconds) {
     // Show countdown modal immediately so the user sees feedback right away
-    _showRestartCountdown(title, estimatedSeconds);
+    _showRestartCountdown(title, estimatedSeconds, null, null, null, null, null, maxPollAttempts, pollStartSeconds);
 
     // Fire the API call (response may never arrive if the service restarts)
     fetch(apiUrl, { method: 'POST', credentials: 'same-origin' })
@@ -3929,7 +4338,7 @@ function _fmtCountdown(secs) {
     return m + ':' + String(s).padStart(2, '0');
 }
 
-function _showRestartCountdown(title, estimatedSeconds, updateTag, rollbackTag, rollbackCommit, oldStarted, updateBtn) {
+function _showRestartCountdown(title, estimatedSeconds, updateTag, rollbackTag, rollbackCommit, oldStarted, updateBtn, maxPollAttempts, pollStartSeconds) {
     const t = window.translations || {};
     const overlay = document.createElement('div');
     overlay.className = 'confirm-modal-overlay';
@@ -3974,20 +4383,31 @@ function _showRestartCountdown(title, estimatedSeconds, updateTag, rollbackTag, 
     requestAnimationFrame(() => overlay.classList.add('visible'));
 
     let remaining = estimatedSeconds;
+    let elapsed = 0;
     let polling = false;
-    const earlyPollStart = 10; // start polling N seconds before countdown ends
+    // How long to let the countdown run before checking for real, as an elapsed
+    // time from the click — NOT relative to the countdown's own length. Polling
+    // start must stay independent of the displayed estimate: if it were pinned to
+    // "N seconds before the countdown ends", a long/generous estimate (e.g. a
+    // reboot's ~3 min, which allows for slow Wi-Fi reconnects) would delay the
+    // first real check for just as long, even on a run that actually comes back
+    // in a fraction of that time — the modal would sit there doing nothing
+    // while the device is already reachable.
+    const pollStartElapsed = pollStartSeconds != null ? pollStartSeconds : Math.max(estimatedSeconds - 10, 0);
 
     const interval = setInterval(() => {
         remaining--;
+        elapsed++;
         if (remaining >= 0) {
             countdownNumber.textContent = _fmtCountdown(remaining);
             progressFill.style.transform = 'scaleX(' + (1 - remaining / estimatedSeconds) + ')';
         }
 
-        // Start early background polling before countdown finishes
-        if (remaining <= earlyPollStart && !polling) {
+        // Start early background polling once enough time has passed to make an
+        // attempt worthwhile — independent of when the countdown display ends.
+        if (elapsed >= pollStartElapsed && !polling) {
             polling = true;
-            _pollForService(overlay, countdownNumber, countdownLabel, progressFill, interval, updateTag, rollbackTag, rollbackCommit, oldStarted, updateBtn);
+            _pollForService(overlay, countdownNumber, countdownLabel, progressFill, interval, updateTag, rollbackTag, rollbackCommit, oldStarted, updateBtn, maxPollAttempts);
         }
 
         // Switch to spinner UI once countdown reaches 0 (only once to preserve animation)
@@ -3998,15 +4418,18 @@ function _showRestartCountdown(title, estimatedSeconds, updateTag, rollbackTag, 
     }, 1000);
 }
 
-function _pollForService(overlay, countdownNumber, countdownLabel, progressFill, countdownInterval, updateTag, rollbackTag, rollbackCommit, oldStarted, updateBtn) {
+function _pollForService(overlay, countdownNumber, countdownLabel, progressFill, countdownInterval, updateTag, rollbackTag, rollbackCommit, oldStarted, updateBtn, maxPollAttempts) {
     const t = window.translations || {};
     let attempts = 0;
-    const maxAttempts = 60;
+    const maxAttempts = maxPollAttempts || 60;
+    let settled = false; // guards against duplicate terminal handling from throttled/queued ticks
 
     const pollInterval = setInterval(async () => {
+        if (settled) return;
         attempts++;
         try {
             const resp = await fetch('/api/health', { cache: 'no-store' });
+            if (settled) return; // another (overlapping) tick already reached a terminal state
             if (resp.ok) {
                 const hData = await resp.json();
 
@@ -4023,7 +4446,9 @@ function _pollForService(overlay, countdownNumber, countdownLabel, progressFill,
                         }
                     } catch (_) { /* version endpoint not ready yet — accept health as sufficient */ }
                 }
+                if (settled) return; // another (overlapping) tick already reached a terminal state
 
+                settled = true;
                 clearInterval(pollInterval);
                 clearInterval(countdownInterval);
                 countdownNumber.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="restart-check-icon" viewBox="0 -960 960 960" fill="#28a745"><path d="M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z"/></svg>';
@@ -4034,12 +4459,15 @@ function _pollForService(overlay, countdownNumber, countdownLabel, progressFill,
                 var _sy = document.documentElement.style.getPropertyValue('--scroll-y');
                 document.documentElement.style.removeProperty('--scroll-y');
                 window.scrollTo(0, parseInt(_sy || '0') * -1);
-                setTimeout(() => _reloadAfterRestart(updateTag), 500);
+                const isReboot = !!(window._pageLoadBootId && hData.boot_id && hData.boot_id !== window._pageLoadBootId);
+                setTimeout(() => _reloadAfterRestart(updateTag, isReboot), 500);
                 return;
             }
         } catch (_) {}
 
+        if (settled) return; // another (overlapping) tick already reached a terminal state
         if (attempts >= maxAttempts) {
+            settled = true;
             clearInterval(pollInterval);
             clearInterval(countdownInterval);
             countdownNumber.innerHTML = '<span style="display:inline-block;width:0.85em;height:0.85em;background-color:var(--danger,#ef4444);-webkit-mask-image:url(\'/static/icons/error.svg\');mask-image:url(\'/static/icons/error.svg\');-webkit-mask-size:contain;mask-size:contain;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;vertical-align:middle"></span>';
@@ -4930,37 +5358,47 @@ function renderConfigurationForm() {
     }, 100); // Small delay to ensure DOM is fully updated
     
 
-    // Fetch live preview data — retry with backoff if the server hasn't cached data yet
-    // (e.g. freshly started, BTC price not fetched yet). Stops once price + network are filled
-    // or after 6 attempts (~62s total).
-    (function _fetchPreviewData(attempt) {
-        fetch('/api/config/preview-data')
-            .then(r => r.ok ? r.json() : null)
-            .then(d => {
-                if (!d) return;
-                const fields = ['price','bitaxe','wallet','donation','countdown','halving','network'];
-                fields.forEach(k => { if (d[k]) window._previewData[k] = d[k]; });
-                if (d.block_hash) {
-                    window._previewData.latestBlockHash = d.block_hash;
-                    if (window._refreshDateHashPreview)    window._refreshDateHashPreview(d.block_hash);
-                    if (window._refreshHolidayHashPreview) window._refreshHolidayHashPreview(d.block_hash);
-                }
-                if (d.price      && window._refreshPricePreview)      window._refreshPricePreview(d.price);
-                if (d.bitaxe     && window._refreshBitaxePreview)     window._refreshBitaxePreview(d.bitaxe);
-                if (d.wallet     && window._refreshWalletPreview)     window._refreshWalletPreview(d.wallet);
-                if (d.donation   && window._refreshDonationPreview)   window._refreshDonationPreview(d.donation);
-                if (d.countdown  && window._refreshCountdownPreview)  window._refreshCountdownPreview(d.countdown);
-                if (d.halving    && window._refreshHalvingPreview)    window._refreshHalvingPreview(d.halving);
-                if (d.network    && window._refreshNetworkPreview)    window._refreshNetworkPreview(d.network);
-                const pd = window._previewData;
-                if ((!pd.price || !pd.network) && attempt < 6) {
-                    setTimeout(() => _fetchPreviewData(attempt + 1), Math.min(1500 * attempt, 10000));
-                }
-            })
-            .catch(() => {
-                if (attempt < 6) setTimeout(() => _fetchPreviewData(attempt + 1), 3000);
-            });
-    })(1);
+    // Fetch live preview data on initial render.
+    _fetchPreviewData(1);
+}
+
+// Fetch live preview data — retry with backoff
+function _fetchPreviewData(attempt) {
+    fetch('/api/config/preview-data')
+        .then(r => r.ok ? r.json() : null)
+        .then(d => {
+            if (!d) return;
+            const fields = ['price','bitaxe','wallet','donation','countdown','halving','network'];
+            fields.forEach(k => { if (d[k]) window._previewData[k] = d[k]; });
+            if (d.block_hash) {
+                window._previewData.latestBlockHash = d.block_hash;
+                if (window._refreshDateHashPreview)    window._refreshDateHashPreview(d.block_hash);
+                if (window._refreshHolidayHashPreview) window._refreshHolidayHashPreview(d.block_hash);
+            }
+            if (d.price      && window._refreshPricePreview)      window._refreshPricePreview(d.price);
+            if (d.bitaxe     && window._refreshBitaxePreview)     window._refreshBitaxePreview(d.bitaxe);
+            if (d.wallet     && window._refreshWalletPreview)     window._refreshWalletPreview(d.wallet);
+            if (d.donation   && window._refreshDonationPreview)   window._refreshDonationPreview(d.donation);
+            if (d.countdown  && window._refreshCountdownPreview)  window._refreshCountdownPreview(d.countdown);
+            if (d.halving    && window._refreshHalvingPreview)    window._refreshHalvingPreview(d.halving);
+            if (d.network    && window._refreshNetworkPreview)    window._refreshNetworkPreview(d.network);
+
+            const pd = window._previewData;
+            const cfg = window.currentConfig || {};
+            const stillMissing =
+                !pd.price ||
+                !pd.network ||
+                (cfg.show_countdown_block !== false && !pd.countdown) ||
+                (cfg.show_halving_block   !== false && !pd.halving) ||
+                (cfg.show_bitaxe_block !== false && cfg.bitaxe_enabled !== false && !pd.bitaxe);
+
+            if (stillMissing && attempt < 6) {
+                setTimeout(() => _fetchPreviewData(attempt + 1), Math.min(1500 * attempt, 10000));
+            }
+        })
+        .catch(() => {
+            if (attempt < 6) setTimeout(() => _fetchPreviewData(attempt + 1), 3000);
+        });
 }
 
 // Cache and helper for loading SVG icons with a specific fill colour
@@ -5092,7 +5530,14 @@ function createFormField(key, field, value) {
             input.className = 'form-input';
             input.value = value !== undefined && value !== null ? value : '';
             input.placeholder = field.placeholder || '';
-            
+            // Trim on blur — this branch covers most free-text config fields users
+            // paste into (mempool host, webhook relay URL, usernames, etc.); a
+            // trailing space or newline from the clipboard shouldn't silently
+            // change the saved value. Captured now, before the field may get
+            // wrapped below (mempool_host / webhook_relay_ws_url), so it always
+            // targets the actual <input>, not the wrapper div.
+            _trimOnBlur(input);
+
             // Disable autocomplete for admin_username field
             if (key === 'admin_username') {
                 input.setAttribute('autocomplete', 'off');
@@ -5583,6 +6028,7 @@ function createColorInput(value) {
             colorInput.value = val;
         }
     });
+    _trimOnBlur(textInput);
 
     // Wrap text input in a column so the error message renders below it
     const textWrapper = document.createElement('div');
@@ -6872,14 +7318,36 @@ function createWalletTableInput(values, field) {
     commentHeader.style.width = '35%';
     
     const balanceHeader = document.createElement('th');
-    balanceHeader.textContent = window.translations?.wallet_table_balance || 'Balance (BTC)';
     balanceHeader.style.padding = '10px';
     balanceHeader.style.border = '1px solid var(--border-subtle)';
     balanceHeader.style.backgroundColor = '#2a2d3e';
     balanceHeader.style.color = '#ffffff';
     balanceHeader.style.width = '20%';
     balanceHeader.style.textAlign = 'center';
-    
+
+    const balanceHeaderInner = document.createElement('div');
+    balanceHeaderInner.style.cssText = 'display:flex; align-items:center; justify-content:center; gap:6px;';
+
+    const balanceHeaderLabel = document.createElement('span');
+    balanceHeaderLabel.textContent = window.translations?.wallet_table_balance || 'Balance (BTC)';
+
+    const balanceVisibilityBtn = document.createElement('button');
+    balanceVisibilityBtn.type = 'button';
+    balanceVisibilityBtn.className = 'wallet-balance-visibility-toggle';
+    balanceVisibilityBtn.style.cssText = 'background:none; border:none; padding:2px; margin:0; cursor:pointer; display:flex; align-items:center; border-radius:4px;';
+    const balanceVisibilityIcon = _createMaskIcon(
+        window._walletBalancesHidden ? '/static/icons/visibility_off.svg' : '/static/icons/visibility.svg'
+    );
+    balanceVisibilityIcon.title = window._walletBalancesHidden
+        ? (window.translations?.show_balances || 'Show balances')
+        : (window.translations?.hide_balances || 'Hide balances');
+    balanceVisibilityBtn.appendChild(balanceVisibilityIcon);
+    balanceVisibilityBtn.addEventListener('click', () => _toggleWalletBalanceVisibility(balanceVisibilityIcon));
+
+    balanceHeaderInner.appendChild(balanceHeaderLabel);
+    balanceHeaderInner.appendChild(balanceVisibilityBtn);
+    balanceHeader.appendChild(balanceHeaderInner);
+
     const actionsHeader = document.createElement('th');
     actionsHeader.textContent = '';
     actionsHeader.style.padding = '10px';
@@ -7044,12 +7512,14 @@ function addWalletTableRow(tbody, entry) {
     addressInput.style.padding = '5px';
     
     addressInput.addEventListener('input', () => {
-        _validateInput(addressInput, _RE_BTC_OR_XPUB, true);
+        _validateInput(addressInput, _isValidBtcAddressOrXpub, true);
         tbody.parentElement.parentElement.dispatchEvent(new Event('change', { bubbles: true }));
     });
-    if (addressInput.value) _validateInput(addressInput, _RE_BTC_OR_XPUB, true);
+    _trimOnBlur(addressInput);
+    if (addressInput.value) _validateInput(addressInput, _isValidBtcAddressOrXpub, true);
 
     addressCell.appendChild(addressInput);
+    _addAddressMaskOverlay(addressInput);
 
     // Comment cell
     const commentCell = document.createElement('td');
@@ -7079,7 +7549,7 @@ function addWalletTableRow(tbody, entry) {
     
     const balanceDisplay = document.createElement('span');
     balanceDisplay.className = 'wallet-balance-display';
-    balanceDisplay.textContent = entry.cached_balance ? `${entry.cached_balance.toFixed(8)}` : '0.00000000';
+    _setWalletBalanceText(balanceDisplay, entry.cached_balance ? `${entry.cached_balance.toFixed(8)}` : '0.00000000');
     balanceDisplay.style.fontFamily = 'var(--font-mono)';
     balanceDisplay.style.fontSize = '0.9em';
     balanceDisplay.style.fontWeight = 'bold';
@@ -7340,18 +7810,16 @@ function addBitaxeTableRow(tbody, entry) {
     linkCell.style.verticalAlign = 'middle';
 
     const linkAnchor = document.createElement('a');
+    linkAnchor.className = 'bitaxe-open-link';
     linkAnchor.target = '_blank';
     linkAnchor.rel = 'noopener noreferrer';
     linkAnchor.style.display = 'inline-flex';
     linkAnchor.style.opacity = entry.address ? '1' : '0.3';
     linkAnchor.style.pointerEvents = entry.address ? 'auto' : 'none';
     if (entry.address) linkAnchor.href = `http://${entry.address}`;
-    const linkIcon = document.createElement('img');
-    linkIcon.src = '/static/icons/open.svg';
-    linkIcon.alt = 'Open';
-    linkIcon.style.width = '16px';
-    linkIcon.style.height = '16px';
-    linkIcon.style.filter = 'invert(1) opacity(0.7)';
+    const linkIcon = _createMaskIcon('/static/icons/open.svg');
+    linkIcon.classList.add('bitaxe-open-link-icon');
+    linkIcon.title = 'Open';
     linkAnchor.appendChild(linkIcon);
     linkCell.appendChild(linkAnchor);
 
@@ -7444,6 +7912,7 @@ function addBitaxeTableRow(tbody, entry) {
             }
         }, 1000);
     });
+    _trimOnBlur(addressInput);
     if (addressInput.value) _validateInput(addressInput, _RE_IPV4, true);
 
     // Load initial values if IP is set
@@ -7729,10 +8198,12 @@ function addBlockRewardTableRow(tbody, entry) {
     addressInput.style.background = 'transparent';
     addressInput.style.color = 'var(--text-primary)';
     addressInput.style.fontSize = '14px';
-    addressInput.addEventListener('input', () => _validateInput(addressInput, _RE_BTC_ADDR, true));
-    if (addressInput.value) _validateInput(addressInput, _RE_BTC_ADDR, true);
+    addressInput.addEventListener('input', () => _validateInput(addressInput, _isValidBtcAddress, true));
+    _trimOnBlur(addressInput);
+    if (addressInput.value) _validateInput(addressInput, _isValidBtcAddress, true);
 
     addressCell.appendChild(addressInput);
+    _addAddressMaskOverlay(addressInput);
     
     // Comment cell
     const commentCell = document.createElement('td');
@@ -8308,7 +8779,7 @@ function createDonationHistoryInterface() {
                 return;
             }
             tbody.innerHTML = donations.map(d => {
-                const ts = d.timestamp ? new Date(d.timestamp + 'Z').toLocaleString() : '—';
+                const ts = _formatDonationTime(d.timestamp);
                 const bh = d.block_height != null ? d.block_height.toLocaleString() : '—';
                 const sats = (d.amount_sats || 0).toLocaleString();
                 const msg = d.message ? escapeHtml(d.message) : '<em style="color: var(--text-muted);">—</em>';
@@ -8877,15 +9348,18 @@ function openMemeModal(filename, url, tags, apiTags) {
             saveTagsBtn.style.display = 'inline-block';
             saveTagsBtn.classList.add('rename-clean');
             saveTagsBtn.classList.remove('rename-dirty');
+            saveTagsBtn.disabled = true;
             const originalTagsKey = [...userTags].map(t => t.trim().toLowerCase()).sort().join('\0');
             HTMLElement.prototype.addEventListener.call(tagsInput, 'change', () => {
                 const currentKey = tagsInput.getValue().map(t => t.trim().toLowerCase()).sort().join('\0');
                 if (currentKey === originalTagsKey) {
                     saveTagsBtn.classList.remove('rename-dirty');
                     saveTagsBtn.classList.add('rename-clean');
+                    saveTagsBtn.disabled = true;
                 } else {
                     saveTagsBtn.classList.remove('rename-clean');
                     saveTagsBtn.classList.add('rename-dirty');
+                    saveTagsBtn.disabled = false;
                 }
             });
         }
@@ -9432,7 +9906,8 @@ async function updateWalletTableWithEntries(tbody, walletEntries) {
             const commentInput = row.querySelector('.wallet-comment-input');
             if (addressInput && !addressInput.value) {
                 addressInput.value = entry.address;
-                            }
+                if (addressInput._refreshAddressMask) addressInput._refreshAddressMask();
+            }
             if (commentInput && !commentInput.value) {
                 commentInput.value = entry.comment;
                             }
@@ -9441,8 +9916,8 @@ async function updateWalletTableWithEntries(tbody, walletEntries) {
             const balanceDisplay = row.querySelector('.wallet-balance-display');
             if (balanceDisplay) {
                 const balance = entry.cached_balance || 0.0;
-                balanceDisplay.textContent = `${balance.toFixed(8)}`;
-                balanceDisplay.style.color = 'var(--accent)'; 
+                _setWalletBalanceText(balanceDisplay, `${balance.toFixed(8)}`);
+                balanceDisplay.style.color = 'var(--accent)';
                 // Add styling to indicate cached data
                 if (balance > 0) {
                     balanceDisplay.style.opacity = '0.8';
@@ -9507,6 +9982,11 @@ function setupConfigSocketHandlers() {
         registerPageForNotifications('config');
         // Subscribe to block notifications (always enabled)
         subscribeToBlockNotifications();
+        // Re-sync preview cards (price/network/countdown/halving/bitaxe/wallet/donation).
+        // Covers reconnects that happen without a full page reload — e.g. a brief drop —
+        // where stale or never-populated preview data would otherwise only catch up via
+        // change-triggered push events (which may be far off, like the next new block).
+        if (window._previewData) _fetchPreviewData(1);
         // Detect any restart (auto-update or manual) by comparing the server's
         // process start time against what was captured at page load.
         if (window._restartPending || window._pageLoadStarted !== undefined) {
@@ -9519,8 +9999,9 @@ function setupConfigSocketHandlers() {
                         : window._pageLoadStarted;
                     if (oldStarted && h.started > oldStarted) {
                         const _tag = window._restartPending?.tag;
+                        const _isReboot = !!(window._pageLoadBootId && h.boot_id && h.boot_id !== window._pageLoadBootId);
                         window._restartPending = null;
-                        _reloadAfterRestart(_tag);
+                        _reloadAfterRestart(_tag, _isReboot);
                     }
                 })
                 .catch(() => {});
@@ -9700,6 +10181,9 @@ function setupConfigSocketHandlers() {
 }
 
 function attemptConfigReconnect() {
+    // Device was deliberately shut down (not restarted) — it isn't coming back
+    // on its own, so don't keep trying.
+    if (window._shuttingDown) return;
     if (reconnectingConfig) return;
     reconnectingConfig = true;
     if (reconnectTimeoutConfig) clearTimeout(reconnectTimeoutConfig);
@@ -9751,7 +10235,7 @@ function updateWalletBalancesFromWebSocket(balanceData) {
                     }
                     
                     if (newBalance !== null) {
-                        balanceDisplay.textContent = `${newBalance.toFixed(8)}`;
+                        _setWalletBalanceText(balanceDisplay, `${newBalance.toFixed(8)}`);
                         balanceDisplay.style.color = 'var(--accent)';
                         balanceDisplay.style.opacity = '1';
                         balanceDisplay.title = 'Real-time balance data';
@@ -10154,10 +10638,16 @@ document.addEventListener('DOMContentLoaded', () => {
     // in case a previous setLanguage() call left one behind.
     document.querySelectorAll('[data-tooltip][title]').forEach(el => el.removeAttribute('title'));
 
-    // Capture server process start time so reconnect can detect any restart.
+    // Capture server process start time + boot_id so reconnect can detect any
+    // restart, and tell an actual reboot (new boot_id) apart from a same-boot
+    // service restart (e.g. triggered from the CLI, not this page).
     fetch('/api/health', { cache: 'no-store' })
         .then(r => r.ok ? r.json() : null)
-        .then(h => { if (h) window._pageLoadStarted = h.started; })
+        .then(h => {
+            if (!h) return;
+            window._pageLoadStarted = h.started;
+            window._pageLoadBootId = h.boot_id;
+        })
         .catch(() => {});
 
     // Show success toast if we just reloaded after a software update.
@@ -10176,17 +10666,49 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 800);
     }
 
+    // Show success toast after a plain restart/reboot (button click or a CLI
+    // "systemctl restart/reboot" run by the user directly — detection doesn't
+    // care who triggered it). Skipped entirely when an update just landed
+    // (handled by the toast above instead, which already names the version).
+    const _actionDone = sessionStorage.getItem('mempaper_action_done');
+    if (_actionDone) {
+        sessionStorage.removeItem('mempaper_action_done');
+        setTimeout(() => {
+            const t = window.translations || {};
+            if (_actionDone === 'reboot') {
+                const icon = '<img src="/static/icons/reboot.svg" width="16" height="16" class="toast-title-icon toast-icon-success"> ';
+                _buildLiveToast(
+                    icon + (t.reboot_success_title || 'Device rebooted'),
+                    t.reboot_success_body || 'The device rebooted successfully.',
+                    '#28a745',
+                    8000
+                );
+            } else {
+                const icon = '<img src="/static/icons/restart.svg" width="16" height="16" class="toast-title-icon toast-icon-success"> ';
+                _buildLiveToast(
+                    icon + (t.restart_success_title || 'Service restarted'),
+                    t.restart_success_body || 'The mempaper service restarted successfully.',
+                    '#28a745',
+                    8000
+                );
+            }
+        }, 800);
+    }
+
     // Setup navigation buttons
     setupNavigationButtons();
 
-    // Delay WebSocket initialization to ensure everything is loaded
-    setTimeout(initializeWebSocket, 1000);
+    // Connect the WebSocket
+    initializeWebSocket();
 });
 
 // Reload immediately when the tab becomes visible again if a service restart was detected.
 // Covers both announced restarts (_restartPending) and silent ones (manual systemctl restart).
 document.addEventListener('visibilitychange', () => {
     if (document.hidden) return;
+    // Device was deliberately shut down (not restarted) — it isn't coming back
+    // on its own, so don't keep checking.
+    if (window._shuttingDown) return;
     if (!window._restartPending && window._pageLoadStarted === undefined) return;
     const oldStarted = window._restartPending
         ? window._restartPending.oldStarted
@@ -10196,8 +10718,9 @@ document.addEventListener('visibilitychange', () => {
         .then(h => {
             if (h && oldStarted && h.started > oldStarted) {
                 const _tag = window._restartPending?.tag;
+                const _isReboot = !!(window._pageLoadBootId && h.boot_id && h.boot_id !== window._pageLoadBootId);
                 window._restartPending = null;
-                _reloadAfterRestart(_tag);
+                _reloadAfterRestart(_tag, _isReboot);
             }
         })
         .catch(() => {});

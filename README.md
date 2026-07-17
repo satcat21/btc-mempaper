@@ -522,9 +522,8 @@ The device remains in setup mode so the user can reconfigure WiFi and create a n
 
 For a full factory reset (including WiFi profiles and e-ink display), the user can power-cycle the device rapidly:
 
-1. **Power on** the device, wait **2 minutes**, then **power off**
-2. **Repeat** two more times (3 power cycles total)
-3. **Power on** a 4th time -- the device now detects the pattern and resets
+1. **Power on** the device and wait for the e-ink display to refresh -- on slower hardware (e.g. Pi Zero) this can take up to about **3 minutes 30 seconds**. Only then **power off**.
+2. **Repeat** two more times (3 power cycles total) -- the reset triggers automatically as soon as the device boots the 3rd time, no extra power-on needed.
 
 The device detects 3 recent boot timestamps within a 15-minute window and automatically:
 
@@ -533,7 +532,7 @@ The device detects 3 recent boot timestamps within a 15-minute window and automa
 - Renders and displays the delivery-state e-ink image
 - Starts the setup hotspot for fresh onboarding
 
-> **Important:** Wait the full 2 minutes before powering off each time. The device needs enough time to boot, record the timestamp, and flush all writes to the SD card. Cutting power too early risks corrupting the filesystem.
+> **Important:** Wait for the e-ink refresh (up to ~3:30 on slower hardware) before powering off each time -- that refresh is the device's own confirmation that it finished booting, recorded the timestamp, and flushed all writes to the SD card. Cutting power too early risks corrupting the filesystem, and 3 cycles of ~3:30 each (~10:30 total) still comfortably fits inside the 15-minute detection window.
 
 ---
 

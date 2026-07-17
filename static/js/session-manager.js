@@ -6,7 +6,6 @@
 // Session management state
 let sessionWarningShown = false;
 let sessionCheckInterval = null;
-let refreshButtonAdded = false;
 
 /**
  * Check the current session status and handle warnings/expiration
@@ -27,7 +26,6 @@ async function checkSessionStatus() {
             sessionWarningShown = true;
             const minutes = Math.ceil(sessionInfo.time_remaining / 60);
             showSessionWarning(minutes);
-            addRefreshSessionButton();
         }
         
         // Auto-refresh session when 10 minutes left if user is actively editing
@@ -56,13 +54,11 @@ async function refreshSession() {
             const result = await response.json();
             if (result.success) {
                 sessionWarningShown = false;
-                refreshButtonAdded = false;
                 showSessionRefreshedMessage();
-                removeRefreshSessionButton();
                 return true;
             }
         }
-        
+
         return false;
     } catch (error) {
         console.error('Session refresh failed:', error);
@@ -84,59 +80,6 @@ function isUserActivelyEditing() {
         }
     }
     return false;
-}
-
-/**
- * Add a temporary refresh session button
- */
-function addRefreshSessionButton() {
-    if (refreshButtonAdded || document.getElementById('refresh-session-btn')) {
-        return; // Already exists
-    }
-    
-    const saveButton = document.getElementById('save-button');
-    if (!saveButton) return;
-    
-    const refreshBtn = document.createElement('button');
-    refreshBtn.id = 'refresh-session-btn';
-    refreshBtn.className = 'form-button';
-    refreshBtn.type = 'button';
-    refreshBtn.style.backgroundColor = '#FFC107';
-    refreshBtn.style.color = '#000';
-    refreshBtn.style.marginLeft = '10px';
-    refreshBtn.style.border = 'none';
-    refreshBtn.style.padding = '10px 20px';
-    refreshBtn.style.borderRadius = '4px';
-    refreshBtn.style.cursor = 'pointer';
-    refreshBtn.textContent = 'Refresh Session';
-    
-    refreshBtn.addEventListener('click', async () => {
-        refreshBtn.disabled = true;
-        refreshBtn.textContent = 'Refreshing...';
-        
-        const success = await refreshSession();
-        
-        refreshBtn.disabled = false;
-        refreshBtn.textContent = 'Refresh Session';
-        
-        if (!success) {
-            showFailedRefreshMessage();
-        }
-    });
-    
-    saveButton.parentNode.insertBefore(refreshBtn, saveButton.nextSibling);
-    refreshButtonAdded = true;
-}
-
-/**
- * Remove the refresh session button
- */
-function removeRefreshSessionButton() {
-    const refreshBtn = document.getElementById('refresh-session-btn');
-    if (refreshBtn) {
-        refreshBtn.remove();
-        refreshButtonAdded = false;
-    }
 }
 
 /**
@@ -198,10 +141,33 @@ async function saveConfigurationWithSessionHandling(configData) {
 
 // Message display functions
 function showSessionWarning(minutes) {
-    if (typeof showNotification === 'function') {
-        showNotification(`Session expires in ${minutes} minutes. Click 'Refresh Session' to extend.`, 'warning');
+    const minuteWord = minutes === 1 ? 'minute' : 'minutes';
+    if (typeof _buildLiveToast === 'function') {
+        const btnId = 'session-refresh-toast-btn-' + Date.now();
+        const bodyHtml = `Session expires in ${minutes} ${minuteWord}. ` +
+            `<button id="${btnId}" type="button" style="background:none;border:none;padding:0;` +
+            `color:inherit;text-decoration:underline;font-weight:600;cursor:pointer;font-size:inherit;">` +
+            `Refresh session</button>`;
+        _buildLiveToast('Session', bodyHtml, '#F7931A', 20000);
+
+        const btn = document.getElementById(btnId);
+        if (btn) {
+            btn.addEventListener('click', async (e) => {
+                // The toast itself closes on any click inside it — stop that here
+                // so the button gets to show its own "Refreshing…" state first.
+                e.stopPropagation();
+                btn.disabled = true;
+                btn.textContent = 'Refreshing…';
+                const success = await refreshSession();
+                if (!success) {
+                    btn.disabled = false;
+                    btn.textContent = 'Refresh session';
+                    showFailedRefreshMessage();
+                }
+            });
+        }
     } else if (typeof showAlertModal === 'function') {
-        showAlertModal({ title: 'Session', message: `Session expires in ${minutes} minutes. Please refresh your session to continue.` });
+        showAlertModal({ title: 'Session', message: `Session expires in ${minutes} ${minuteWord}. Please refresh your session to continue.` });
     }
 }
 
@@ -253,9 +219,7 @@ function cleanupSessionManager() {
         clearInterval(sessionCheckInterval);
         sessionCheckInterval = null;
     }
-    removeRefreshSessionButton();
     sessionWarningShown = false;
-    refreshButtonAdded = false;
 }
 
 // Auto-initialize when this script is loaded

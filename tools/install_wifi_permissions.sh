@@ -304,6 +304,7 @@ ${SERVICE_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} restart mempaper.service
 ${SERVICE_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} enable mempaper.service
 ${SERVICE_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} daemon-reload
 ${SERVICE_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} reboot
+${SERVICE_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} poweroff
 
 # Service file self-update: mempaper can regenerate and install its own unit file.
 # tee is scoped to the exact service file path only.

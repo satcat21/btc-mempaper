@@ -552,11 +552,21 @@ class MempaperApp:
         # release the interface — no need to wait for it to be ready first.
         fs_interface = self._detect_wifi_interface_fs_only()
         if fs_interface and self._has_saved_wifi_connections_on_disk() is False:
-            print('📶 No saved Wi-Fi networks on disk — starting setup hotspot without waiting for NetworkManager')
-            if not self._bring_up_setup_hotspot_with_retry(fs_interface):
-                self._write_setup_mode_flag(True, ssid=self._setup_ssid_from_mac(fs_interface), interface=fs_interface)
-                print('⚠️ Hotspot failed at startup — recovery monitor will retry')
-            return
+            # The saved-network profile file is written by netplan/NetworkManager's
+            # own startup (netplan generate -> /run/NetworkManager/system-connections/),
+            # which can still be mid-reload right when this runs.
+            no_saved_confirmed = True
+            for _ in range(8):
+                time.sleep(3)
+                if self._has_saved_wifi_connections_on_disk() is not False:
+                    no_saved_confirmed = False
+                    break
+            if no_saved_confirmed:
+                print('📶 No saved Wi-Fi networks on disk — starting setup hotspot without waiting for NetworkManager')
+                if not self._bring_up_setup_hotspot_with_retry(fs_interface):
+                    self._write_setup_mode_flag(True, ssid=self._setup_ssid_from_mac(fs_interface), interface=fs_interface)
+                    print('⚠️ Hotspot failed at startup — recovery monitor will retry')
+                return
 
         # Wait for NetworkManager to become operational.  On the Pi Zero W it
         # can take 10-30s after systemd starts the service before nmcli
@@ -746,10 +756,96 @@ class MempaperApp:
             except OSError:
                 pass
 
+        # Deleting the file above doesn't touch UnifiedSecureCache's in-memory
+        # copy — this reset runs inside the already-running process (not a
+        # fresh restart), and get_cached_wallet_balances() etc. read straight
+        # from that in-memory dict, not from disk. Without this, the old
+        # balance/hashrate keeps being served from memory even though the
+        # config now has no addresses/miners and the file is gone.
+        try:
+            from managers.unified_secure_cache import get_unified_cache
+            _uc = get_unified_cache()
+            for _cache_type in ('wallet_balance_cache', 'block_reward_cache', 'optimized_balance_cache'):
+                _uc.clear_cache(_cache_type)
+        except Exception as e:
+            print(f'⚠️ Could not clear in-memory unified cache: {e}')
+
+        # Also drop the wallet API's own last-fetched-result attribute, if any.
+        try:
+            wallet_api = getattr(self.image_renderer, 'wallet_api', None)
+            if wallet_api is not None and hasattr(wallet_api, '_wallet_cache'):
+                wallet_api._wallet_cache = None
+        except Exception:
+            pass
+
+        # 4. Strip mempaper-managed SSH keys — a reset that leaves old SSH
+        # access in place while wiping the admin password would be a real
+        # security gap for the "locked out, need a clean device" use case.
+        self._clear_managed_ssh_keys()
+
         if removed:
             print(f"🧹 Cleared sensitive data: {', '.join(removed)}")
         else:
             print("ℹ️ No sensitive data found to clear")
+
+    def _clear_managed_ssh_keys(self):
+        """Strip the mempaper-managed SSH key block from both authorized_keys
+        files (the service user's own, and the pi user's — see the
+        /api/system/ssh-keys routes for the canonical splice format this
+        mirrors). Lines outside the BEGIN/END markers are left untouched, same
+        as the routes: this only removes keys mempaper itself provisioned.
+        """
+        ssh_start = '# BEGIN mempaper-managed'
+        ssh_end = '# END mempaper-managed'
+
+        def _without_block(content):
+            if ssh_start not in content:
+                return None  # nothing to do
+            kept = []
+            in_block = False
+            for line in content.splitlines(keepends=True):
+                s = line.strip()
+                if s == ssh_start:
+                    in_block = True
+                    continue
+                if s == ssh_end:
+                    in_block = False
+                    continue
+                if not in_block:
+                    kept.append(line)
+            result = ''.join(kept).rstrip('\n')
+            return result + '\n' if result else ''
+
+        own_path = os.path.join(os.path.expanduser('~'), '.ssh', 'authorized_keys')
+        try:
+            if os.path.exists(own_path):
+                with open(own_path, encoding='utf-8') as f:
+                    new_content = _without_block(f.read())
+                if new_content is not None:
+                    with open(own_path, 'w', encoding='utf-8') as f:
+                        f.write(new_content)
+                    print(f'🧹 Cleared mempaper-managed SSH keys from {own_path}')
+        except OSError as e:
+            print(f'⚠️ Could not clear SSH keys from {own_path}: {e}')
+
+        pi_path = '/home/pi/.ssh/authorized_keys'
+        if own_path == pi_path:
+            return  # service user IS pi — already handled above
+        try:
+            cat_result = subprocess.run(
+                ['sudo', 'cat', pi_path], capture_output=True, text=True, timeout=10
+            )
+            if cat_result.returncode != 0:
+                return  # file doesn't exist / not readable — nothing to clear
+            new_content = _without_block(cat_result.stdout)
+            if new_content is not None:
+                subprocess.run(
+                    ['sudo', 'tee', pi_path], input=new_content,
+                    capture_output=True, text=True, timeout=10
+                )
+                print(f'🧹 Cleared mempaper-managed SSH keys from {pi_path}')
+        except Exception as e:
+            print(f'⚠️ Could not clear SSH keys from {pi_path}: {e}')
 
     def _write_setup_mode_flag(self, enabled, ssid=None, interface=None):
         try:
@@ -2172,6 +2268,14 @@ class MempaperApp:
         self._webhook_site_ws = None                 # current WebSocketApp (for close on restart)
 
         def _run():
+            # Wait for the startup Wi-Fi check to finish (connected or fell back to
+            # setup hotspot) before the very first connect attempt — avoids a
+            # guaranteed-to-fail DNS lookup (which itself blocks for several seconds
+            # before failing) competing for CPU with other boot-time work while Wi-Fi
+            # is still down. Only gates the first attempt; reconnects after a real
+            # drop later use the existing backoff below, unaffected by this.
+            self._startup_wifi_check_done.wait(timeout=90)
+
             backoff = 5
             while True:
                 self._webhook_site_wake.clear()
@@ -2629,6 +2733,14 @@ class MempaperApp:
     BOOT_TIMESTAMPS_PATH = os.path.join('cache', 'boot_timestamps.json')
     POWER_CYCLE_RESET_THRESHOLD = 3   # number of boots within the window
     POWER_CYCLE_RESET_WINDOW = 900    # seconds (15 minutes — 3 cycles × ~3.5 min + 4th boot)
+    # One-shot marker: the app's own /api/system/reboot handler writes this right
+    # before calling `systemctl reboot`. An authenticated, intentional reboot from
+    # the web UI should never count toward the panic-recovery counter below —
+    # that mechanism exists for someone who's locked out with no access except
+    # the power cord, not for routine reboots via a button someone is already
+    # logged in to click. Without this, a handful of ordinary UI reboots within
+    # 15 minutes can trigger an unwanted full factory reset.
+    GRACEFUL_REBOOT_MARKER_PATH = os.path.join('cache', 'graceful_reboot_pending')
 
     def _check_power_cycle_reset(self):
         """Detect rapid power-cycling (3 reboots in 15 min) and trigger factory reset.
@@ -2656,6 +2768,23 @@ class MempaperApp:
             print(f'⏱️ Kernel boot_id: {boot_id}')
         except (OSError, ValueError):
             pass  # Not on Linux (dev machine)
+        # Exposed via /api/health so the frontend can tell an actual reboot
+        # (new boot_id) apart from a same-boot service restart.
+        self._current_boot_id = boot_id
+
+        # Consume the one-shot "this reboot was triggered from the authenticated
+        # web UI" marker. Still want the usual boot-confirmation e-ink refresh
+        # below — just skip counting this boot toward the panic-recovery
+        # threshold, since the user already has full access (they just used it).
+        graceful_reboot = os.path.exists(self.GRACEFUL_REBOOT_MARKER_PATH)
+        if graceful_reboot:
+            try:
+                os.remove(self.GRACEFUL_REBOOT_MARKER_PATH)
+            except OSError:
+                pass
+            print('🔄 Power-cycle reset check: skipped (reboot was triggered from the web UI)')
+            self._pending_boot_refresh = True
+            return False
 
         # Load existing boot records — stored as {boot_id: timestamp} pairs
         # to deduplicate multiple service restarts within the same boot.
@@ -2823,18 +2952,28 @@ class MempaperApp:
             elif not failed:
                 print('ℹ️ No saved WiFi profiles to delete')
             if failed:
-                # nmcli refused — likely netplan-managed Pi Imager connections.
-                # Fall back to the scoped wrapper that removes NM files + netplan YAML.
-                wrapper = '/usr/local/bin/mempaper-clear-wifi'
-                if os.path.exists(wrapper):
-                    print(f'⚠️ nmcli delete failed for {len(failed)} profile(s) — trying wrapper…')
-                    r = subprocess.run(['sudo', wrapper], capture_output=True, text=True)
-                    if r.returncode == 0:
-                        print('🧹 WiFi profiles cleared via wrapper')
-                    else:
-                        print(f'❌ Wrapper failed: {(r.stderr or r.stdout or "").strip()}')
+                print(f'⚠️ nmcli delete failed for {len(failed)} profile(s)')
+
+            # Always run the wrapper too, even when every nmcli delete reported
+            # success. For Pi-Imager/netplan-managed profiles, 'nmcli connection
+            # delete' can return 0 after removing the live NM connection object
+            # while leaving the underlying /etc/netplan/*.yaml 'wifis:' section
+            # completely untouched — the deletion "succeeds" but NetworkManager's
+            # own internal 'netplan generate' (or mempaper-netplan-pregenerate)
+            # silently recreates the identical profile from that YAML on the very
+            # next boot. Only stripping the netplan source when nmcli explicitly
+            # failed missed exactly this case. The wrapper's netplan edit is
+            # idempotent (checks for a 'wifis:' section first), so re-running it
+            # here is a no-op when there's nothing left to strip.
+            wrapper = '/usr/local/bin/mempaper-clear-wifi'
+            if os.path.exists(wrapper):
+                r = subprocess.run(['sudo', wrapper], capture_output=True, text=True)
+                if r.returncode == 0:
+                    print('🧹 Netplan-sourced WiFi config cleared via wrapper')
                 else:
-                    print('❌ WiFi clear wrapper not installed — re-run install_wifi_permissions.sh')
+                    print(f'❌ Wrapper failed: {(r.stderr or r.stdout or "").strip()}')
+            else:
+                print('❌ WiFi clear wrapper not installed — re-run install_wifi_permissions.sh')
         except Exception as e:
             print(f'⚠️ WiFi cleanup failed: {e}')
             import traceback
@@ -3061,6 +3200,35 @@ class MempaperApp:
         except Exception as e:
             print(f"⚠️ Failed to create placeholder image: {e}")
 
+    def _verify_block_height_once_online(self):
+        """One-shot re-check of the current chain tip, run once the startup
+        Wi-Fi check has resolved
+        """
+        self._startup_wifi_check_done.wait(timeout=90)
+        try:
+            block_info = self.mempool_api.get_current_block_info()
+            _fb = self.mempool_api.fallback_data
+            if (block_info.get('block_height') == _fb['block_height']
+                    and block_info.get('block_hash') == _fb['block_hash']):
+                print("⚠️ [STARTUP] Post-connectivity block check: mempool still unreachable — "
+                      "the real-time websocket will catch up whenever the next block arrives")
+                return
+
+            current_bh = str(block_info.get('block_height', ''))
+            cached_bh = str(self.current_block_height) if self.current_block_height is not None else None
+            if cached_bh and current_bh and cached_bh != current_bh:
+                print(f"⚙️ [STARTUP] Post-connectivity check: block changed {cached_bh} -> {current_bh} — catching up")
+                self.current_block_height = block_info.get('block_height')
+                self.current_block_hash = block_info.get('block_hash')
+                self.image_is_current = False
+                self._generate_new_image(
+                    self.current_block_height,
+                    self.current_block_hash,
+                    use_new_meme=True
+                )
+        except Exception as e:
+            print(f"⚠️ [STARTUP] Post-connectivity block check failed: {e}")
+
     def _run_background_startup(self):
         """Run heavy startup operations in background."""
         try:
@@ -3079,12 +3247,27 @@ class MempaperApp:
             self._start_precache_updater()
 
             # Check block height now (moved from __init__ to avoid 10s+ timeout when offline)
+            needs_post_connectivity_recheck = False
             try:
                 block_info = self.mempool_api.get_current_block_info()
                 current_bh = str(block_info.get('block_height', ''))
                 cached_bh = str(self.current_block_height) if self.current_block_height is not None else None
 
-                if cached_bh and current_bh and cached_bh != current_bh:
+                # get_current_block_info() falls back to a sentinel (height 0 + the
+                # genesis hash) on network failure instead of raising. Several other
+                # startup tasks (webhook relay, precache, wallet scan) fire concurrent
+                # requests to the same mempool host in this same window, so a single
+                # timeout here is common — treating the sentinel as a real "block 0"
+                # would look like "the block changed" and force an unnecessary
+                # regenerate + e-ink push on every restart, not just real block changes.
+                _fb = self.mempool_api.fallback_data
+                if (block_info.get('block_height') == _fb['block_height']
+                        and block_info.get('block_hash') == _fb['block_hash']):
+                    print("⚠️ [STARTUP] Could not verify current block (mempool API unreachable) — keeping cached image")
+                    if cached_bh:
+                        self.image_is_current = True
+                    needs_post_connectivity_recheck = True
+                elif cached_bh and current_bh and cached_bh != current_bh:
                     print(f"⚙️ [STARTUP] Block changed since last run: {cached_bh} -> {current_bh}")
                     self.current_block_height = block_info.get('block_height')
                     self.current_block_hash = block_info.get('block_hash')
@@ -3106,6 +3289,7 @@ class MempaperApp:
             except Exception as e:
                 print(f"[STARTUP] Failed to check current block: {e}")
                 self.image_is_current = False
+                needs_post_connectivity_recheck = True
 
             # Sync cache to current blockchain height (important for recovery after downtime)
             if self.block_monitor:
@@ -3149,6 +3333,14 @@ class MempaperApp:
                 ).start()
 
             self._pending_boot_refresh = False  # consumed — one-shot per boot/install
+
+            # The check above couldn't verify the real chain tip
+            if needs_post_connectivity_recheck:
+                threading.Thread(
+                    target=self._verify_block_height_once_online,
+                    daemon=True,
+                    name='startup-block-verify'
+                ).start()
 
             print("✅ Background initialization completed!")
             
@@ -3360,12 +3552,12 @@ class MempaperApp:
 
         # Wait for the worker to finish loading drivers (ready signal)
         try:
-            ready = self._display_worker_results.get(timeout=30)
+            ready = self._display_worker_results.get(timeout=60)
             if ready.get("status") != "ready":
                 raise RuntimeError(f"Unexpected worker signal: {ready}")
         except queue.Empty:
             proc.kill()
-            raise RuntimeError("Display worker failed to become ready within 30s")
+            raise RuntimeError("Display worker failed to become ready within 60s")
 
         print(f"⚙️ Display worker started (PID {proc.pid})")
         return proc
@@ -3891,8 +4083,35 @@ class MempaperApp:
         """Start background thread that keeps slow-changing data fresh."""
         def update_precache():
             """Background worker to refresh price and bitaxe data between blocks."""
-            # Initial pre-fill on startup
-            self._update_precache_data()
+            # Wait for the startup Wi-Fi check to finish (connected OR fell back to
+            # setup hotspot — either way, the "is the network up" question is settled)
+            # instead of firing off price/bitaxe/network requests blind at t=0. That
+            # burst of guaranteed-to-fail attempts was pure wasted CPU on a single-core
+            # Pi Zero, competing with the boot-confirmation e-ink push for the same
+            # core right when the display worker needs it for its driver imports.
+            # Bounded wait: if the event is somehow never set, don't block forever.
+            self._startup_wifi_check_done.wait(timeout=90)
+
+            # Initial pre-fill on startup. A failed fetch here
+            # doesn't reset price_last_update/network_last_update, so without a retry
+            # the next attempt wouldn't happen until the full precache_update_interval_seconds
+            # (5 min) later, leaving the price/network preview cards empty that whole time.
+            # Retry quickly with backoff until both succeed, or give up after ~3 minutes.
+            def _bitaxe_ready():
+                if not (self.config.get("show_bitaxe_block", True) and self.config.get("bitaxe_enabled", True)):
+                    return True
+                bd = self._precache.get('bitaxe_data')
+                if not bd:
+                    return False
+                return bd.get('miners_total', 0) == 0 or bd.get('miners_online', 0) > 0
+
+            startup_retry_delay = 10
+            for _ in range(8):
+                self._update_precache_data()
+                if self._precache.get('price_data') and self._precache.get('network_data') and _bitaxe_ready():
+                    break
+                time.sleep(startup_retry_delay)
+                startup_retry_delay = min(startup_retry_delay * 2, 30)
 
             # Get update interval from config (default 5 minutes to reduce RPi load)
             update_interval = self.config.get("precache_update_interval_seconds", 300)
@@ -3947,6 +4166,39 @@ class MempaperApp:
             self._prerendered['timestamp'] = 0
             self._prerendered['mode_signature'] = self._get_prerender_mode_signature()
 
+    def _store_fresh_price_data(self, price_data, now):
+        """Cache a successful price fetch and notify config-page clients if it changed.
+
+        Called from both the periodic pre-cache updater and the on-demand
+        image-render fetch, which share the same price_data/price_last_update
+        cache slot — only accepting real (non-error) data here, in one place,
+        ensures a price obtained via either path is (a) never mistaken for a
+        successful update when it's really a network error, and (b) always
+        announced over the websocket exactly once when it changes. Caller
+        must hold self._precache['lock']. Returns True if the price changed.
+        """
+        if not price_data or price_data.get('error'):
+            return False
+        self._precache['price_data'] = price_data
+        self._precache['price_last_update'] = now
+        if price_data.get('all_prices'):
+            self._precache['all_prices'] = price_data['all_prices']
+
+        currency = price_data.get('currency', 'USD')
+        price = price_data.get('price_in_selected_currency', 0)
+        if price == self._precache['last_price_value']:
+            return False
+
+        print(f"💰 Pre-cache updated: Price {price:,.0f} {currency}")
+        self._precache['last_price_value'] = price
+        if hasattr(self, 'socketio') and self.socketio:
+            self.socketio.emit('price_stats_updated', {
+                'price': price,
+                'currency': currency,
+                'moscow_time': price_data.get('moscow_time', 0),
+            }, room='authenticated')
+        return True
+
     def _update_precache_data(self):
         """Update pre-cached data (price, bitaxe, fees) in background."""
         data_changed = False
@@ -3955,56 +4207,43 @@ class MempaperApp:
             update_interval = self.config.get("precache_update_interval_seconds", 300)
 
             # In prioritize_large_scaled_meme mode, pre-select the next meme and the
-            # info block types that will actually be shown.  Data is then only fetched
-            # for the pre-selected types, eliminating wasted API calls.
+            # info block types that will actually be shown, so _get_precached_data()
+            # (the on-demand render path) can skip fetching data for blocks that
+            # won't be drawn this cycle.
             if self.config.get("prioritize_large_scaled_meme", False):
                 next_meme = self.image_renderer.pick_random_meme()
                 selected = self.image_renderer._preselect_info_blocks(next_meme)
                 # selected: None (shouldn't happen here), [] (meme fills screen), or list
                 self._precache['next_meme_path'] = next_meme
                 self._precache['selected_block_types'] = selected if selected is not None else []
-                _selected = self._precache['selected_block_types']
             else:
                 # Clear meme-first preselection artifacts when switching back to balanced mode.
                 self._precache['next_meme_path'] = None
                 self._precache['selected_block_types'] = None
-                _selected = None  # None → fetch all (default layout shows all blocks)
 
-            # Helper: should a specific block type's data be fetched?
-            def _need_type(*types):
-                return _selected is None or any(t in _selected for t in types)
 
             # Update price data if stale
-            if _need_type('price', 'wallet') and now - self._precache['price_last_update'] > update_interval:
+            if now - self._precache['price_last_update'] > update_interval:
                 try:
                     price_data = self.image_renderer.fetch_btc_price()
-                    if price_data:
-                        self._precache['price_data'] = price_data
-                        self._precache['price_last_update'] = now
-                        if price_data.get('all_prices'):
-                            self._precache['all_prices'] = price_data['all_prices']
-                        
-                        # Only log if price actually changed
-                        currency = price_data.get('currency', 'USD')
-                        price = price_data.get('price_in_selected_currency', 0)
-                        if price != self._precache['last_price_value']:
-                            print(f"💰 Pre-cache updated: Price {price:,.0f} {currency}")
-                            self._precache['last_price_value'] = price
-                            data_changed = True
-                            if hasattr(self, 'socketio') and self.socketio:
-                                self.socketio.emit('price_stats_updated', {
-                                    'price': price,
-                                    'currency': currency,
-                                    'moscow_time': price_data.get('moscow_time', 0),
-                                }, room='authenticated')
+                    if self._store_fresh_price_data(price_data, now):
+                        data_changed = True
                 except Exception as e:
                     print(f"⚠️ Failed to pre-cache price: {e}")
             
-            # Update Bitaxe data only when the Bitaxe block will be shown and data is stale.
-            if _need_type('bitaxe') and self.config.get("show_bitaxe_block", True) and self.config.get("bitaxe_enabled", True) and now - self._precache['bitaxe_last_update'] > update_interval:
+            # Update Bitaxe data whenever the block is enabled and data is stale. If every
+            # configured miner came back offline last time, only trust that for a short
+            # window — fetch_bitaxe_stats() has no way to tell "miners are genuinely
+            # down" apart from "the Pi's own LAN wasn't reachable yet" (e.g. right after a
+            # reboot), and locking that reading in for the full update_interval (5 min by
+            # default) makes a transient miss look like a stuck-stale summary card.
+            _last_bitaxe = self._precache.get('bitaxe_data') or {}
+            _bitaxe_was_all_offline = _last_bitaxe.get('miners_total', 0) > 0 and _last_bitaxe.get('miners_online', 0) == 0
+            _bitaxe_interval = min(update_interval, 30) if _bitaxe_was_all_offline else update_interval
+            if self.config.get("show_bitaxe_block", True) and self.config.get("bitaxe_enabled", True) and now - self._precache['bitaxe_last_update'] > _bitaxe_interval:
                 try:
                     bitaxe_data = self.image_renderer.bitaxe_api.fetch_bitaxe_stats()
-                    if bitaxe_data:
+                    if bitaxe_data and not bitaxe_data.get('error'):
                         self._precache['bitaxe_data'] = bitaxe_data
                         self._precache['bitaxe_last_update'] = now
                         
@@ -4019,8 +4258,8 @@ class MempaperApp:
                 except Exception as e:
                     print(f"⚠️ Failed to pre-cache Bitaxe: {e}")
             
-            # Update network stats when at least one network-dependent block will be shown.
-            _need_network = _need_type('countdown', 'halving', 'network') and (
+            # Update network stats when at least one network-dependent block is enabled.
+            _need_network = (
                 self.config.get("show_countdown_block", True)
                 or self.config.get("show_halving_block", True)
                 or self.config.get("show_network_block", True)
@@ -4099,9 +4338,11 @@ class MempaperApp:
                     price_data = self._precache['price_data']
                 else:
                     print("🔄 Pre-cache stale, fetching fresh price...")
-                    price_data = self.image_renderer.fetch_btc_price()
-                    self._precache['price_data'] = price_data
-                    self._precache['price_last_update'] = now
+                    fresh_price_data = self.image_renderer.fetch_btc_price()
+                    self._store_fresh_price_data(fresh_price_data, now)
+                    # Fall back to the last known-good cached price on error rather
+                    # than clobbering it with the error dict.
+                    price_data = self._precache['price_data'] or fresh_price_data
             else:
                 price_data = None
 
@@ -5350,25 +5591,25 @@ class MempaperApp:
     
     def _format_block_hash_for_display(self, block_hash):
         """
-        Format block hash for display: first 6 and last 6 characters, grouped in pairs.
-        
+        Format block hash for display: first 8 and last 8 characters, grouped in pairs.
+
         Args:
             block_hash (str): Full block hash
-            
+
         Returns:
-            str: Formatted hash like "00 00 00 ... ea 1f 0c"
+            str: Formatted hash like "00 00 00 00 ... ea 1f 0c 9b"
         """
-        if len(block_hash) < 12:
+        if len(block_hash) < 16:
             return block_hash  # Return as-is if too short
-        
-        # Get first 6 and last 6 characters
-        first_six = block_hash[:6]
-        last_six = block_hash[-6:]
-        
+
+        # Get first 8 and last 8 characters
+        first_eight = block_hash[:8]
+        last_eight = block_hash[-8:]
+
         # Group in pairs with spaces
-        first_formatted = ' '.join([first_six[i:i+2] for i in range(0, 6, 2)])
-        last_formatted = ' '.join([last_six[i:i+2] for i in range(0, 6, 2)])
-        
+        first_formatted = ' '.join([first_eight[i:i+2] for i in range(0, 8, 2)])
+        last_formatted = ' '.join([last_eight[i:i+2] for i in range(0, 8, 2)])
+
         return f"{first_formatted} ... {last_formatted}"
     
     def regenerate_dashboard(self, block_height, block_hash):
@@ -6758,11 +6999,17 @@ class MempaperApp:
                 # Bitaxe — aggregate from pre-cache or live fetch
                 bitaxe_payload = None
                 bitaxe_data = self._precache.get('bitaxe_data') if hasattr(self, '_precache') else None
-                if not bitaxe_data and hasattr(self.image_renderer, 'bitaxe_api'):
+                _bitaxe_stale_offline = bool(bitaxe_data) and bitaxe_data.get('miners_total', 0) > 0 and bitaxe_data.get('miners_online', 0) == 0
+                if (not bitaxe_data or _bitaxe_stale_offline) and hasattr(self.image_renderer, 'bitaxe_api'):
                     try:
-                        bitaxe_data = self.image_renderer.bitaxe_api.fetch_bitaxe_stats()
-                        if bitaxe_data and hasattr(self, '_precache'):
-                            self._precache['bitaxe_data'] = bitaxe_data
+                        fresh_bitaxe_data = self.image_renderer.bitaxe_api.fetch_bitaxe_stats()
+                        if fresh_bitaxe_data and not fresh_bitaxe_data.get('error'):
+                            bitaxe_data = fresh_bitaxe_data
+                            if hasattr(self, '_precache'):
+                                self._precache['bitaxe_data'] = bitaxe_data
+                                self._precache['bitaxe_last_update'] = time.time()
+                        elif not bitaxe_data:
+                            bitaxe_data = fresh_bitaxe_data
                     except Exception:
                         pass
                 if bitaxe_data and not bitaxe_data.get('error'):
@@ -6841,6 +7088,18 @@ class MempaperApp:
                 try:
                     from lib.image_renderer import ImageRenderer as _IR
                     bh = self.current_block_height
+                    if not bh:
+                        # Not resolved yet — e.g. right after a reboot, before the
+                        # startup block-height check has run or if it failed because
+                        # Wi-Fi wasn't reconnected yet. Fall back to a live lookup
+                        # (mirrors the network/Bitaxe fallbacks below) so the
+                        # countdown/halving cards don't stay stuck until the next
+                        # real block arrives (countdown_updated only fires then).
+                        try:
+                            info = self.mempool_api.get_current_block_info()
+                            bh = info.get('block_height') if info else None
+                        except Exception:
+                            bh = None
                     if bh:
                         sup = _IR._compute_supply_stats(bh)
                         countdown_payload = {
@@ -7849,6 +8108,7 @@ class MempaperApp:
             return jsonify({
                 'status': 'ok',
                 'started': self._startup_timestamp,
+                'boot_id': getattr(self, '_current_boot_id', None),
             })
 
         # ── WiFi Management API ───────────────────────────────────────────
@@ -8184,12 +8444,37 @@ class MempaperApp:
             """Reboot the entire device."""
             try:
                 def _do_reboot():
+                    # Mark this as an authenticated, intentional reboot so
+                    # _check_power_cycle_reset() on the next boot doesn't count it
+                    # toward the panic-recovery threshold (see GRACEFUL_REBOOT_MARKER_PATH).
+                    try:
+                        os.makedirs('cache', exist_ok=True)
+                        with open(self.GRACEFUL_REBOOT_MARKER_PATH, 'w', encoding='utf-8') as f:
+                            f.write('')
+                    except OSError as e:
+                        print(f'⚠️ Could not write graceful-reboot marker: {e}')
                     time.sleep(2)
                     subprocess.run(
                         ['sudo', 'systemctl', 'reboot'],
                         timeout=30
                     )
                 threading.Thread(target=_do_reboot, daemon=True).start()
+                return jsonify({'success': True})
+            except Exception as e:
+                return jsonify({'success': False, 'error': str(e)}), 500
+
+        @self.app.route('/api/system/shutdown', methods=['POST'])
+        @require_auth(self.auth_manager)
+        def shutdown_device():
+            """Shut down (power off) the device."""
+            try:
+                def _do_shutdown():
+                    time.sleep(2)
+                    subprocess.run(
+                        ['sudo', 'systemctl', 'poweroff'],
+                        timeout=30
+                    )
+                threading.Thread(target=_do_shutdown, daemon=True).start()
                 return jsonify({'success': True})
             except Exception as e:
                 return jsonify({'success': False, 'error': str(e)}), 500

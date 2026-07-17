@@ -28,6 +28,10 @@
 
 .container > #config-container {
     flex: 1;
+    overflow-x: hidden;
+    max-width: 100%;
+    display: flex;
+    flex-direction: column;
 }
 
 @media (min-width: 1000px) {
@@ -721,6 +725,24 @@ body.dark-mode .toggle-option.active {
     filter: brightness(0) invert(1); /* maps icon to #ffffff, matching text */
 }
 
+.toggle-option:not(.active):hover {
+    background: var(--bg-card-hover);
+}
+
+.toggle-option.active:hover {
+    filter: brightness(1.08);
+    box-shadow: 0 1px 6px rgba(247, 147, 26, 0.5);
+}
+
+body.dark-mode .toggle-option:not(.active):hover {
+    background: rgba(255, 255, 255, 0.07);
+}
+
+body.dark-mode .toggle-option.active:hover {
+    filter: brightness(1.11);
+    box-shadow: 0 1px 7px rgba(247, 147, 26, 0.6);
+}
+
 /* ── Boolean Switch ─────────────────────────────────────────── */
 .boolean-switch {
     display: flex;
@@ -1048,6 +1070,43 @@ body.dark-mode .table-delete-icon {
 .block-reward-remove-icon:hover .table-delete-icon,
 .ssh-remove-btn:hover .table-delete-icon {
     filter: brightness(0) invert(1) !important;
+}
+
+/* Themed mask icons: black-fill SVGs (visibility toggle, external-link) can't
+   be recolored to an arbitrary CSS variable via filter — filter:invert() only
+   ever gets you pure black or pure white, which is invisible against a
+   same-brightness background (e.g. white icon on a light-theme background).
+   A CSS mask uses the SVG shape as a stencil over a real background-color
+   instead, so it can follow theme variables properly in both modes, and turn
+   the accent color on hover like other interactive icons in the app. See
+   _createMaskIcon() in config.js.*/
+.themed-mask-icon {
+    display: inline-block;
+    background-color: var(--text-secondary);
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-size: contain;
+    mask-size: contain;
+    -webkit-mask-position: center;
+    mask-position: center;
+    transition: background-color var(--transition);
+}
+
+.wallet-balance-visibility-toggle:hover {
+    background: var(--bg-card-hover);
+}
+
+.wallet-balance-visibility-toggle:hover .themed-mask-icon {
+    background-color: var(--accent) !important;
+}
+
+.bitaxe-open-link:hover {
+    background: var(--bg-card-hover);
+    border-radius: 4px;
+}
+
+.bitaxe-open-link:hover .themed-mask-icon {
+    background-color: var(--accent) !important;
 }
 
 /* ── Bitaxe & Block Reward Table ────────────────────────────── */
@@ -1825,6 +1884,8 @@ body.dark-mode .meme-lazy:not(.loaded) {
 @media (max-width: 999px) {
     body { padding-bottom: 80px; }
 
+    .config-section { padding: 14px; }
+
     .meme-modal-content {
         width: 98%;
         max-height: 95vh;
@@ -1870,6 +1931,12 @@ body.dark-mode .meme-lazy:not(.loaded) {
     .container { padding: 12px; }
     .header h1 { font-size: 1.3rem; }
     .section-title { font-size: 0.65rem; }
+    .config-section { padding: 12px; }
+    .section-nav {
+        margin: 0 -12px;
+        padding-left: 12px;
+        padding-right: 12px;
+    }
 }
 
 /* Hide old back-button if present */
@@ -2068,6 +2135,15 @@ body.dark-mode .meme-lazy:not(.loaded) {
     #block-toast-container > div {
         padding: 12px 16px !important;
         font-size: 12px !important;
+    }
+}
+
+/* Donation history table: stack the date and time onto two lines on small
+   mobile screens instead of forcing the whole table (Time/Block/Sats/Message)
+   into horizontal scroll to fit one long "date, time" string on one line. */
+@media (max-width: 600px) {
+    .donation-time-clock {
+        display: block;
     }
 }
 
@@ -2343,6 +2419,12 @@ body.dark-mode .wifi-badge-saved {
 .device-control-wrapper {
     display: flex;
     gap: 10px;
+}
+
+@media (max-width: 600px) {
+    .device-control-wrapper {
+        flex-direction: column;
+    }
 }
 
 .device-control-btn {
@@ -3048,10 +3130,10 @@ body.dark-mode .modal-title-icon {
 /* Loading state */
 .config-loading {
     display: flex;
+    flex: 1;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 80px 0;
     color: #888;
     gap: 16px;
 }

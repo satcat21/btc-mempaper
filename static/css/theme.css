@@ -442,6 +442,9 @@ body.modal-open {
 
 .confirm-modal-btn {
     flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     padding: 10px 20px;
     border: none;
     border-radius: var(--radius-md);
