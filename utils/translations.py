@@ -193,7 +193,17 @@ translations = {
         "rate_limit_exceeded": "Rate limit exceeded. Please wait {seconds} seconds before trying again.",
         "wallet_balances_updated": "Wallet balances updated automatically!",
         "are_you_sure_logout": "Are you sure you want to logout?",
-        
+        "session_toast_title": "Session",
+        "session_logging_out_in": "Logging out in {seconds} seconds.",
+        "session_stay_logged_in": "Stay logged in",
+        "session_refreshing": "Refreshing…",
+        "session_renewed_title": "Session Renewed",
+        "session_renewed_body": "Your session has been extended.",
+        "session_expired_title": "Session Expired",
+        "session_error_title": "Session Error",
+        "session_refresh_failed": "Failed to refresh session.",
+        "session_expired_dashboard": "Session expired. Redirecting…",
+
         # Status Messages
         "websocket_connecting": "Connecting to real-time updates...",
         "websocket_connected": "WebSocket: Connected",
@@ -867,7 +877,17 @@ translations = {
         "rate_limit_exceeded": "Rate-Limit überschritten. Bitte warten Sie {seconds} Sekunden, bevor Sie es erneut versuchen.",
         "wallet_balances_updated": "Wallet-Salden automatisch aktualisiert!",
         "are_you_sure_logout": "Möchten Sie sich wirklich abmelden?",
-        
+        "session_toast_title": "Sitzung",
+        "session_logging_out_in": "Abmeldung in {seconds} Sekunden.",
+        "session_stay_logged_in": "Angemeldet bleiben",
+        "session_refreshing": "Wird aktualisiert…",
+        "session_renewed_title": "Sitzung verlängert",
+        "session_renewed_body": "Ihre Sitzung wurde verlängert.",
+        "session_expired_title": "Sitzung abgelaufen",
+        "session_error_title": "Sitzungsfehler",
+        "session_refresh_failed": "Sitzung konnte nicht verlängert werden.",
+        "session_expired_dashboard": "Sitzung abgelaufen. Weiterleitung…",
+
         # Status Messages
         "websocket_connecting": "Verbinde zu Echtzeit-Updates...",
         "websocket_connected": "WebSocket: Verbunden",
@@ -1543,7 +1563,17 @@ translations = {
         "rate_limit_exceeded": "Límite de tasa excedido. Por favor espere {seconds} segundos antes de intentar nuevamente.",
         "wallet_balances_updated": "¡Saldos de cartera actualizados automáticamente!",
         "are_you_sure_logout": "¿Estás seguro de que quieres cerrar sesión?",
-        
+        "session_toast_title": "Sesión",
+        "session_logging_out_in": "Cierre de sesión en {seconds} segundos.",
+        "session_stay_logged_in": "Mantener sesión iniciada",
+        "session_refreshing": "Actualizando…",
+        "session_renewed_title": "Sesión renovada",
+        "session_renewed_body": "Tu sesión ha sido extendida.",
+        "session_expired_title": "Sesión expirada",
+        "session_error_title": "Error de sesión",
+        "session_refresh_failed": "No se pudo renovar la sesión.",
+        "session_expired_dashboard": "Sesión expirada. Redirigiendo…",
+
         # Status Messages
         "websocket_connecting": "Conectando a actualizaciones en tiempo real...",
         "websocket_connected": "WebSocket: Conectado",
@@ -2205,7 +2235,17 @@ translations = {
         "rate_limit_exceeded": "Limite de taux dépassée. Veuillez attendre {seconds} secondes avant de réessayer.",
         "wallet_balances_updated": "Soldes des portefeuilles mis à jour automatiquement !",
         "are_you_sure_logout": "Êtes-vous sûr de vouloir vous déconnecter ?",
-        
+        "session_toast_title": "Session",
+        "session_logging_out_in": "Déconnexion dans {seconds} secondes.",
+        "session_stay_logged_in": "Rester connecté",
+        "session_refreshing": "Actualisation…",
+        "session_renewed_title": "Session renouvelée",
+        "session_renewed_body": "Votre session a été prolongée.",
+        "session_expired_title": "Session expirée",
+        "session_error_title": "Erreur de session",
+        "session_refresh_failed": "Échec du renouvellement de la session.",
+        "session_expired_dashboard": "Session expirée. Redirection…",
+
         # Status Messages
         "websocket_connecting": "Connexion aux mises à jour en temps réel...",
         "websocket_connected": "WebSocket : Connecté",
@@ -2870,7 +2910,17 @@ translations = {
         "rate_limit_exceeded": "Limite di velocità superato. Attendi {seconds} secondi prima di riprovare.",
         "wallet_balances_updated": "Saldi del wallet aggiornati automaticamente!",
         "are_you_sure_logout": "Sei sicuro di voler uscire?",
-        
+        "session_toast_title": "Sessione",
+        "session_logging_out_in": "Disconnessione tra {seconds} secondi.",
+        "session_stay_logged_in": "Rimani connesso",
+        "session_refreshing": "Aggiornamento…",
+        "session_renewed_title": "Sessione rinnovata",
+        "session_renewed_body": "La tua sessione è stata prolungata.",
+        "session_expired_title": "Sessione scaduta",
+        "session_error_title": "Errore di sessione",
+        "session_refresh_failed": "Impossibile rinnovare la sessione.",
+        "session_expired_dashboard": "Sessione scaduta. Reindirizzamento…",
+
         # Status Messages
         "websocket_connecting": "Connessione agli aggiornamenti in tempo reale...",
         "websocket_connected": "WebSocket: Connesso",

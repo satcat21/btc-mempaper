@@ -15,6 +15,7 @@
     <script defer src="static/js/socket.io.min.js"></script>
     <script defer src="static/js/confirm-modal.js"></script>
     <script defer src="static/js/toast.js"></script>
+    <script defer src="static/js/session-manager.js"></script>
 </head>
 <body class="orientation-{{ orientation }}{% if dark_mode %} dark-mode{% endif %}">
     <!-- Desktop Navigation - Left Side -->
@@ -83,7 +84,18 @@
             confirm_logout: "{{ translations.confirm_logout }}",
             cancel: "{{ translations.cancel }}",
             auto_update_started: "{{ translations.auto_update_started }}",
-            auto_update_started_body: "{{ translations.auto_update_started_body }}"
+            auto_update_started_body: "{{ translations.auto_update_started_body }}",
+            session_expired: "{{ translations.session_expired }}",
+            session_expired_dashboard: "{{ translations.session_expired_dashboard }}",
+            session_toast_title: "{{ translations.session_toast_title }}",
+            session_logging_out_in: "{{ translations.session_logging_out_in }}",
+            session_stay_logged_in: "{{ translations.session_stay_logged_in }}",
+            session_refreshing: "{{ translations.session_refreshing }}",
+            session_renewed_title: "{{ translations.session_renewed_title }}",
+            session_renewed_body: "{{ translations.session_renewed_body }}",
+            session_expired_title: "{{ translations.session_expired_title }}",
+            session_error_title: "{{ translations.session_error_title }}",
+            session_refresh_failed: "{{ translations.session_refresh_failed }}"
         };
         window.orientation = "{{ orientation }}";
         window.isAuthenticated = {{ 'true' if is_authenticated else 'false' }};

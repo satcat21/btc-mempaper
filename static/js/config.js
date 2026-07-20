@@ -368,7 +368,8 @@ function _setupValidationClickInterceptor() {
                 const detail = (firstErrEl && firstErrEl.classList.contains('input-error-msg'))
                     ? firstErrEl.textContent : '';
                 _buildLiveToast(
-                    t.validation_save_blocked_title || 'Fix invalid fields before saving',
+                    '<img src="/static/icons/error.svg" alt="" width="16" height="16" class="toast-title-icon toast-icon-error"> ' +
+                        (t.validation_save_blocked_title || 'Fix invalid fields before saving'),
                     [detail || (t.validation_save_blocked_body || 'One or more fields have invalid values.')],
                     '#ef4444', 6000
                 );
@@ -574,6 +575,10 @@ function setLanguage(lang) {
         section.dataset.lazy = 'true';
         _renderCategorySection(cat, section);
     });
+
+    // Re-render rebuilds the display select from the raw schema (all options,
+    // enabled) - re-lock it, same as the initial page load does.
+    setTimeout(_enhanceDisplaySelect, 150);
 
     window.scrollTo({ top: savedScrollY, behavior: 'instant' });
 }
@@ -3358,7 +3363,7 @@ async function _loadUpdateData(selectEl, updateBtn, versionEl, notesContainer) {
                 const t = window.translations || {};
                 const msg = (t.update_available_hint || 'Update {version} available').replace('{version}', latestTag);
                 _buildLiveToast(
-                    '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 -960 960 960" fill="currentColor" style="vertical-align:middle;margin-right:4px"><path d="M240-120v-80l40-40H160q-33 0-56.5-23.5T80-320v-440q0-33 23.5-56.5T160-840h320v80H160v440h640v-120h80v120q0 33-23.5 56.5T800-240H680l40 40v80H240Zm360-240L400-560l56-56 104 103v-327h80v327l104-103 56 56-200 200Z"/></svg> ' + (t.software_update || 'Software Update'),
+                    '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 -960 960 960" fill="currentColor" style="vertical-align:-3px;margin-right:4px"><path d="M240-120v-80l40-40H160q-33 0-56.5-23.5T80-320v-440q0-33 23.5-56.5T160-840h320v80H160v440h640v-120h80v120q0 33-23.5 56.5T800-240H680l40 40v80H240Zm360-240L400-560l56-56 104 103v-327h80v327l104-103 56 56-200 200Z"/></svg> ' + (t.software_update || 'Software Update'),
                     msg,
                     '#F7931A',
                     8000
@@ -3778,23 +3783,16 @@ function _startDriverHealthPolling(toast) {
     }, 2000);
 }
 
-// ── Display Select Enhancement ───────────────────────────────
-
-// Fetches /api/display/options and rebuilds the omni_device_name select with
-// availability badges (✓ ready / ⬇ needs download), plus an inline hint div.
+// ── Display Select Hint ────────────────────────────────────────
 function _setDisplayHint(hint, state) {
-    // state: 'ok' | 'no_drivers' | 'error'
-    if (state === 'ok') {
-        hint.style.color = 'var(--text-muted,#888)';
-        hint.textContent = window.translations?.display_change_via_install || 'To change display type, re-run install.sh on the Pi.';
-    } else if (state === 'error') {
+    // state: 'ok' | 'error'
+    if (state === 'error') {
         hint.style.color = 'var(--danger,#ef4444)';
         hint.textContent = window.translations?.wrong_display_driver_detected ||
             'Wrong display driver detected — re-run install.sh to configure the correct display.';
     } else {
-        hint.style.color = 'var(--danger,#ef4444)';
-        hint.textContent = window.translations?.run_install_sh_for_display ||
-            'Run install.sh again to configure a connected display.';
+        hint.style.color = 'var(--text-muted,#888)';
+        hint.textContent = window.translations?.display_change_via_install || 'To change display type, re-run install.sh on the Pi.';
     }
 }
 
@@ -3802,43 +3800,8 @@ async function _enhanceDisplaySelect() {
     const selectEl = document.querySelector('[data-config-key="omni_device_name"]');
     if (!selectEl || selectEl.tagName !== 'SELECT') return;
 
-    // Display type is set via install.sh only — the select is always locked.
-    const currentVal = selectEl.value;
-    let matchedOption = null;
-    let displayError = null;
-
-    // Fetch driver availability and last error state in parallel
-    const [optionsResp, statusResp] = await Promise.allSettled([
-        fetch('/api/display/options').then(r => r.ok ? r.json() : null).catch(() => null),
-        fetch('/api/display/status').then(r => r.ok ? r.json() : null).catch(() => null),
-    ]);
-
-    const optionsData = optionsResp.value;
-    const statusData = statusResp.value;
-
-    if (optionsData?.success && Array.isArray(optionsData.options)) {
-        matchedOption = optionsData.options.find(o => o.device_id === currentVal && o.available);
-    }
-    if (statusData?.error) {
-        displayError = statusData.error;
-    }
-
-    selectEl.innerHTML = '';
-    selectEl.disabled = true;
     selectEl.title = window.translations?.display_change_via_install || 'Change display type by re-running install.sh on the Pi';
 
-    const opt = document.createElement('option');
-    opt.selected = true;
-    if (matchedOption) {
-        opt.value = currentVal;
-        opt.textContent = matchedOption.label || currentVal;
-    } else {
-        opt.value = '';
-        opt.textContent = window.translations?.no_display_drivers_installed || 'No display drivers installed';
-    }
-    selectEl.appendChild(opt);
-
-    // Hint div below the select
     let hint = document.getElementById('display-driver-hint');
     if (!hint) {
         hint = document.createElement('div');
@@ -3847,13 +3810,8 @@ async function _enhanceDisplaySelect() {
         selectEl.parentNode.insertBefore(hint, selectEl.nextSibling);
     }
 
-    if (displayError) {
-        _setDisplayHint(hint, 'error');
-    } else if (matchedOption) {
-        _setDisplayHint(hint, 'ok');
-    } else {
-        _setDisplayHint(hint, 'no_drivers');
-    }
+    const statusData = await fetch('/api/display/status').then(r => r.ok ? r.json() : null).catch(() => null);
+    _setDisplayHint(hint, statusData?.error ? 'error' : 'ok');
 }
 
 // ── System Package Update ────────────────────────────────────
@@ -5415,7 +5373,7 @@ function _mpaIcon(name, color, size) {
     if (!cached) return '';
     return cached
         .replace(/fill="[^"]*"/, `fill="${color}"`)
-        .replace('<svg ', `<svg style="width:${size}px;height:${size}px;flex-shrink:0;vertical-align:middle;" `);
+        .replace('<svg ', `<svg style="width:${size}px;height:${size}px;flex-shrink:0;vertical-align:-3px;" `);
 }
 
 function _mpaShowLogModal(checks) {
@@ -5611,7 +5569,7 @@ function createFormField(key, field, value) {
                 testBtn.addEventListener('click', () => {
                     const url = wsInput.value.trim();
                     if (!url) {
-                        _buildLiveToast('No URL', ['Enter a WebSocket URL first.'], '#ef4444', 5000);
+                        _buildLiveToast(`${_mpaIcon('error', '#ef4444', 15)}No URL`, ['Enter a WebSocket URL first.'], '#ef4444', 5000);
                         return;
                     }
                     const origLabel = testBtn.textContent;
@@ -5711,7 +5669,9 @@ function createFormField(key, field, value) {
                     input.appendChild(optionEl);
                 });
             }
-            
+
+            if (field.disabled) input.disabled = true;
+
             // Special handling for language changes - remove immediate modal, save for later
             if (key === 'language') {
                 input.addEventListener('change', (e) => {
@@ -5847,7 +5807,7 @@ function createFormField(key, field, value) {
 
                         _buildLiveToast(`${titleIcon}${allOk ? 'Mempool — All OK' : 'Mempool — Issues Found'}`, rows.join(''), accentColor, 15000);
                     })
-                    .catch(() => { _buildLiveToast('Mempool Check Failed', 'Could not reach the server.', '#ef4444', 30000); })
+                    .catch(() => { _buildLiveToast(`${_mpaIcon('error', '#ef4444', 15)}Mempool Check Failed`, 'Could not reach the server.', '#ef4444', 30000); })
                     .finally(() => {
                         checkBtn.disabled = false;
                         checkBtn.textContent = originalLabel;

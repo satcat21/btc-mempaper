@@ -9,10 +9,11 @@
 
     // Inject toast icon styles once
     var s = document.createElement('style');
-    s.textContent = '.toast-title-icon{vertical-align:middle;margin-right:4px;opacity:0.85}' +
+    s.textContent = '.toast-title-icon{vertical-align:-3px;margin-right:4px;opacity:0.85}' +
         '.dark-mode .toast-title-icon{filter:invert(1)}' +
         '.toast-icon-accent{filter:brightness(0) saturate(100%) invert(62%) sepia(65%) saturate(2028%) hue-rotate(6deg) brightness(100%) contrast(93%)!important}' +
-        '.toast-icon-success{filter:brightness(0) saturate(100%) invert(44%) sepia(72%) saturate(456%) hue-rotate(97deg) brightness(96%) contrast(97%)!important}';
+        '.toast-icon-success{filter:brightness(0) saturate(100%) invert(44%) sepia(72%) saturate(456%) hue-rotate(97deg) brightness(96%) contrast(97%)!important}' +
+        '.toast-icon-error{filter:brightness(0) saturate(100%) invert(33%) sepia(93%) saturate(231%) hue-rotate(305deg) brightness(110%) contrast(216%)!important}';
     document.head.appendChild(s);
 
     // Return (or create) the shared upper-right toast stack container
@@ -151,6 +152,8 @@
 
         const timer = setTimeout(closeToast, autoDismissMs);
         toast.closeToast = () => { clearTimeout(timer); closeToast(); };
+
+        return toast;
     };
 
     // Type-to-colour map for showNotification
@@ -159,6 +162,14 @@
         error:   '#dc3545',
         warning: '#F7931A',
         info:    '#17a2b8'
+    };
+
+    // Type-to-icon map for showNotification. No 'info' entry - no icon asset
+    // fits that case well yet, so info toasts stay title-only.
+    var _notifyIcons = {
+        success: { src: '/static/icons/check.svg', filterClass: 'toast-icon-success' },
+        error:   { src: '/static/icons/error.svg',  filterClass: 'toast-icon-error' },
+        warning: { src: '/static/icons/error.svg',  filterClass: 'toast-icon-accent' }
     };
 
     // Drop-in replacement for the old showNotification(message, type, duration)
@@ -174,8 +185,12 @@
             info:    t.toast_info    || 'Info'
         };
         var title = titles[type] || '';
+        var icon = _notifyIcons[type];
+        var titleHtml = icon
+            ? `<img src="${icon.src}" alt="" width="16" height="16" class="toast-title-icon ${icon.filterClass}"> ${title}`
+            : title;
         // Escape HTML in message
         var safe = message.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-        _buildLiveToast(title, safe, color, duration);
+        _buildLiveToast(titleHtml, safe, color, duration);
     };
 })();

@@ -849,6 +849,20 @@ class ConfigManager:
             '</div>'
         )
 
+        from tools.configure_display import DEVICE_CONFIGS
+        _current_device_id = self.config.get('omni_device_name', '')
+        _current_device_info = DEVICE_CONFIGS.get(_current_device_id)
+        if _current_device_info:
+            # Device model names are proper nouns - not translated, same as before.
+            _current_device_option = {"value": _current_device_id, "label": _current_device_info['name']}
+        else:
+            # No (recognized) display configured
+            _current_device_option = {
+                "value": _current_device_id,
+                "label": t.get('no_display_drivers_installed', 'No display drivers installed'),
+                "_lk": "no_display_drivers_installed",
+            }
+
         schema = {
             # --- Info block config additions ---
             "show_btc_price_block": {
@@ -1292,12 +1306,8 @@ class ConfigManager:
                 "type": "select",
                 "label": t.get("display_type", "Display Device Type"),
                 "_lk": "display_type",
-                "description": t.get("display_type_desc", "Select your specific e-paper display model"),
-                "_dk": "display_type_desc",
-                "options": [
-                    {"value": "epd13in3E", "label": "Waveshare 13.3\" 6-Color (Spectra 6) — 1200×1600"},
-                    {"value": "epd7in3f",  "label": "Waveshare 7.3\" 7-Color — 800×480"},
-                ],
+                "options": [_current_device_option],
+                "disabled": True,
                 "category": "eink_display"
             },
             "eink_dark_mode": {

@@ -585,6 +585,10 @@ body.dark-mode .form-input[type="date"] {
     box-shadow: 0 0 0 3px var(--accent-dim);
 }
 
+.form-select:disabled {
+    cursor: not-allowed;
+}
+
 /* Prevent iOS zoom on focus */
 @media (max-width: 999px) {
     .form-input, .form-select {

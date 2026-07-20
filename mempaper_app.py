@@ -9228,39 +9228,6 @@ class MempaperApp:
                 traceback.print_exc()
                 return jsonify({'success': False, 'message': str(e)}), 500
 
-        # ── Display Options Endpoint ──────────────────────────────
-
-        @self.app.route('/api/display/options', methods=['GET'])
-        @require_auth(self.auth_manager)
-        def get_display_options():
-            """Return all display options with per-device driver availability status."""
-            try:
-                from tools.configure_display import (
-                    DEVICE_CONFIGS, DRIVER_DOWNLOADS, _drivers_missing
-                )
-                options = []
-                for device_id, info in DEVICE_CONFIGS.items():
-                    in_downloads = device_id in DRIVER_DOWNLOADS
-                    if in_downloads:
-                        missing = _drivers_missing(device_id)
-                        available = len(missing) == 0
-                    else:
-                        available = True
-                    options.append({
-                        'device_id': device_id,
-                        'label': info['name'],
-                        'description': info.get('description', ''),
-                        'width': info['width'],
-                        'height': info['height'],
-                        'available': available,
-                        'needs_download': in_downloads and not available,
-                    })
-                return jsonify({'success': True, 'options': options})
-            except Exception as e:
-                print(f"Display options error: {e}")
-                traceback.print_exc()
-                return jsonify({'success': False, 'message': str(e)}), 500
-
         # ── Display Status Endpoint ────────────────────────────────
 
         @self.app.route('/api/display/status', methods=['GET'])
