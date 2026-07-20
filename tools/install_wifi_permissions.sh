@@ -219,6 +219,11 @@ ${SERVICE_USER} ALL=(root) NOPASSWD: ${NFT_BIN} insert rule inet filter input ii
 ${SERVICE_USER} ALL=(root) NOPASSWD: ${NFT_BIN} delete rule inet filter input handle *
 ${SERVICE_USER} ALL=(root) NOPASSWD: ${NFT_BIN} -a list chain inet filter input
 
+# Dependency health check: validates a self-contained ruleset (own throwaway
+# table/chain, read from stdin) via -c -f - — never touches the live 'inet
+# filter input' chain, which doesn't exist outside of active hotspot mode.
+${SERVICE_USER} ALL=(root) NOPASSWD: ${NFT_BIN} -c -f -
+
 # DHCP option 114 (RFC 8910): write captive portal URL into NM's dnsmasq-shared.d
 # so Android 11+ detects the portal immediately via DHCP instead of HTTP probing.
 ${SERVICE_USER} ALL=(root) NOPASSWD: ${MKDIR_BIN} -p /etc/NetworkManager/dnsmasq-shared.d

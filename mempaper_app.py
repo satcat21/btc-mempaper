@@ -393,6 +393,9 @@ class MempaperApp:
         self._last_display_error = None       # set on failure, cleared on success
         self._consecutive_display_failures = 0  # reset on success; auto-disable only after DISPLAY_FAILURE_DISABLE_THRESHOLD in a row
 
+        # Dependency health check
+        self._dependency_health_issues = None  # list of {name, detail} or None
+
         # Flag: an e-ink refresh was requested while the display was busy (e.g. donation during block update)
         self._pending_eink_refresh = False
 
@@ -1741,10 +1744,11 @@ class MempaperApp:
                     if missing_apt:
                         print(f'📦 Dependency check: missing apt packages: {", ".join(missing_apt)}')
                         subprocess.run(['sudo', 'mount', '-o', 'remount,rw', '/'], timeout=10, capture_output=True)
-                        subprocess.run(
-                            ['sudo', 'apt-get', 'install', '-y', '--no-upgrade'] + missing_apt,
-                            capture_output=True, timeout=300
-                        )
+                        # Scoped wrapper (installs from apt-requirements.txt, no args accepted) —
+                        # a raw 'apt-get install <pkgs>' isn't in sudoers and would hang on a
+                        # password prompt, silently failing under capture_output.
+                        subprocess.run(['sudo', '/usr/local/bin/mempaper-apt-install'],
+                                        capture_output=True, timeout=300)
                         print(f'📦 Dependency check: apt packages installed')
                     else:
                         print('✅ Dependency check: all apt packages present')
@@ -1797,6 +1801,63 @@ class MempaperApp:
                     print('✅ Dependency check: all pip packages present')
             except Exception as e:
                 print(f'⚠️ Dependency check (pip): {e}')
+
+        # ── Compatibility checks ──
+        # Catches an apt package silently losing compatibility after a security
+        # update (e.g. the Trixie nft-vs-iptables-nft break we already hit once).
+        # These validate syntax only (nft --check, dnsmasq --test) — neither
+        # touches the live firewall ruleset or binds a socket, so they're safe
+        # to run on every boot regardless of hotspot/network state. Pillow/image
+        # encoding is intentionally not covered here (see comment near
+        # self._dependency_health_issues in __init__).
+        issues = []
+
+        try:
+            ruleset = (
+                'table inet mempaper_healthcheck {\n'
+                '    chain input {\n'
+                '        type filter hook input priority 0;\n'
+                '        iifname "lo" accept\n'
+                '    }\n'
+                '}\n'
+            )
+            r = subprocess.run(
+                ['sudo', 'nft', '-c', '-f', '-'],
+                input=ruleset, capture_output=True, text=True, timeout=5
+            )
+            if r.returncode != 0:
+                detail = r.stderr.strip()[:200]
+                issues.append({'name': 'nftables rule syntax', 'detail': detail})
+                print(f'⚠️ Dependency check: nftables rule syntax check failed: {detail}')
+            else:
+                print('✅ Dependency check: nftables rule syntax OK')
+        except Exception as e:
+            issues.append({'name': 'nftables rule syntax', 'detail': str(e)})
+            print(f'⚠️ Dependency check (nft): {e}')
+
+        try:
+            import tempfile
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.conf', delete=False) as tf:
+                tf.write('interface=lo\nbind-dynamic\ndhcp-range=10.255.255.10,10.255.255.100,12h\n')
+                tmp_path = tf.name
+            try:
+                r = subprocess.run(
+                    ['dnsmasq', '--test', f'--conf-file={tmp_path}'],
+                    capture_output=True, timeout=5
+                )
+            finally:
+                os.remove(tmp_path)
+            if r.returncode != 0:
+                detail = r.stderr.decode(errors='replace').strip()[:200]
+                issues.append({'name': 'dnsmasq config syntax', 'detail': detail})
+                print(f'⚠️ Dependency check: dnsmasq config syntax check failed: {detail}')
+            else:
+                print('✅ Dependency check: dnsmasq config syntax OK')
+        except Exception as e:
+            issues.append({'name': 'dnsmasq config syntax', 'detail': str(e)})
+            print(f'⚠️ Dependency check (dnsmasq): {e}')
+
+        self._dependency_health_issues = issues or None
 
     def _start_wifi_recovery_monitor(self):
         if self._wifi_recovery_thread_started:
@@ -9244,6 +9305,14 @@ class MempaperApp:
                 })
             return jsonify({'success': True, 'error': None, 'display_disabled': False})
 
+        @self.app.route('/api/system/dependency-status', methods=['GET'])
+        @require_auth(self.auth_manager)
+        def get_dependency_status():
+            """Return any apt-dependency compatibility issues found at startup
+            (e.g. nft/dnsmasq syntax breaking after a system package update)."""
+            issues = self._dependency_health_issues
+            return jsonify({'success': True, 'issues': issues or []})
+
         # ── System Package Update Endpoint ────────────────────────
 
         @self.app.route('/api/system/update-packages', methods=['POST'])
@@ -9674,13 +9743,8 @@ class MempaperApp:
                             if apt_deps_changed:
                                 apt_req_file = os.path.join(project_dir, 'apt-requirements.txt')
                                 if os.path.exists(apt_req_file):
-                                    with open(apt_req_file) as f:
-                                        pkgs = [l.strip() for l in f if l.strip() and not l.strip().startswith('#')]
-                                    if pkgs:
-                                        subprocess.run(
-                                            ['sudo', 'apt-get', 'install', '-y', '--no-upgrade'] + pkgs,
-                                            capture_output=True, timeout=300
-                                        )
+                                    subprocess.run(['sudo', '/usr/local/bin/mempaper-apt-install'],
+                                                    capture_output=True, timeout=300)
 
                             venv_pip = os.path.join(project_dir, '.venv', 'bin', 'pip')
                             requirements_file = os.path.join(project_dir, 'requirements.txt')
