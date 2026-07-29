@@ -4282,9 +4282,15 @@ class MempaperApp:
                 self._precache['next_meme_path'] = None
                 self._precache['selected_block_types'] = None
 
+            # Mirrors _get_precached_data()'s _need_type(): None (balanced mode, or
+            # types not yet preselected this cycle) always fetches, same as before.
+            _selected = self._precache.get('selected_block_types')
+
+            def _need_type(*types):
+                return _selected is None or any(t in _selected for t in types)
 
             # Update price data if stale
-            if now - self._precache['price_last_update'] > update_interval:
+            if _need_type('price', 'wallet') and now - self._precache['price_last_update'] > update_interval:
                 try:
                     price_data = self.image_renderer.fetch_btc_price()
                     if self._store_fresh_price_data(price_data, now):
@@ -4301,7 +4307,7 @@ class MempaperApp:
             _last_bitaxe = self._precache.get('bitaxe_data') or {}
             _bitaxe_was_all_offline = _last_bitaxe.get('miners_total', 0) > 0 and _last_bitaxe.get('miners_online', 0) == 0
             _bitaxe_interval = min(update_interval, 30) if _bitaxe_was_all_offline else update_interval
-            if self.config.get("show_bitaxe_block", True) and self.config.get("bitaxe_enabled", True) and now - self._precache['bitaxe_last_update'] > _bitaxe_interval:
+            if _need_type('bitaxe') and self.config.get("show_bitaxe_block", True) and self.config.get("bitaxe_enabled", True) and now - self._precache['bitaxe_last_update'] > _bitaxe_interval:
                 try:
                     bitaxe_data = self.image_renderer.bitaxe_api.fetch_bitaxe_stats()
                     if bitaxe_data and not bitaxe_data.get('error'):
@@ -4320,7 +4326,7 @@ class MempaperApp:
                     print(f"⚠️ Failed to pre-cache Bitaxe: {e}")
             
             # Update network stats when at least one network-dependent block is enabled.
-            _need_network = (
+            _need_network = _need_type('countdown', 'halving', 'network') and (
                 self.config.get("show_countdown_block", True)
                 or self.config.get("show_halving_block", True)
                 or self.config.get("show_network_block", True)
@@ -4350,8 +4356,8 @@ class MempaperApp:
                 except Exception as e:
                     print(f"⚠️ Failed to pre-cache network stats: {e}")
 
-            # Update fee data if stale (fees change more frequently, so use shorter interval)
-            fee_update_interval = min(update_interval, 60)  # Update fees at least every 60s
+            # Update fee data if stale
+            fee_update_interval = update_interval
             if now - self._precache['fee_last_update'] > fee_update_interval:
                 try:
                     fee_param = self.config.get("fee_parameter", "minimumFee")
