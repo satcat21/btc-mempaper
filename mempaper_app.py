@@ -3893,9 +3893,24 @@ class MempaperApp:
         # Update translations
         lang = self.config.get("language", "en")
         self.translations = translations.get(lang, translations["en"])
-        
+
         # Update e-ink display status
         self.e_ink_enabled = self.config.get("e-ink-display-connected", True)
+
+        # Restart the persistent display worker if the display type changed - the
+        # worker reads config once at its startup (see lib/display_worker.py) and
+        # would otherwise keep driving the panel with the previous device's driver
+        # until the next service restart.
+        if old_config and old_config.get('omni_device_name') != self.config.get('omni_device_name'):
+            print("🖥️ Display type changed — restarting display worker with new driver")
+
+            def _restart_worker():
+                # Wait for any in-flight push to finish rather than killing mid-refresh.
+                with self._display_worker_lock:
+                    self._kill_display_worker(self._display_worker)
+                # Next _display_on_epaper_async call starts a fresh worker with new config.
+
+            threading.Thread(target=_restart_worker, daemon=True).start()
         
         # Reinitialize image renderer with new config
         self.image_renderer = ImageRenderer(self.config, self.translations)

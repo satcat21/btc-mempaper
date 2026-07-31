@@ -486,8 +486,15 @@ class WaveshareDisplay:
                 # Assume it's already a PIL Image
                 img = image_path
             
-            # Process image for vertical orientation if needed
-            if process_vertical and img.size == (480, 800):
+            # Rotate when the rendered image's orientation is orthogonal to the
+            # panel's native scan orientation (e.g. portrait render for the
+            # landscape-native 7.3" panel; the 13.3" E is portrait-native and
+            # needs no rotation for vertical renders). Previously hardcoded to
+            # the 7.3"'s portrait size (480, 800), which silently fell through
+            # to a distorting resize for any other panel/size combination.
+            img_is_portrait = img.height > img.width
+            panel_is_portrait = self.height > self.width
+            if process_vertical and img_is_portrait != panel_is_portrait:
                 # Add message overlay before rotation if provided
                 if message and len(message) > 1:
                     try:
@@ -501,8 +508,8 @@ class WaveshareDisplay:
                         draw.text((10, 30), message, font=font, fill=(255, 255, 255))
                     except Exception as e:
                         print(f"Warning: Could not add message overlay: {e}")
-                
-                # Rotate 90° clockwise to convert portrait to landscape
+
+                print(f"⚙️ Rotating {img.size} image 90° to match panel orientation ({self.width}×{self.height})")
                 img = img.transpose(Image.Transpose.ROTATE_90)
             
             # Ensure image is the correct size for the display

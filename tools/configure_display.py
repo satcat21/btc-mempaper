@@ -347,8 +347,14 @@ def set_device(config, device_id, offline=False):
             print(f"   Drivers already present.")
 
     config["omni_device_name"] = device_id
-    config["display_width"] = info["width"]
-    config["display_height"] = info["height"]
+    # Config stores LANDSCAPE dimensions (width >= height) - the convention shared
+    # by validate_config's auto-set, DEVICE_DIMENSIONS and ImageRenderer, whose
+    # "vertical" orientation swaps them at render time. DEVICE_CONFIGS holds the
+    # panel's native scan dimensions, which for portrait-native panels (13.3" E:
+    # 1200x1600) are portrait - written unnormalized they made vertical renders
+    # come out landscape and get squash-resized onto the panel.
+    config["display_width"] = max(info["width"], info["height"])
+    config["display_height"] = min(info["width"], info["height"])
 
     if device_id != "omni_epd.mock":
         config["e-ink-display-connected"] = True
@@ -356,7 +362,7 @@ def set_device(config, device_id, offline=False):
     if save_config(config):
         print(f"✅ Display device updated to: {info['name']}")
         print(f"   Device ID: {device_id}")
-        print(f"   Dimensions: {info['width']}x{info['height']}")
+        print(f"   Dimensions: {config['display_width']}x{config['display_height']} (landscape convention)")
         return True
 
     return False
