@@ -584,7 +584,17 @@ class WaveshareDisplay:
                 if WAVESHARE_AVAILABLE and self.module_name in WAVESHARE_MODULES:
                     epd_module = WAVESHARE_MODULES[self.module_name]
                     if hasattr(epd_module, 'epdconfig'):
-                        epd_module.epdconfig.module_exit(cleanup=True)
+                        module_exit = epd_module.epdconfig.module_exit
+                        # module_exit()'s signature isn't consistent across driver
+                        # versions/downloads (some accept cleanup=, some take no
+                        # args) - a TypeError here previously aborted cleanup
+                        # entirely, which for this driver's ctypes/CDLL-based GPIO
+                        # (not the standard RPi.GPIO package) can leave hardware
+                        # claims stuck at the OS level across worker restarts.
+                        try:
+                            module_exit(cleanup=True)
+                        except TypeError:
+                            module_exit()
                 print("✅ Display cleanup completed")
             except Exception as e:
                 print(f"❌ Error during cleanup: {e}")
