@@ -20,8 +20,19 @@ function applyLanguage(lang) {
     });
 
     // Update all elements with data-i18n-html (innerHTML, for <strong>/<code> etc.)
+    //
+    // Only these keys may be rendered as markup. The attribute decides what gets
+    // written into innerHTML, so restricting it to a fixed set keeps that
+    // decision in this file rather than in whatever produced the DOM.
+    var I18N_HTML_KEYS = ['setup_success_title', 'setup_success_hostname',
+                          'setup_success_step1', 'setup_success_step2',
+                          'setup_success_step3'];
     document.querySelectorAll('[data-i18n-html]').forEach(function(el) {
         var key = el.getAttribute('data-i18n-html');
+        if (I18N_HTML_KEYS.indexOf(key) === -1) {
+            el.textContent = t(key);
+            return;
+        }
         var val = t(key);
         // Prefix the success title with check icon
         if (key === 'setup_success_title') val = '<span style="display:inline-block;width:1.1em;height:1.1em;background-color:#22c55e;-webkit-mask-image:url(\'/static/icons/check.svg\');mask-image:url(\'/static/icons/check.svg\');-webkit-mask-size:contain;mask-size:contain;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;vertical-align:-0.15em;margin-right:4px"></span>' + val;

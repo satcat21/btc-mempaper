@@ -1471,6 +1471,21 @@ function reportUploadFailure(statusElementId, error) {
     showNotification(window.translations?.upload_failed || 'Upload failed', 'error');
 }
 
+// Build a URL by appending a filename as a single path segment.
+// Filenames are server-supplied (and for synced memes ultimately external), and
+// land in src/href attributes; encoding the segment stops a name containing
+// '../', '?' or '#' from changing which resource the browser actually requests.
+function assetUrl(prefix, filename) {
+    return prefix + encodeURIComponent(filename);
+}
+
+// Reduce a configured host to the characters legal in host[:port] (including
+// brackets for IPv6) before it is interpolated into a URL, so a config value
+// cannot smuggle in a path, a query or a different scheme.
+function sanitizeHost(host) {
+    return String(host == null ? '' : host).replace(/[^A-Za-z0-9.\-:[\]]/g, '');
+}
+
 // Build a meme/OPSec action button (download, delete, ...).
 //
 // The handler is attached as a function rather than written into an inline
@@ -1562,11 +1577,10 @@ async function showRenameDialog(originalFilename, file, suggestedFilename, exist
         const safeSuggested = escapeHtml(suggestedNameWithoutExt);
         const safeExtension = escapeHtml(extension);
 
-        const previewHtml = previewUrl
-            ? `<div style="text-align: center; margin-bottom: 15px;">
-                   <img src="${previewUrl}" alt="${safeOriginal}" style="max-width: 150px; max-height: 150px; object-fit: contain; border-radius: 6px; border: 1px solid #ddd;">
-               </div>`
-            : '';
+        // The preview is built as an element and inserted after the markup is
+        // parsed, so neither the object URL nor the filename passes through
+        // innerHTML at all.
+        const previewHtml = '';
 
         modal.innerHTML = `
             <div class="modal-content" style="max-width: 400px;">
@@ -1583,6 +1597,18 @@ async function showRenameDialog(originalFilename, file, suggestedFilename, exist
                 </div>
             </div>
         `;
+
+        if (previewUrl) {
+            const previewWrap = document.createElement('div');
+            previewWrap.style.cssText = 'text-align: center; margin-bottom: 15px;';
+            const previewImg = document.createElement('img');
+            previewImg.src = previewUrl;
+            previewImg.alt = originalFilename;
+            previewImg.style.cssText = 'max-width: 150px; max-height: 150px; object-fit: contain; border-radius: 6px; border: 1px solid #ddd;';
+            previewWrap.appendChild(previewImg);
+            const heading = modal.querySelector('.modal-content h3');
+            if (heading) heading.insertAdjacentElement('afterend', previewWrap);
+        }
 
         document.body.appendChild(modal);
 
@@ -1929,7 +1955,7 @@ async function renameMeme(oldFilename, newFilename) {
                         imgElement.dataset.filename = newFilename;
                         
                         // Update URL if needed
-                        const newUrl = `/static/memes/${newFilename}`;
+                        const newUrl = assetUrl('/static/memes/', newFilename);
                         imgElement.dataset.url = newUrl;
                         if (imgElement.src && !imgElement.src.includes('data:image/svg')) {
                             imgElement.src = newUrl;
@@ -2072,7 +2098,7 @@ async function saveRenameInModal() {
 
     // Update modal with new filename
     currentModalMeme.filename = newFilename;
-    currentModalMeme.url = `/static/memes/${newFilename}`;
+    currentModalMeme.url = assetUrl('/static/memes/', newFilename);
 
     // Update display
     const filenameDisplay = document.getElementById('meme-modal-filename-display');
@@ -5871,7 +5897,7 @@ function createFormField(key, field, value) {
                 const useHttps = httpsEl && typeof httpsEl.getValue === 'function'
                     ? httpsEl.getValue()
                     : !!(window.currentConfig || {})['mempool_use_https'];
-                openBtn.href = `${useHttps ? 'https' : 'http'}://${host}`;
+                openBtn.href = `${useHttps ? 'https' : 'http'}://${sanitizeHost(host)}`;
             });
 
             row.appendChild(checkBtn);
@@ -7837,7 +7863,7 @@ function addBitaxeTableRow(tbody, entry) {
     addressInput.addEventListener('input', () => {
         const ip = addressInput.value.trim();
         if (ip) {
-            linkAnchor.href = `http://${ip}`;
+            linkAnchor.href = `http://${sanitizeHost(ip)}`;
             linkAnchor.style.opacity = '1';
             linkAnchor.style.pointerEvents = 'auto';
         } else {
@@ -8608,7 +8634,7 @@ async function loadMoreOpsecImages(page, sentinel) {
 
 function downloadOpsecImage(filename) {
     const a = document.createElement('a');
-    a.href = `/api/download-opsec/${encodeURIComponent(filename)}`;
+    a.href = assetUrl('/api/download-opsec/', filename);
     a.download = filename;
     document.body.appendChild(a);
     a.click();
@@ -9698,7 +9724,7 @@ async function saveRenameInOpsecModal() {
 
     // Update modal with new filename
     currentModalOpsec.filename = newFilename;
-    currentModalOpsec.url = `/static/opsec/${newFilename}`;
+    currentModalOpsec.url = assetUrl('/static/opsec/', newFilename);
 
     const filenameDisplay = document.getElementById('opsec-modal-filename-display');
     const modalTitle = document.getElementById('opsec-modal-title');
@@ -9743,7 +9769,7 @@ async function renameOpsecImage(oldFilename, newFilename) {
             const img = document.querySelector(`#opsec-images-list img[data-filename="${oldFilename}"]`);
             if (img) {
                 img.dataset.filename = newFilename;
-                img.src = `/static/opsec/${newFilename}`;
+                img.src = assetUrl('/static/opsec/', newFilename);
                 img.title = newFilename;
                 const thumb = img.closest('.meme-thumbnail');
                 if (thumb) {
@@ -9760,7 +9786,7 @@ async function renameOpsecImage(oldFilename, newFilename) {
                         );
                     }
                     // Update onclick to use new filename
-                    img.onclick = () => openOpsecModal(newFilename, `/static/opsec/${newFilename}`);
+                    img.onclick = () => openOpsecModal(newFilename, assetUrl('/static/opsec/', newFilename));
                 }
             }
         } else {
@@ -9774,7 +9800,7 @@ async function renameOpsecImage(oldFilename, newFilename) {
 function downloadOpsecFromModal() {
     if (currentModalOpsec) {
         const a = document.createElement('a');
-        a.href = `/api/download-opsec/${currentModalOpsec.filename}`;
+        a.href = assetUrl('/api/download-opsec/', currentModalOpsec.filename);
         a.download = currentModalOpsec.filename;
         document.body.appendChild(a);
         a.click();

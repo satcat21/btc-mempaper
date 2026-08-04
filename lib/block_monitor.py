@@ -16,7 +16,7 @@ import traceback
 from typing import List, Set, Dict, Any
 import urllib3
 from requests.auth import HTTPBasicAuth
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 from utils.technical_config import build_mempool_api_url
 
 # Import the new caching system
@@ -79,15 +79,11 @@ class BlockRewardMonitor:
         ws_url = self._get_mempool_ws_url()
         # API endpoint already logged in mempaper_app._init_api_clients
         # print(f"🌐 Block monitor using mempool API: {base_url}")
-        # Log scheme+host only: a mempool URL can carry basic-auth credentials
-        # (wss://user:pass@host/...), and the journal is not the place for them.
-        try:
-            from urllib.parse import urlsplit
-            _p = urlsplit(ws_url)
-            _safe_ws = f"{_p.scheme}://{_p.hostname or ''}" + (f":{_p.port}" if _p.port else "")
-        except Exception:
-            _safe_ws = "(unparsable)"
-        print(f"📶 Block monitor WebSocket: {_safe_ws}")
+        # Neither the URL nor the host is logged: it can carry basic-auth
+        # credentials (wss://user:pass@host/...), and which mempool instance a
+        # node talks to is itself identifying. The configured endpoint is
+        # visible in the config UI when it is actually needed.
+        print(f"📶 Block monitor WebSocket configured ({urlsplit(ws_url).scheme or 'ws'})")
     
     def _load_and_migrate_legacy_data(self):
         """Load legacy data and migrate to new caching system if needed."""

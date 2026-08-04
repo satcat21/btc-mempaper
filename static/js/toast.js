@@ -138,11 +138,14 @@
         const content = document.createElement('div');
         content.style.cssText = 'margin-right: 28px;';
 
-        // Title goes in via textContent: callers pre-escape only the body
-        // (bodyHtml is deliberately HTML), so the title was the unescaped one.
+        // Both arguments are HTML by contract: titles carry inline SVG icons
+        // from _mpaIcon(), bodies carry built-up rows. Callers are responsible
+        // for escaping anything user-supplied - showLiveToast() escapes its
+        // message for exactly that reason. Rendering the title as textContent
+        // instead turns those icons into literal <svg ...> text.
         const titleEl = document.createElement('div');
         titleEl.style.cssText = `font-weight:600;font-size:14px;margin-bottom:5px;color:${titleColor};`;
-        titleEl.textContent = titleText;
+        titleEl.innerHTML = titleText;
 
         const bodyEl = document.createElement('div');
         bodyEl.style.cssText = 'opacity:0.85;font-size:13px;';
