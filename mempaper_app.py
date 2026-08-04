@@ -29,7 +29,7 @@ import requests
 # Strip identifying User-Agent header from all outgoing requests (privacy)
 requests.utils.default_user_agent = lambda *_args, **_kw: "python-requests"
 from datetime import datetime
-from werkzeug.utils import secure_filename
+from werkzeug.utils import secure_filename, safe_join
 from flask import Flask, send_file, render_template, request, jsonify, session, redirect, url_for, make_response
 from flask_socketio import SocketIO, join_room, leave_room
 from flask_compress import Compress
@@ -6081,8 +6081,8 @@ class MempaperApp:
         @self.app.route('/static/icons/<filename>')
         def serve_icon_with_cache(filename):
             import os
-            file_path = os.path.join('static', 'icons', filename)
-            if not os.path.exists(file_path):
+            file_path = safe_join('static', 'icons', filename)
+            if not file_path or not os.path.exists(file_path):
                 return "File not found", 404
             file_stat = os.stat(file_path)
             etag = f'"{file_stat.st_mtime}-{file_stat.st_size}"'
@@ -6097,8 +6097,13 @@ class MempaperApp:
         # Serve JS from static/js/dist/ if minified copy exists, else fall back to static/js/
         @self.app.route('/static/js/<path:filename>')
         def serve_js_with_dist_fallback(filename):
-            dist_path = os.path.join('static', 'js', 'dist', filename)
-            src_path = os.path.join('static', 'js', filename)
+            # safe_join, not os.path.join: the <path:> converter accepts slashes,
+            # so an unchecked filename could walk out of static/js and hand
+            # send_file() anything readable — config/config.json included.
+            dist_path = safe_join('static', 'js', 'dist', filename)
+            src_path = safe_join('static', 'js', filename)
+            if not dist_path or not src_path:
+                return 'Not found', 404
             serve_path = dist_path if os.path.exists(dist_path) else src_path
             if not os.path.exists(serve_path):
                 return 'Not found', 404
@@ -6107,8 +6112,11 @@ class MempaperApp:
         # Serve CSS from static/css/dist/ if minified copy exists, else fall back to static/css/
         @self.app.route('/static/css/<path:filename>')
         def serve_css_with_dist_fallback(filename):
-            dist_path = os.path.join('static', 'css', 'dist', filename)
-            src_path = os.path.join('static', 'css', filename)
+            # safe_join, not os.path.join — see serve_js_with_dist_fallback above.
+            dist_path = safe_join('static', 'css', 'dist', filename)
+            src_path = safe_join('static', 'css', filename)
+            if not dist_path or not src_path:
+                return 'Not found', 404
             serve_path = dist_path if os.path.exists(dist_path) else src_path
             if not os.path.exists(serve_path):
                 return 'Not found', 404
@@ -6122,9 +6130,9 @@ class MempaperApp:
             import os
             from datetime import datetime, timedelta
             
-            file_path = os.path.join('static', 'memes', filename)
-            
-            if not os.path.exists(file_path):
+            file_path = safe_join('static', 'memes', filename)
+
+            if not file_path or not os.path.exists(file_path):
                 return "File not found", 404
             
             # Get file stats for ETag and Last-Modified
@@ -8177,6 +8185,14 @@ class MempaperApp:
             try:
                 if not ip:
                     return jsonify({'success': False, 'message': 'No IP provided'}), 400
+
+                # Reject before any request is made: this value comes straight
+                # from the request path and used to be interpolated into the
+                # miner URL unvalidated (SSRF).
+                from lib.bitaxe_api import parse_miner_address
+                if parse_miner_address(ip) is None:
+                    return jsonify({'success': False,
+                                    'message': 'Invalid miner address'}), 400
 
                 from lib.bitaxe_api import BitaxeAPI
                 bitaxe_api = getattr(self.image_renderer, 'bitaxe_api', None) or BitaxeAPI()

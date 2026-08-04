@@ -7,8 +7,62 @@ Based on fetch_bitaxe_hashrate.py reference implementation.
 
 """
 
+import ipaddress
 import requests
 from typing import Dict, List, Optional, Union
+
+
+def parse_miner_address(raw) -> Optional[str]:
+    """Validate a Bitaxe address and return a safe "host" / "host:port", else None.
+
+    A miner address is interpolated straight into a request URL, and it reaches
+    that URL from two directions: the miner table in config, and the request path
+    of /api/bitaxe/<ip>/best-diff. Neither validated it, so any string - another
+    host, a port on localhost, a full URL with its own path and query - became
+    the request target (SSRF).
+
+    Only a literal IPv4/IPv6 address with an optional port is accepted, so a
+    scheme, path, query, credentials or hostname can never reach the URL.
+    Loopback, link-local (169.254.169.254 is the cloud metadata address),
+    multicast, reserved and unspecified addresses are rejected as well: they are
+    the usual SSRF pivots and are never a real miner. Private ranges stay allowed
+    because that is exactly where a Bitaxe lives.
+    """
+    if not isinstance(raw, str):
+        return None
+    value = raw.strip()
+    if not value:
+        return None
+
+    host, port = value, None
+    if value.startswith('['):
+        # Bracketed IPv6, optionally [addr]:port
+        end = value.find(']')
+        if end == -1:
+            return None
+        host, rest = value[1:end], value[end + 1:]
+        if rest:
+            if not rest.startswith(':'):
+                return None
+            port = rest[1:]
+    elif value.count(':') == 1:
+        # Exactly one colon means host:port; a bare IPv6 literal has several
+        host, port = value.split(':', 1)
+
+    if port is not None and not (port.isdigit() and 1 <= int(port) <= 65535):
+        return None
+
+    try:
+        addr = ipaddress.ip_address(host)
+    except ValueError:
+        return None
+
+    if (addr.is_loopback or addr.is_link_local or addr.is_multicast
+            or addr.is_unspecified or addr.is_reserved):
+        return None
+
+    netloc = f'[{addr.compressed}]' if addr.version == 6 else addr.compressed
+    return f'{netloc}:{port}' if port else netloc
 
 
 def _parse_diff_value(raw) -> float:
@@ -75,8 +129,16 @@ class BitaxeAPI:
         Returns:
             Hashrate in GH/s, 0 if error
         """
+        target = parse_miner_address(ip)
+        if target is None:
+            print(f"⚠️ Rejected invalid Bitaxe address: {ip!r}")
+            return 0
+
         try:
-            response = requests.get(f"http://{ip}/api/system/info", timeout=timeout)
+            # allow_redirects=False: a redirect would let the miner point the
+            # request back at a host this validation just excluded.
+            response = requests.get(f"http://{target}/api/system/info",
+                                    timeout=timeout, allow_redirects=False)
             response.raise_for_status()
             data = response.json()
             return data.get("hashRate", 0)
@@ -95,11 +157,23 @@ class BitaxeAPI:
         Returns:
             Dictionary with miner information
         """
+        target = parse_miner_address(ip)
+        if target is None:
+            print(f"⚠️ Rejected invalid Bitaxe address: {ip!r}")
+            return {
+                "ip": ip, "hashrate_ghs": 0, "power": 0, "temp": 0,
+                "fan_speed": 0, "frequency": 0, "voltage": 0, "best_diff": 0,
+                "online": False, "error": "invalid miner address",
+            }
+
         try:
-            response = requests.get(f"http://{ip}/api/system/info", timeout=timeout)
+            # allow_redirects=False: a redirect would let the miner point the
+            # request back at a host this validation just excluded.
+            response = requests.get(f"http://{target}/api/system/info",
+                                    timeout=timeout, allow_redirects=False)
             response.raise_for_status()
             data = response.json()
-            
+
             best_diff = _parse_diff_value(data.get("bestDiff") or data.get("bestSessionDiff", 0))
             if best_diff > 0:
                 BitaxeAPI._best_diff_cache[ip] = best_diff
