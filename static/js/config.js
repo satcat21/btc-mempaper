@@ -368,8 +368,8 @@ function _setupValidationClickInterceptor() {
                 const detail = (firstErrEl && firstErrEl.classList.contains('input-error-msg'))
                     ? firstErrEl.textContent : '';
                 _buildLiveToast(
-                    '<img src="/static/icons/error.svg" alt="" width="16" height="16" class="toast-title-icon toast-icon-error"> ' +
-                        (t.validation_save_blocked_title || 'Fix invalid fields before saving'),
+                    [_toastIcon('error', 'error'),
+                        ' ' + (t.validation_save_blocked_title || 'Fix invalid fields before saving')],
                     [detail || (t.validation_save_blocked_body || 'One or more fields have invalid values.')],
                     '#ef4444', 6000
                 );
@@ -760,8 +760,8 @@ function closeMemeModal() {
             socket.on('auto_update_started', function() {
                 const t = window.translations || {};
                 _buildLiveToast(
-                    '<img src="/static/icons/update.svg" width="16" height="16" class="toast-title-icon toast-icon-accent"> ' + (t.auto_update_started || 'Auto-update started'),
-                    t.auto_update_started_body || 'Checking for system and software updates...',
+                    [_toastIcon('update', 'accent'), ' ' + (t.auto_update_started || 'Auto-update started')],
+                    [t.auto_update_started_body || 'Checking for system and software updates...'],
                     '#F7931A',
                     10000
                 );
@@ -774,10 +774,9 @@ function closeMemeModal() {
                 const hint = document.getElementById('display-driver-hint');
                 if (hint) _setDisplayHint(hint, 'error');
                 _buildLiveToast(
-                    '<img src="/static/icons/error.svg" alt="" class="toast-title-icon" width="16" height="16"> ' +
-                        (t.toast_error || 'Error'),
-                    t.wrong_display_driver_detected ||
-                        'Wrong display driver detected — re-run install.sh to configure the correct display.',
+                    [_toastIcon('error'), ' ' + (t.toast_error || 'Error')],
+                    [t.wrong_display_driver_detected ||
+                        'Wrong display driver detected — re-run install.sh to configure the correct display.'],
                     '#dc3545',
                     12000
                 );
@@ -3461,9 +3460,13 @@ async function _loadUpdateData(selectEl, updateBtn, versionEl, notesContainer) {
             if (hasUpdate) {
                 const t = window.translations || {};
                 const msg = (t.update_available_hint || 'Update {version} available').replace('{version}', latestTag);
+                const updateIcon = _mpaSvgIcon(
+                    'M240-120v-80l40-40H160q-33 0-56.5-23.5T80-320v-440q0-33 23.5-56.5T160-840h320v80H160v440h640v-120h80v120q0 33-23.5 56.5T800-240H680l40 40v80H240Zm360-240L400-560l56-56 104 103v-327h80v327l104-103 56 56-200 200Z',
+                    'currentColor', 16, 'margin-right:4px;'
+                );
                 _buildLiveToast(
-                    '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 -960 960 960" fill="currentColor" style="vertical-align:-3px;margin-right:4px"><path d="M240-120v-80l40-40H160q-33 0-56.5-23.5T80-320v-440q0-33 23.5-56.5T160-840h320v80H160v440h640v-120h80v120q0 33-23.5 56.5T800-240H680l40 40v80H240Zm360-240L400-560l56-56 104 103v-327h80v327l104-103 56 56-200 200Z"/></svg> ' + (t.software_update || 'Software Update'),
-                    msg,
+                    [updateIcon, ' ' + (t.software_update || 'Software Update')],
+                    [msg],
                     '#F7931A',
                     8000
                 );
@@ -5468,12 +5471,34 @@ const _mpaIconCache = {};
         .catch(() => {});
 });
 
+const _MPA_SVG_NS = 'http://www.w3.org/2000/svg';
+
+// Element form of the cached icons. Toasts and the log modal build their
+// content from nodes, so the icon has to be a node too - parsing the cached
+// markup here (a first-party asset, image/svg+xml, no script execution)
+// keeps the whole icon rather than reducing it to a single path.
 function _mpaIcon(name, color, size) {
     const cached = _mpaIconCache[name];
-    if (!cached) return '';
-    return cached
-        .replace(/fill="[^"]*"/, `fill="${color}"`)
-        .replace('<svg ', `<svg style="width:${size}px;height:${size}px;flex-shrink:0;vertical-align:-3px;" `);
+    if (!cached) return null;
+    const root = new DOMParser().parseFromString(cached, 'image/svg+xml').documentElement;
+    if (!root || root.localName !== 'svg') return null;
+    const svg = document.importNode(root, true);
+    svg.setAttribute('fill', color);
+    svg.style.cssText = `width:${size}px;height:${size}px;flex-shrink:0;vertical-align:-3px;`;
+    return svg;
+}
+
+// Build an inline icon element from a single Material-symbol path, for icons
+// that aren't in the fetched cache.
+function _mpaSvgIcon(pathData, color, size, extraStyle) {
+    const svg = document.createElementNS(_MPA_SVG_NS, 'svg');
+    svg.setAttribute('viewBox', '0 -960 960 960');
+    svg.setAttribute('fill', color);
+    svg.style.cssText = `width:${size}px;height:${size}px;flex-shrink:0;vertical-align:-3px;` + (extraStyle || '');
+    const path = document.createElementNS(_MPA_SVG_NS, 'path');
+    path.setAttribute('d', pathData);
+    svg.appendChild(path);
+    return svg;
 }
 
 function _mpaShowLogModal(checks) {
@@ -5522,11 +5547,15 @@ function _mpaShowLogModal(checks) {
         const header = document.createElement('div');
         header.style.cssText = `display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:${c.ok ? '#22c55e' : '#ef4444'};`;
         const detailText = [c.detail, c.latency_ms != null ? `${c.latency_ms} ms` : null].filter(Boolean).join(' · ');
-        const detailBadge = detailText
-            ? `<span style="margin-left:auto;font-weight:400;font-size:10px;color:${C.muted};background:${C.badge};padding:2px 7px;border-radius:4px;border:1px solid ${C.badgeBorder};white-space:nowrap;">${escapeHtml(detailText)}</span>`
-            : '';
         const icon = c.ok ? _mpaIcon('check', '#22c55e', 14) : _mpaIcon('error', '#ef4444', 14);
-        header.innerHTML = `${icon}${escapeHtml(c.name)}${detailBadge}`;
+        if (icon) header.appendChild(icon);
+        header.appendChild(document.createTextNode(c.name));
+        if (detailText) {
+            const detailBadge = document.createElement('span');
+            detailBadge.style.cssText = `margin-left:auto;font-weight:400;font-size:10px;color:${C.muted};background:${C.badge};padding:2px 7px;border-radius:4px;border:1px solid ${C.badgeBorder};white-space:nowrap;`;
+            detailBadge.textContent = detailText;
+            header.appendChild(detailBadge);
+        }
         row.appendChild(header);
 
         if (c.url) {
@@ -5669,7 +5698,7 @@ function createFormField(key, field, value) {
                 testBtn.addEventListener('click', () => {
                     const url = wsInput.value.trim();
                     if (!url) {
-                        _buildLiveToast(`${_mpaIcon('error', '#ef4444', 15)}No URL`, ['Enter a WebSocket URL first.'], '#ef4444', 5000);
+                        _buildLiveToast([_mpaIcon('error', '#ef4444', 15), 'No URL'], ['Enter a WebSocket URL first.'], '#ef4444', 5000);
                         return;
                     }
                     const origLabel = testBtn.textContent;
@@ -5689,7 +5718,8 @@ function createFormField(key, field, value) {
                         testBtn.style.width = '';
                         const color = ok ? '#22c55e' : '#ef4444';
                         _buildLiveToast(
-                            `${_mpaIcon(ok ? 'check' : 'error', color, 15)}${ok ? (_t.relay_connected || 'Relay Connected') : (_t.relay_unreachable || 'Relay Unreachable')}`,
+                            [_mpaIcon(ok ? 'check' : 'error', color, 15),
+                                ok ? (_t.relay_connected || 'Relay Connected') : (_t.relay_unreachable || 'Relay Unreachable')],
                             [msg], color, 8000
                         );
                     };
@@ -5878,36 +5908,58 @@ function createFormField(key, field, value) {
                 checkBtn.disabled = true;
                 checkBtn.innerHTML = `Checking<span class="mpa-dots"></span>`;
 
-                const svgCheck = _mpaIcon('check', '#22c55e', 13);
-                const svgError = _mpaIcon('error', '#ef4444', 13);
-
                 fetch('/api/mempool/validate')
                     .then(r => r.ok ? r.json() : Promise.reject(r.status))
                     .then(data => {
                         const allOk = data.checks.every(c => c.ok);
                         const accentColor = allOk ? '#22c55e' : '#ef4444';
-                        const titleIcon = allOk
-                            ? _mpaIcon('check', '#22c55e', 15)
-                            : _mpaIcon('error', '#ef4444', 15);
+                        const titleIcon = _mpaIcon(allOk ? 'check' : 'error', accentColor, 15);
 
-                        const rows = data.checks.map(c =>
-                            `<div style="display:flex;gap:8px;align-items:center;padding:2px 0;">` +
-                            `${c.ok ? svgCheck : svgError}` +
-                            `<span style="font-size:11px;">${escapeHtml(c.name)}</span>` +
-                            `</div>`
+                        const body = document.createDocumentFragment();
+                        data.checks.forEach(c => {
+                            const line = document.createElement('div');
+                            line.style.cssText = 'display:flex;gap:8px;align-items:center;padding:2px 0;';
+                            const icon = _mpaIcon(c.ok ? 'check' : 'error', c.ok ? '#22c55e' : '#ef4444', 13);
+                            if (icon) line.appendChild(icon);
+                            const name = document.createElement('span');
+                            name.style.fontSize = '11px';
+                            name.textContent = c.name;
+                            line.appendChild(name);
+                            body.appendChild(line);
+                        });
+
+                        const logBtn = document.createElement('button');
+                        logBtn.type = 'button';
+                        logBtn.textContent = 'Open Log';
+                        logBtn.style.cssText = 'margin-top:8px;width:100%;padding:5px 10px;background:transparent;' +
+                            'border:1px solid rgba(128,128,128,0.3);border-radius:6px;color:inherit;cursor:pointer;' +
+                            'font-size:11px;font-family:inherit;';
+                        logBtn.addEventListener('click', e => {
+                            // The toast closes on any click inside it - keep this one for the modal
+                            e.stopPropagation();
+                            _mpaShowLogModal(data.checks);
+                        });
+                        logBtn.addEventListener('mouseenter', () => {
+                            logBtn.style.borderColor = accentColor;
+                            logBtn.style.color = accentColor;
+                        });
+                        logBtn.addEventListener('mouseleave', () => {
+                            logBtn.style.borderColor = 'rgba(128,128,128,0.3)';
+                            logBtn.style.color = 'inherit';
+                        });
+                        body.appendChild(logBtn);
+
+                        _buildLiveToast(
+                            [titleIcon, allOk ? 'Mempool — All OK' : 'Mempool — Issues Found'],
+                            body, accentColor, 15000
                         );
-
-                        window._mpaOpenLog = () => _mpaShowLogModal(data.checks);
-                        const logBtnHoverColor = allOk ? '#22c55e' : '#ef4444';
-                        rows.push(`<button onclick="event.stopPropagation();window._mpaOpenLog();" ` +
-                                  `style="margin-top:8px;width:100%;padding:5px 10px;background:transparent;border:1px solid rgba(128,128,128,0.3);border-radius:6px;color:inherit;cursor:pointer;font-size:11px;font-family:inherit;" ` +
-                                  `onmouseenter="this.style.borderColor='${logBtnHoverColor}';this.style.color='${logBtnHoverColor}';" ` +
-                                  `onmouseleave="this.style.borderColor='rgba(128,128,128,0.3)';this.style.color='inherit';">` +
-                                  `Open Log</button>`);
-
-                        _buildLiveToast(`${titleIcon}${allOk ? 'Mempool — All OK' : 'Mempool — Issues Found'}`, rows.join(''), accentColor, 15000);
                     })
-                    .catch(() => { _buildLiveToast(`${_mpaIcon('error', '#ef4444', 15)}Mempool Check Failed`, 'Could not reach the server.', '#ef4444', 30000); })
+                    .catch(() => {
+                        _buildLiveToast(
+                            [_mpaIcon('error', '#ef4444', 15), 'Mempool Check Failed'],
+                            ['Could not reach the server.'], '#ef4444', 30000
+                        );
+                    })
                     .finally(() => {
                         checkBtn.disabled = false;
                         checkBtn.textContent = originalLabel;
@@ -8889,20 +8941,26 @@ function _getLiveToastColor(keyBase) {
 function showDonationToast(donation) {
     const sats     = (donation.amount_sats || 0).toLocaleString();
     const satLabel = donation.amount_sats === 1 ? 'sat' : 'sats';
-    const bodyHtml = `<strong>${sats} ${satLabel}</strong>` +
-        (donation.message
-            ? `<br><span style="opacity:0.7;font-size:12px;">"${escapeHtml(donation.message)}"</span>`
-            : '');
+
+    const amountEl = document.createElement('strong');
+    amountEl.textContent = `${sats} ${satLabel}`;
+    const lines = [amountEl];
+
+    if (donation.message) {
+        const msgEl = document.createElement('span');
+        msgEl.style.cssText = 'opacity:0.7;font-size:12px;';
+        msgEl.textContent = `"${donation.message}"`;
+        lines.push(msgEl);
+    }
+
     const title = window.translations?.donation_toast_title || 'Lightning Donation';
-    _buildLiveToast(title, bodyHtml, _getLiveToastColor('color_donation'), 8000);
+    _buildLiveToast(title, lines, _getLiveToastColor('color_donation'), 8000);
 }
 
 // title    — short section label shown in the configured colour (e.g. "Wallet", "Bitaxe")
-// message  — detail text (user data — will be HTML-escaped)
+// message  — detail text (user data — rendered as text, never as markup)
 // colorKey — config key base (e.g. 'color_wallets', 'color_bitaxe_stats')
 function showLiveToast(title, message, colorKey) {
-    // Array form: the body is rendered with textContent, so the message needs
-    // no escaping and cannot be re-parsed as markup.
     _buildLiveToast(title, [message], _getLiveToastColor(colorKey));
 }
 
@@ -10740,11 +10798,13 @@ document.addEventListener('DOMContentLoaded', () => {
         sessionStorage.removeItem('mempaper_updated_to');
         setTimeout(() => {
             const t = window.translations || {};
-            const icon = '<img src="/static/icons/update.svg" width="16" height="16" class="toast-title-icon toast-icon-success"> ';
+            const tagEl = document.createElement('strong');
+            tagEl.textContent = _updatedTag;
+            const body = document.createDocumentFragment();
+            body.append((t.update_success_body || 'mempaper updated to') + ' ', tagEl);
             _buildLiveToast(
-                icon + (t.update_success_title || 'Update successful'),
-                (t.update_success_body || 'mempaper updated to') +
-                    ' <strong>' + escapeHtml(_updatedTag) + '</strong>',
+                [_toastIcon('update', 'success'), ' ' + (t.update_success_title || 'Update successful')],
+                body,
                 '#28a745',
                 8000
             );
@@ -10761,18 +10821,16 @@ document.addEventListener('DOMContentLoaded', () => {
         setTimeout(() => {
             const t = window.translations || {};
             if (_actionDone === 'reboot') {
-                const icon = '<img src="/static/icons/reboot.svg" width="16" height="16" class="toast-title-icon toast-icon-success"> ';
                 _buildLiveToast(
-                    icon + (t.reboot_success_title || 'Device rebooted'),
-                    t.reboot_success_body || 'The device rebooted successfully.',
+                    [_toastIcon('reboot', 'success'), ' ' + (t.reboot_success_title || 'Device rebooted')],
+                    [t.reboot_success_body || 'The device rebooted successfully.'],
                     '#28a745',
                     8000
                 );
             } else {
-                const icon = '<img src="/static/icons/restart.svg" width="16" height="16" class="toast-title-icon toast-icon-success"> ';
                 _buildLiveToast(
-                    icon + (t.restart_success_title || 'Service restarted'),
-                    t.restart_success_body || 'The mempaper service restarted successfully.',
+                    [_toastIcon('restart', 'success'), ' ' + (t.restart_success_title || 'Service restarted')],
+                    [t.restart_success_body || 'The mempaper service restarted successfully.'],
                     '#28a745',
                     8000
                 );

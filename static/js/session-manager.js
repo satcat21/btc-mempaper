@@ -107,24 +107,32 @@ function showCountdownToast() {
 
     const t = window.translations || {};
     const remainingSeconds = Math.max(0, Math.ceil((sessionExpiryEpoch - Date.now()) / 1000));
-    const btnId = 'session-refresh-toast-btn-' + Date.now();
-    const countdownId = 'session-countdown-' + Date.now();
-    const countingDownText = (t.session_logging_out_in || 'Logging out in {seconds} seconds.')
-        .replace('{seconds}', `<span id="${countdownId}">${remainingSeconds}</span>`);
-    const bodyHtml = `${countingDownText} ` +
-        `<button id="${btnId}" type="button" style="background:none;border:none;padding:0;` +
-        `color:inherit;text-decoration:underline;font-weight:600;cursor:pointer;font-size:inherit;">` +
-        `${t.session_stay_logged_in || 'Stay logged in'}</button>`;
 
-    const titleIcon = '<img src="/static/icons/logout.svg" alt="" width="16" height="16" class="toast-title-icon toast-icon-accent">';
-    countdownToastEl = _buildLiveToast(titleIcon + (t.session_toast_title || 'Session'), bodyHtml, '#F7931A', (remainingSeconds + 2) * 1000);
+    // The countdown template carries a {seconds} placeholder that has to become
+    // a live element, so split it and put the span between the two text halves.
+    const countdownSpan = document.createElement('span');
+    countdownSpan.textContent = remainingSeconds;
+    const [beforeSeconds, afterSeconds] = (t.session_logging_out_in || 'Logging out in {seconds} seconds.')
+        .split('{seconds}');
 
-    const countdownSpan = document.getElementById(countdownId);
-    const btn = document.getElementById(btnId);
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = t.session_stay_logged_in || 'Stay logged in';
+    btn.style.cssText = 'background:none;border:none;padding:0;color:inherit;' +
+        'text-decoration:underline;font-weight:600;cursor:pointer;font-size:inherit;';
+
+    const body = document.createDocumentFragment();
+    body.append(beforeSeconds, countdownSpan, (afterSeconds || '') + ' ', btn);
+
+    const titleIcon = _toastIcon('logout', 'accent');
+    countdownToastEl = _buildLiveToast(
+        [titleIcon, t.session_toast_title || 'Session'],
+        body, '#F7931A', (remainingSeconds + 2) * 1000
+    );
 
     countdownIntervalId = setInterval(() => {
         const secondsLeft = Math.max(0, Math.ceil((sessionExpiryEpoch - Date.now()) / 1000));
-        if (countdownSpan) countdownSpan.textContent = secondsLeft;
+        countdownSpan.textContent = secondsLeft;
         if (secondsLeft <= 0) {
             clearInterval(countdownIntervalId);
             countdownIntervalId = null;
@@ -132,21 +140,19 @@ function showCountdownToast() {
         }
     }, 1000);
 
-    if (btn) {
-        btn.addEventListener('click', async (e) => {
-            // The toast itself closes on any click inside it - stop that here
-            // so the button gets to show its own "Refreshing…" state first.
-            e.stopPropagation();
-            btn.disabled = true;
-            btn.textContent = t.session_refreshing || 'Refreshing…';
-            const success = await refreshSession();
-            if (!success) {
-                btn.disabled = false;
-                btn.textContent = t.session_stay_logged_in || 'Stay logged in';
-                showFailedRefreshMessage();
-            }
-        });
-    }
+    btn.addEventListener('click', async (e) => {
+        // The toast itself closes on any click inside it - stop that here
+        // so the button gets to show its own "Refreshing…" state first.
+        e.stopPropagation();
+        btn.disabled = true;
+        btn.textContent = t.session_refreshing || 'Refreshing…';
+        const success = await refreshSession();
+        if (!success) {
+            btn.disabled = false;
+            btn.textContent = t.session_stay_logged_in || 'Stay logged in';
+            showFailedRefreshMessage();
+        }
+    });
 }
 
 function dismissCountdownToast() {
@@ -301,8 +307,8 @@ function showSessionExpiredMessage() {
         : (t.session_expired_dashboard || 'Session expired. Redirecting…');
 
     if (typeof _buildLiveToast === 'function') {
-        const icon = '<img src="/static/icons/logout.svg" alt="" width="16" height="16" class="toast-title-icon toast-icon-error">';
-        _buildLiveToast(icon + (t.session_expired_title || 'Session Expired'), message, '#dc3545', 5000);
+        const icon = _toastIcon('logout', 'error');
+        _buildLiveToast([icon, t.session_expired_title || 'Session Expired'], [message], '#dc3545', 5000);
     } else if (typeof showAlertModal === 'function') {
         showAlertModal({ title: t.session_expired_title || 'Session Expired', message });
     }
@@ -315,10 +321,9 @@ function showSessionExpiredMessage() {
 function showSessionRefreshedMessage() {
     const t = window.translations || {};
     if (typeof _buildLiveToast === 'function') {
-        const icon = '<img src="/static/icons/check.svg" width="16" height="16" class="toast-title-icon toast-icon-success"> ';
         _buildLiveToast(
-            icon + (t.session_renewed_title || 'Session Renewed'),
-            t.session_renewed_body || 'Your session has been extended.',
+            [_toastIcon('check', 'success'), ' ' + (t.session_renewed_title || 'Session Renewed')],
+            [t.session_renewed_body || 'Your session has been extended.'],
             '#28a745',
             5000
         );

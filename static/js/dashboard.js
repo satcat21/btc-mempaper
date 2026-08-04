@@ -206,8 +206,8 @@ function setupSocketHandlers() {
         if (!window.isAuthenticated) return;
         const t = window.translations || {};
         _buildLiveToast(
-            '<img src="/static/icons/update.svg" width="16" height="16" class="toast-title-icon toast-icon-accent"> ' + (t.auto_update_started || 'Auto-update started'),
-            t.auto_update_started_body || 'Checking for system and software updates...',
+            [_toastIcon('update', 'accent'), ' ' + (t.auto_update_started || 'Auto-update started')],
+            [t.auto_update_started_body || 'Checking for system and software updates...'],
             '#F7931A',
             10000
         );
@@ -256,10 +256,13 @@ fetch('/api/health', { cache: 'no-store' })
     sessionStorage.removeItem('mempaper_updated_to');
     setTimeout(() => {
         const t = window.translations || {};
-        const icon = '<img src="/static/icons/update.svg" width="16" height="16" class="toast-title-icon toast-icon-success"> ';
+        const tagEl = document.createElement('strong');
+        tagEl.textContent = _updatedTag;
+        const body = document.createDocumentFragment();
+        body.append((t.update_success_body || 'mempaper updated to') + ' ', tagEl);
         _buildLiveToast(
-            icon + (t.update_success_title || 'Update successful'),
-            (t.update_success_body || 'mempaper updated to') + ' <strong>' + _updatedTag + '</strong>',
+            [_toastIcon('update', 'success'), ' ' + (t.update_success_title || 'Update successful')],
+            body,
             '#28a745',
             8000
         );
@@ -778,5 +781,5 @@ function _formatDiff(value) {
 
 // Dashboard live-update toast — uses shared glass-card style from toast.js
 function showDashboardToast(icon, message) {
-    _buildLiveToast(icon, message, '#F7931A', 6000);
+    _buildLiveToast(icon, [message], '#F7931A', 6000);
 }

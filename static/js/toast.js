@@ -1,7 +1,12 @@
 /**
  * Shared glass-card toast notifications.
  *
- * Provides _getLiveToastContainer() and _buildLiveToast() for use on any page.
+ * Provides _getLiveToastContainer(), _buildLiveToast() and _toastIcon() for
+ * use on any page.
+ *
+ * _buildLiveToast() never parses markup: titles and bodies are strings (text)
+ * or DOM nodes the caller built. Callers that need an icon, a link or a button
+ * build the element and pass it in.
  */
 
 (function () {
@@ -64,8 +69,49 @@
         return _lightModeColorMap[color.toLowerCase()] || color;
     }
 
+    // Build the 16px <img> icon used in toast titles. `variant` picks the
+    // colour filter class ('accent' | 'success' | 'error'); omit it to keep
+    // the theme-neutral default.
+    window._toastIcon = function (name, variant) {
+        const img = document.createElement('img');
+        img.src = '/static/icons/' + encodeURIComponent(name) + '.svg';
+        img.alt = '';
+        img.width = 16;
+        img.height = 16;
+        img.className = 'toast-title-icon' + (variant ? ' toast-icon-' + variant : '');
+        return img;
+    };
+
+    // Append content to `parent`: strings become text nodes, DOM nodes are
+    // appended as-is, arrays are appended entry by entry. Nothing is ever
+    // parsed as HTML, so no caller has to escape anything.
+    function _appendContent(parent, value) {
+        if (value === null || value === undefined) return;
+        if (Array.isArray(value)) {
+            value.forEach(entry => _appendContent(parent, entry));
+        } else if (value instanceof Node) {
+            parent.appendChild(value);
+        } else {
+            parent.appendChild(document.createTextNode(String(value)));
+        }
+    }
+
+    // Bodies passed as an array render one line per entry; anything else goes
+    // into the body as-is, which is how callers compose a single mixed line.
+    function _appendBody(bodyEl, body) {
+        if (!Array.isArray(body)) {
+            _appendContent(bodyEl, body);
+            return;
+        }
+        body.forEach(entry => {
+            const line = document.createElement('div');
+            _appendContent(line, entry);
+            bodyEl.appendChild(line);
+        });
+    }
+
     // Build and display a glass-card toast in the shared upper-right container
-    window._buildLiveToast = function (titleText, bodyHtml, titleColor, autoDismissMs) {
+    window._buildLiveToast = function (title, body, titleColor, autoDismissMs) {
         if (autoDismissMs === undefined) autoDismissMs = 6000;
         const isDark      = document.body.classList.contains('dark-mode');
         titleColor = _adaptTitleColor(titleColor, isDark);
@@ -102,7 +148,7 @@
         `;
 
         const closeBtn = document.createElement('button');
-        closeBtn.innerHTML = '&times;';
+        closeBtn.textContent = '×';
         closeBtn.setAttribute('aria-label', 'Close notification');
         closeBtn.style.cssText = `
             position: absolute;
@@ -138,31 +184,17 @@
         const content = document.createElement('div');
         content.style.cssText = 'margin-right: 28px;';
 
-        // Both arguments are HTML by contract: titles carry inline SVG icons
-        // from _mpaIcon(), bodies carry built-up rows. Callers are responsible
-        // for escaping anything user-supplied - showLiveToast() escapes its
-        // message for exactly that reason. Rendering the title as textContent
-        // instead turns those icons into literal <svg ...> text.
+        // Titles are a string, an icon element from _toastIcon()/_mpaIconEl(),
+        // or an array mixing the two. Bodies additionally accept an array to
+        // get one line per entry. Strings are always rendered as text, so
+        // values read back out of the DOM or off the wire stay literal.
         const titleEl = document.createElement('div');
         titleEl.style.cssText = `font-weight:600;font-size:14px;margin-bottom:5px;color:${titleColor};`;
-        titleEl.innerHTML = titleText;
+        _appendContent(titleEl, title);
 
         const bodyEl = document.createElement('div');
         bodyEl.style.cssText = 'opacity:0.85;font-size:13px;';
-        if (Array.isArray(bodyHtml)) {
-            // Array form carries plain text, including values read back out of
-            // the DOM (validation messages), so each entry is rendered as text.
-            // Assigning an array to innerHTML also stringified it, which both
-            // re-parsed that text as HTML and comma-joined multi-entry arrays.
-            bodyHtml.forEach(line => {
-                const lineEl = document.createElement('div');
-                lineEl.textContent = line;
-                bodyEl.appendChild(lineEl);
-            });
-        } else {
-            // String form is markup built by the caller (icon rows, links).
-            bodyEl.innerHTML = bodyHtml;
-        }
+        _appendBody(bodyEl, body);
 
         content.append(titleEl, bodyEl);
 
@@ -192,9 +224,9 @@
     // Type-to-icon map for showNotification. No 'info' entry - no icon asset
     // fits that case well yet, so info toasts stay title-only.
     var _notifyIcons = {
-        success: { src: '/static/icons/check.svg', filterClass: 'toast-icon-success' },
-        error:   { src: '/static/icons/error.svg',  filterClass: 'toast-icon-error' },
-        warning: { src: '/static/icons/error.svg',  filterClass: 'toast-icon-accent' }
+        success: { name: 'check', variant: 'success' },
+        error:   { name: 'error', variant: 'error' },
+        warning: { name: 'error', variant: 'accent' }
     };
 
     // Drop-in replacement for the old showNotification(message, type, duration)
@@ -211,13 +243,11 @@
         };
         var title = titles[type] || '';
         var icon = _notifyIcons[type];
-        var titleHtml = icon
-            ? `<img src="${icon.src}" alt="" width="16" height="16" class="toast-title-icon ${icon.filterClass}"> ${title}`
+        var titleParts = icon
+            ? [_toastIcon(icon.name, icon.variant), ' ' + title]
             : title;
-        // Pass as an array so the body is rendered with textContent. Messages
-        // here routinely carry filenames and other values read back out of the
-        // DOM; hand-escaping them into markup only to have innerHTML re-parse
-        // it is the round-trip that undoes the escaping in the first place.
-        _buildLiveToast(titleHtml, [message], color, duration);
+        // Pass as an array so the body renders as text. Messages here
+        // routinely carry filenames and other values read back out of the DOM.
+        _buildLiveToast(titleParts, [message], color, duration);
     };
 })();
