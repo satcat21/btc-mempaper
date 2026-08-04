@@ -101,6 +101,23 @@ def _reserve_upload_path(directory, raw_filename, file_ext):
     return candidate, os.path.join(directory, candidate)
 
 
+def _parse_git_remote(remote_url):
+    """Split a git remote into (host, owner/repo), or (None, None) if unparsable.
+
+    Handles both https://host/owner/repo and the scp-like git@host:owner/repo
+    form, which urlparse does not understand. Callers must compare the host
+    rather than test for a substring: the update check decides from this whether
+    to send an API token to GitHub or to a self-hosted GitLab, and a plain
+    'github.com' in url test also matches hosts like github.com.example.org.
+    """
+    import re
+    m = re.match(r'^(?:(?:https?|ssh|git)://)?(?:[^@/]+@)?([^/:]+)[:/](.+?)/?$',
+                 (remote_url or '').strip())
+    if not m:
+        return None, None
+    return m.group(1).lower(), m.group(2)
+
+
 def _safe_error(exc, context=''):
     """Log an exception server-side and hand the client a generic message.
 
@@ -8849,9 +8866,16 @@ class MempaperApp:
                 remote_url = subprocess.check_output(
                     ['git', 'remote', 'get-url', 'origin'],
                     cwd=project_dir, text=True
-                ).strip().rstrip('.git').rstrip('/')
+                ).strip()
 
-                is_gitlab = 'github.com' not in remote_url
+                # rstrip('.git') was wrong: it strips any trailing '.', 'g', 'i'
+                # and 't' characters, so a repo named 'digit' became 'd'.
+                if remote_url.endswith('.git'):
+                    remote_url = remote_url[:-4]
+                remote_url = remote_url.rstrip('/')
+
+                remote_host, remote_path = _parse_git_remote(remote_url)
+                is_gitlab = remote_host not in ('github.com', 'www.github.com')
                 repo_url = remote_url
                 platform = 'GitLab' if is_gitlab else 'GitHub'
 
@@ -8869,9 +8893,8 @@ class MempaperApp:
 
                 api_releases = None
                 try:
-                    if 'github.com' in remote_url:
-                        parts = remote_url.split('github.com/')[-1]
-                        api_url = f'https://api.github.com/repos/{parts}/releases'
+                    if not is_gitlab:
+                        api_url = f'https://api.github.com/repos/{remote_path}/releases'
                         headers = {'Accept': 'application/vnd.github.v3+json'}
                         if api_token:
                             headers['Authorization'] = f'Bearer {api_token}'

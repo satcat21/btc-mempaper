@@ -192,8 +192,13 @@ def _extract_files_from_zip(zip_path, target_files, dest_dir):
         # Build a map: basename -> full zip path (last one wins if duplicates)
         name_map = {}
         for member in all_members:
+            # Reducing each entry to its basename is what stops a crafted zip
+            # from writing outside dest_dir (zip-slip): '../../etc/x' becomes
+            # 'x'. '.' and '..' are the only basenames that survive that
+            # reduction still pointing at a directory, so drop them here rather
+            # than relying on the later open() to fail.
             basename = os.path.basename(member)
-            if basename:
+            if basename and basename not in ('.', '..'):
                 name_map[basename] = member
 
         for fname in target_files:
