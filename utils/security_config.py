@@ -66,8 +66,15 @@ class SecurityConfig:
         """Save secret key to file for persistence."""
         try:
             secret_file = SecurityConfig._get_secret_key_file_path()
-            secret_file.write_text(key)
-            secret_file.chmod(0o600)  # Restrict file permissions
+            # Create with 0600 already applied rather than write-then-chmod:
+            # the latter leaves the key readable by any local user for the
+            # window between the two calls.
+            fd = os.open(str(secret_file), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            try:
+                os.write(fd, key.encode('utf-8'))
+            finally:
+                os.close(fd)
+            secret_file.chmod(0o600)  # Enforce on pre-existing files too
             logger.info("Saved secret key to file for persistence")
         except Exception as e:
             logger.warning(f"Could not save secret key to file: {e}")

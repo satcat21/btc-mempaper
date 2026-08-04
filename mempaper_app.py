@@ -94,11 +94,18 @@ def _reserve_upload_path(directory, raw_filename, file_ext):
 
     candidate = f"{stem}.{file_ext}"
     counter = 1
-    while os.path.exists(os.path.join(directory, candidate)):
+    while os.path.exists(safe_join(directory, candidate) or os.devnull):
         candidate = f"{stem}_{counter}.{file_ext}"
         counter += 1
 
-    return candidate, os.path.join(directory, candidate)
+    # Explicit containment check at the point of use. secure_filename() already
+    # strips separators and traversal, so this cannot currently fail; enforcing
+    # it here means the guarantee does not depend on a sanitiser three lines up
+    # continuing to behave the same way.
+    path = safe_join(directory, candidate)
+    if path is None:
+        return None, None
+    return candidate, path
 
 
 def _parse_git_remote(remote_url):
@@ -1680,7 +1687,9 @@ class MempaperApp:
                 from lib.onboarding_renderer import render_hotspot_screen
                 _, path = render_hotspot_screen(ssid, password, portal_url, self.config)
             if path:
-                print(f'📺 Displaying hotspot onboarding screen on e-ink ({portal_url})')
+                # The portal URL is shown on the panel itself; keeping it out of
+                # the log avoids writing setup-session details to the journal.
+                print('📺 Displaying hotspot onboarding screen on e-ink')
                 self._display_on_epaper_async(path, None, None)
         except Exception as e:
             print(f'⚠️ Could not render hotspot onboarding screen: {e}')
@@ -6653,8 +6662,10 @@ class MempaperApp:
                 try:
                     auth_result = self.auth_manager.login(username, password)
                 except Exception as auth_err:
-                    traceback.print_exc()
-                    return jsonify({'success': False, 'message': f'Authentication error: {str(auth_err)}'}), 500
+                    return jsonify({
+                        'success': False,
+                        'message': _safe_error(auth_err, 'Authentication error')
+                    }), 500
                 
                 if auth_result:
                     # Determine redirect: if public dashboard is on, login is only for config access
@@ -7432,6 +7443,9 @@ class MempaperApp:
                 # Secure filename and save (never overwrites an existing meme)
                 filename, upload_path = _reserve_upload_path(
                     os.path.join('static', 'memes'), file.filename, file_ext)
+                if not upload_path:
+                    return jsonify({'success': False,
+                                    'message': 'Invalid filename'}), 400
 
                 # Save file
                 file.save(upload_path)
@@ -7448,9 +7462,12 @@ class MempaperApp:
                         hint = (' WebP requires libwebp support in Pillow. '
                                 'Run: sudo apt install libwebp-dev && '
                                 'pip install --no-binary :all: pillow')
+                    # The hint is static, actionable text and is kept; the decoder
+                    # exception itself goes to the log, not to the browser.
+                    _safe_error(img_err, 'Uploaded image could not be opened')
                     return jsonify({
                         'success': False,
-                        'message': f'Image cannot be opened by the server: {img_err}.{hint}'
+                        'message': f'Image cannot be opened by the server.{hint}'
                     }), 400
 
                 self.image_renderer.invalidate_meme_cache()
@@ -7828,6 +7845,9 @@ class MempaperApp:
 
                 filename, upload_path = _reserve_upload_path(
                     os.path.join('static', 'opsec'), file.filename, file_ext)
+                if not upload_path:
+                    return jsonify({'success': False,
+                                    'message': 'Invalid filename'}), 400
                 file.save(upload_path)
 
                 return jsonify({
@@ -8967,8 +8987,10 @@ class MempaperApp:
 
                 return jsonify({'success': True, 'releases': result, 'repo_url': repo_url, 'platform': platform})
             except Exception as e:
-                print(f"Error fetching releases: {e}")
-                return jsonify({'success': False, 'message': f'Failed to fetch releases: {e}'}), 502
+                return jsonify({
+                    'success': False,
+                    'message': _safe_error(e, 'Failed to fetch releases')
+                }), 502
 
         def _meme_download_cmd(project_dir: str, extra_args: list | None = None) -> list:
             """Build the subprocess command for tools/download_all_memes.py.

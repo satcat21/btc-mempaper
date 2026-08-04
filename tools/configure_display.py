@@ -160,6 +160,22 @@ def list_available_devices():
         print()
 
 
+def _safe_dest(base_dir, name):
+    """Resolve name inside base_dir, refusing anything that escapes it.
+
+    Names reaching here come from a zip entry or a hardcoded download table and
+    are reduced to a basename first, so this cannot currently escape. Enforcing
+    it at the point a file is actually written means the guarantee does not rest
+    on that reduction being preserved by a later edit.
+    """
+    base = os.path.realpath(base_dir)
+    dest = os.path.realpath(os.path.join(base, os.path.basename(name)))
+    # Strictly inside: equality would let '.' resolve back to base_dir itself.
+    if not dest.startswith(base + os.sep):
+        raise ValueError(f"refusing to write outside {base_dir}: {name!r}")
+    return dest
+
+
 def _drivers_missing(device_id):
     """Return list of driver files that are not yet installed.
     
@@ -168,7 +184,7 @@ def _drivers_missing(device_id):
     """
     info = DEVICE_CONFIGS.get(device_id, {})
     missing = []
-    device_driver_dir = os.path.join(DRIVERS_DIR, device_id)
+    device_driver_dir = _safe_dest(DRIVERS_DIR, device_id)
     for fname in info.get("driver_files", []):
         if '*' in fname or '?' in fname:
             # Glob pattern: check if any files match
@@ -208,7 +224,7 @@ def _extract_files_from_zip(zip_path, target_files, dest_dir):
                 if matched:
                     for bn in matched:
                         member = name_map[bn]
-                        dest = os.path.join(dest_dir, bn)
+                        dest = _safe_dest(dest_dir, bn)
                         os.makedirs(os.path.dirname(dest), exist_ok=True)
                         with zf.open(member) as src, open(dest, 'wb') as dst:
                             dst.write(src.read())
@@ -218,7 +234,7 @@ def _extract_files_from_zip(zip_path, target_files, dest_dir):
             else:
                 if fname in name_map:
                     member = name_map[fname]
-                    dest = os.path.join(dest_dir, fname)
+                    dest = _safe_dest(dest_dir, fname)
                     os.makedirs(os.path.dirname(dest), exist_ok=True)
                     with zf.open(member) as src, open(dest, 'wb') as dst:
                         dst.write(src.read())
@@ -239,7 +255,7 @@ def install_drivers(device_id, max_retries=5, retry_delay=10):
         return True
 
     dl = DRIVER_DOWNLOADS[device_id]
-    device_driver_dir = os.path.join(DRIVERS_DIR, device_id)
+    device_driver_dir = _safe_dest(DRIVERS_DIR, device_id)
     os.makedirs(device_driver_dir, exist_ok=True)
 
     # ── Direct file download mode ──────────────────────────────────────────────
@@ -248,7 +264,7 @@ def install_drivers(device_id, max_retries=5, retry_delay=10):
         for fname, url in dl["direct_files"].items():
             if fname not in missing:
                 continue
-            dest = os.path.join(device_driver_dir, fname)
+            dest = _safe_dest(device_driver_dir, fname)
             host = url.split('/')[2]
             for attempt in range(1, max_retries + 1):
                 try:
