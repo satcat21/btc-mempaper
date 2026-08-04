@@ -69,16 +69,44 @@ for _l in "${_bl[@]}"; do
     printf '%b%s%b%s%b\n' "${_W}" "${_l:0:$_sp}" "${_O}" "${_l:$_sp}" "${_R}"
 done
 printf '\n'
-printf '%b\n' "  ${_B}${_Y}Bitcoin Meme Block Clock  ·  github.com/satcat21/btc-mempaper${_R}"
+_ORIGIN=$(git -C "${PROJECT_DIR}" -c safe.directory="${PROJECT_DIR}" remote get-url origin 2>/dev/null || echo "")
+_ORIGIN="${_ORIGIN%.git}"
+_ORIGIN=$(printf '%s' "${_ORIGIN%/}" | sed -E 's#^(https?|ssh|git)://##; s#^[^@/]+@##; s#:#/#')
+[ -n "${_ORIGIN}" ] || _ORIGIN="github.com/satcat21/btc-mempaper"
+printf '%b\n' "  ${_B}${_Y}Bitcoin Meme Block Clock  ·  ${_ORIGIN}${_R}"
 
 # ── Version info ──────────────────────────────────────────────────────────────
 _OS_PRETTY=$(. /etc/os-release 2>/dev/null && echo "${PRETTY_NAME:-}")
 _PY_VER=$(python3 --version 2>/dev/null | awk '{print $2}')
 _MVER=$(git -C "${PROJECT_DIR}" -c safe.directory="${PROJECT_DIR}" describe --tags --abbrev=0 2>/dev/null || echo "unknown")
-_LATEST=$(curl -sf --max-time 2 \
-    "https://api.github.com/repos/satcat21/btc-mempaper/releases/latest" 2>/dev/null \
-    | python3 -c "import json,sys; print(json.load(sys.stdin)['tag_name'])" 2>/dev/null \
-    || echo "")
+
+# Ask this checkout's own origin for the latest release, not a hardcoded
+# upstream repo — a fork or a self-hosted GitLab mirror was otherwise told
+# about upstream's releases and prompted to "update" to a tag it does not have.
+# Mirrors the host-based GitHub/GitLab split used by the in-app update check.
+_REMOTE=$(git -C "${PROJECT_DIR}" -c safe.directory="${PROJECT_DIR}" remote get-url origin 2>/dev/null || echo "")
+_REMOTE="${_REMOTE%.git}"
+_REMOTE="${_REMOTE%/}"
+# host and owner/repo, handling https://host/path and git@host:path alike
+_RHOST=$(printf '%s' "${_REMOTE}" | sed -E 's#^(https?|ssh|git)://##; s#^[^@/]+@##; s#[:/].*$##' | tr 'A-Z' 'a-z')
+_RPATH=$(printf '%s' "${_REMOTE}" | sed -E 's#^(https?|ssh|git)://##; s#^[^@/]+@##; s#^[^:/]+[:/]##')
+
+_LATEST=""
+if [ -n "${_RHOST}" ] && [ -n "${_RPATH}" ]; then
+    if [ "${_RHOST}" = "github.com" ] || [ "${_RHOST}" = "www.github.com" ]; then
+        _LATEST=$(curl -sf --max-time 2 \
+            "https://api.github.com/repos/${_RPATH}/releases/latest" 2>/dev/null \
+            | python3 -c "import json,sys; print(json.load(sys.stdin)['tag_name'])" 2>/dev/null \
+            || echo "")
+    else
+        # GitLab returns a list, newest first; %2F-encode the project path
+        _RPATH_ENC=$(printf '%s' "${_RPATH}" | sed 's#/#%2F#g')
+        _LATEST=$(curl -sf --max-time 2 \
+            "https://${_RHOST}/api/v4/projects/${_RPATH_ENC}/releases" 2>/dev/null \
+            | python3 -c "import json,sys; d=json.load(sys.stdin); print(d[0]['tag_name'] if d else '')" 2>/dev/null \
+            || echo "")
+    fi
+fi
 
 printf '\n'
 printf "  %b%s%b\n" "${_D}" "${_OS_PRETTY}" "${_R}"
