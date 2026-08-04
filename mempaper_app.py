@@ -101,6 +101,20 @@ def _reserve_upload_path(directory, raw_filename, file_ext):
     return candidate, os.path.join(directory, candidate)
 
 
+def _safe_error(exc, context=''):
+    """Log an exception server-side and hand the client a generic message.
+
+    Returning str(exc) straight to the browser put filesystem paths, internal
+    hostnames and library internals into the config UI. The detail is more
+    useful in the journal anyway, where it is not readable by whoever happens
+    to hold a session - so it is logged in full and only the generic string
+    crosses the wire.
+    """
+    print(f"❌ {context or 'Request failed'}: {exc}")
+    traceback.print_exc()
+    return 'Internal error - check the server log for details'
+
+
 def _read_reboot_time():
     """Parse the unattended-upgrades auto-reboot time from all apt conf.d files.
     Returns (hour, minute) tuple or None if auto-reboot is not configured."""
@@ -6438,7 +6452,7 @@ class MempaperApp:
                 return jsonify({'success': True, 'message': 'Device reset successful'})
             except Exception as e:
                 print(f"❌ Setup reset failed: {e}")
-                return jsonify({'success': False, 'message': str(e)}), 500
+                return jsonify({'success': False, 'message': _safe_error(e)}), 500
 
         @self.app.route('/image')
         @allow_public_or_auth(self.auth_manager, self.config_manager)
@@ -6657,7 +6671,7 @@ class MempaperApp:
             except Exception as e:
                 traceback.print_exc()
                 try:
-                    return jsonify({'success': False, 'message': f'Server error: {str(e)}'}), 500
+                    return jsonify({'success': False, 'message': _safe_error(e)}), 500
                 except:
                     # If even jsonify fails, return raw JSON
                     return '{"success": false, "message": "Server error"}', 500, {'Content-Type': 'application/json'}
@@ -6697,7 +6711,7 @@ class MempaperApp:
                 users = self.auth_manager.password_manager.list_users()
                 return jsonify({'success': True, 'users': users})
             except Exception as e:
-                return jsonify({'success': False, 'message': str(e)}), 500
+                return jsonify({'success': False, 'message': _safe_error(e)}), 500
 
         @self.app.route('/api/users', methods=['POST'])
         @require_auth(self.auth_manager)
@@ -6714,7 +6728,7 @@ class MempaperApp:
                     return jsonify({'success': True})
                 return jsonify({'success': False, 'message': 'Failed to create user'}), 500
             except Exception as e:
-                return jsonify({'success': False, 'message': str(e)}), 400
+                return jsonify({'success': False, 'message': _safe_error(e)}), 400
 
         @self.app.route('/api/users/<username>/password', methods=['POST'])
         @require_auth(self.auth_manager)
@@ -6733,7 +6747,7 @@ class MempaperApp:
                     return jsonify({'success': True})
                 return jsonify({'success': False, 'message': 'Failed to update password'}), 500
             except Exception as e:
-                return jsonify({'success': False, 'message': str(e)}), 400
+                return jsonify({'success': False, 'message': _safe_error(e)}), 400
 
         @self.app.route('/api/users/<username>/rename', methods=['POST'])
         @require_auth(self.auth_manager)
@@ -6755,7 +6769,7 @@ class MempaperApp:
                 self.config_manager.save_config()
                 return jsonify({'success': True})
             except Exception as e:
-                return jsonify({'success': False, 'message': str(e)}), 400
+                return jsonify({'success': False, 'message': _safe_error(e)}), 400
 
         @self.app.route('/api/users/<username>', methods=['DELETE'])
         @require_auth(self.auth_manager)
@@ -6773,7 +6787,7 @@ class MempaperApp:
                 self.config_manager.save_config()
                 return jsonify({'success': True})
             except Exception as e:
-                return jsonify({'success': False, 'message': str(e)}), 400
+                return jsonify({'success': False, 'message': _safe_error(e)}), 400
 
         # Lightning Donation Webhook
         @self.app.route('/api/donation-webhook/<webhook_token>', methods=['POST'])
@@ -7052,7 +7066,7 @@ class MempaperApp:
             except Exception as e:
                 print(f"Error in get_config: {e}")
                 traceback.print_exc()
-                return jsonify({'error': str(e)}), 500
+                return jsonify({'error': _safe_error(e)}), 500
         
         @self.app.route('/api/translations/<language>', methods=['GET'])
         @require_auth(self.auth_manager)
@@ -7066,7 +7080,7 @@ class MempaperApp:
                     'translations': language_translations
                 })
             except Exception as e:
-                return jsonify({'success': False, 'error': str(e)}), 500
+                return jsonify({'success': False, 'error': _safe_error(e)}), 500
         
         @self.app.route('/api/config/preview-data', methods=['GET'])
         @require_auth(self.auth_manager)
@@ -7260,7 +7274,7 @@ class MempaperApp:
                     'block_hash': self.current_block_hash,
                 })
             except Exception as e:
-                return jsonify({'error': str(e)}), 500
+                return jsonify({'error': _safe_error(e)}), 500
 
         @self.app.route('/api/config', methods=['POST'])
         @require_auth(self.auth_manager)
@@ -7374,7 +7388,7 @@ class MempaperApp:
                 else:
                     return jsonify({'success': False, 'message': 'Failed to save configuration'}), 500
             except Exception as e:
-                return jsonify({'success': False, 'message': str(e)}), 400
+                return jsonify({'success': False, 'message': _safe_error(e)}), 400
         
         @self.app.route('/api/upload-meme', methods=['POST'])
         @require_auth(self.auth_manager)
@@ -7431,7 +7445,7 @@ class MempaperApp:
                 })
                 
             except Exception as e:
-                return jsonify({'success': False, 'message': str(e)}), 500
+                return jsonify({'success': False, 'message': _safe_error(e)}), 500
         
         @self.app.route('/api/memes', methods=['GET'])
         @require_auth(self.auth_manager)
@@ -7505,7 +7519,7 @@ class MempaperApp:
                 })
                 
             except Exception as e:
-                return jsonify({'success': False, 'message': str(e)}), 500
+                return jsonify({'success': False, 'message': _safe_error(e)}), 500
         
         @self.app.route('/api/thumb/<filename>', methods=['GET'])
         def serve_meme_thumb(filename):
@@ -7580,7 +7594,7 @@ class MempaperApp:
                 return send_file(file_path, as_attachment=True, download_name=filename)
                 
             except Exception as e:
-                return jsonify({'success': False, 'message': str(e)}), 500
+                return jsonify({'success': False, 'message': _safe_error(e)}), 500
         
         @self.app.route('/api/delete-meme/<filename>', methods=['DELETE'])
         @require_auth(self.auth_manager)
@@ -7609,7 +7623,7 @@ class MempaperApp:
                 })
                 
             except Exception as e:
-                return jsonify({'success': False, 'message': str(e)}), 500
+                return jsonify({'success': False, 'message': _safe_error(e)}), 500
         
         @self.app.route('/api/rename-meme', methods=['POST'])
         @require_auth(self.auth_manager)
@@ -7668,7 +7682,7 @@ class MempaperApp:
                 })
                 
             except Exception as e:
-                return jsonify({'success': False, 'message': str(e)}), 500
+                return jsonify({'success': False, 'message': _safe_error(e)}), 500
 
         @self.app.route('/api/meme-tags', methods=['POST'])
         @require_auth(self.auth_manager)
@@ -7686,7 +7700,7 @@ class MempaperApp:
                 self.image_renderer.set_meme_tags(stem, tags)
                 return jsonify({'success': True, 'tags': tags})
             except Exception as e:
-                return jsonify({'success': False, 'message': str(e)}), 500
+                return jsonify({'success': False, 'message': _safe_error(e)}), 500
 
         @self.app.route('/api/meme-hashes', methods=['GET'])
         @require_auth(self.auth_manager)
@@ -7720,7 +7734,7 @@ class MempaperApp:
                 return jsonify({'hashes': hashes})
                 
             except Exception as e:
-                return jsonify({'success': False, 'message': str(e)}), 500
+                return jsonify({'success': False, 'message': _safe_error(e)}), 500
         
         @self.app.route('/api/opsec-thumb/<filename>', methods=['GET'])
         def serve_opsec_thumb(filename):
@@ -7806,7 +7820,7 @@ class MempaperApp:
                 })
 
             except Exception as e:
-                return jsonify({'success': False, 'message': str(e)}), 500
+                return jsonify({'success': False, 'message': _safe_error(e)}), 500
 
         @self.app.route('/api/opsec-images', methods=['GET'])
         @require_auth(self.auth_manager)
@@ -7852,7 +7866,7 @@ class MempaperApp:
                 })
 
             except Exception as e:
-                return jsonify({'success': False, 'message': str(e)}), 500
+                return jsonify({'success': False, 'message': _safe_error(e)}), 500
 
         @self.app.route('/api/delete-opsec/<filename>', methods=['DELETE'])
         @require_auth(self.auth_manager)
@@ -7873,7 +7887,7 @@ class MempaperApp:
                 return jsonify({'success': True, 'message': f'OPSec image deleted: {filename}'})
 
             except Exception as e:
-                return jsonify({'success': False, 'message': str(e)}), 500
+                return jsonify({'success': False, 'message': _safe_error(e)}), 500
 
         @self.app.route('/api/opsec-hashes', methods=['GET'])
         @require_auth(self.auth_manager)
@@ -7903,7 +7917,7 @@ class MempaperApp:
                 return jsonify({'hashes': hashes})
 
             except Exception as e:
-                return jsonify({'success': False, 'message': str(e)}), 500
+                return jsonify({'success': False, 'message': _safe_error(e)}), 500
 
         @self.app.route('/api/download-opsec/<filename>', methods=['GET'])
         @require_auth(self.auth_manager)
@@ -7920,7 +7934,7 @@ class MempaperApp:
                 return send_file(os.path.abspath(file_path), as_attachment=True, download_name=filename)
 
             except Exception as e:
-                return jsonify({'success': False, 'message': str(e)}), 500
+                return jsonify({'success': False, 'message': _safe_error(e)}), 500
 
         @self.app.route('/api/rename-opsec', methods=['POST'])
         @require_auth(self.auth_manager)
@@ -7958,7 +7972,7 @@ class MempaperApp:
                 })
 
             except Exception as e:
-                return jsonify({'success': False, 'message': str(e)}), 500
+                return jsonify({'success': False, 'message': _safe_error(e)}), 500
 
         @self.app.route('/api/wallet_balance', methods=['POST'])
         @require_auth(self.auth_manager)
@@ -8031,7 +8045,7 @@ class MempaperApp:
             except Exception as e:
                 print(f"Error in refresh_wallet_balances: {e}")
                 traceback.print_exc()
-                return jsonify({'success': False, 'message': str(e)}), 500
+                return jsonify({'success': False, 'message': _safe_error(e)}), 500
 
         @self.app.route('/api/wallet_balance_cached', methods=['POST'])
         @require_auth(self.auth_manager)
@@ -8097,7 +8111,7 @@ class MempaperApp:
             except Exception as e:
                 print(f"Error in get_cached_wallet_balances: {e}")
                 traceback.print_exc()
-                return jsonify({'success': False, 'message': str(e)}), 500
+                return jsonify({'success': False, 'message': _safe_error(e)}), 500
 
         @self.app.route('/api/clear_wallet_cache', methods=['POST'])
         @require_auth(self.auth_manager)
@@ -8135,7 +8149,7 @@ class MempaperApp:
                 return jsonify({'success': True, 'cleared': removed})
             except Exception as e:
                 print(f"Error clearing wallet cache: {e}")
-                return jsonify({'success': False, 'message': str(e)}), 500
+                return jsonify({'success': False, 'message': _safe_error(e)}), 500
 
         @self.app.route('/api/block-rewards/<address>/found-blocks', methods=['GET'])
         @require_auth(self.auth_manager)
@@ -8176,7 +8190,7 @@ class MempaperApp:
             except Exception as e:
                 print(f"Error in get_found_blocks_count: {e}")
                 traceback.print_exc()
-                return jsonify({'success': False, 'message': str(e)}), 500
+                return jsonify({'success': False, 'message': _safe_error(e)}), 500
         
         @self.app.route('/api/bitaxe/<ip>/best-diff', methods=['GET'])
         @require_auth(self.auth_manager)
@@ -8215,7 +8229,7 @@ class MempaperApp:
             except Exception as e:
                 print(f"Error in get_bitaxe_best_diff: {e}")
                 traceback.print_exc()
-                return jsonify({'success': False, 'message': str(e)}), 500
+                return jsonify({'success': False, 'message': _safe_error(e)}), 500
 
         # ── Software Update Endpoints ────────────────────────────────
 
@@ -8296,7 +8310,7 @@ class MempaperApp:
                 connections.sort(key=lambda c: (-c['priority'], c['name'].lower()))
                 return jsonify({'success': True, 'connections': connections})
             except Exception as e:
-                return jsonify({'success': False, 'error': str(e)}), 500
+                return jsonify({'success': False, 'error': _safe_error(e)}), 500
 
         @self.app.route('/api/wifi/saved/<uuid>', methods=['DELETE'])
         @require_auth(self.auth_manager)
@@ -8326,7 +8340,7 @@ class MempaperApp:
 
                 return jsonify({'success': True})
             except Exception as e:
-                return jsonify({'success': False, 'error': str(e)}), 500
+                return jsonify({'success': False, 'error': _safe_error(e)}), 500
 
         @self.app.route('/api/wifi/add', methods=['POST'])
         @require_auth(self.auth_manager)
@@ -8365,7 +8379,7 @@ class MempaperApp:
 
                 return jsonify({'success': True})
             except Exception as e:
-                return jsonify({'success': False, 'error': str(e)}), 500
+                return jsonify({'success': False, 'error': _safe_error(e)}), 500
 
         @self.app.route('/api/wifi/priority', methods=['POST'])
         @require_auth(self.auth_manager)
@@ -8387,7 +8401,7 @@ class MempaperApp:
 
                 return jsonify({'success': True})
             except Exception as e:
-                return jsonify({'success': False, 'error': str(e)}), 500
+                return jsonify({'success': False, 'error': _safe_error(e)}), 500
 
         @self.app.route('/api/wifi/scan', methods=['GET'])
         @require_auth(self.auth_manager)
@@ -8491,7 +8505,7 @@ class MempaperApp:
                 networks.sort(key=lambda n: n.get('signal', 0), reverse=True)
                 return jsonify({'success': True, 'networks': networks})
             except Exception as e:
-                return jsonify({'success': False, 'error': str(e)}), 500
+                return jsonify({'success': False, 'error': _safe_error(e)}), 500
 
         @self.app.route('/api/wifi/connect', methods=['POST'])
         @require_auth(self.auth_manager)
@@ -8510,7 +8524,7 @@ class MempaperApp:
 
                 return jsonify({'success': True})
             except Exception as e:
-                return jsonify({'success': False, 'error': str(e)}), 500
+                return jsonify({'success': False, 'error': _safe_error(e)}), 500
 
         @self.app.route('/api/wifi/modify', methods=['POST'])
         @require_auth(self.auth_manager)
@@ -8536,7 +8550,7 @@ class MempaperApp:
 
                 return jsonify({'success': True})
             except Exception as e:
-                return jsonify({'success': False, 'error': str(e)}), 500
+                return jsonify({'success': False, 'error': _safe_error(e)}), 500
 
         # ── Device Power Management API ────────────────────────────────────
         @self.app.route('/api/system/restart-service', methods=['POST'])
@@ -8553,7 +8567,7 @@ class MempaperApp:
                 threading.Thread(target=_do_restart, daemon=True).start()
                 return jsonify({'success': True})
             except Exception as e:
-                return jsonify({'success': False, 'error': str(e)}), 500
+                return jsonify({'success': False, 'error': _safe_error(e)}), 500
 
         @self.app.route('/api/system/reboot', methods=['POST'])
         @require_auth(self.auth_manager)
@@ -8578,7 +8592,7 @@ class MempaperApp:
                 threading.Thread(target=_do_reboot, daemon=True).start()
                 return jsonify({'success': True})
             except Exception as e:
-                return jsonify({'success': False, 'error': str(e)}), 500
+                return jsonify({'success': False, 'error': _safe_error(e)}), 500
 
         @self.app.route('/api/system/shutdown', methods=['POST'])
         @require_auth(self.auth_manager)
@@ -8594,7 +8608,7 @@ class MempaperApp:
                 threading.Thread(target=_do_shutdown, daemon=True).start()
                 return jsonify({'success': True})
             except Exception as e:
-                return jsonify({'success': False, 'error': str(e)}), 500
+                return jsonify({'success': False, 'error': _safe_error(e)}), 500
 
         # ── SSH Key Management API ─────────────────────────────────────────────
         # Marker lines that delimit the mempaper-managed section inside authorized_keys.
@@ -8671,7 +8685,7 @@ class MempaperApp:
                     keys, _ = _ssh_block_keys(content)
                 return jsonify({'success': True, 'keys': keys})
             except Exception as e:
-                return jsonify({'success': False, 'error': str(e)}), 500
+                return jsonify({'success': False, 'error': _safe_error(e)}), 500
 
         @self.app.route('/api/system/ssh-keys', methods=['POST'])
         @require_auth(self.auth_manager)
@@ -8765,7 +8779,7 @@ class MempaperApp:
 
                 return jsonify({'success': True, 'key_count': len(valid_keys)})
             except Exception as e:
-                return jsonify({'success': False, 'error': str(e)}), 500
+                return jsonify({'success': False, 'error': _safe_error(e)}), 500
 
         @self.app.route('/api/system/lan-ip', methods=['GET'])
         @require_auth(self.auth_manager)
@@ -8780,7 +8794,7 @@ class MempaperApp:
                 s.close()
                 return jsonify({'success': True, 'ip': ip})
             except Exception as e:
-                return jsonify({'success': False, 'error': str(e)}), 500
+                return jsonify({'success': False, 'error': _safe_error(e)}), 500
 
         @self.app.route('/api/update/current', methods=['GET'])
         @require_auth(self.auth_manager)
@@ -8811,7 +8825,7 @@ class MempaperApp:
                 })
             except Exception as e:
                 print(f"Error getting current version: {e}")
-                return jsonify({'success': False, 'message': str(e)}), 500
+                return jsonify({'success': False, 'message': _safe_error(e)}), 500
 
         @self.app.route('/api/update/releases', methods=['GET'])
         @require_auth(self.auth_manager)
@@ -9343,7 +9357,7 @@ class MempaperApp:
             except Exception as e:
                 print(f"Driver install error: {e}")
                 traceback.print_exc()
-                return jsonify({'success': False, 'message': str(e)}), 500
+                return jsonify({'success': False, 'message': _safe_error(e)}), 500
 
         # ── Display Status Endpoint ────────────────────────────────
 
