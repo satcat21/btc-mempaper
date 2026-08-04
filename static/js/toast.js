@@ -149,7 +149,20 @@
 
         const bodyEl = document.createElement('div');
         bodyEl.style.cssText = 'opacity:0.85;font-size:13px;';
-        bodyEl.innerHTML = bodyHtml;
+        if (Array.isArray(bodyHtml)) {
+            // Array form carries plain text, including values read back out of
+            // the DOM (validation messages), so each entry is rendered as text.
+            // Assigning an array to innerHTML also stringified it, which both
+            // re-parsed that text as HTML and comma-joined multi-entry arrays.
+            bodyHtml.forEach(line => {
+                const lineEl = document.createElement('div');
+                lineEl.textContent = line;
+                bodyEl.appendChild(lineEl);
+            });
+        } else {
+            // String form is markup built by the caller (icon rows, links).
+            bodyEl.innerHTML = bodyHtml;
+        }
 
         content.append(titleEl, bodyEl);
 
