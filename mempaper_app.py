@@ -78,6 +78,29 @@ if not _WEBP_ENCODING_OK:
     print("⚠️  WebP encoding disabled (SIGILL on ARMv6 + NEON-compiled libwebp). Falling back to PNG.")
 
 
+def _reserve_upload_path(directory, raw_filename, file_ext):
+    """Return (safe_filename, path) for an upload, never overwriting an existing file.
+
+    secure_filename() can rewrite a name (spaces, umlauts, non-ASCII scripts) into
+    one that collides with a file already on disk even though the browser-side
+    conflict check cleared it, silently destroying the existing image. Collisions
+    get a _1/_2/… suffix instead, so both files survive; the caller returns the
+    resolved name so the UI can show what was actually stored.
+    """
+    raw_stem = os.path.splitext(raw_filename or '')[0]
+    stem = secure_filename(raw_stem) or 'image'
+
+    os.makedirs(directory, exist_ok=True)
+
+    candidate = f"{stem}.{file_ext}"
+    counter = 1
+    while os.path.exists(os.path.join(directory, candidate)):
+        candidate = f"{stem}_{counter}.{file_ext}"
+        counter += 1
+
+    return candidate, os.path.join(directory, candidate)
+
+
 def _read_reboot_time():
     """Parse the unattended-upgrades auto-reboot time from all apt conf.d files.
     Returns (hour, minute) tuple or None if auto-reboot is not configured."""
@@ -7367,13 +7390,10 @@ class MempaperApp:
                         'message': f'Invalid file type. Allowed: {", ".join(allowed_extensions)}'
                     }), 400
                 
-                # Secure filename and save
-                filename = secure_filename(file.filename)
-                upload_path = os.path.join('static', 'memes', filename)
-                
-                # Ensure directory exists
-                os.makedirs(os.path.dirname(upload_path), exist_ok=True)
-                
+                # Secure filename and save (never overwrites an existing meme)
+                filename, upload_path = _reserve_upload_path(
+                    os.path.join('static', 'memes'), file.filename, file_ext)
+
                 # Save file
                 file.save(upload_path)
 
@@ -7767,9 +7787,8 @@ class MempaperApp:
                         'message': f'Invalid file type. Allowed: {", ".join(allowed_extensions)}'
                     }), 400
 
-                filename = secure_filename(file.filename)
-                upload_path = os.path.join('static', 'opsec', filename)
-                os.makedirs(os.path.dirname(upload_path), exist_ok=True)
+                filename, upload_path = _reserve_upload_path(
+                    os.path.join('static', 'opsec'), file.filename, file_ext)
                 file.save(upload_path)
 
                 return jsonify({

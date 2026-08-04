@@ -1425,13 +1425,13 @@ function setupUpload() {
         uploadArea.classList.remove('dragover');
         const files = Array.from(e.dataTransfer.files);
         if (files.length > 0) {
-            uploadFiles(files);
+            uploadFiles(files).catch(err => reportUploadFailure('upload-status', err));
         }
     });
     
     fileInput.addEventListener('change', (e) => {
         if (e.target.files.length > 0) {
-            uploadFiles(Array.from(e.target.files));
+            uploadFiles(Array.from(e.target.files)).catch(err => reportUploadFailure('upload-status', err));
         }
         // Reset input to allow re-uploading the same file
         e.target.value = '';
@@ -1453,6 +1453,22 @@ async function calculateFileHash(file) {
         console.error('Failed to calculate file hash:', error);
         return null;
     }
+}
+
+// Surface an upload failure in the UI. Without this, an exception thrown inside
+// an async upload becomes an unhandled rejection: the progress bar stays visible
+// and frozen on whatever status line was last written, which is indistinguishable
+// from an upload that is still working.
+function reportUploadFailure(statusElementId, error) {
+    console.error('Upload failed:', error);
+
+    const statusText = document.getElementById(statusElementId);
+    if (statusText) {
+        const label = window.translations?.upload_failed || 'Upload failed';
+        statusText.textContent = `${label}: ${error?.message || error}`;
+        statusText.style.color = '#e53e3e';
+    }
+    showNotification(window.translations?.upload_failed || 'Upload failed', 'error');
 }
 
 // Get all existing OPSec image hashes from server
@@ -8677,10 +8693,12 @@ function createOpsecManagementInterface(field) {
         area.addEventListener('drop', (e) => {
             e.preventDefault();
             area.classList.remove('dragover');
-            uploadOpsecFiles(Array.from(e.dataTransfer.files));
+            uploadOpsecFiles(Array.from(e.dataTransfer.files))
+                .catch(err => reportUploadFailure('opsec-upload-status', err));
         });
         fileInput.addEventListener('change', () => {
-            uploadOpsecFiles(Array.from(fileInput.files));
+            uploadOpsecFiles(Array.from(fileInput.files))
+                .catch(err => reportUploadFailure('opsec-upload-status', err));
             fileInput.value = '';
         });
 
@@ -8825,6 +8843,9 @@ async function uploadOpsecFiles(files) {
     // Fetch existing hashes for duplicate detection
     const existingHashes = await getExistingOpsecHashes();
 
+    // Build a working set of filenames (server state + files queued this batch)
+    const existingFilenames = new Set(Object.values(existingHashes));
+
     // Process files: check for duplicates, offer rename
     const filesToUpload = [];
     const duplicates = [];
@@ -8846,15 +8867,31 @@ async function uploadOpsecFiles(files) {
             continue;
         }
 
-        // Offer rename dialog (same as meme upload)
-        const newName = await showRenameDialog(file.name, file);
+        let targetName = file.name;
 
-        if (newName === file.name) {
-            filesToUpload.push({ file, name: file.name, hash });
-        } else {
-            const renamedFile = new File([file], newName, { type: file.type });
-            filesToUpload.push({ file: renamedFile, name: newName, hash });
+        // Check for filename conflict (same name, different content)
+        if (existingFilenames.has(file.name)) {
+            const ext = file.name.substring(file.name.lastIndexOf('.'));
+            const base = file.name.substring(0, file.name.lastIndexOf('.'));
+
+            // Auto-generate a non-conflicting name: base_1.ext, base_2.ext, …
+            let counter = 1;
+            while (existingFilenames.has(base + '_' + counter + ext)) {
+                counter++;
+            }
+            const suggestedName = base + '_' + counter + ext;
+
+            // Show dialog with the pre-corrected name so user can adjust if desired
+            targetName = await showRenameDialog(file.name, file, suggestedName, existingFilenames);
         }
+
+        const uploadFile = targetName === file.name
+            ? file
+            : new File([file], targetName, { type: file.type });
+
+        filesToUpload.push({ file: uploadFile, name: targetName, hash });
+        // Track name within this batch to avoid intra-batch conflicts
+        existingFilenames.add(targetName);
     }
 
     // Show pre-upload summary
