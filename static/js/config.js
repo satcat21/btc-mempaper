@@ -8901,7 +8901,9 @@ function showDonationToast(donation) {
 // message  — detail text (user data — will be HTML-escaped)
 // colorKey — config key base (e.g. 'color_wallets', 'color_bitaxe_stats')
 function showLiveToast(title, message, colorKey) {
-    _buildLiveToast(title, escapeHtml(message), _getLiveToastColor(colorKey));
+    // Array form: the body is rendered with textContent, so the message needs
+    // no escaping and cannot be re-parsed as markup.
+    _buildLiveToast(title, [message], _getLiveToastColor(colorKey));
 }
 
 async function uploadOpsecFiles(files) {
@@ -10741,7 +10743,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const icon = '<img src="/static/icons/update.svg" width="16" height="16" class="toast-title-icon toast-icon-success"> ';
             _buildLiveToast(
                 icon + (t.update_success_title || 'Update successful'),
-                (t.update_success_body || 'mempaper updated to') + ' <strong>' + _updatedTag + '</strong>',
+                (t.update_success_body || 'mempaper updated to') +
+                    ' <strong>' + escapeHtml(_updatedTag) + '</strong>',
                 '#28a745',
                 8000
             );

@@ -214,8 +214,10 @@
         var titleHtml = icon
             ? `<img src="${icon.src}" alt="" width="16" height="16" class="toast-title-icon ${icon.filterClass}"> ${title}`
             : title;
-        // Escape HTML in message
-        var safe = message.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-        _buildLiveToast(titleHtml, safe, color, duration);
+        // Pass as an array so the body is rendered with textContent. Messages
+        // here routinely carry filenames and other values read back out of the
+        // DOM; hand-escaping them into markup only to have innerHTML re-parse
+        // it is the round-trip that undoes the escaping in the first place.
+        _buildLiveToast(titleHtml, [message], color, duration);
     };
 })();
