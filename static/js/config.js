@@ -1571,32 +1571,16 @@ async function showRenameDialog(originalFilename, file, suggestedFilename, exist
         modal.className = 'modal';
         modal.style.display = 'flex';
 
-        // Filenames come from the user's own file picker / drag-drop and are
-        // interpolated into attributes and markup below, so escape them.
-        const safeOriginal = escapeHtml(originalFilename);
-        const safeSuggested = escapeHtml(suggestedNameWithoutExt);
-        const safeExtension = escapeHtml(extension);
+        // Built as elements rather than markup: the filename comes from the
+        // user's own file picker and previously reached an alt attribute, a
+        // <strong> body and an input value through innerHTML.
+        const content = document.createElement('div');
+        content.className = 'modal-content';
+        content.style.maxWidth = '400px';
 
-        // The preview is built as an element and inserted after the markup is
-        // parsed, so neither the object URL nor the filename passes through
-        // innerHTML at all.
-        const previewHtml = '';
-
-        modal.innerHTML = `
-            <div class="modal-content" style="max-width: 400px;">
-                <h3>${t?.rename_image || 'Rename Image'}</h3>
-                ${previewHtml}
-                <p style="margin-bottom: 8px; color: #6a6a78;">${t?.rename_conflict_info || 'A file named'} <strong>${safeOriginal}</strong> ${t?.rename_conflict_exists || 'already exists.'}</p>
-                <label style="display: block; margin-bottom: 5px; font-weight: 600;">${t?.rename_new_name || 'New name (without extension):'}</label>
-                <input type="text" id="rename-input" class="form-input" value="${safeSuggested}" style="margin-bottom: 5px;">
-                <p id="rename-name-warning" style="font-size: 0.85rem; color: #e53e3e; margin-bottom: 5px; display: none;">${t?.rename_name_in_use || 'This name is already in use. Please choose a different name.'}</p>
-                <p style="font-size: 0.85rem; color: #F7931A; margin-bottom: 15px;">${(t?.rename_extension_preserved || 'Extension {ext} will be preserved').replace('{ext}', safeExtension)}</p>
-                <div class="modal-buttons" style="display: flex; gap: 10px;">
-                    <button id="rename-confirm" class="save-button" style="flex: 1;">${t?.rename_confirm || 'Rename'}</button>
-                    <button id="rename-skip" class="cancel-button" style="flex: 1;">${t?.rename_keep_original || 'Keep Original'}</button>
-                </div>
-            </div>
-        `;
+        const heading = document.createElement('h3');
+        heading.textContent = t?.rename_image || 'Rename Image';
+        content.appendChild(heading);
 
         if (previewUrl) {
             const previewWrap = document.createElement('div');
@@ -1606,16 +1590,63 @@ async function showRenameDialog(originalFilename, file, suggestedFilename, exist
             previewImg.alt = originalFilename;
             previewImg.style.cssText = 'max-width: 150px; max-height: 150px; object-fit: contain; border-radius: 6px; border: 1px solid #ddd;';
             previewWrap.appendChild(previewImg);
-            const heading = modal.querySelector('.modal-content h3');
-            if (heading) heading.insertAdjacentElement('afterend', previewWrap);
+            content.appendChild(previewWrap);
         }
 
-        document.body.appendChild(modal);
+        const info = document.createElement('p');
+        info.style.cssText = 'margin-bottom: 8px; color: #6a6a78;';
+        const nameEl = document.createElement('strong');
+        nameEl.textContent = originalFilename;
+        info.append(
+            (t?.rename_conflict_info || 'A file named') + ' ',
+            nameEl,
+            ' ' + (t?.rename_conflict_exists || 'already exists.')
+        );
+        content.appendChild(info);
 
-        const input = modal.querySelector('#rename-input');
-        const confirmBtn = modal.querySelector('#rename-confirm');
-        const skipBtn = modal.querySelector('#rename-skip');
-        const warning = modal.querySelector('#rename-name-warning');
+        const label = document.createElement('label');
+        label.style.cssText = 'display: block; margin-bottom: 5px; font-weight: 600;';
+        label.textContent = t?.rename_new_name || 'New name (without extension):';
+        content.appendChild(label);
+
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.id = 'rename-input';
+        input.className = 'form-input';
+        input.value = suggestedNameWithoutExt;
+        input.style.marginBottom = '5px';
+        content.appendChild(input);
+
+        const warning = document.createElement('p');
+        warning.id = 'rename-name-warning';
+        warning.style.cssText = 'font-size: 0.85rem; color: #e53e3e; margin-bottom: 5px; display: none;';
+        warning.textContent = t?.rename_name_in_use || 'This name is already in use. Please choose a different name.';
+        content.appendChild(warning);
+
+        const extNote = document.createElement('p');
+        extNote.style.cssText = 'font-size: 0.85rem; color: #F7931A; margin-bottom: 15px;';
+        extNote.textContent = (t?.rename_extension_preserved || 'Extension {ext} will be preserved')
+            .replace('{ext}', extension);
+        content.appendChild(extNote);
+
+        const buttons = document.createElement('div');
+        buttons.className = 'modal-buttons';
+        buttons.style.cssText = 'display: flex; gap: 10px;';
+        const confirmBtn = document.createElement('button');
+        confirmBtn.id = 'rename-confirm';
+        confirmBtn.className = 'save-button';
+        confirmBtn.style.flex = '1';
+        confirmBtn.textContent = t?.rename_confirm || 'Rename';
+        const skipBtn = document.createElement('button');
+        skipBtn.id = 'rename-skip';
+        skipBtn.className = 'cancel-button';
+        skipBtn.style.flex = '1';
+        skipBtn.textContent = t?.rename_keep_original || 'Keep Original';
+        buttons.append(confirmBtn, skipBtn);
+        content.appendChild(buttons);
+
+        modal.appendChild(content);
+        document.body.appendChild(modal);
 
         const validateInput = () => {
             const candidate = input.value.trim() + extension;

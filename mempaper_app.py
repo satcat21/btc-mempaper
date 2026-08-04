@@ -6936,6 +6936,11 @@ class MempaperApp:
 
                     if ws_scheme == 'wss':
                         ctx = _ssl.create_default_context()
+                        # create_default_context() still permits TLS 1.0/1.1;
+                        # pin the floor to 1.2. Independent of verify_ssl below,
+                        # which only controls certificate checking for
+                        # self-signed mempool instances.
+                        ctx.minimum_version = _ssl.TLSVersion.TLSv1_2
                         if not verify_ssl:
                             ctx.check_hostname = False
                             ctx.verify_mode = _ssl.CERT_NONE
