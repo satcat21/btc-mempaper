@@ -137,9 +137,18 @@
 
         const content = document.createElement('div');
         content.style.cssText = 'margin-right: 28px;';
-        content.innerHTML =
-            `<div style="font-weight:600;font-size:14px;margin-bottom:5px;color:${titleColor};">${titleText}</div>` +
-            `<div style="opacity:0.85;font-size:13px;">${bodyHtml}</div>`;
+
+        // Title goes in via textContent: callers pre-escape only the body
+        // (bodyHtml is deliberately HTML), so the title was the unescaped one.
+        const titleEl = document.createElement('div');
+        titleEl.style.cssText = `font-weight:600;font-size:14px;margin-bottom:5px;color:${titleColor};`;
+        titleEl.textContent = titleText;
+
+        const bodyEl = document.createElement('div');
+        bodyEl.style.cssText = 'opacity:0.85;font-size:13px;';
+        bodyEl.innerHTML = bodyHtml;
+
+        content.append(titleEl, bodyEl);
 
         toast.appendChild(closeBtn);
         toast.appendChild(content);

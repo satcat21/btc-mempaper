@@ -1471,6 +1471,48 @@ function reportUploadFailure(statusElementId, error) {
     showNotification(window.translations?.upload_failed || 'Upload failed', 'error');
 }
 
+// Build a meme/OPSec action button (download, delete, ...).
+//
+// The handler is attached as a function rather than written into an inline
+// onclick attribute with the filename interpolated into it. escapeHtml() does
+// not escape single quotes, so a filename like  x');alert(1);//  would leave the
+// HTML attribute intact while breaking out of the handler's JS string.
+function buildActionButton(iconName, label, extraClass, onClick) {
+    const btn = document.createElement('button');
+    btn.className = extraClass ? `action-button ${extraClass}` : 'action-button';
+    btn.title = label;
+
+    const icon = document.createElement('img');
+    icon.src = `/static/icons/${iconName}.svg`;
+    icon.alt = label;
+    icon.style.cssText = 'width:16px; height:16px; filter:brightness(0) invert(1);';
+
+    btn.appendChild(icon);
+    btn.addEventListener('click', onClick);
+    return btn;
+}
+
+// Populate a meme thumbnail's action row and filename label.
+// Built as elements rather than markup: the filename comes from the server (and
+// for synced memes, ultimately from an external source), and was previously
+// interpolated both into an inline onclick and into the label's HTML.
+function renderMemeThumbBody(memeDiv, meme) {
+    const actions = document.createElement('div');
+    actions.className = 'meme-actions';
+    actions.append(
+        buildActionButton('download', window.translations?.download_meme || 'Download', '',
+            () => downloadMeme(meme.filename)),
+        buildActionButton('delete', window.translations?.delete_meme || 'Delete', 'delete',
+            () => showDeleteModal(meme.filename))
+    );
+
+    const name = document.createElement('div');
+    name.className = 'meme-filename';
+    name.textContent = meme.filename;
+
+    memeDiv.replaceChildren(actions, name);
+}
+
 // Get all existing OPSec image hashes from server
 async function getExistingOpsecHashes() {
     try {
@@ -1514,9 +1556,15 @@ async function showRenameDialog(originalFilename, file, suggestedFilename, exist
         modal.className = 'modal';
         modal.style.display = 'flex';
 
+        // Filenames come from the user's own file picker / drag-drop and are
+        // interpolated into attributes and markup below, so escape them.
+        const safeOriginal = escapeHtml(originalFilename);
+        const safeSuggested = escapeHtml(suggestedNameWithoutExt);
+        const safeExtension = escapeHtml(extension);
+
         const previewHtml = previewUrl
             ? `<div style="text-align: center; margin-bottom: 15px;">
-                   <img src="${previewUrl}" alt="${originalFilename}" style="max-width: 150px; max-height: 150px; object-fit: contain; border-radius: 6px; border: 1px solid #ddd;">
+                   <img src="${previewUrl}" alt="${safeOriginal}" style="max-width: 150px; max-height: 150px; object-fit: contain; border-radius: 6px; border: 1px solid #ddd;">
                </div>`
             : '';
 
@@ -1524,11 +1572,11 @@ async function showRenameDialog(originalFilename, file, suggestedFilename, exist
             <div class="modal-content" style="max-width: 400px;">
                 <h3>${t?.rename_image || 'Rename Image'}</h3>
                 ${previewHtml}
-                <p style="margin-bottom: 8px; color: #6a6a78;">${t?.rename_conflict_info || 'A file named'} <strong>${originalFilename}</strong> ${t?.rename_conflict_exists || 'already exists.'}</p>
+                <p style="margin-bottom: 8px; color: #6a6a78;">${t?.rename_conflict_info || 'A file named'} <strong>${safeOriginal}</strong> ${t?.rename_conflict_exists || 'already exists.'}</p>
                 <label style="display: block; margin-bottom: 5px; font-weight: 600;">${t?.rename_new_name || 'New name (without extension):'}</label>
-                <input type="text" id="rename-input" class="form-input" value="${suggestedNameWithoutExt}" style="margin-bottom: 5px;">
+                <input type="text" id="rename-input" class="form-input" value="${safeSuggested}" style="margin-bottom: 5px;">
                 <p id="rename-name-warning" style="font-size: 0.85rem; color: #e53e3e; margin-bottom: 5px; display: none;">${t?.rename_name_in_use || 'This name is already in use. Please choose a different name.'}</p>
-                <p style="font-size: 0.85rem; color: #F7931A; margin-bottom: 15px;">${(t?.rename_extension_preserved || 'Extension {ext} will be preserved').replace('{ext}', extension)}</p>
+                <p style="font-size: 0.85rem; color: #F7931A; margin-bottom: 15px;">${(t?.rename_extension_preserved || 'Extension {ext} will be preserved').replace('{ext}', safeExtension)}</p>
                 <div class="modal-buttons" style="display: flex; gap: 10px;">
                     <button id="rename-confirm" class="save-button" style="flex: 1;">${t?.rename_confirm || 'Rename'}</button>
                     <button id="rename-skip" class="cancel-button" style="flex: 1;">${t?.rename_keep_original || 'Keep Original'}</button>
@@ -1896,14 +1944,12 @@ async function renameMeme(oldFilename, newFilename) {
                         // Update action buttons to use new filename
                         const actionsDiv = memeDiv.querySelector('.meme-actions');
                         if (actionsDiv) {
-                            actionsDiv.innerHTML = `
-                                <button class="action-button" onclick="downloadMeme('${newFilename}')" title="${window.translations?.download_meme || 'Download'}">
-                                    <img src="/static/icons/download.svg" alt="Download" style="width: 16px; height: 16px; filter: brightness(0) invert(1);" />
-                                </button>
-                                <button class="action-button delete" onclick="showDeleteModal('${newFilename}')" title="${window.translations?.delete_meme || 'Delete'}">
-                                    <img src="/static/icons/delete.svg" alt="Delete" style="width: 16px; height: 16px; filter: brightness(0) invert(1);" />
-                                </button>
-                            `;
+                            actionsDiv.replaceChildren(
+                                buildActionButton('download', window.translations?.download_meme || 'Download', '',
+                                    () => downloadMeme(newFilename)),
+                                buildActionButton('delete', window.translations?.delete_meme || 'Delete', 'delete',
+                                    () => showDeleteModal(newFilename))
+                            );
                         }
                         
                         // Update onclick for the image (preserve tags from current modal)
@@ -2255,17 +2301,7 @@ async function loadMemes(search = '') {
                 img.classList.add('meme-lazy');
                 // Set up lazy loading observer
                 memeLoader.observer.observe(img);
-                memeDiv.innerHTML = `
-                    <div class="meme-actions">
-                        <button class="action-button" onclick="downloadMeme('${meme.filename}')" title="${window.translations?.download_meme || 'Download'}">
-                            <img src="/static/icons/download.svg" alt="Download" style="width: 16px; height: 16px; filter: brightness(0) invert(1);" />
-                        </button>
-                        <button class="action-button delete" onclick="showDeleteModal('${meme.filename}')" title="${window.translations?.delete_meme || 'Delete'}">
-                            <img src="/static/icons/delete.svg" alt="Delete" style="width: 16px; height: 16px; filter: brightness(0) invert(1);" />
-                        </button>
-                    </div>
-                    <div class="meme-filename">${meme.filename}</div>
-                `;
+                renderMemeThumbBody(memeDiv, meme);
                 // Insert the image at the beginning
                 memeDiv.insertBefore(img, memeDiv.firstChild);
                 memesList.appendChild(memeDiv);
@@ -2344,17 +2380,7 @@ async function loadMoreMemes(page, sentinel) {
 
             memeLoader.observer.observe(img);
             
-            memeDiv.innerHTML = `
-                <div class="meme-actions">
-                    <button class="action-button" onclick="downloadMeme('${meme.filename}')" title="${window.translations?.download_meme || 'Download'}">
-                        <img src="/static/icons/download.svg" alt="Download" style="width: 16px; height: 16px; filter: brightness(0) invert(1);" />
-                    </button>
-                    <button class="action-button delete" onclick="showDeleteModal('${meme.filename}')" title="${window.translations?.delete_meme || 'Delete'}">
-                        <img src="/static/icons/delete.svg" alt="Delete" style="width: 16px; height: 16px; filter: brightness(0) invert(1);" />
-                    </button>
-                </div>
-                <div class="meme-filename">${meme.filename}</div>
-            `;
+            renderMemeThumbBody(memeDiv, meme);
             
             memeDiv.insertBefore(img, memeDiv.firstChild);
             memesList.insertBefore(memeDiv, sentinel);
@@ -3430,7 +3456,8 @@ async function _performUpdate(tag, updateBtn) {
 
     const heading = document.createElement('h3');
     heading.className = 'confirm-modal-title';
-    heading.innerHTML = `<img src="/static/icons/update.svg" alt="" class="modal-title-icon"> ${(window.translations?.updating_to || 'Updating to') + ' ' + tag}`;
+    // `tag` is a release tag from the update API — escape before it becomes markup.
+    heading.innerHTML = `<img src="/static/icons/update.svg" alt="" class="modal-title-icon"> ${escapeHtml((window.translations?.updating_to || 'Updating to') + ' ' + tag)}`;
 
     const phaseBar = document.createElement('div');
     phaseBar.className = 'system-update-phase';
@@ -7242,7 +7269,14 @@ function addTag(container, value) {
     
     const tag = document.createElement('div');
     tag.className = 'tag';
-    tag.innerHTML = `${value} <button type="button" class="tag-remove">×</button>`;
+    // `value` is user-entered and was previously parsed as HTML here.
+    // append() with a string creates a text node, so it stays inert.
+    tag.append(value + ' ');
+    const tagRemoveBtn = document.createElement('button');
+    tagRemoveBtn.type = 'button';
+    tagRemoveBtn.className = 'tag-remove';
+    tagRemoveBtn.textContent = '×';
+    tag.appendChild(tagRemoveBtn);
     
     // Handle tag removal
     tag.querySelector('.tag-remove').addEventListener('click', (e) => {
@@ -8470,16 +8504,12 @@ function createOpsecThumb(img) {
     const actionsEl = document.createElement('div');
     actionsEl.className = 'meme-actions';
     actionsEl.style.cssText = 'display:flex; justify-content:center; gap:4px; margin-top:4px;';
-    actionsEl.innerHTML = `
-        <button class="action-button" title="${window.translations?.download_meme || 'Download'}"
-                onclick="downloadOpsecImage('${img.filename}')">
-            <img src="/static/icons/download.svg" alt="Download" style="width:16px; height:16px; filter:brightness(0) invert(1);" />
-        </button>
-        <button class="action-button delete" title="${window.translations?.delete_meme || 'Delete'}"
-                onclick="showOpsecDeleteModal('${img.filename}')">
-            <img src="/static/icons/delete.svg" alt="Delete" style="width:16px; height:16px; filter:brightness(0) invert(1);" />
-        </button>
-    `;
+    actionsEl.append(
+        buildActionButton('download', window.translations?.download_meme || 'Download', '',
+            () => downloadOpsecImage(img.filename)),
+        buildActionButton('delete', window.translations?.delete_meme || 'Delete', 'delete',
+            () => showOpsecDeleteModal(img.filename))
+    );
 
     thumb.appendChild(imgEl);
     thumb.appendChild(nameEl);
@@ -9722,14 +9752,12 @@ async function renameOpsecImage(oldFilename, newFilename) {
                     // Update action buttons to use new filename
                     const actionsDiv = thumb.querySelector('.meme-actions');
                     if (actionsDiv) {
-                        actionsDiv.innerHTML = `
-                            <button class="action-button" onclick="downloadOpsecImage('${newFilename}')" title="${window.translations?.download_meme || 'Download'}">
-                                <img src="/static/icons/download.svg" alt="Download" style="width:16px; height:16px; filter:brightness(0) invert(1);" />
-                            </button>
-                            <button class="action-button delete" onclick="showOpsecDeleteModal('${newFilename}')" title="${window.translations?.delete_meme || 'Delete'}">
-                                <img src="/static/icons/delete.svg" alt="Delete" style="width:16px; height:16px; filter:brightness(0) invert(1);" />
-                            </button>
-                        `;
+                        actionsDiv.replaceChildren(
+                            buildActionButton('download', window.translations?.download_meme || 'Download', '',
+                                () => downloadOpsecImage(newFilename)),
+                            buildActionButton('delete', window.translations?.delete_meme || 'Delete', 'delete',
+                                () => showOpsecDeleteModal(newFilename))
+                        );
                     }
                     // Update onclick to use new filename
                     img.onclick = () => openOpsecModal(newFilename, `/static/opsec/${newFilename}`);
