@@ -90,6 +90,13 @@
         if (Array.isArray(value)) {
             value.forEach(entry => _appendContent(parent, entry));
         } else if (value instanceof Node) {
+            // Appending an existing node parses nothing - the branch below is
+            // what turns strings into text. CodeQL does not honour the
+            // instanceof guard, so DOM-derived text that always takes the text
+            // branch is still reported as reaching here. Any API where callers
+            // build nodes and hand them over produces this alert; the only way
+            // to remove the flow is to pass markup strings instead.
+            // codeql[js/xss-through-dom]
             parent.appendChild(value);
         } else {
             parent.appendChild(document.createTextNode(String(value)));

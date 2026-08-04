@@ -1585,6 +1585,10 @@ async function showRenameDialog(originalFilename, file, suggestedFilename, exist
             const previewWrap = document.createElement('div');
             previewWrap.style.cssText = 'text-align: center; margin-bottom: 15px;';
             const previewImg = document.createElement('img');
+            // createObjectURL only ever mints blob:<origin>/<uuid> - nothing from
+            // the file or its name reaches the URL - and img.src does not execute
+            // javascript: URLs. CodeQL taints the result through createObjectURL.
+            // codeql[js/xss-through-dom]
             previewImg.src = previewUrl;
             previewImg.alt = originalFilename;
             previewImg.style.cssText = 'max-width: 150px; max-height: 150px; object-fit: contain; border-radius: 6px; border: 1px solid #ddd;';
