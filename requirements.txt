@@ -22,7 +22,7 @@ gevent-websocket==0.10.1  # Required for WebSocket upgrade support with gunicorn
 # websocket-client (above) is used for outgoing connections to mempool API
 
 # Security dependencies for configuration encryption
-cryptography==48.0.1  # Lightweight encryption for sensitive config data
+cryptography==50.0.0  # Lightweight encryption for sensitive config data
 psutil==7.2.2  # System info for device fingerprinting
 
 # Optional: Tor / SOCKS5 proxy support (used by tools/download_all_memes.py --tor)
