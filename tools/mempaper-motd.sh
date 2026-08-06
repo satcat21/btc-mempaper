@@ -32,6 +32,9 @@ MEMPOOL_PORT="443"
 MEMPOOL_HTTPS="true"
 DISP_ON="false"
 DEVICE_NAME="none"
+MEMPOOL_TOR="false"
+TOR_SOCKS_HOST="127.0.0.1"
+TOR_SOCKS_PORT="9050"
 
 if [ -f "$CONFIG_FILE" ] && command -v python3 >/dev/null 2>&1; then
     _raw=$(python3 - <<PYEOF 2>/dev/null
@@ -44,8 +47,12 @@ try:
     print(str(c.get('e-ink-display-connected', False)).lower())
     print(c.get('omni_device_name', 'none'))
     print(str(c.get('mempool_use_https', True)).lower())
+    print(str(c.get('mempool_use_tor', False)).lower())
+    print(c.get('tor_socks_host', '127.0.0.1') or '127.0.0.1')
+    print(c.get('tor_socks_port', 9050) or 9050)
 except Exception:
     print('mempool.space'); print('443'); print('false'); print('none'); print('true')
+    print('false'); print('127.0.0.1'); print('9050')
 PYEOF
 )
     MEMPOOL_HOST=$(printf '%s' "$_raw"  | sed -n '1p')
@@ -53,6 +60,10 @@ PYEOF
     DISP_ON=$(printf '%s' "$_raw"       | sed -n '3p')
     DEVICE_NAME=$(printf '%s' "$_raw"   | sed -n '4p')
     MEMPOOL_HTTPS=$(printf '%s' "$_raw" | sed -n '5p')
+    MEMPOOL_TOR=$(printf '%s' "$_raw"   | sed -n '6p')
+    TOR_SOCKS_HOST=$(printf '%s' "$_raw" | sed -n '7p')
+    TOR_SOCKS_PORT=$(printf '%s' "$_raw" | sed -n '8p')
+    : "${TOR_SOCKS_HOST:=127.0.0.1}" "${TOR_SOCKS_PORT:=9050}"
 fi
 
 # ── Banner ────────────────────────────────────────────────────────────────────
@@ -241,17 +252,43 @@ else
         || _MURL="http://${MEMPOOL_HOST}:${MEMPOOL_PORT}"
 fi
 
-# Block height — query mempool (4 s timeout)
+# Onion addresses are 62 characters and would push the right-hand column off an
+# 80-column terminal, wrapping the row. Shorten to exactly the column width so
+# the padding below still lines up, keeping the readable head and the .onion
+# tail. ASCII dots rather than a single ellipsis character: printf pads by byte
+# count, so a multi-byte glyph here would silently shift the next column.
+_shorten_host() {
+    local h="$1"
+    [ "${#h}" -le 20 ] && { printf '%s' "$h"; return; }
+    printf '%s...%s' "${h:0:7}" "${h: -10}"
+}
+
+# Block height — query mempool. A .onion host resolves only through the SOCKS
+# proxy, so without this the banner reports a perfectly healthy instance as
+# offline. --socks5-hostname (not --socks5) leaves resolution to Tor.
+# The longer budget covers circuit setup and the hidden-service descriptor
+# lookup, which routinely exceed the clearnet timeout — kept modest because
+# every second here is a second the SSH login sits there waiting.
+_CURL_PROXY=()
+_CURL_TIME=4
+if [ "$MEMPOOL_TOR" = "true" ]; then
+    _CURL_PROXY=(--socks5-hostname "${TOR_SOCKS_HOST}:${TOR_SOCKS_PORT}")
+    _CURL_TIME=10
+fi
+
 _BH="—"
 _MD="${_RE}"
-_TIP=$(curl -sf --max-time 4 "${_MURL}/api/blocks/tip/height" 2>/dev/null || true)
+_TIP=$(curl -sf "${_CURL_PROXY[@]}" --max-time "${_CURL_TIME}" \
+        "${_MURL}/api/blocks/tip/height" 2>/dev/null || true)
 if printf '%s' "${_TIP}" | grep -qE '^[0-9]+$' 2>/dev/null; then
     _BH=$(python3 -c "print(f'{int(${_TIP}):,}')" 2>/dev/null || echo "${_TIP}")
     _MD="${_G}"
-    _ML="${MEMPOOL_HOST}"
+    _ML="$(_shorten_host "${MEMPOOL_HOST}")"
 else
-    _ML="${MEMPOOL_HOST} (offline)"
+    _ML="$(_shorten_host "${MEMPOOL_HOST}") (offline)"
 fi
+# Sourced from profile.d, so anything defined here stays in the user's shell.
+unset -f _shorten_host
 
 # Display label
 if [ "$DISP_ON" = "true" ] || [ "$DISP_ON" = "True" ]; then
