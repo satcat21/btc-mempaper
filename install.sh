@@ -179,6 +179,8 @@ echo ""
 # [3] Options — press Enter to accept defaults
 echo -e "  ${CYAN}Options${NC} — press Enter to accept defaults"
 echo ""
+read -rp "  Reach mempool.space over Tor (private)?    [Y/n]: " MEMPOOL_TOR_CHOICE
+MEMPOOL_TOR_CHOICE="${MEMPOOL_TOR_CHOICE:-Y}"
 read -rp "  Minify JavaScript (better performance)?   [Y/n]: " MINIFY_CHOICE
 MINIFY_CHOICE="${MINIFY_CHOICE:-Y}"
 read -rp "  fail2ban (SSH brute-force protection)?     [Y/n]: " F2B_CHOICE
@@ -460,8 +462,18 @@ else
     ok "Virtual environment already exists"
 fi
 
-sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" install --upgrade pip setuptools wheel -q
-ok "pip/setuptools upgraded"
+# pip is pinned in requirements.txt so every device resolves wheels the same
+# way; install that exact version here too, otherwise a fresh install starts on
+# whatever pip is newest today and immediately diverges from the pin.
+_PIP_PIN=$(grep -oE '^pip==[0-9][0-9.]*' requirements.txt | head -1)
+if [ -n "$_PIP_PIN" ]; then
+    sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" install --upgrade "$_PIP_PIN" setuptools wheel -q
+    ok "pip pinned to ${_PIP_PIN#pip==}, setuptools/wheel upgraded"
+else
+    # No pin found (requirements.txt edited?) — fall back rather than fail the install.
+    sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" install --upgrade pip setuptools wheel -q
+    warn "No pip pin found in requirements.txt — upgraded to latest instead"
+fi
 
 # Lock the Python minor version so 'apt upgrade' can never switch the default
 # Python (e.g. 3.13 → 3.14) and orphan the virtual environment.
@@ -588,6 +600,92 @@ if [ ! -f config/config.json ]; then
     fi
 else
     ok "config.json already exists"
+fi
+
+# ── Privacy default: reach mempool.space over Tor ─────────────────────────────
+# Out of the box mempaper talks to the public mempool.space, which pairs the
+# home IP with every query. Routing that over Tor costs a few seconds of latency
+# the dashboard never notices (blocks arrive ~10 min apart) and removes the IP
+# from the picture. Only applied while the host is still the shipped default, so
+# re-running install.sh never redirects an instance the user has already pointed
+# somewhere — including their own node.
+if [ -f config/config.json ] && [[ "$MEMPOOL_TOR_CHOICE" =~ ^[Yy]$ ]]; then
+    sudo -u "$SERVICE_USER" python3 - <<'PYEOF' && ok "mempool.space reachable over Tor (change any time in Settings)" || warn "Could not set Tor default (non-fatal)"
+import json, sys
+from pathlib import Path
+
+sys.path.insert(0, ".")
+try:
+    # single source of truth — also carries the scheme/port the service expects
+    from utils.technical_config import MEMPOOL_ONION_PRESETS
+    preset = MEMPOOL_ONION_PRESETS[0]
+except Exception as e:
+    print(f"   could not read onion preset: {e}")
+    sys.exit(1)
+
+p = Path("config/config.json")
+try:
+    cfg = json.loads(p.read_text())
+except Exception as e:
+    print(f"   could not read config.json: {e}")
+    sys.exit(1)
+
+host = str(cfg.get("mempool_host", "")).strip()
+if host and host not in ("mempool.space", ""):
+    print(f"   mempool_host already set to '{host}' — leaving it alone")
+    sys.exit(0)
+
+cfg["mempool_use_tor"] = True
+cfg["mempool_host"] = preset["host"]
+cfg["mempool_use_https"] = preset["use_https"]
+cfg["mempool_rest_port"] = preset["port"]
+cfg["mempool_ws_port"] = preset["port"]
+
+tmp = p.with_suffix(".json.tmp")
+tmp.write_text(json.dumps(cfg, indent=2))
+tmp.replace(p)
+print(f"   {preset['label']} via Tor on port {preset['port']}")
+PYEOF
+elif [ -f config/config.json ]; then
+    ok "Using mempool.space directly (no Tor) — your IP is visible to the instance"
+fi
+
+# ── Randomise the weekly meme-sync schedule ───────────────────────────────────
+# Every install otherwise inherits the same default (Thu 13:00), so every
+# mempaper in the world would hit einundzwanzig-memes.space in the same hour.
+# Picking a per-device day and hour at install time spreads that load out.
+# Only ever set on a device that has not chosen a schedule yet, so re-running
+# install.sh never overwrites what a user picked in the web UI.
+if [ -f config/config.json ]; then
+    sudo -u "$SERVICE_USER" python3 - <<'PYEOF' && ok "Meme-sync schedule randomised for this device" || warn "Could not set meme-sync schedule (non-fatal)"
+import json, random, sys
+from pathlib import Path
+
+p = Path("config/config.json")
+try:
+    cfg = json.loads(p.read_text())
+except Exception as e:
+    print(f"   could not read config.json: {e}")
+    sys.exit(1)
+
+# Treat the shipped default (Thu 13:00) as "never chosen".
+already = cfg.get("meme_sync_schedule_randomised", False)
+if already:
+    print("   schedule already randomised — leaving it alone")
+    sys.exit(0)
+
+day  = random.randint(0, 6)    # cron: 0=Sun … 6=Sat
+hour = random.randint(0, 23)
+cfg["meme_sync_day"] = str(day)
+cfg["meme_sync_hour"] = str(hour)
+cfg["meme_sync_schedule_randomised"] = True
+
+names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+tmp = p.with_suffix(".json.tmp")
+tmp.write_text(json.dumps(cfg, indent=2))
+tmp.replace(p)
+print(f"   weekly meme sync scheduled for {names[day]} at {hour:02d}:00")
+PYEOF
 fi
 
 # Secure config directory and file (contains password hashes and API keys).

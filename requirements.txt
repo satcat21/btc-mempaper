@@ -1,3 +1,10 @@
+# Build tooling — pinned so every device resolves wheels identically.
+# Matters most on armv6l (Pi Zero 1), where almost nothing has a prebuilt wheel
+# and a pip change to platform-tag or wheel-selection behaviour is the
+# difference between a fast install and a 40-minute source build (or a failure).
+# Bump deliberately; the updater applies it via `pip install -r requirements.txt`.
+pip==26.2.1
+
 # Core dependencies for mempaper Bitcoin Dashboard
 flask==3.1.3
 flask-socketio==5.6.1
@@ -25,9 +32,10 @@ gevent-websocket==0.10.1  # Required for WebSocket upgrade support with gunicorn
 cryptography==50.0.0  # Lightweight encryption for sensitive config data
 psutil==7.2.2  # System info for device fingerprinting
 
-# Optional: Tor / SOCKS5 proxy support (used by tools/download_all_memes.py --tor)
+# Optional: Tor / SOCKS5 proxy support (used by tools/sync_memes.py --tor)
 # Install Tor daemon separately: sudo apt install tor
-PySocks==1.7.1  # SOCKS5 proxy routing for meme downloads via Tor
+PySocks==1.7.1  # SOCKS5 proxy for requests/urllib3 (mempool REST over Tor, meme downloads)
+python-socks==2.7.2  # SOCKS5 for websocket-client; it does NOT use PySocks
 
 # Optional: E-Paper display support
 # Uncomment the line below if you plan to use physical e-ink displays
