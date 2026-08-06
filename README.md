@@ -17,6 +17,7 @@
   <a href="#gallery">Gallery</a> &nbsp;&bull;&nbsp;
   <a href="#getting-started">Getting Started</a> &nbsp;&bull;&nbsp;
   <a href="#configuration">Configuration</a> &nbsp;&bull;&nbsp;
+  <a href="docs/ARCHITECTURE.md">Architecture</a> &nbsp;&bull;&nbsp;
   <a href="#documentation">Documentation</a> &nbsp;&bull;&nbsp;
   <a href="#support-the-project">Support</a>
 </p>
@@ -651,6 +652,7 @@ sudo chmod 0440 /etc/sudoers.d/mempaper-update
 
 ## DOCUMENTATION
 
+- [Architecture](docs/ARCHITECTURE.md) -- Diagrams: deployment topologies, what data leaves the device, codebase map, block-to-image data flow
 - [Configuration Reference](docs/CONFIG_REFERENCE.md) -- Complete guide to all settings
 - [Security Guide](docs/SECURITY_GUIDE.md) -- Hardening guide: installation, SSH, UFW, threat model, audit checklist
 - [Maintenance Guide](docs/MAINTENANCE_GUIDE.md) -- Safe apt upgrades, Python version management

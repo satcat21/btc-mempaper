@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" role="img" aria-label="VPN topology: mempaper routes outbound traffic through a WireGuard tunnel to a VPN provider, which exits to mempool.space. mempool.space sees the VPN exit IP instead of the home IP, but the VPN provider sees both the real home IP and the destination. LAN routes must be excluded from the tunnel or browser access to the dashboard breaks.">
+<style>
+  svg { font-family: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, "Liberation Mono", monospace; }
+
+  .f-t{fill:#1A1A1F} .f-t2{fill:#5C5C66} .f-t3{fill:#8A8A94}
+  .f-btc{fill:#B7791F} .f-lan{fill:#1D6B2C} .f-auth{fill:#2C5AA8}
+  .f-exp{fill:#C62828} .f-tor{fill:#6B3FA0}
+
+  .zone{fill:none;stroke-width:1.5;stroke-dasharray:7 5}
+  .zone-lan{fill:rgba(29,107,44,0.09);stroke:#1D6B2C}
+  .zone-exp{fill:rgba(198,40,40,0.08);stroke:#C62828}
+  .zone-net{fill:#F2F0EC;stroke:#DAD6CE}
+  .zone-tor{fill:rgba(107,63,160,0.10);stroke:#6B3FA0}
+  .zone-auth{fill:rgba(44,90,168,0.09);stroke:#2C5AA8}
+
+  .bx{fill:#FFFFFF;stroke:#1A1A1F;stroke-width:1.6}
+  .bx-soft{fill:#FFFFFF;stroke:#DAD6CE;stroke-width:1.6}
+  .bx-2{fill:#F2F0EC;stroke:#DAD6CE;stroke-width:1.4}
+  .bx-in{fill:#FFFFFF;stroke:#DAD6CE;stroke-width:1.2}
+  .bx-btc{fill:rgba(183,121,31,0.10);stroke:#B7791F;stroke-width:2.4}
+  .bx-lan{fill:rgba(29,107,44,0.09);stroke:#1D6B2C;stroke-width:1.9}
+  .bx-auth{fill:rgba(44,90,168,0.09);stroke:#2C5AA8;stroke-width:2}
+  .bx-exp{fill:rgba(198,40,40,0.08);stroke:#C62828;stroke-width:1.6}
+  .bx-tor{fill:rgba(107,63,160,0.10);stroke:#6B3FA0;stroke-width:2.2}
+  .bx-o{fill:#FFFFFF;stroke:#C62828;stroke-width:2}
+  .bx-g{fill:#FFFFFF;stroke:#1D6B2C;stroke-width:2}
+
+  .ln{stroke:#1A1A1F;stroke-width:2;fill:none}
+  .ln-thin{stroke:#DAD6CE;stroke-width:1;fill:none}
+  /* fill:none matters on every one of these: the bracket paths are open
+     outlines, and without it a browser fills them solid black. */
+  .ln-btc{stroke:#B7791F;stroke-width:2;fill:none}
+  .ln-tor{stroke:#6B3FA0;stroke-width:2.4;fill:none}
+  .ln-exp{stroke:#C62828;stroke-width:2.4;fill:none}
+  .ln-auth{stroke:#2C5AA8;stroke-width:2.3;fill:none}
+  .ln-lan{stroke:#1D6B2C;stroke-width:2.2;fill:none}
+  .ln-mut{stroke:#5C5C66;stroke-width:2;fill:none}
+  .ln-dash{stroke:#8A8A94;stroke-width:1.6;fill:none;stroke-dasharray:5 4}
+  .ln-sep{stroke:#E8E5DF;stroke-width:1;fill:none}
+
+  .t-lg{font-size:25px;font-weight:700} .t-md{font-size:20px;font-weight:600}
+  .t-sm{font-size:17px;font-weight:600} .t-xs{font-size:15px} .t-xxs{font-size:14px}
+  .t-zone{font-size:18px;font-weight:600;letter-spacing:1.5px}
+  .t-eyebrow{font-size:15px;font-weight:700;letter-spacing:1.4px}
+  .mid{text-anchor:middle}
+</style>
+<rect x="0" y="0" width="100%" height="100%" fill="#FAF9F6"/>
+<svg x="40" y="20" width="44" height="44" viewBox="0 0 64 64"><g transform="translate(0.00630876,-0.00301984)"><path fill="#1a1a1f" d="m63.033,39.744c-4.274,17.143-21.637,27.576-38.782,23.301-17.138-4.274-27.571-21.638-23.295-38.78,4.272-17.145,21.635-27.579,38.775-23.305,17.144,4.274,27.576,21.64,23.302,38.784z"/><path fill="#F7931A" d="m46.103,27.444c0.637-4.258-2.605-6.547-7.038-8.074l1.438-5.768-3.511-0.875-1.4,5.616c-0.923-0.23-1.871-0.447-2.813-0.662l1.41-5.653-3.509-0.875-1.439,5.766c-0.764-0.174-1.514-0.346-2.242-0.527l0.004-0.018-4.842-1.209-0.934,3.75s2.605,0.597,2.55,0.634c1.422,0.355,1.679,1.296,1.636,2.042l-1.638,6.571c0.098,0.025,0.225,0.061,0.365,0.117-0.117-0.029-0.242-0.061-0.371-0.092l-2.296,9.205c-0.174,0.432-0.615,1.08-1.609,0.834,0.035,0.051-2.552-0.637-2.552-0.637l-1.743,4.019,4.569,1.139c0.85,0.213,1.683,0.436,2.503,0.646l-1.453,5.834,3.507,0.875,1.439-5.772c0.958,0.26,1.888,0.5,2.798,0.726l-1.434,5.745,3.511,0.875,1.453-5.823c5.987,1.133,10.489,0.676,12.384-4.739,1.527-4.36-0.076-6.875-3.226-8.515,2.294-0.529,4.022-2.038,4.483-5.155zm-8.022,11.249c-1.085,4.36-8.426,2.003-10.806,1.412l1.928-7.729c2.38,0.594,10.012,1.77,8.878,6.317zm1.086-11.312c-0.99,3.966-7.1,1.951-9.082,1.457l1.748-7.01c1.982,0.494,8.365,1.416,7.334,5.553z"/></g></svg>
+<text x="96" y="42" font-size="21" font-weight="700"><tspan fill="#1A1A1F">mem</tspan><tspan fill="#B7791F">paper</tspan></text>
+<text x="96" y="64" font-size="15" fill="#5C5C66">Topology B &#8212; VPN as a mitigation</text>
+<text x="1240" y="42" font-size="13" fill="#8A8A94" text-anchor="end">github.com/satcat21/btc-mempaper</text>
+<text x="1240" y="63" font-size="13" fill="#8A8A94" text-anchor="end">2026</text>
+<line x1="40" y1="80" x2="1240" y2="80" stroke="#DAD6CE" stroke-width="1"/>
+
+          <defs>
+            <marker id="s7t" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-t"/></marker>
+            <marker id="s7a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-auth"/></marker>
+            <marker id="s7l" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-lan"/></marker>
+          </defs>
+
+          <rect x="36" y="96" width="470" height="440" rx="12" class="zone zone-lan"/>
+          <text x="58" y="128" class="t-zone f-lan">YOUR HOME NETWORK</text>
+          <rect x="556" y="96" width="300" height="440" rx="12" class="zone zone-auth"/>
+          <text x="578" y="128" class="t-zone f-auth">VPN PROVIDER</text>
+          <rect x="906" y="96" width="334" height="440" rx="12" class="zone zone-net"/>
+          <text x="928" y="128" class="t-zone f-t2">INTERNET</text>
+
+          <rect x="68" y="300" width="150" height="100" rx="8" class="bx"/>
+          <text x="143" y="340" class="t-md mid f-t">Browser</text>
+          <text x="143" y="368" class="t-xxs mid f-t2">LAN</text>
+
+          <rect x="266" y="256" width="210" height="188" rx="9" class="bx-btc"/>
+          <text x="371" y="298" class="t-lg mid f-btc">mempaper</text>
+          <text x="371" y="326" class="t-xxs mid f-t2">Pi Zero</text>
+          <line x1="292" y1="344" x2="450" y2="344" class="ln-thin"/>
+          <text x="371" y="372" class="t-xxs mid f-t">wg0 tunnel up</text>
+          <text x="371" y="396" class="t-xxs mid f-t">all egress via VPN</text>
+          <text x="371" y="424" class="t-xxs mid f-lan">LAN excluded</text>
+
+          <rect x="596" y="256" width="220" height="188" rx="9" class="bx-auth"/>
+          <text x="706" y="300" class="t-md mid f-auth">VPN exit</text>
+          <text x="706" y="330" class="t-xxs mid f-t2">shared exit IP</text>
+          <line x1="622" y1="348" x2="790" y2="348" class="ln-thin"/>
+          <text x="706" y="378" class="t-xxs mid f-exp">sees your real IP</text>
+          <text x="706" y="402" class="t-xxs mid f-exp">sees the destination</text>
+          <text x="706" y="426" class="t-xxs mid f-exp">can log both</text>
+
+          <rect x="944" y="266" width="264" height="140" rx="8" class="bx-o"/>
+          <text x="1076" y="312" class="t-md mid f-t">mempool.space</text>
+          <text x="1076" y="342" class="t-xxs mid f-t2">sees the VPN exit IP</text>
+          <text x="1076" y="370" class="t-xxs mid f-lan">not your home IP</text>
+
+          <line x1="218" y1="350" x2="258" y2="350" class="ln-lan" marker-end="url(#s7l)"/>
+          <text x="238" y="334" class="t-xxs mid f-lan">local</text>
+          <line x1="476" y1="350" x2="588" y2="350" class="ln-auth" marker-end="url(#s7a)"/>
+          <text x="532" y="334" class="t-xxs mid f-auth">encrypted</text>
+          <text x="532" y="376" class="t-xxs mid f-auth">tunnel</text>
+          <line x1="816" y1="336" x2="936" y2="336" class="ln-mut" marker-end="url(#s7t)"/>
+          <text x="876" y="320" class="t-xxs mid f-t2">plain egress</text>
+
+          <rect x="36" y="566" width="1204" height="110" rx="8" class="bx-exp"/>
+          <text x="60" y="600" class="t-xs f-exp" font-weight="700">NO NET PRIVACY GAIN</text>
+          <text x="60" y="630" class="t-xxs f-t">mempool.space stops seeing your home IP — but the VPN provider now sees your real IP and every destination together,</text>
+          <text x="60" y="656" class="t-xxs f-t">which is more than either of them knew before. The observer changed; it did not go away.</text>
+        </svg>

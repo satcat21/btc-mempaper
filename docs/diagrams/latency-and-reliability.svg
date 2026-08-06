@@ -1,0 +1,101 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" role="img" aria-label="Latency comparison. A direct request takes roughly 0.1 seconds, a VPN 0.15 seconds, Tor to clearnet 0.5 to 2 seconds and Tor to an onion service 1 to 4 seconds. Against these, the e-ink refresh takes about 35 seconds, the precache interval is 300 seconds and the average block interval is 600 seconds. Even the slowest Tor path is about a tenth of a single e-ink refresh.">
+<style>
+  svg { font-family: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, "Liberation Mono", monospace; }
+
+  .f-t{fill:#1A1A1F} .f-t2{fill:#5C5C66} .f-t3{fill:#8A8A94}
+  .f-btc{fill:#B7791F} .f-lan{fill:#1D6B2C} .f-auth{fill:#2C5AA8}
+  .f-exp{fill:#C62828} .f-tor{fill:#6B3FA0}
+
+  .zone{fill:none;stroke-width:1.5;stroke-dasharray:7 5}
+  .zone-lan{fill:rgba(29,107,44,0.09);stroke:#1D6B2C}
+  .zone-exp{fill:rgba(198,40,40,0.08);stroke:#C62828}
+  .zone-net{fill:#F2F0EC;stroke:#DAD6CE}
+  .zone-tor{fill:rgba(107,63,160,0.10);stroke:#6B3FA0}
+  .zone-auth{fill:rgba(44,90,168,0.09);stroke:#2C5AA8}
+
+  .bx{fill:#FFFFFF;stroke:#1A1A1F;stroke-width:1.6}
+  .bx-soft{fill:#FFFFFF;stroke:#DAD6CE;stroke-width:1.6}
+  .bx-2{fill:#F2F0EC;stroke:#DAD6CE;stroke-width:1.4}
+  .bx-in{fill:#FFFFFF;stroke:#DAD6CE;stroke-width:1.2}
+  .bx-btc{fill:rgba(183,121,31,0.10);stroke:#B7791F;stroke-width:2.4}
+  .bx-lan{fill:rgba(29,107,44,0.09);stroke:#1D6B2C;stroke-width:1.9}
+  .bx-auth{fill:rgba(44,90,168,0.09);stroke:#2C5AA8;stroke-width:2}
+  .bx-exp{fill:rgba(198,40,40,0.08);stroke:#C62828;stroke-width:1.6}
+  .bx-tor{fill:rgba(107,63,160,0.10);stroke:#6B3FA0;stroke-width:2.2}
+  .bx-o{fill:#FFFFFF;stroke:#C62828;stroke-width:2}
+  .bx-g{fill:#FFFFFF;stroke:#1D6B2C;stroke-width:2}
+
+  .ln{stroke:#1A1A1F;stroke-width:2;fill:none}
+  .ln-thin{stroke:#DAD6CE;stroke-width:1;fill:none}
+  /* fill:none matters on every one of these: the bracket paths are open
+     outlines, and without it a browser fills them solid black. */
+  .ln-btc{stroke:#B7791F;stroke-width:2;fill:none}
+  .ln-tor{stroke:#6B3FA0;stroke-width:2.4;fill:none}
+  .ln-exp{stroke:#C62828;stroke-width:2.4;fill:none}
+  .ln-auth{stroke:#2C5AA8;stroke-width:2.3;fill:none}
+  .ln-lan{stroke:#1D6B2C;stroke-width:2.2;fill:none}
+  .ln-mut{stroke:#5C5C66;stroke-width:2;fill:none}
+  .ln-dash{stroke:#8A8A94;stroke-width:1.6;fill:none;stroke-dasharray:5 4}
+  .ln-sep{stroke:#E8E5DF;stroke-width:1;fill:none}
+
+  .t-lg{font-size:25px;font-weight:700} .t-md{font-size:20px;font-weight:600}
+  .t-sm{font-size:17px;font-weight:600} .t-xs{font-size:15px} .t-xxs{font-size:14px}
+  .t-zone{font-size:18px;font-weight:600;letter-spacing:1.5px}
+  .t-eyebrow{font-size:15px;font-weight:700;letter-spacing:1.4px}
+  .mid{text-anchor:middle}
+</style>
+<rect x="0" y="0" width="100%" height="100%" fill="#FAF9F6"/>
+<svg x="40" y="20" width="44" height="44" viewBox="0 0 64 64"><g transform="translate(0.00630876,-0.00301984)"><path fill="#1a1a1f" d="m63.033,39.744c-4.274,17.143-21.637,27.576-38.782,23.301-17.138-4.274-27.571-21.638-23.295-38.78,4.272-17.145,21.635-27.579,38.775-23.305,17.144,4.274,27.576,21.64,23.302,38.784z"/><path fill="#F7931A" d="m46.103,27.444c0.637-4.258-2.605-6.547-7.038-8.074l1.438-5.768-3.511-0.875-1.4,5.616c-0.923-0.23-1.871-0.447-2.813-0.662l1.41-5.653-3.509-0.875-1.439,5.766c-0.764-0.174-1.514-0.346-2.242-0.527l0.004-0.018-4.842-1.209-0.934,3.75s2.605,0.597,2.55,0.634c1.422,0.355,1.679,1.296,1.636,2.042l-1.638,6.571c0.098,0.025,0.225,0.061,0.365,0.117-0.117-0.029-0.242-0.061-0.371-0.092l-2.296,9.205c-0.174,0.432-0.615,1.08-1.609,0.834,0.035,0.051-2.552-0.637-2.552-0.637l-1.743,4.019,4.569,1.139c0.85,0.213,1.683,0.436,2.503,0.646l-1.453,5.834,3.507,0.875,1.439-5.772c0.958,0.26,1.888,0.5,2.798,0.726l-1.434,5.745,3.511,0.875,1.453-5.823c5.987,1.133,10.489,0.676,12.384-4.739,1.527-4.36-0.076-6.875-3.226-8.515,2.294-0.529,4.022-2.038,4.483-5.155zm-8.022,11.249c-1.085,4.36-8.426,2.003-10.806,1.412l1.928-7.729c2.38,0.594,10.012,1.77,8.878,6.317zm1.086-11.312c-0.99,3.966-7.1,1.951-9.082,1.457l1.748-7.01c1.982,0.494,8.365,1.416,7.334,5.553z"/></g></svg>
+<text x="96" y="42" font-size="21" font-weight="700"><tspan fill="#1A1A1F">mem</tspan><tspan fill="#B7791F">paper</tspan></text>
+<text x="96" y="64" font-size="15" fill="#5C5C66">Latency and reliability</text>
+<text x="1240" y="42" font-size="13" fill="#8A8A94" text-anchor="end">github.com/satcat21/btc-mempaper</text>
+<text x="1240" y="63" font-size="13" fill="#8A8A94" text-anchor="end">2026</text>
+<line x1="40" y1="80" x2="1240" y2="80" stroke="#DAD6CE" stroke-width="1"/>
+
+          <defs>
+            <marker id="s9t" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-t3"/></marker>
+          </defs>
+
+          <text x="60" y="126" class="t-eyebrow f-t3">TIME TO FETCH ONE REQUEST</text>
+
+          <text x="60" y="178" class="t-xs f-t">direct</text>
+          <rect x="250" y="160" width="46" height="26" rx="4" class="bx-lan"/>
+          <text x="312" y="180" class="t-xs f-t2">~0.1 s</text>
+
+          <text x="60" y="226" class="t-xs f-t">VPN</text>
+          <rect x="250" y="208" width="66" height="26" rx="4" class="bx-auth"/>
+          <text x="332" y="228" class="t-xs f-t2">~0.15 s</text>
+
+          <text x="60" y="274" class="t-xs f-t">Tor → clearnet</text>
+          <rect x="250" y="256" width="210" height="26" rx="4" class="bx-tor"/>
+          <text x="476" y="276" class="t-xs f-t2">0.5 – 2 s</text>
+
+          <text x="60" y="322" class="t-xs f-t">Tor → .onion</text>
+          <rect x="250" y="304" width="330" height="26" rx="4" class="bx-tor"/>
+          <text x="596" y="324" class="t-xs f-t2">1 – 4 s</text>
+
+          <line x1="60" y1="360" x2="1220" y2="360" class="ln-sep"/>
+          <text x="60" y="398" class="t-eyebrow f-t3">WHAT MEMPAPER IS ALREADY WAITING ON</text>
+
+          <text x="60" y="448" class="t-xs f-t">e-ink refresh</text>
+          <rect x="250" y="430" width="620" height="26" rx="4" class="bx-btc"/>
+          <text x="886" y="450" class="t-xs f-btc">~35 s · local hardware</text>
+
+          <text x="60" y="496" class="t-xs f-t">precache cycle</text>
+          <rect x="250" y="478" width="840" height="26" rx="4" class="bx-soft"/>
+          <text x="1106" y="498" class="t-xs f-t2">300 s</text>
+
+          <text x="60" y="544" class="t-xs f-t">block interval</text>
+          <rect x="250" y="526" width="940" height="26" rx="4" class="bx-soft"/>
+          <text x="1206" y="546" class="t-xs f-t2">~600 s</text>
+
+          <rect x="60" y="580" width="566" height="112" rx="9" class="bx-tor"/>
+          <text x="86" y="612" class="t-xs f-tor" font-weight="700">LATENCY VERDICT</text>
+          <text x="86" y="642" class="t-xxs f-t">~4 s worst case, on events every ~600 s, feeding a panel</text>
+          <text x="86" y="666" class="t-xxs f-t">that takes ~35 s to redraw. It vanishes into slower hardware.</text>
+
+          <rect x="654" y="580" width="566" height="112" rx="9" class="bx-2"/>
+          <text x="680" y="612" class="t-xs f-t2" font-weight="700">RELIABILITY VERDICT</text>
+          <text x="680" y="642" class="t-xxs f-t">Circuits break more often than direct TCP — but the cost is one</text>
+          <text x="680" y="666" class="t-xxs f-t">missed push and a 30 s reconnect, which the app already handles.</text>
+        </svg>

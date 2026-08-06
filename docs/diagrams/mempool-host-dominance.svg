@@ -1,0 +1,114 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" role="img" aria-label="Every mempool call resolves to one configurable destination, the mempool host. Bitaxe miners are LAN-only and never routable. Three further destinations are optional and off by default: a webhook relay, api.github.com for update checks, and einundzwanzig-memes.space for meme sync. Choosing where the mempool host points therefore decides almost the entire privacy posture in one setting.">
+<style>
+  svg { font-family: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, "Liberation Mono", monospace; }
+
+  .f-t{fill:#1A1A1F} .f-t2{fill:#5C5C66} .f-t3{fill:#8A8A94}
+  .f-btc{fill:#B7791F} .f-lan{fill:#1D6B2C} .f-auth{fill:#2C5AA8}
+  .f-exp{fill:#C62828} .f-tor{fill:#6B3FA0}
+
+  .zone{fill:none;stroke-width:1.5;stroke-dasharray:7 5}
+  .zone-lan{fill:rgba(29,107,44,0.09);stroke:#1D6B2C}
+  .zone-exp{fill:rgba(198,40,40,0.08);stroke:#C62828}
+  .zone-net{fill:#F2F0EC;stroke:#DAD6CE}
+  .zone-tor{fill:rgba(107,63,160,0.10);stroke:#6B3FA0}
+  .zone-auth{fill:rgba(44,90,168,0.09);stroke:#2C5AA8}
+
+  .bx{fill:#FFFFFF;stroke:#1A1A1F;stroke-width:1.6}
+  .bx-soft{fill:#FFFFFF;stroke:#DAD6CE;stroke-width:1.6}
+  .bx-2{fill:#F2F0EC;stroke:#DAD6CE;stroke-width:1.4}
+  .bx-in{fill:#FFFFFF;stroke:#DAD6CE;stroke-width:1.2}
+  .bx-btc{fill:rgba(183,121,31,0.10);stroke:#B7791F;stroke-width:2.4}
+  .bx-lan{fill:rgba(29,107,44,0.09);stroke:#1D6B2C;stroke-width:1.9}
+  .bx-auth{fill:rgba(44,90,168,0.09);stroke:#2C5AA8;stroke-width:2}
+  .bx-exp{fill:rgba(198,40,40,0.08);stroke:#C62828;stroke-width:1.6}
+  .bx-tor{fill:rgba(107,63,160,0.10);stroke:#6B3FA0;stroke-width:2.2}
+  .bx-o{fill:#FFFFFF;stroke:#C62828;stroke-width:2}
+  .bx-g{fill:#FFFFFF;stroke:#1D6B2C;stroke-width:2}
+
+  .ln{stroke:#1A1A1F;stroke-width:2;fill:none}
+  .ln-thin{stroke:#DAD6CE;stroke-width:1;fill:none}
+  /* fill:none matters on every one of these: the bracket paths are open
+     outlines, and without it a browser fills them solid black. */
+  .ln-btc{stroke:#B7791F;stroke-width:2;fill:none}
+  .ln-tor{stroke:#6B3FA0;stroke-width:2.4;fill:none}
+  .ln-exp{stroke:#C62828;stroke-width:2.4;fill:none}
+  .ln-auth{stroke:#2C5AA8;stroke-width:2.3;fill:none}
+  .ln-lan{stroke:#1D6B2C;stroke-width:2.2;fill:none}
+  .ln-mut{stroke:#5C5C66;stroke-width:2;fill:none}
+  .ln-dash{stroke:#8A8A94;stroke-width:1.6;fill:none;stroke-dasharray:5 4}
+  .ln-sep{stroke:#E8E5DF;stroke-width:1;fill:none}
+
+  .t-lg{font-size:25px;font-weight:700} .t-md{font-size:20px;font-weight:600}
+  .t-sm{font-size:17px;font-weight:600} .t-xs{font-size:15px} .t-xxs{font-size:14px}
+  .t-zone{font-size:18px;font-weight:600;letter-spacing:1.5px}
+  .t-eyebrow{font-size:15px;font-weight:700;letter-spacing:1.4px}
+  .mid{text-anchor:middle}
+</style>
+<rect x="0" y="0" width="100%" height="100%" fill="#FAF9F6"/>
+<svg x="40" y="20" width="44" height="44" viewBox="0 0 64 64"><g transform="translate(0.00630876,-0.00301984)"><path fill="#1a1a1f" d="m63.033,39.744c-4.274,17.143-21.637,27.576-38.782,23.301-17.138-4.274-27.571-21.638-23.295-38.78,4.272-17.145,21.635-27.579,38.775-23.305,17.144,4.274,27.576,21.64,23.302,38.784z"/><path fill="#F7931A" d="m46.103,27.444c0.637-4.258-2.605-6.547-7.038-8.074l1.438-5.768-3.511-0.875-1.4,5.616c-0.923-0.23-1.871-0.447-2.813-0.662l1.41-5.653-3.509-0.875-1.439,5.766c-0.764-0.174-1.514-0.346-2.242-0.527l0.004-0.018-4.842-1.209-0.934,3.75s2.605,0.597,2.55,0.634c1.422,0.355,1.679,1.296,1.636,2.042l-1.638,6.571c0.098,0.025,0.225,0.061,0.365,0.117-0.117-0.029-0.242-0.061-0.371-0.092l-2.296,9.205c-0.174,0.432-0.615,1.08-1.609,0.834,0.035,0.051-2.552-0.637-2.552-0.637l-1.743,4.019,4.569,1.139c0.85,0.213,1.683,0.436,2.503,0.646l-1.453,5.834,3.507,0.875,1.439-5.772c0.958,0.26,1.888,0.5,2.798,0.726l-1.434,5.745,3.511,0.875,1.453-5.823c5.987,1.133,10.489,0.676,12.384-4.739,1.527-4.36-0.076-6.875-3.226-8.515,2.294-0.529,4.022-2.038,4.483-5.155zm-8.022,11.249c-1.085,4.36-8.426,2.003-10.806,1.412l1.928-7.729c2.38,0.594,10.012,1.77,8.878,6.317zm1.086-11.312c-0.99,3.966-7.1,1.951-9.082,1.457l1.748-7.01c1.982,0.494,8.365,1.416,7.334,5.553z"/></g></svg>
+<text x="96" y="42" font-size="21" font-weight="700"><tspan fill="#1A1A1F">mem</tspan><tspan fill="#B7791F">paper</tspan></text>
+<text x="96" y="64" font-size="15" fill="#5C5C66">One setting decides the privacy posture</text>
+<text x="1240" y="42" font-size="13" fill="#8A8A94" text-anchor="end">github.com/satcat21/btc-mempaper</text>
+<text x="1240" y="63" font-size="13" fill="#8A8A94" text-anchor="end">2026</text>
+<line x1="40" y1="80" x2="1240" y2="80" stroke="#DAD6CE" stroke-width="1"/>
+
+          <defs>
+            <marker id="s2t" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-btc"/></marker>
+            <marker id="s2l" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-lan"/></marker>
+            <marker id="s2d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-t3"/></marker>
+          </defs>
+
+          <text x="60" y="128" class="t-eyebrow f-t3">EVERY OUTBOUND CALL, GROUPED BY DESTINATION</text>
+
+          <!-- left: the calls -->
+          <rect x="60" y="152" width="300" height="286" rx="9" class="bx-btc"/>
+          <text x="210" y="188" class="t-sm mid f-btc">every mempool call</text>
+          <text x="210" y="216" class="t-xxs mid f-t2">blocks · fees · prices</text>
+          <text x="210" y="240" class="t-xxs mid f-t2">hashrate · difficulty · txids</text>
+          <text x="210" y="264" class="t-xxs mid f-t2">addresses · block WebSocket</text>
+          <line x1="86" y1="286" x2="334" y2="286" class="ln-thin"/>
+          <text x="210" y="316" class="t-xs mid f-t">one destination, one setting</text>
+          <rect x="86" y="334" width="248" height="38" rx="5" class="bx-2"/>
+          <text x="210" y="359" class="t-xs mid f-btc">mempool_host</text>
+          <text x="210" y="400" class="t-xxs mid f-exp">includes your wallet addresses</text>
+          <text x="210" y="424" class="t-xxs mid f-t2">— the only sensitive payload</text>
+
+          <rect x="60" y="452" width="300" height="96" rx="9" class="bx-lan"/>
+          <text x="210" y="486" class="t-sm mid f-lan">Bitaxe miners</text>
+          <text x="210" y="512" class="t-xxs mid f-t2">private IP, never routable</text>
+          <text x="210" y="534" class="t-xxs mid f-lan">stays on the LAN by definition</text>
+
+          <rect x="60" y="568" width="300" height="122" rx="9" class="bx-2"/>
+          <text x="210" y="600" class="t-sm mid f-t2">3 · optional</text>
+          <text x="210" y="624" class="t-xxs mid f-t3">your webhook relay</text>
+          <text x="210" y="646" class="t-xxs mid f-t3">api.github.com</text>
+          <text x="210" y="668" class="t-xxs mid f-t3">einundzwanzig-memes.space</text>
+
+          <!-- one setting, three possible destinations -->
+          <line x1="360" y1="353" x2="440" y2="353" class="ln-mut"/>
+          <path d="M 440 272 L 440 560" class="ln-mut" fill="none"/>
+          <line x1="440" y1="272" x2="492" y2="272" class="ln-mut" marker-end="url(#s2d)"/>
+          <line x1="440" y1="416" x2="492" y2="416" class="ln-mut" marker-end="url(#s2d)"/>
+          <line x1="440" y1="560" x2="492" y2="560" class="ln-mut" marker-end="url(#s2d)"/>
+          <!-- above the bracket: the 80px gap beside it is narrower than the label -->
+          <text x="430" y="258" class="t-xxs mid f-t2">points at one of</text>
+
+          <!-- right: the consequence -->
+          <rect x="500" y="212" width="720" height="120" rx="9" class="bx-exp"/>
+          <text x="530" y="250" class="t-md f-exp">Point it at a public instance</text>
+          <text x="530" y="284" class="t-xs f-t">That operator receives your home IP paired with every address you watch.</text>
+          <text x="530" y="312" class="t-xxs f-t2">Every mempool endpoint, including the only sensitive one, lands in one place.</text>
+
+          <rect x="500" y="356" width="720" height="120" rx="9" class="bx-lan"/>
+          <text x="530" y="394" class="t-md f-lan">Point it at your own node</text>
+          <text x="530" y="428" class="t-xs f-t">Every mempool endpoint stops crossing your router entirely.</text>
+          <text x="530" y="456" class="t-xxs f-t2">The remaining two are LAN-local and optional. Nothing to mitigate.</text>
+
+          <rect x="500" y="500" width="720" height="120" rx="9" class="bx-tor"/>
+          <text x="530" y="538" class="t-md f-tor">Point it at an onion address</text>
+          <text x="530" y="572" class="t-xs f-t">Same public data, but the operator sees a circuit instead of your IP.</text>
+          <text x="530" y="600" class="t-xxs f-t2">Requires proxy support that mempaper does not have yet.</text>
+
+          <rect x="500" y="644" width="720" height="46" rx="8" class="bx-2"/>
+          <text x="530" y="673" class="t-xs f-t">One config value decides almost the entire privacy posture.</text>
+        </svg>
