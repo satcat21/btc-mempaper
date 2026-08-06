@@ -15,7 +15,8 @@ from utils.technical_config import build_mempool_api_url
 class MempoolAPI:
     """Handles communication with Bitcoin mempool API."""
     
-    def __init__(self, host="127.0.0.1", port="4081", use_https=False, verify_ssl=True, username=None, password=None):
+    def __init__(self, host="127.0.0.1", port="4081", use_https=False, verify_ssl=True,
+                 username=None, password=None, proxies=None):
         self.host = host
         self.port = port
         self.use_https = use_https
@@ -23,7 +24,16 @@ class MempoolAPI:
         self.username = username
         self.password = password
         self.auth = HTTPBasicAuth(username, password) if username and password else None
+        # None when Tor routing is off — requests treats that as "no proxy".
+        self.proxies = proxies
         self.base_url = build_mempool_api_url(host, port, use_https)
+
+        # Timeouts below are tuned for a LAN or clearnet instance. Over Tor a
+        # request also pays circuit setup and hidden-service descriptor lookup,
+        # which alone can exceed the 5 s fast-path budget — so a working onion
+        # would otherwise be reported as unreachable. Scale rather than replace,
+        # keeping the relative fast/slow distinction between call sites.
+        self._timeout_scale = 4 if proxies else 1
         
         # Fallback values for when API is unavailable
         self.fallback_data = {
@@ -40,7 +50,7 @@ class MempoolAPI:
         """
         try:
             url = f"{self.base_url}/blocks/tip/height"
-            response = requests.get(url, timeout=5, verify=self.verify_ssl, auth=self.auth)
+            response = requests.get(url, timeout=5 * self._timeout_scale, verify=self.verify_ssl, auth=self.auth, proxies=self.proxies)
             response.raise_for_status()
             height_str = response.text.strip()
             
@@ -67,7 +77,7 @@ class MempoolAPI:
         """
         try:
             url = f"{self.base_url}/blocks/tip/hash"
-            response = requests.get(url, timeout=5, verify=self.verify_ssl, auth=self.auth)
+            response = requests.get(url, timeout=5 * self._timeout_scale, verify=self.verify_ssl, auth=self.auth, proxies=self.proxies)
             response.raise_for_status()
             return response.text.strip()
         except requests.RequestException as e:
@@ -86,7 +96,7 @@ class MempoolAPI:
         """
         try:
             url = f"{self.base_url}/block/{block_hash}"
-            response = requests.get(url, timeout=5, verify=self.verify_ssl, auth=self.auth)
+            response = requests.get(url, timeout=5 * self._timeout_scale, verify=self.verify_ssl, auth=self.auth, proxies=self.proxies)
             response.raise_for_status()
             data = response.json()
             return int(data.get("height", 0))
@@ -175,7 +185,7 @@ class MempoolAPI:
         """
         try:
             url = f"{self.base_url}/v1/fees/recommended"
-            response = requests.get(url, timeout=10, verify=self.verify_ssl, auth=self.auth)
+            response = requests.get(url, timeout=10 * self._timeout_scale, verify=self.verify_ssl, auth=self.auth, proxies=self.proxies)
             response.raise_for_status()
             return response.json()
         except requests.RequestException as e:
@@ -220,7 +230,7 @@ class MempoolAPI:
         """
         try:
             url = f"{self.base_url}/v1/mining/hashrate/1m"
-            response = requests.get(url, timeout=10, verify=self.verify_ssl, auth=self.auth)
+            response = requests.get(url, timeout=10 * self._timeout_scale, verify=self.verify_ssl, auth=self.auth, proxies=self.proxies)
             response.raise_for_status()
             data = response.json()
             return {
@@ -241,7 +251,7 @@ class MempoolAPI:
         """
         try:
             url = f"{self.base_url}/v1/difficulty-adjustment"
-            response = requests.get(url, timeout=10, verify=self.verify_ssl, auth=self.auth)
+            response = requests.get(url, timeout=10 * self._timeout_scale, verify=self.verify_ssl, auth=self.auth, proxies=self.proxies)
             response.raise_for_status()
             return response.json()
         except requests.RequestException as e:

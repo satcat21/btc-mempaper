@@ -40,7 +40,9 @@ from lib.websocket_client import MempoolWebSocket
 from lib.image_renderer import ImageRenderer
 from utils.translations import translations
 from managers.config_manager import ConfigManager
-from utils.technical_config import TechnicalConfig, build_mempool_api_url
+from utils.technical_config import (TechnicalConfig, build_mempool_api_url,
+                                    build_mempool_proxies, build_mempool_ws_proxy_kwargs,
+                                    is_onion_host, MEMPOOL_ONION_PRESETS)
 from utils.security_config import SecurityConfig
 from utils.color_lut import ColorLUT
 from managers.auth_manager import AuthManager, require_auth, require_web_auth, allow_public_or_auth, require_rate_limit
@@ -2183,17 +2185,24 @@ class MempaperApp:
         mempool_username = self.config.get("mempool_username", "")
         mempool_password = self.config.get("mempool_password", "")
         
+        mempool_proxies = build_mempool_proxies(self.config)
+
         if not hasattr(self, '_api_clients_initialized'):
             print(f"🌐 Mempool API: {build_mempool_api_url(mempool_host, mempool_rest_port, mempool_use_https)}")
+            if mempool_proxies:
+                print(f"🧅 Mempool traffic routed via Tor "
+                      f"({self.config.get('tor_socks_host', '127.0.0.1')}:"
+                      f"{self.config.get('tor_socks_port', 9050)})")
             self._api_clients_initialized = True
-        
+
         self.mempool_api = MempoolAPI(
             host=mempool_host,
             port=mempool_rest_port,
             use_https=mempool_use_https,
             verify_ssl=mempool_verify_ssl,
             username=mempool_username or None,
-            password=mempool_password or None
+            password=mempool_password or None,
+            proxies=mempool_proxies
         )
     
     def _init_websocket(self):
@@ -2225,7 +2234,8 @@ class MempaperApp:
             on_new_block_callback=self.on_new_block_received,
             verify_ssl=mempool_verify_ssl,
             username=mempool_username or None,
-            password=mempool_password or None
+            password=mempool_password or None,
+            proxy_kwargs=build_mempool_ws_proxy_kwargs(self.config)
         )
         
         # Configure network outage tolerance (how long to retry before giving up)
@@ -4876,9 +4886,14 @@ class MempaperApp:
 
         if enabled:
             project_dir = os.path.dirname(os.path.abspath(__file__))
+            # The sync script needs requests/PySocks, which live in the venv only —
+            # cron runs with a bare environment, so name the interpreter by full
+            # path rather than relying on anything being activated. The python3
+            # fallback is for a dev checkout without a venv; on a real install
+            # .venv always exists, and the script warns if it is run outside it.
             venv_python = os.path.join(project_dir, '.venv', 'bin', 'python')
             python = venv_python if os.path.exists(venv_python) else 'python3'
-            script = os.path.join(project_dir, 'tools', 'download_all_memes.py')
+            script = os.path.join(project_dir, 'tools', 'sync_memes.py')
             log_dir = os.path.join(project_dir, 'logs')
             os.makedirs(log_dir, exist_ok=True)
             log_file = os.path.join(log_dir, 'meme-sync.log')
@@ -6864,6 +6879,15 @@ class MempaperApp:
             auth = _Auth(username, password) if username and password else None
             ws_scheme = 'wss' if use_https else 'ws'
 
+            # Tor adds 1-4 s per request, so the clearnet timeouts below would
+            # report a healthy onion service as timing out. Widen them, and
+            # route the checks through the same proxy the app itself uses.
+            _proxies = build_mempool_proxies(cfg)
+            _via_tor = bool(_proxies)
+            _rest_timeout = (10, 25) if _via_tor else (3, 5)
+            _ws_connect_timeout = 20 if _via_tor else 3
+            _ws_read_timeout = 20 if _via_tor else 5
+
             checks_def = [
                 ('Block height',  f'{base_url}/blocks/tip/height'),
                 ('Price API',     f'{base_url}/v1/prices'),
@@ -6877,7 +6901,8 @@ class MempaperApp:
             def _check(name, url):
                 t0 = _time.time()
                 try:
-                    r = _req.get(url, timeout=(3, 5), verify=verify_ssl, auth=auth)
+                    r = _req.get(url, timeout=_rest_timeout, verify=verify_ssl,
+                                 auth=auth, proxies=_proxies)
                     latency = round((_time.time() - t0) * 1000)
                     if not r.ok:
                         snippet = r.text[:200].strip() if r.text else ''
@@ -6905,10 +6930,14 @@ class MempaperApp:
                             'detail': f'HTTP {r.status_code}'}
                 except _req.exceptions.ConnectTimeout:
                     return {'name': name, 'url': url, 'ok': False,
-                            'error': f'Connection timed out (3 s) — check host/port and firewall rules.'}
+                            'error': f'Connection timed out ({_rest_timeout[0]} s) — '
+                                     + ('is the Tor daemon running and reachable?' if _via_tor
+                                        else 'check host/port and firewall rules.')}
                 except _req.exceptions.ReadTimeout:
                     return {'name': name, 'url': url, 'ok': False,
-                            'error': f'Server connected but response timed out (5 s) — mempool may be overloaded.'}
+                            'error': f'Server connected but response timed out ({_rest_timeout[1]} s) — '
+                                     + ('slow Tor circuit, or the onion service is down.' if _via_tor
+                                        else 'mempool may be overloaded.')}
                 except _req.exceptions.SSLError as e:
                     return {'name': name, 'url': url, 'ok': False,
                             'error': f'SSL error: {str(e)[:150]} — try disabling "Verify SSL" in Advanced settings.'}
@@ -6932,7 +6961,21 @@ class MempaperApp:
                     port = p.port or (443 if ws_scheme == 'wss' else 80)
                     path_str = p.path or '/api/v1/ws'
 
-                    sock = _socket.create_connection((h, port), timeout=3)
+                    if _via_tor:
+                        # A plain socket ignores the SOCKS proxy entirely and would
+                        # try to resolve the .onion locally, which always fails.
+                        # PySocks (already a dependency) proxies at socket level;
+                        # rdns=True keeps resolution on the Tor side.
+                        import socks as _socks
+                        sock = _socks.socksocket()
+                        sock.set_proxy(_socks.SOCKS5,
+                                       cfg.get('tor_socks_host', '127.0.0.1'),
+                                       int(cfg.get('tor_socks_port', 9050)),
+                                       rdns=True)
+                        sock.settimeout(_ws_connect_timeout)
+                        sock.connect((h, port))
+                    else:
+                        sock = _socket.create_connection((h, port), timeout=_ws_connect_timeout)
 
                     if ws_scheme == 'wss':
                         ctx = _ssl.create_default_context()
@@ -6960,7 +7003,7 @@ class MempaperApp:
                         hdrs.append(f'Authorization: Basic {creds}')
 
                     sock.sendall(('\r\n'.join(hdrs) + '\r\n\r\n').encode())
-                    sock.settimeout(5)
+                    sock.settimeout(_ws_read_timeout)
 
                     resp = b''
                     while b'\r\n\r\n' not in resp:
@@ -7092,6 +7135,10 @@ class MempaperApp:
                     'schema': self.config_manager.get_config_schema(schema_translations),
                     'categories': self.config_manager.get_categories(schema_translations),
                     'color_options': self.config_manager.get_color_options(),
+                    # Offered as dropdown suggestions on the mempool host field
+                    # when Tor is enabled; the field stays free-text so a
+                    # self-hosted hidden service can be entered instead.
+                    'mempool_onion_presets': MEMPOOL_ONION_PRESETS,
                     'current_user': _session.get('username', ''),
                     'btc_holidays': btc_h_compact,
                     'reboot_window': {'hour': _rbt[0], 'minute': _rbt[1]} if _rbt else None,
@@ -8998,14 +9045,14 @@ class MempaperApp:
                 }), 502
 
         def _meme_download_cmd(project_dir: str, extra_args: list | None = None) -> list:
-            """Build the subprocess command for tools/download_all_memes.py.
+            """Build the subprocess command for tools/sync_memes.py.
 
             Automatically appends --tor when tor_meme_downloads is enabled in config.
             extra_args (e.g. ['--update'] or ['--status']) are appended after the tor flag.
             """
             venv_python = os.path.join(project_dir, '.venv', 'bin', 'python')
             python = venv_python if os.path.exists(venv_python) else 'python3'
-            script = os.path.join(project_dir, 'tools', 'download_all_memes.py')
+            script = os.path.join(project_dir, 'tools', 'sync_memes.py')
             cmd = [python, script]
             if self.config_manager.get('tor_meme_downloads', False):
                 cmd.append('--tor')

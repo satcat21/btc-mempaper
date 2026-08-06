@@ -14,6 +14,9 @@ import time
 from typing import Dict, Any, List, Callable, Optional
 
 from utils.atomic_io import atomic_write_json
+from utils.technical_config import (is_onion_host, normalize_host,
+                                    MEMPOOL_DEFAULT_ONION, MEMPOOL_ONION_PRESETS,
+                                    MEMPOOL_ONION_SUPERSEDED)
 
 # File watching functionality (install with: pip install watchdog)
 try:
@@ -373,6 +376,9 @@ class ConfigManager:
             "mempool_ws_path": "/api/v1/ws",
             "mempool_use_https": False,
             "mempool_verify_ssl": True,
+            "mempool_use_tor": False,
+            "tor_socks_host": "127.0.0.1",
+            "tor_socks_port": 9050,
             "mempool_username": "",
             "mempool_password": "",
             "network_outage_tolerance_minutes": 45,  # Time to retry connection before giving up
@@ -527,6 +533,7 @@ class ConfigManager:
             "eink_dark_mode",
             "mempool_use_https",
             "mempool_verify_ssl",
+            "mempool_use_tor",
             "mempool_is_private",
             "opsec_mode_enabled",
             "public_dashboard",
@@ -604,6 +611,7 @@ class ConfigManager:
         string_settings = [
             "mempool_host",
             "mempool_ws_path",
+            "tor_socks_host",
             "mempool_username",
             "mempool_password",
             "omni_device_name",
@@ -625,6 +633,7 @@ class ConfigManager:
         int_settings = {
             "mempool_rest_port": (1, 65535),
             "mempool_ws_port": (1, 65535),
+            "tor_socks_port": (1, 65535),
             "network_outage_tolerance_minutes": (5, 10080),  # 5 min to 1 week
             "display_width": (100, 2000),
             "display_height": (100, 2000),
@@ -802,7 +811,80 @@ class ConfigManager:
                         validated[setting] = value
                 except (ValueError, TypeError):
                     pass
-        
+
+        # Users paste whole URLs into the host field; keep only the hostname so
+        # build_mempool_api_url() does not end up with a doubled scheme.
+        if "mempool_host" in validated:
+            _clean = normalize_host(validated["mempool_host"])
+            if _clean != validated["mempool_host"]:
+                print(f"🌐 Normalized mempool_host to '{_clean}'")
+            validated["mempool_host"] = _clean
+
+        _host = validated.get("mempool_host", "")
+
+        # Migrate an onion address that a previous release shipped as official
+        # and has since replaced. Config files are user data and survive
+        # updates, so without this an existing install stays pointed at a dead
+        # hidden service even though the new address shipped in the update.
+        if _host and _host in MEMPOOL_ONION_SUPERSEDED:
+            print(f"🧅 Onion address '{_host[:16]}…' has been superseded — "
+                  f"migrating to the current official address.")
+            _host = MEMPOOL_DEFAULT_ONION
+            validated["mempool_host"] = _host
+
+        # Tor on with no host at all — fall back to the official onion rather
+        # than leaving an unusable blank. A host that is already set is never
+        # replaced: a self-hosted instance may have its own hidden service.
+        if validated.get("mempool_use_tor", False) and not _host:
+            _host = MEMPOOL_DEFAULT_ONION
+            validated["mempool_host"] = _host
+            print(f"🧅 Tor enabled with no host set — defaulting to the official "
+                  f"mempool onion service.")
+
+        # A known onion service dictates its own scheme and port, so apply the
+        # preset's values rather than carrying over whatever the previous
+        # (clearnet) host used. Switching from an https:443 clearnet instance
+        # would otherwise leave https/443 pointed at an onion that only serves
+        # plain HTTP on 80 — the connection is refused and every call times out.
+        _preset = next((p for p in MEMPOOL_ONION_PRESETS if p["host"] == _host), None)
+        if _preset:
+            _want_https, _want_port = _preset["use_https"], _preset["port"]
+            if (validated.get("mempool_use_https") != _want_https
+                    or str(validated.get("mempool_rest_port")) != str(_want_port)):
+                print(f"🧅 Applying {_preset['label']} settings: "
+                      f"{'https' if _want_https else 'http'} on port {_want_port}")
+            validated["mempool_use_https"] = _want_https
+            validated["mempool_rest_port"] = _want_port
+            validated["mempool_ws_port"] = _want_port
+
+        elif is_onion_host(_host):
+            # Self-hosted onion: only reset the scheme when the host is *changing*
+            # from clearnet to onion. A hidden service is already encrypted and
+            # authenticated by its circuit, and the address is the service's
+            # public key, so plain HTTP is the norm — carrying https:443 over
+            # from a clearnet instance just refuses every connection.
+            # Restricting this to the transition means anyone genuinely running
+            # TLS on their onion can still set https afterwards and keep it.
+            try:
+                _prev_host = (self.config or {}).get("mempool_host", "")
+            except Exception:
+                _prev_host = ""
+            if not is_onion_host(_prev_host) and validated.get("mempool_use_https"):
+                validated["mempool_use_https"] = False
+                validated["mempool_rest_port"] = 80
+                validated["mempool_ws_port"] = 80
+                print("🧅 Switched to an onion host — defaulting to http on port 80 "
+                      "(the circuit already encrypts). Set HTTPS again if your "
+                      "hidden service really terminates TLS.")
+
+        # A .onion host is unreachable without a SOCKS proxy: the OS resolver
+        # cannot resolve one. Saving that pair would fail every request with a
+        # DNS error and no hint why, so turn Tor on rather than persist it.
+        if is_onion_host(_host) and not validated.get("mempool_use_tor", False):
+            validated["mempool_use_tor"] = True
+            print("🧅 mempool_host is a .onion address — enabling Tor routing, "
+                  "since onion names cannot resolve without it.")
+
         return validated
     
     def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, Any]:
@@ -1176,6 +1258,44 @@ class ConfigManager:
                 "_lk_open": "open_mempool",
                 "category": "mempool",
                 "order": 1000
+            },
+            "mempool_use_tor": {
+                "type": "boolean",
+                "label": t.get("mempool_use_tor", "Connect via Tor"),
+                "_lk": "mempool_use_tor",
+                "description": t.get(
+                    "mempool_use_tor_desc",
+                    "Route all mempool traffic through a local Tor daemon. Lets you use a .onion "
+                    "address so the instance operator never sees your home IP. Requires Tor running "
+                    "on this device. Bitaxe stays on the LAN and is never proxied."
+                ),
+                "_dk": "mempool_use_tor_desc",
+                "default": False,
+                "category": "mempool",
+                "order": 2
+            },
+            "tor_socks_host": {
+                "type": "text",
+                "label": t.get("tor_socks_host", "Tor SOCKS Host"),
+                "_lk": "tor_socks_host",
+                "placeholder": "127.0.0.1",
+                "default": "127.0.0.1",
+                "category": "mempool",
+                "advanced": True,
+                "order": 6
+            },
+            "tor_socks_port": {
+                "type": "number",
+                "label": t.get("tor_socks_port", "Tor SOCKS Port"),
+                "_lk": "tor_socks_port",
+                "min": 1,
+                "max": 65535,
+                "default": 9050,
+                "description": t.get("tor_socks_port_desc", "Usually 9050 for the Tor daemon, 9150 for Tor Browser."),
+                "_dk": "tor_socks_port_desc",
+                "category": "mempool",
+                "advanced": True,
+                "order": 7
             },
             "mempool_use_https": {
                 "type": "boolean",

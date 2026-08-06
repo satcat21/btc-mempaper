@@ -17,7 +17,8 @@ from typing import List, Set, Dict, Any
 import urllib3
 from requests.auth import HTTPBasicAuth
 from urllib.parse import quote, urlsplit
-from utils.technical_config import build_mempool_api_url
+from utils.technical_config import (build_mempool_api_url, build_mempool_proxies,
+                                    build_mempool_ws_proxy_kwargs)
 
 # Import the new caching system
 from lib.block_reward_cache import BlockRewardCache
@@ -114,6 +115,12 @@ class BlockRewardMonitor:
             self.valid_blocks_count = 0
             self.blocks_by_address = {}
     
+    def _get_mempool_proxies(self):
+        """Proxy dict for mempool REST calls, or None when Tor routing is off."""
+        if not self.config_manager:
+            return None
+        return build_mempool_proxies(self.config_manager.get_current_config())
+
     def _get_mempool_base_url(self) -> str:
         """Get mempool API base URL from configuration."""
         if self.config_manager:
@@ -315,7 +322,8 @@ class BlockRewardMonitor:
         block_height = None
         try:
             base_url = self._get_mempool_base_url()
-            response = requests.get(f"{base_url}/block/{block_hash}", timeout=5, verify=False)
+            response = requests.get(f"{base_url}/block/{block_hash}", timeout=5, verify=False,
+                                    proxies=self._get_mempool_proxies())
             if response.ok:
                 block_data = response.json()
                 if isinstance(block_data, dict):
@@ -386,7 +394,8 @@ class BlockRewardMonitor:
                 try:
                     print(f"👁️ Trying endpoint: {endpoint} (auth={auth_mode})")
                     # Use verify=False for self-signed HTTPS certificates
-                    txids_resp = requests.get(endpoint, timeout=10, verify=False, auth=mempool_auth)
+                    txids_resp = requests.get(endpoint, timeout=10, verify=False, auth=mempool_auth,
+                                               proxies=self._get_mempool_proxies())
                     txids_resp.raise_for_status()
                     txids = txids_resp.json()
                     print(f"✅ Successfully got txids from: {endpoint} (auth={auth_mode})")
@@ -425,7 +434,8 @@ class BlockRewardMonitor:
             coinbase_txid = transaction_ids[0]
             
             # Get coinbase transaction details
-            tx_resp = requests.get(f"{BASE_URL}/tx/{coinbase_txid}", timeout=10, verify=False, auth=mempool_auth)
+            tx_resp = requests.get(f"{BASE_URL}/tx/{coinbase_txid}", timeout=10, verify=False, auth=mempool_auth,
+                               proxies=self._get_mempool_proxies())
             tx_resp.raise_for_status()
             
             return tx_resp.json()
@@ -454,7 +464,8 @@ class BlockRewardMonitor:
         # Startup catch-up: check current block height and process missed blocks
         try:
             base_url = self._get_mempool_base_url()
-            resp = requests.get(f"{base_url}/blocks/tip", timeout=10, verify=False)
+            resp = requests.get(f"{base_url}/blocks/tip", timeout=10, verify=False,
+                                proxies=self._get_mempool_proxies())
             if resp.ok:
                 tip_data = resp.json()
                 current_height = tip_data.get("height") if isinstance(tip_data, dict) else None
@@ -463,7 +474,8 @@ class BlockRewardMonitor:
                     print(f"⚙️ Missed blocks detected: {last_cached_height} → {current_height}. Generating images for missed blocks...")
                     for h in range(last_cached_height + 1, current_height + 1):
                         # Fetch block hash for height
-                        block_resp = requests.get(f"{base_url}/block-height/{h}", timeout=10, verify=False)
+                        block_resp = requests.get(f"{base_url}/block-height/{h}", timeout=10, verify=False,
+                                                     proxies=self._get_mempool_proxies())
                         if block_resp.ok:
                             block_json = block_resp.json()
                             block_hash = None
@@ -556,10 +568,15 @@ class BlockRewardMonitor:
                 # Run forever with keepalive ping/pong to prevent idle timeouts
                 # ping_interval: Send ping every 30s to keep connection alive (prevents 5min timeout)
                 # ping_timeout: Wait 10s for pong response before considering connection dead
+                # Route over Tor when configured; empty dict otherwise.
+                _proxy_kwargs = build_mempool_ws_proxy_kwargs(
+                    self.config_manager.get_current_config() if self.config_manager else None
+                )
                 self.ws.run_forever(
                     sslopt=sslopt,
                     ping_interval=30,  # Send ping every 30 seconds
-                    ping_timeout=10    # Wait 10 seconds for pong response
+                    ping_timeout=10,   # Wait 10 seconds for pong response
+                    **_proxy_kwargs
                 )
             except Exception as e:
                 print(f"⚠️ WebSocket error: {e}")

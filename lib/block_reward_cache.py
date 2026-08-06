@@ -26,6 +26,7 @@ import os
 import requests
 import time
 import threading
+from utils.technical_config import build_mempool_proxies
 from typing import Dict, List, Optional, Tuple, Any
 from datetime import datetime
 import urllib3
@@ -102,6 +103,12 @@ class BlockRewardCache:
         # Fallback
         return "http://127.0.0.1:4081/api"
     
+    def _get_mempool_proxies(self):
+        """Proxy dict for mempool calls, or None when Tor routing is off."""
+        if not self.config_manager:
+            return None
+        return build_mempool_proxies(self.config_manager.get_current_config())
+
     def _get_mempool_verify_ssl(self) -> bool:
         """Get SSL verification setting from configuration."""
         if self.config_manager:
@@ -202,7 +209,8 @@ class BlockRewardCache:
         try:
             base_url = self._get_mempool_base_url()
             verify_ssl = self._get_mempool_verify_ssl()
-            response = requests.get(f"{base_url}/blocks/tip/height", timeout=10, verify=verify_ssl)
+            response = requests.get(f"{base_url}/blocks/tip/height", timeout=10, verify=verify_ssl,
+                                    proxies=self._get_mempool_proxies())
             response.raise_for_status()
             return int(response.text.strip())
         except Exception as e:
@@ -305,7 +313,8 @@ class BlockRewardCache:
         try:
             # Get all transactions for this address
             # Use the address API endpoint to get transaction history
-            tx_response = requests.get(f"{base_url}/address/{address}/txs", timeout=30, verify=verify_ssl)
+            tx_response = requests.get(f"{base_url}/address/{address}/txs", timeout=30, verify=verify_ssl,
+                                       proxies=self._get_mempool_proxies())
             
             if not tx_response.ok:
                 print(f"⚠️ Failed to get transactions for address {self._crop_address_for_log(address)}: {tx_response.status_code}")
@@ -411,7 +420,8 @@ class BlockRewardCache:
             
             for pagination_url in pagination_urls:
                 try:
-                    response = requests.get(pagination_url, timeout=30, verify=self._get_mempool_verify_ssl())
+                    response = requests.get(pagination_url, timeout=30, verify=self._get_mempool_verify_ssl(),
+                                            proxies=self._get_mempool_proxies())
                     if response.ok:
                         transactions = response.json()
                         if transactions:
@@ -480,7 +490,8 @@ class BlockRewardCache:
             verify_ssl = self._get_mempool_verify_ssl()
             
             # Get block transactions
-            txids_response = requests.get(f"{base_url}/block/{block_hash}/txids", timeout=10, verify=verify_ssl)
+            txids_response = requests.get(f"{base_url}/block/{block_hash}/txids", timeout=10, verify=verify_ssl,
+                                          proxies=self._get_mempool_proxies())
             if not txids_response.ok:
                 return False
             
@@ -492,7 +503,8 @@ class BlockRewardCache:
             coinbase_txid = txids[0]
             
             # Get coinbase transaction details
-            tx_response = requests.get(f"{base_url}/tx/{coinbase_txid}", timeout=10, verify=verify_ssl)
+            tx_response = requests.get(f"{base_url}/tx/{coinbase_txid}", timeout=10, verify=verify_ssl,
+                                       proxies=self._get_mempool_proxies())
             if not tx_response.ok:
                 return False
             

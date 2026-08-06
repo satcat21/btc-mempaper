@@ -9,7 +9,7 @@ Based on the reference implementation from image_renderer.py.
 import requests
 import time
 from typing import Dict, Optional, Union
-from utils.technical_config import build_mempool_api_url
+from utils.technical_config import build_mempool_api_url, build_mempool_proxies
 
 
 class BitcoinPriceAPI:
@@ -25,6 +25,8 @@ class BitcoinPriceAPI:
         self.config = config or {}
         self.base_url = self._build_base_url()
         self.mempool_verify_ssl = self.config.get("mempool_verify_ssl", True)
+        # Price comes from the same mempool host, so it follows the same route.
+        self.mempool_proxies = build_mempool_proxies(self.config)
         
         # Price caching to prevent duplicate API calls
         self._price_cache = None
@@ -74,7 +76,8 @@ class BitcoinPriceAPI:
             return self._build_result(self._raw_prices, selected_currency)
 
         try:
-            response = requests.get(f"{self.base_url}/v1/prices", timeout=10, verify=self.mempool_verify_ssl)
+            response = requests.get(f"{self.base_url}/v1/prices", timeout=10,
+                                    verify=self.mempool_verify_ssl, proxies=self.mempool_proxies)
             response.raise_for_status()
             raw_prices = response.json()
 

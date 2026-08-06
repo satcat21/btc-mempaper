@@ -150,6 +150,101 @@ class TechnicalConfig:
         logger.info(f"  🌐 Network outage tolerance: {TechnicalConfig.NETWORK_OUTAGE_TOLERANCE_MINUTES} minutes")
 
 
+# Known public mempool onion services, offered as presets in the config UI.
+# The user can always type their own address instead — self-hosted mempool
+# instances commonly run behind their own hidden service.
+#
+# Verify any address here against the operator's own site before trusting it.
+# A v3 onion address *is* the service's public key plus a checksum, so a
+# corrupted one fails to connect rather than silently reaching an impostor.
+MEMPOOL_ONION_PRESETS = [
+    {
+        "id": "official",
+        "label": "mempool.space (official)",
+        "host": "mempoolhqx4isw62xs7abwphsq7ldayuidyx2v2oethdhhj6mlo2r6ad.onion",
+        "use_https": False,   # onion services carry their own encryption
+        "port": 80,
+    },
+]
+
+MEMPOOL_DEFAULT_ONION = MEMPOOL_ONION_PRESETS[0]["host"]
+
+# Onion addresses that used to be listed above and have since been replaced.
+#
+# The preset list ships in code, so a software update always carries the current
+# address — but a user who already picked the old one has it saved in
+# config.json, which updates never touch. Listing the retired address here lets
+# validate_config() migrate those installs on the next save or startup, instead
+# of silently leaving them pointed at a dead service.
+#
+# When the official address changes: move the old value into this set and put
+# the new one in MEMPOOL_ONION_PRESETS. Nothing else needs to change.
+MEMPOOL_ONION_SUPERSEDED = {
+    # "oldaddress....onion",
+}
+
+
+def normalize_host(host):
+    """Strip scheme, path and trailing slash from a pasted URL.
+
+    mempool_host holds a bare hostname — the scheme comes from
+    mempool_use_https and build_mempool_api_url() appends /api. Users
+    understandably paste a whole URL, which would otherwise produce
+    "http://http://host//api".
+    """
+    h = str(host or "").strip()
+    if not h:
+        return ""
+    for scheme in ("http://", "https://"):
+        if h.lower().startswith(scheme):
+            h = h[len(scheme):]
+            break
+    return h.split("/", 1)[0].strip()
+
+
+def is_onion_host(host):
+    """True when host is a Tor hidden service address."""
+    return normalize_host(host).lower().endswith(".onion")
+
+
+def build_mempool_proxies(config):
+    """Build a requests-style proxy dict for reaching the mempool host over Tor.
+
+    Returns None when Tor routing is off, so callers can pass the result straight
+    through to requests without branching.
+
+    Scoped deliberately to mempool traffic only. Tor refuses to route private
+    addresses, so applying this process-wide would break Bitaxe polling on the
+    LAN — see the Bitaxe client, which never receives these proxies.
+
+    socks5h (rather than socks5) hands hostname resolution to the proxy, which
+    is required for .onion names: the local resolver cannot resolve them.
+    """
+    if not config or not config.get("mempool_use_tor", False):
+        return None
+
+    host = config.get("tor_socks_host", "127.0.0.1") or "127.0.0.1"
+    port = config.get("tor_socks_port", 9050) or 9050
+    endpoint = f"socks5h://{host}:{port}"
+    return {"http": endpoint, "https": endpoint}
+
+
+def build_mempool_ws_proxy_kwargs(config):
+    """Proxy kwargs for websocket-client's run_forever().
+
+    Mirrors build_mempool_proxies() for the WebSocket path. Returns {} when Tor
+    is off so callers can splat it unconditionally.
+    """
+    if not config or not config.get("mempool_use_tor", False):
+        return {}
+
+    return {
+        "proxy_type": "socks5h",
+        "http_proxy_host": config.get("tor_socks_host", "127.0.0.1") or "127.0.0.1",
+        "http_proxy_port": int(config.get("tor_socks_port", 9050) or 9050),
+    }
+
+
 def build_mempool_api_url(host, port, use_https=False):
     """
     Build a mempool API base URL, handling domain vs IP and standard ports.

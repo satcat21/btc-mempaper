@@ -37,5 +37,6 @@ hostapd
 # GPIO (Raspberry Pi)
 python3-gpiozero
 
-# Optional: Tor daemon for anonymous downloads
+# Tor daemon: routes mempool traffic to a .onion instance (mempool_use_tor)
+# and optionally the weekly meme sync (sync_memes.py --tor)
 tor

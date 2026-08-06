@@ -20,7 +20,8 @@ from urllib.parse import urlsplit, urlunsplit
 class MempoolWebSocket:
     """Handles WebSocket connection to mempool for real-time block updates with auto-reconnection."""
     
-    def __init__(self, host, port, path="/api/v1/ws", use_wss=False, on_new_block_callback=None, verify_ssl=True, username=None, password=None):
+    def __init__(self, host, port, path="/api/v1/ws", use_wss=False, on_new_block_callback=None,
+                 verify_ssl=True, username=None, password=None, proxy_kwargs=None):
         """
         Initialize WebSocket connection.
         
@@ -42,7 +43,9 @@ class MempoolWebSocket:
         self.verify_ssl = verify_ssl
         self.username = username
         self.password = password
-        
+        # SOCKS proxy kwargs for run_forever(); empty dict when Tor is off.
+        self.proxy_kwargs = proxy_kwargs or {}
+
         # Build WebSocket URL
         protocol = "wss" if use_wss else "ws"
         
@@ -299,7 +302,8 @@ class MempoolWebSocket:
         self.ws.run_forever(
             sslopt=sslopt,
             ping_interval=30,  # Send ping every 30 seconds
-            ping_timeout=10    # Wait 10 seconds for pong response
+            ping_timeout=10,   # Wait 10 seconds for pong response
+            **self.proxy_kwargs
         )
     
     def start_listener_thread(self):

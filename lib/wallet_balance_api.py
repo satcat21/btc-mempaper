@@ -12,7 +12,7 @@ import urllib3
 import traceback
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-from utils.technical_config import build_mempool_api_url
+from utils.technical_config import build_mempool_api_url, build_mempool_proxies
 import hashlib
 import json
 import time
@@ -124,21 +124,28 @@ class WalletBalanceAPI:
         self.mempool_verify_ssl = self.config.get("mempool_verify_ssl", True)
         
         self.base_url = build_mempool_api_url(mempool_host, mempool_port, mempool_use_https)
-        
-        
+
+        # Tor routing for the mempool host, if enabled. This is the client that
+        # queries derived addresses, so it is the one that matters most for privacy.
+        self.mempool_proxies = build_mempool_proxies(self.config)
+
         # Initialize mempool API client
         self.mempool_api = MempoolAPI(
-            host=mempool_host, 
-            port=str(mempool_port), 
-            use_https=mempool_use_https, 
+            host=mempool_host,
+            port=str(mempool_port),
+            use_https=mempool_use_https,
             verify_ssl=self.mempool_verify_ssl,
             username=self.config.get("mempool_username") or None,
-            password=self.config.get("mempool_password") or None
+            password=self.config.get("mempool_password") or None,
+            proxies=self.mempool_proxies
         )
-        
+
         # Initialize requests session with robust retry logic
         self.session = requests.Session()
         self.session.headers['User-Agent'] = 'python-requests'
+        # Set once on the session so every address lookup inherits it.
+        if self.mempool_proxies:
+            self.session.proxies.update(self.mempool_proxies)
         retry_strategy = Retry(
             total=3,  # Increase retries to handle transient failures
             backoff_factor=1,  # Increase backoff
