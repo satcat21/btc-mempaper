@@ -579,6 +579,7 @@ function setLanguage(lang) {
     // Re-render rebuilds the display select from the raw schema (all options,
     // enabled) - re-lock it, same as the initial page load does.
     setTimeout(_enhanceDisplaySelect, 150);
+    setTimeout(_initTorToggleWatch, 160);
 
     window.scrollTo({ top: savedScrollY, behavior: 'instant' });
 }
@@ -2499,6 +2500,7 @@ async function loadConfiguration() {
         categories = data.categories;
         colorOptions = data.color_options || [];
         window.btcHolidays = data.btc_holidays || {};
+        window.mempoolOnionPresets = data.mempool_onion_presets || [];
         window._rebootWindow = data.reboot_window || null;
         configCurrentUser = data.current_user || '';
         
@@ -2521,6 +2523,7 @@ async function loadConfiguration() {
         setTimeout(_initMempoolPrivacyWatch, 400);
         // Enhance display select with availability badges from API
         setTimeout(_enhanceDisplaySelect, 150);
+    setTimeout(_initTorToggleWatch, 160);
     } catch (error) {
         // console.error('Configuration load error:', error);
         const failedMessage = window.translations?.failed_to_load_configuration || 'Failed to load configuration';
@@ -3888,6 +3891,94 @@ function _startDriverHealthPolling(toast) {
             `;
         }
     }, 2000);
+}
+
+// ── Mempool over Tor ───────────────────────────────────────────
+
+// Swap the host field's placeholder between a clearnet host and a .onion
+// address, and attach the known-onion dropdown when Tor is on.
+//
+// A <datalist> rather than a <select>: it gives the dropdown of known
+// addresses while leaving the field free-text, so anyone running their own
+// hidden service can still type it. A select would force a "Custom…" branch.
+function _applyTorHostHint(hostInput, torOn) {
+    if (!hostInput) return;
+    const t = window.translations || {};
+    hostInput.placeholder = torOn
+        ? (t.mempool_host_placeholder_tor || 'youronionaddress....onion')
+        : '192.168.0.119 or mempool.mydomain.com';
+
+    const LIST_ID = 'mempool-onion-presets';
+    let list = document.getElementById(LIST_ID);
+
+    if (!torOn) {
+        hostInput.removeAttribute('list');
+        if (list) list.remove();
+        return;
+    }
+
+    const presets = (window.mempoolOnionPresets || []);
+    if (!presets.length) return;
+
+    if (!list) {
+        list = document.createElement('datalist');
+        list.id = LIST_ID;
+        hostInput.parentNode.appendChild(list);
+    }
+    list.innerHTML = '';
+    presets.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.host;
+        opt.label = p.label;
+        list.appendChild(opt);
+    });
+    hostInput.setAttribute('list', LIST_ID);
+}
+
+// Over Tor the TLS settings stop carrying their usual meaning: an onion service
+// is already authenticated and encrypted by the circuit itself, and its address
+// *is* the server's public key. Grey the TLS controls out rather than hiding
+// them, so it stays visible that they were deliberately taken out of play.
+function _applyTorMode(torOn) {
+    const t = window.translations || {};
+
+    _applyTorHostHint(document.getElementById('mempool-host-input'), torOn);
+
+    ['mempool_use_https', 'mempool_verify_ssl'].forEach(k => {
+        const el = document.querySelector(`[data-config-key="${k}"]`);
+        if (!el) return;
+        const group = el.closest('.form-group') || el.parentElement;
+        if (!group) return;
+        group.style.opacity = torOn ? '0.45' : '';
+        group.style.pointerEvents = torOn ? 'none' : '';
+        group.title = torOn
+            ? (t.tls_not_needed_over_tor || 'Not needed over Tor — the onion circuit already provides encryption and authentication.')
+            : '';
+    });
+
+    ['tor_socks_host', 'tor_socks_port'].forEach(k => {
+        const el = document.querySelector(`[data-config-key="${k}"]`);
+        const group = el && (el.closest('.form-group') || el.parentElement);
+        if (group) group.style.display = torOn ? '' : 'none';
+    });
+}
+
+function _initTorToggleWatch() {
+    const toggle = document.querySelector('[data-config-key="mempool_use_tor"]');
+    if (!toggle) return;
+
+    const readState = () => {
+        if (typeof toggle.getValue === 'function') return !!toggle.getValue();
+        if (toggle.type === 'checkbox') return toggle.checked;
+        return !!(window.currentConfig && window.currentConfig.mempool_use_tor);
+    };
+
+    _applyTorMode(readState());
+    // Boolean switches here are div-based and emit 'change' on toggle; listen for
+    // click too so the state is picked up either way.
+    ['change', 'click'].forEach(ev =>
+        toggle.addEventListener(ev, () => setTimeout(() => _applyTorMode(readState()), 0))
+    );
 }
 
 // ── Display Select Hint ────────────────────────────────────────
@@ -5674,6 +5765,11 @@ function createFormField(key, field, value) {
                 cb.addEventListener('change', () => {
                     if (window.currentConfig) window.currentConfig.mempool_is_private = cb.checked;
                 });
+
+                // Tor mode changes what belongs in this field, so keep the
+                // placeholder and hint in step with the toggle.
+                hostInput.id = 'mempool-host-input';
+                _applyTorHostHint(hostInput, !!(currentConfig && currentConfig.mempool_use_tor));
 
                 input = wrapper;
             }
