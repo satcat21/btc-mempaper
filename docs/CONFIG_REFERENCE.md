@@ -38,10 +38,13 @@ These settings can be modified via the Web Dashboard (recommended) or by editing
 
 | Web Label | Config Key | Type | Description | Allowed Values / Examples |
 | :--- | :--- | :--- | :--- | :--- |
-| **Mempool Host** | `mempool_host` | String | Mempool instance hostname | `mempool.space` (public), `192.168.1.50` (local) |
+| **Mempool Host** | `mempool_host` | String | Mempool instance hostname. A `.onion` address enables Tor automatically and switches to http on port 80, since onion names cannot resolve without a proxy and the circuit already encrypts | `mempool.space` (public), `192.168.1.50` (local), `...onion` (via Tor) |
 | **Private/Self-Hosted** | `mempool_is_private` | Switch | Marks the instance as self-hosted on your local network; disables privacy warnings for wallet monitoring | `true` (private), `false` (public, default) |
-| **Use HTTPS/SSL** | `mempool_use_https` | Switch | Secure connection | `true` (https://), `false` (http://) |
-| **Verify SSL Cert** | `mempool_verify_ssl` | Switch | Validate SSL certificate | `true` (Verify), `false` (Skip -- for self-signed) |
+| **Connect via Tor** | `mempool_use_tor` | Switch | Route mempool traffic through a local Tor daemon, so a `.onion` host can be used and the instance never sees your IP. Requires `sudo apt install tor` on the device. Only mempool traffic is proxied -- Bitaxe miners stay on the LAN | `true` (via Tor), `false` (direct, default) |
+| **Tor SOCKS Host** | `tor_socks_host` | String | Address of the Tor SOCKS proxy (Advanced) | `127.0.0.1` (default) |
+| **Tor SOCKS Port** | `tor_socks_port` | Number | Port of the Tor SOCKS proxy (Advanced) | `9050` (Tor daemon, default), `9150` (Tor Browser) |
+| **Use HTTPS/SSL** | `mempool_use_https` | Switch | Secure connection. Not used over Tor -- the onion circuit already encrypts and authenticates, so the setting is disabled while Tor is on | `true` (https://), `false` (http://) |
+| **Verify SSL Cert** | `mempool_verify_ssl` | Switch | Validate SSL certificate. Not used over Tor, for the same reason | `true` (Verify), `false` (Skip -- for self-signed) |
 | **REST Port** | `mempool_rest_port` | Number | API port | `443` (public), `80`, `3006` (local MyNode/Umbrel) |
 | **WebSocket Port** | `mempool_ws_port` | Number | Real-time data port | `443` (public), `8999` (local standard) |
 | **WebSocket Path** | `mempool_ws_path` | String | Websocket endpoint path | `/api/v1/ws` (default) |
