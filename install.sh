@@ -13,7 +13,7 @@
 #   1. Installs system packages (apt-requirements.txt)
 #   2. Creates Python virtual environment and installs pip packages
 #   3. Installs Raspberry Pi GPIO/SPI libraries + rebuilds Pillow (Pi Zero 1 WH)
-#   4. Copies example config
+#   4. Copies example config and applies the chosen mempool source
 #   5. Configures e-ink display (interactive selection + driver download)
 #   6. Generates and installs systemd service file
 #   7. Installs WiFi/hotspot permissions (polkit + sudoers)
@@ -176,11 +176,84 @@ PYEOF
 fi
 echo ""
 
-# [3] Options — press Enter to accept defaults
+# [3] Mempool source
+# One question rather than separate host/Tor toggles, because the two are not
+# independent: Tor cannot route private addresses, so "own node on the LAN" plus
+# Tor is a combination that fails outright. Choosing here writes a coherent set.
+echo -e "  ${CYAN}Mempool source${NC}"
+echo "  Where mempaper reads blocks, fees, hashrate and prices from."
+echo ""
+echo -e "    ${CYAN}1${NC}. mempool.space over Tor   ${GREEN}[recommended]${NC} — mempool.space sees your IP"
+echo -e "    ${CYAN}2${NC}. mempool.space directly   — slightly faster, your IP is visible to it"
+echo -e "    ${CYAN}3${NC}. My own node on the LAN   — nothing leaves your network"
+echo ""
+MEMPOOL_SOURCE=""
+MEMPOOL_LAN_HOST=""
+MEMPOOL_LAN_REST=""
+MEMPOOL_LAN_WS=""
+while true; do
+    read -rp "  Select mempool source [1-3, default 1]: " MEMPOOL_SOURCE
+    MEMPOOL_SOURCE="${MEMPOOL_SOURCE:-1}"
+    case "$MEMPOOL_SOURCE" in
+        1|2) break ;;
+        3)
+            _paste_had_https=""
+            while true; do
+                read -rp "    Node host, IP or domain:      " MEMPOOL_LAN_HOST
+                # Remember a pasted https:// before stripping it — it is a good
+                # signal for the scheme default below.
+                case "$MEMPOOL_LAN_HOST" in https://*) _paste_had_https="y" ;; esac
+                # The app stores a bare host, so drop any scheme and path.
+                MEMPOOL_LAN_HOST=$(echo "$MEMPOOL_LAN_HOST" | sed -E 's#^[a-zA-Z]+://##; s#/.*$##' | tr -d '[:space:]')
+                [ -n "$MEMPOOL_LAN_HOST" ] && break
+                echo "    Host cannot be empty."
+            done
+
+            # A bare LAN IP is almost always plain http on mempool's own ports;
+            # a domain name usually means a reverse proxy terminating TLS.
+            if [ -n "$_paste_had_https" ]; then
+                _https_default="Y"
+            elif echo "$MEMPOOL_LAN_HOST" | grep -qE '^[0-9]+(\.[0-9]+){3}$'; then
+                _https_default="N"
+            else
+                _https_default="Y"
+            fi
+            if [ "$_https_default" = "Y" ]; then
+                read -rp "    Reached over HTTPS?     [Y/n]: " MEMPOOL_LAN_HTTPS
+                MEMPOOL_LAN_HTTPS="${MEMPOOL_LAN_HTTPS:-Y}"
+            else
+                read -rp "    Reached over HTTPS?     [y/N]: " MEMPOOL_LAN_HTTPS
+                MEMPOOL_LAN_HTTPS="${MEMPOOL_LAN_HTTPS:-N}"
+            fi
+
+            # Behind a TLS proxy everything arrives on 443; a direct mempool
+            # instance splits REST and WebSocket across its own two ports.
+            if [[ "$MEMPOOL_LAN_HTTPS" =~ ^[Yy]$ ]]; then
+                _rest_default=443; _ws_default=443
+            else
+                _rest_default=4081; _ws_default=8999
+            fi
+            while true; do
+                read -rp "    REST API port:        [${_rest_default}]: " MEMPOOL_LAN_REST
+                MEMPOOL_LAN_REST="${MEMPOOL_LAN_REST:-$_rest_default}"
+                echo "$MEMPOOL_LAN_REST" | grep -qE '^[0-9]{1,5}$' && [ "$MEMPOOL_LAN_REST" -le 65535 ] && break
+                echo "    Not a valid port."
+            done
+            while true; do
+                read -rp "    WebSocket port:       [${_ws_default}]: " MEMPOOL_LAN_WS
+                MEMPOOL_LAN_WS="${MEMPOOL_LAN_WS:-$_ws_default}"
+                echo "$MEMPOOL_LAN_WS" | grep -qE '^[0-9]{1,5}$' && [ "$MEMPOOL_LAN_WS" -le 65535 ] && break
+                echo "    Not a valid port."
+            done
+            break ;;
+        *) echo "  Invalid choice. Enter 1, 2 or 3." ;;
+    esac
+done
+echo ""
+
+# [4] Options — press Enter to accept defaults
 echo -e "  ${CYAN}Options${NC} — press Enter to accept defaults"
 echo ""
-read -rp "  Reach mempool.space over Tor (private)?    [Y/n]: " MEMPOOL_TOR_CHOICE
-MEMPOOL_TOR_CHOICE="${MEMPOOL_TOR_CHOICE:-Y}"
 read -rp "  Minify JavaScript (better performance)?   [Y/n]: " MINIFY_CHOICE
 MINIFY_CHOICE="${MINIFY_CHOICE:-Y}"
 read -rp "  fail2ban (SSH brute-force protection)?     [Y/n]: " F2B_CHOICE
@@ -225,7 +298,7 @@ if ! echo "$WIFI_COUNTRY" | grep -qE '^[A-Z]{2}$'; then
 fi
 echo ""
 echo -e "  ${CYAN}SSH hardening${NC} — disable password login, require SSH key"
-echo "  Add your public key via Settings > SSH in the web UI after install."
+echo "  Add your public key via Settings > General > Advanced > SSH Access after install."
 echo "  Without a key, physical access is needed to SSH in."
 echo ""
 read -rp "  Disable SSH password authentication?       [Y/n]: " SSH_HARDENING
@@ -602,27 +675,26 @@ else
     ok "config.json already exists"
 fi
 
-# ── Privacy default: reach mempool.space over Tor ─────────────────────────────
-# Out of the box mempaper talks to the public mempool.space, which pairs the
-# home IP with every query. Routing that over Tor costs a few seconds of latency
-# the dashboard never notices (blocks arrive ~10 min apart) and removes the IP
-# from the picture. Only applied while the host is still the shipped default, so
-# re-running install.sh never redirects an instance the user has already pointed
-# somewhere — including their own node.
-if [ -f config/config.json ] && [[ "$MEMPOOL_TOR_CHOICE" =~ ^[Yy]$ ]]; then
-    sudo -u "$SERVICE_USER" python3 - <<'PYEOF' && ok "mempool.space reachable over Tor (change any time in Settings)" || warn "Could not set Tor default (non-fatal)"
-import json, sys
+# ── Mempool source ────────────────────────────────────────────────────────────
+# Writes host, scheme, ports, Tor and the private flag as one coherent set, so
+# the combinations that silently fail cannot be produced by hand (Tor refuses to
+# route private addresses, so LAN host + Tor breaks mempool access entirely).
+# Only applied while the host is still the shipped default, so re-running
+# install.sh never redirects an instance already pointed somewhere else.
+# Values travel via env rather than string interpolation so a host containing
+# shell metacharacters cannot break out of the heredoc.
+if [ -f config/config.json ]; then
+    sudo -u "$SERVICE_USER" env \
+        MP_SOURCE="$MEMPOOL_SOURCE" \
+        MP_HOST="$MEMPOOL_LAN_HOST" \
+        MP_REST="$MEMPOOL_LAN_REST" \
+        MP_WS="$MEMPOOL_LAN_WS" \
+        MP_HTTPS="$MEMPOOL_LAN_HTTPS" \
+        python3 - <<'PYEOF' && ok "Mempool source configured (change any time in Settings)" || warn "Could not set mempool source (non-fatal)"
+import json, os, sys
 from pathlib import Path
 
 sys.path.insert(0, ".")
-try:
-    # single source of truth — also carries the scheme/port the service expects
-    from utils.technical_config import MEMPOOL_ONION_PRESETS
-    preset = MEMPOOL_ONION_PRESETS[0]
-except Exception as e:
-    print(f"   could not read onion preset: {e}")
-    sys.exit(1)
-
 p = Path("config/config.json")
 try:
     cfg = json.loads(p.read_text())
@@ -631,23 +703,66 @@ except Exception as e:
     sys.exit(1)
 
 host = str(cfg.get("mempool_host", "")).strip()
-if host and host not in ("mempool.space", ""):
+if host and host != "mempool.space":
     print(f"   mempool_host already set to '{host}' — leaving it alone")
     sys.exit(0)
 
-cfg["mempool_use_tor"] = True
-cfg["mempool_host"] = preset["host"]
-cfg["mempool_use_https"] = preset["use_https"]
-cfg["mempool_rest_port"] = preset["port"]
-cfg["mempool_ws_port"] = preset["port"]
+source = os.environ.get("MP_SOURCE", "1")
+
+if source == "1":
+    try:
+        # single source of truth — also carries the scheme/port the service
+        # expects, so a changed onion address ships with a software update
+        from utils.technical_config import MEMPOOL_ONION_PRESETS
+        preset = MEMPOOL_ONION_PRESETS[0]
+    except Exception as e:
+        print(f"   could not read onion preset: {e}")
+        sys.exit(1)
+    cfg.update({
+        "mempool_use_tor":    True,
+        "mempool_host":       preset["host"],
+        "mempool_use_https":  preset["use_https"],   # the circuit already encrypts
+        "mempool_rest_port":  preset["port"],
+        "mempool_ws_port":    preset["port"],
+        "mempool_is_private": False,
+    })
+    summary = f"{preset['label']} via Tor on port {preset['port']}"
+
+elif source == "2":
+    cfg.update({
+        "mempool_use_tor":    False,
+        "mempool_host":       "mempool.space",
+        "mempool_use_https":  True,
+        "mempool_rest_port":  443,
+        "mempool_ws_port":    443,
+        "mempool_is_private": False,
+    })
+    summary = "mempool.space directly over HTTPS — the instance sees your IP"
+
+else:
+    # Own node, either a bare LAN address or a domain behind a TLS proxy.
+    # Tor stays off deliberately: it cannot reach a private address, so
+    # enabling it here would break every request — and for a public domain it
+    # would add a circuit to reach a host you already control. is_private
+    # suppresses the public-instance privacy warnings on wallet monitoring,
+    # which do not apply when you run the instance yourself.
+    _https = os.environ.get("MP_HTTPS", "").lower() in ("y", "yes", "true", "1")
+    cfg.update({
+        "mempool_use_tor":    False,
+        "mempool_host":       os.environ["MP_HOST"],
+        "mempool_use_https":  _https,
+        "mempool_rest_port":  int(os.environ["MP_REST"]),
+        "mempool_ws_port":    int(os.environ["MP_WS"]),
+        "mempool_is_private": True,
+    })
+    summary = (f"self-hosted mempool at {'https' if _https else 'http'}://"
+               f"{cfg['mempool_host']}:{cfg['mempool_rest_port']} (Tor off)")
 
 tmp = p.with_suffix(".json.tmp")
 tmp.write_text(json.dumps(cfg, indent=2))
 tmp.replace(p)
-print(f"   {preset['label']} via Tor on port {preset['port']}")
+print(f"   {summary}")
 PYEOF
-elif [ -f config/config.json ]; then
-    ok "Using mempool.space directly (no Tor) — your IP is visible to the instance"
 fi
 
 # ── Randomise the weekly meme-sync schedule ───────────────────────────────────
@@ -890,7 +1005,7 @@ EOF
         ok "SSH hardened: password auth disabled, root login disabled (key-only)"
         echo ""
         echo -e "  ${YELLOW}⚠  SSH password login is now disabled.${NC}"
-        echo "  Add your SSH public key via Settings > SSH in the web UI."
+        echo "  Add your SSH public key via Settings > General > Advanced > SSH Access."
         echo "  Until then, SSH access requires physical access to the Pi."
     else
         warn "SSH hardening written, but password auth is still effectively enabled"
@@ -932,11 +1047,12 @@ echo "    sudo journalctl -u mempaper.service -f    # live logs"
 echo "    sudo systemctl restart mempaper.service   # restart"
 echo "    sudo systemctl status mempaper.service    # status"
 echo ""
-echo "  To reconfigure the display later:"
-echo "    python tools/configure_display.py"
+echo "  To reconfigure the display later (not possible from the web UI):"
+echo "    cd $SCRIPT_DIR"
+echo "    sudo -u $SERVICE_USER $VENV_DIR/bin/python tools/configure_display.py"
 echo ""
 echo "  To prepare for delivery (factory reset):"
-echo "    python tools/delivery_state.py"
+echo "    sudo -u $SERVICE_USER $VENV_DIR/bin/python tools/delivery_state.py"
 echo ""
 
 # ── Step 9: Start service ─────────────────────────────────────────────────
