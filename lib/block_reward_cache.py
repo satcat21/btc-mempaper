@@ -27,8 +27,7 @@ import requests
 import time
 import threading
 from utils.technical_config import build_mempool_proxies
-from typing import Dict, List, Optional, Tuple, Any
-from datetime import datetime
+from typing import Dict, List, Optional, Any
 import urllib3
 
 # Import unified secure cache
@@ -230,12 +229,6 @@ class BlockRewardCache:
         with self.cache_lock:
             addr_data = self.cache_data["addresses"].get(address, {})
             return addr_data.get("total_coinbase_count", 0)
-    
-    def get_address_sync_height(self, address: str) -> int:
-        """Get the sync height for a specific address."""
-        with self.cache_lock:
-            addr_data = self.cache_data["addresses"].get(address, {})
-            return addr_data.get("synced_height", 0)
     
     def add_new_address(self, address: str, scan_from_height: Optional[int] = None) -> bool:
         """

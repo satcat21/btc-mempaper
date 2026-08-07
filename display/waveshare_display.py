@@ -10,10 +10,6 @@ using the native Waveshare Python library instead of omni-epd.
 
 import sys
 import os
-import time
-import logging
-import threading
-import queue
 from PIL import Image, ImageDraw
 
 # Each display has its own subdirectory under display/drivers/ because their
@@ -300,34 +296,6 @@ class WaveshareDisplay:
         else:
             raise AttributeError(f"EPD object has no sleep method")
 
-    def init_display(self):
-        """Initialize the e-paper display hardware."""
-        if not self.epd:
-            print("⚙️ EPD not available - skipping hardware initialization")
-            return False
-            
-        try:
-            print("Initializing e-paper display...")
-            self._call_epd_init()
-            print("✅ E-paper display initialized")
-            return True
-        except Exception as e:
-            print(f"❌ Failed to initialize display: {e}")
-            return False
-
-    def clear_display(self):
-        """Clear the e-paper display to white."""
-        if not self.epd:
-            print("⚙️ EPD not available - skipping clear")
-            return
-            
-        try:
-            print("Clearing e-paper display...")
-            self._call_epd_clear()
-            print("✅ E-paper display cleared")
-        except Exception as e:
-            print(f"❌ Failed to clear display: {e}")
-
     def convert_to_epd_palette(self, image):
         """
         Convert image to EPD color palette (6 or 7 colors based on display).
@@ -379,49 +347,6 @@ class WaveshareDisplay:
         
         # Convert back to RGB for display
         return quantized.convert('RGB')
-
-    def _run_with_timeout(self, func, timeout=30, *args, **kwargs):
-        """
-        Run a function with a timeout to prevent hanging.
-        
-        Args:
-            func: Function to run
-            timeout: Timeout in seconds
-            *args, **kwargs: Arguments for the function
-            
-        Returns:
-            Result of function or None if timeout/error
-        """
-        import threading
-        import queue
-        
-        result_queue = queue.Queue()
-        exception_queue = queue.Queue()
-        
-        def target():
-            try:
-                result = func(*args, **kwargs)
-                result_queue.put(result)
-            except Exception as e:
-                exception_queue.put(e)
-        
-        thread = threading.Thread(target=target, daemon=True)
-        thread.start()
-        thread.join(timeout)
-        
-        if thread.is_alive():
-            print(f"⏰ Function {func.__name__} timed out after {timeout}s")
-            return None
-        
-        if not exception_queue.empty():
-            e = exception_queue.get()
-            print(f"❌ Function {func.__name__} failed: {e}")
-            return None
-        
-        if not result_queue.empty():
-            return result_queue.get()
-        
-        return None
 
     def display_image(self, image_path, message=None, process_vertical=True):
         """

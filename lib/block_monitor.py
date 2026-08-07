@@ -13,7 +13,7 @@ import requests
 import threading
 import time
 import traceback
-from typing import List, Set, Dict, Any
+from typing import List, Dict, Any
 import urllib3
 from requests.auth import HTTPBasicAuth
 from urllib.parse import quote, urlsplit
@@ -150,9 +150,6 @@ class BlockRewardMonitor:
         if username and password:
             return HTTPBasicAuth(username, password)
         return None
-
-    def _has_mempool_auth(self) -> bool:
-        return self._get_mempool_auth() is not None
     
     def _get_mempool_ws_url(self) -> str:
         """Get mempool WebSocket URL from configuration with WSS support."""
@@ -190,30 +187,6 @@ class BlockRewardMonitor:
                 return f"{protocol}://{auth_prefix}{mempool_host}:{mempool_ws_port}{mempool_ws_path}"
         else:
             raise ValueError("❌ No configuration manager available. Cannot connect to mempool WebSocket without configuration.")
-    
-    def _load_valid_blocks_count(self):
-        """Load valid blocks count from file."""
-        try:
-            if os.path.exists(self.valid_blocks_file):
-                with open(self.valid_blocks_file, 'r') as f:
-                    data = json.load(f)
-                    if isinstance(data, dict):
-                        self.valid_blocks_count = data.get("valid_blocks", 0)
-                        self.blocks_by_address = data.get("blocks_by_address", {})
-                    else:
-                        print(f"⚠️ Unexpected valid blocks data type: {type(data)} value={data}")
-                        self.valid_blocks_count = 0
-                        self.blocks_by_address = {}
-                    print(f"💾 Loaded valid blocks count: {self.valid_blocks_count}")
-                    if self.blocks_by_address:
-                        # Crop addresses for privacy in logs
-                        cropped_blocks = {self.cache._crop_address_for_log(addr): count 
-                                         for addr, count in self.blocks_by_address.items()}
-                        print(f"📍 Per-address blocks: {cropped_blocks}")
-        except Exception as e:
-            print(f"⚠️ Error loading valid blocks count: {e}")
-            self.valid_blocks_count = 0
-            self.blocks_by_address = {}
     
     def _save_valid_blocks_count(self):
         """Save valid blocks count to file."""

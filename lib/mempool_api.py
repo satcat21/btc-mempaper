@@ -157,25 +157,6 @@ class MempoolAPI:
         except (ValueError, TypeError):
             return str(raw_height)
     
-    def shorten_hash(self, full_hash):
-        """
-        Create a shortened, formatted version of a block hash for display.
-        
-        Args:
-            full_hash (str): Full block hash
-            
-        Returns:
-            str: Shortened and formatted hash with byte grouping
-        """
-        start_part = full_hash[:24]
-        end_part = full_hash[-6:]
-        
-        def group_bytes(s):
-            """Group string into byte pairs separated by spaces."""
-            return " ".join(s[i:i+2] for i in range(0, len(s), 2))
-        
-        return f"{group_bytes(start_part)} ... {group_bytes(end_part)}"
-    
     def get_fee_recommendations(self):
         """
         Get current fee recommendations from mempool API.
@@ -191,18 +172,6 @@ class MempoolAPI:
         except requests.RequestException as e:
             print(f"Error fetching fee recommendations: {e}")
             return None
-    
-    def get_minimum_fee(self):
-        """
-        Get the current minimum fee from fee recommendations.
-        
-        Returns:
-            int: Minimum fee in sat/vB or None if failed
-        """
-        fees = self.get_fee_recommendations()
-        if fees:
-            return fees.get("minimumFee", 1)
-        return None
     
     def get_configured_fee(self, fee_parameter="minimumFee"):
         """

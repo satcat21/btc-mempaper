@@ -4,7 +4,6 @@ Fast startup script for testing mempaper app on PC
 Optimized for quick startup without e-ink display dependencies
 """
 
-import os
 import sys
 
 def main():

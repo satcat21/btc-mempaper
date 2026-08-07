@@ -118,34 +118,6 @@ class BitaxeAPI:
             if ip not in active:
                 del BitaxeAPI._best_diff_cache[ip]
     
-    def get_miner_hashrate(self, ip: str, timeout: int = 5) -> float:
-        """
-        Get hashrate from a single Bitaxe miner.
-        
-        Args:
-            ip: IP address of the miner
-            timeout: Request timeout in seconds
-            
-        Returns:
-            Hashrate in GH/s, 0 if error
-        """
-        target = parse_miner_address(ip)
-        if target is None:
-            print(f"⚠️ Rejected invalid Bitaxe address: {ip!r}")
-            return 0
-
-        try:
-            # allow_redirects=False: a redirect would let the miner point the
-            # request back at a host this validation just excluded.
-            response = requests.get(f"http://{target}/api/system/info",
-                                    timeout=timeout, allow_redirects=False)
-            response.raise_for_status()
-            data = response.json()
-            return data.get("hashRate", 0)
-        except Exception as e:
-            print(f"⚠️ Error fetching hashrate from {ip}: {e}")
-            return 0
-    
     def get_miner_info(self, ip: str, timeout: int = 5) -> Dict:
         """
         Get detailed info from a single Bitaxe miner.
@@ -294,52 +266,3 @@ class BitaxeAPI:
         except Exception as e:
             print(f"⚠️ Could not get valid blocks count: {e}")
         return 0
-    
-    def get_formatted_hashrate(self, stats: Dict) -> str:
-        """
-        Format hashrate for display.
-        
-        Args:
-            stats: Stats data from fetch_bitaxe_stats()
-            
-        Returns:
-            Formatted hashrate string
-        """
-        if stats.get("error"):
-            return "Hashrate unavailable"
-        
-        ths = stats.get("total_hashrate_ths", 0)
-        return f"{ths:.2f} TH/s"
-    
-    def get_formatted_miners_status(self, stats: Dict) -> str:
-        """
-        Format miners status for display.
-        
-        Args:
-            stats: Stats data from fetch_bitaxe_stats()
-            
-        Returns:
-            Formatted miners status string
-        """
-        if stats.get("error"):
-            return "Status unavailable"
-        
-        online = stats.get("miners_online", 0)
-        total = stats.get("miners_total", 0)
-        return f"{online}/{total} online"
-    
-    def get_formatted_valid_blocks(self, stats: Dict) -> str:
-        """
-        Format valid blocks count for display.
-        
-        Args:
-            stats: Stats data from fetch_bitaxe_stats()
-            
-        Returns:
-            Formatted valid blocks string
-        """
-        if stats.get("error"):
-            return "N/A"
-        
-        blocks = stats.get("valid_blocks", 0)
-        return f"{blocks} blocks"

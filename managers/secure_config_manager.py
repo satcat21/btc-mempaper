@@ -19,12 +19,11 @@ import hashlib
 import base64
 import subprocess
 import time
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 import platform
-import uuid
 
 from utils.atomic_io import atomic_write_json
 

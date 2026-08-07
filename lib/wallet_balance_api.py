@@ -19,7 +19,6 @@ import time
 import os
 import threading
 from typing import Dict, List, Optional, Union, Tuple, Set
-from datetime import datetime, timedelta
 
 # Optional import for secure config - graceful fallback if not available
 try:
@@ -261,21 +260,6 @@ class WalletBalanceAPI:
             print(f"❌ Fiat conversion error: {e}")
             traceback.print_exc()
             return 0.0
-    
-    def _load_address_cache(self) -> Dict:
-        """Load address derivation cache from file."""
-        try:
-            if os.path.exists(self.cache_file):
-                with open(self.cache_file, 'r') as f:
-                    cache = json.load(f)
-                    cache_entries = len(cache)
-                    if cache_entries > 0:
-                        print(f"📂 Loaded address cache with {cache_entries} entries")
-                    return cache
-        except Exception as e:
-            print(f"⚠️ Failed to load address cache: {e}")
-        
-        return {}
     
     def _get_optimized_balance_cache_key(self, xpub: str) -> str:
         """Generate cache key for optimized balance monitoring."""
@@ -701,18 +685,6 @@ class WalletBalanceAPI:
             "cache_file_size": cache_size,
             "cache_file": self.cache_file
         }
-    
-    def clear_address_cache(self) -> bool:
-        """Clear all cached addresses."""
-        self.address_cache = {}
-        try:
-            if os.path.exists(self.cache_file):
-                os.remove(self.cache_file)
-            print(f"🗑️ Address derivation cache cleared")
-            return True
-        except Exception as e:
-            print(f"⚠️ Failed to clear address cache: {e}")
-            return False
 
     def detect_address_conflicts(self, wallet_entries: List[str]) -> Optional[Dict[str, Union[str, List]]]:
         """
@@ -1694,7 +1666,6 @@ class WalletBalanceAPI:
             
             # 4. Fetch balances for XPUBs/ZPUBs with comments (in parallel)
             import concurrent.futures
-            import threading
             
             def fetch_single_xpub_balance(xpub_info):
                 """Fetch balance for a single XPUB/ZPUB with error handling."""

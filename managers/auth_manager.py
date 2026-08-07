@@ -10,7 +10,7 @@ import time
 import logging
 from functools import wraps
 from collections import defaultdict, deque
-from typing import Dict, Tuple
+from typing import Tuple
 from flask import request, jsonify, session, make_response
 from managers.secure_password_manager import SecurePasswordManager
 from utils.security_config import SecurityConfig

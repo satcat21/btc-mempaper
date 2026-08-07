@@ -4,7 +4,6 @@ PC-optimized startup script for mempaper app
 Enables full functionality while keeping config file watching disabled to prevent hanging
 """
 
-import os
 import sys
 
 def main():

@@ -11,9 +11,8 @@ import hashlib
 import time
 import threading
 import os
-from typing import Dict, List, Set, Optional, Callable, Tuple
+from typing import Dict, List, Optional, Tuple
 import queue
-from datetime import datetime
 
 from lib.address_derivation import AddressDerivation
 
@@ -488,10 +487,6 @@ class AsyncAddressCacheManager:
             self.is_running = False
             print(f"🛑 Stopped async address cache worker")
     
-    def add_callback(self, callback: Callable):
-        """Add callback to be notified of cache events."""
-        self.callbacks.append(callback)
-    
     def _notify_callbacks(self, event_type: str, data: Dict):
         """Notify all callbacks of an event."""
         for callback in self.callbacks:
@@ -565,67 +560,3 @@ class WalletConfigurationManager:
         """Stop monitoring and clean up resources."""
         self.observer.stop_monitoring()
         self.cache_manager.stop_worker()
-    
-    def get_addresses_for_config(self, config: Dict) -> Optional[Dict[str, List[str]]]:
-        """Get addresses for configuration (from cache if available)."""
-        return self.cache_manager.get_cached_addresses(config)
-    
-    def force_cache_rebuild(self):
-        """Force a cache rebuild with current configuration."""
-        self._initialize_cache()
-    
-    def get_status(self) -> Dict:
-        """Get status of monitoring and caching system."""
-        cache_stats = self.cache_manager.get_cache_stats()
-        
-        return {
-            "monitoring_active": self.observer.is_monitoring,
-            "worker_active": self.cache_manager.is_running,
-            "cache_entries": cache_stats["total_entries"],
-            "derived_addresses": cache_stats["total_derived_addresses"],
-            "queue_size": cache_stats["queue_size"],
-            "cache_file_size": cache_stats["cache_file_size"]
-        }
-    
-    def clear_cache_pattern(self, pattern: str, cache_type: str = "both") -> bool:
-        """
-        Clear cache entries matching a specific pattern.
-        
-        Args:
-            pattern: String pattern to match (e.g., address or XPUB prefix)
-            cache_type: Type of cache to clear ("address", "secure", or "both")
-            
-        Returns:
-            bool: True if entries were cleared, False otherwise
-        """
-        cleared = False
-        
-        try:
-            # Clear from address derivation cache
-            if cache_type in ["address", "both"]:
-                if hasattr(self.cache_manager, 'clear_pattern'):
-                    cleared = self.cache_manager.clear_pattern(pattern) or cleared
-                else:
-                    print(f"⚠️ Address cache manager does not support pattern clearing")
-            
-            # Clear from secure cache
-            if cache_type in ["secure", "both"] and SECURE_CACHE_AVAILABLE:
-                try:
-                    secure_cache = SecureCacheManager()
-                    if hasattr(secure_cache, 'clear_pattern'):
-                        cleared = secure_cache.clear_pattern(pattern) or cleared
-                    else:
-                        print(f"⚠️ Secure cache manager does not support pattern clearing")
-                except Exception as e:
-                    print(f"⚠️ Failed to clear secure cache pattern {pattern}: {e}")
-            
-            if cleared:
-                print(f"🧹 Cleared cache entries matching pattern: {pattern}")
-            else:
-                print(f"⚠️ No cache entries found matching pattern: {pattern}")
-                
-            return cleared
-            
-        except Exception as e:
-            print(f"❌ Error clearing cache pattern {pattern}: {e}")
-            return False

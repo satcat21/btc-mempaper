@@ -399,33 +399,6 @@ class SecurePasswordManager:
             print(f"❌ Password migration failed: {e}")
             return False
     
-    def update_username(self, new_username):
-        """
-        Update the admin username without requiring password change.
-        Preserves the existing password hash.
-        
-        Args:
-            new_username (str): New username to set
-            
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        if not new_username or new_username.strip() == "":
-            logger.error("Cannot set empty username")
-            return False
-        
-        try:
-            # Just update the username, password hash is preserved automatically
-            self.config_manager.set('admin_username', new_username.strip())
-            self.config_manager.save_config()
-            
-            logger.info(f"Username updated to: {new_username}")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Failed to update username: {e}")
-            return False
-    
     def change_password(self, new_password):
         """
         Change the admin password without requiring username change.
@@ -465,64 +438,3 @@ class SecurePasswordManager:
         except Exception as e:
             logger.error(f"Failed to change password: {e}")
             return False
-
-
-def get_password_strength_info(password):
-    """
-    Analyze password strength and provide feedback.
-    
-    Args:
-        password (str): Password to analyze
-        
-    Returns:
-        dict: Analysis results with score and recommendations
-    """
-    analysis = {
-        'score': 0,
-        'strength': 'Very Weak',
-        'recommendations': []
-    }
-    
-    if len(password) >= 8:
-        analysis['score'] += 20
-    else:
-        analysis['recommendations'].append("Use at least 8 characters")
-    
-    if len(password) >= 12:
-        analysis['score'] += 20
-    else:
-        analysis['recommendations'].append("Consider 12+ characters for better security")
-    
-    if any(c.islower() for c in password):
-        analysis['score'] += 15
-    else:
-        analysis['recommendations'].append("Add lowercase letters")
-    
-    if any(c.isupper() for c in password):
-        analysis['score'] += 15
-    else:
-        analysis['recommendations'].append("Add uppercase letters")
-    
-    if any(c.isdigit() for c in password):
-        analysis['score'] += 15
-    else:
-        analysis['recommendations'].append("Add numbers")
-    
-    if any(c in "!@#$%^&*()_+-=[]{}|;:,.<>?" for c in password):
-        analysis['score'] += 15
-    else:
-        analysis['recommendations'].append("Add special characters (!@#$%^&*)")
-    
-    # Determine strength level
-    if analysis['score'] >= 80:
-        analysis['strength'] = 'Very Strong'
-    elif analysis['score'] >= 60:
-        analysis['strength'] = 'Strong'
-    elif analysis['score'] >= 40:
-        analysis['strength'] = 'Medium'
-    elif analysis['score'] >= 20:
-        analysis['strength'] = 'Weak'
-    else:
-        analysis['strength'] = 'Very Weak'
-    
-    return analysis

@@ -326,17 +326,6 @@ class MempoolWebSocket:
             self.is_connected = False
             print("WebSocket connection closed (auto-reconnection disabled)")
     
-    def enable_reconnection(self):
-        """Enable automatic reconnection."""
-        self.should_reconnect = True
-        self.reconnect_attempts = 0
-        print("Auto-reconnection enabled")
-    
-    def disable_reconnection(self):
-        """Disable automatic reconnection."""
-        self.should_reconnect = False
-        print("Auto-reconnection disabled")
-    
     def get_connection_status(self):
         """Get current connection status and stats."""
         status = {
@@ -358,13 +347,6 @@ class MempoolWebSocket:
             })
         
         return status
-    
-    def reset_outage_mode(self):
-        """Manually reset outage mode (useful for testing or manual intervention)."""
-        self.outage_mode = False
-        self.outage_start_time = None
-        self.reconnect_attempts = 0
-        print("⚙️ Outage mode reset manually")
     
     def set_network_tolerance(self, max_outage_minutes=30):
         """

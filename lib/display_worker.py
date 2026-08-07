@@ -13,7 +13,6 @@ Protocol (newline-delimited JSON over stdin/stdout):
 """
 
 import sys
-import os
 import json
 import traceback
 import atexit

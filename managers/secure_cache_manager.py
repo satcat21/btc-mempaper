@@ -15,7 +15,7 @@ Security Features:
 import os
 import json
 import threading
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 from managers.secure_config_manager import SecureConfigManager
 from utils.atomic_io import atomic_write_json
 

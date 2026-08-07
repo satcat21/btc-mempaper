@@ -15,11 +15,9 @@ import time
 from PIL import Image
 from PIL import ImageDraw
 from PIL import ImageFont
-from PIL import ImageColor
 
 from PIL import Image
 
-import json
 
 print("13.3inch e-paper (E) Demo...")
 

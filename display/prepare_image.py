@@ -166,42 +166,6 @@ class Processor():
             img = img.crop((left, top, right, bottom))
         
         return img
-    
-    def quantize_to_waveshare_7color(self, img):
-        """
-        Quantize image to exact Waveshare 7.3" F display colors
-        Based on official Waveshare library palette
-        """
-        # Ensure RGB mode
-        if img.mode != 'RGB':
-            img = img.convert('RGB')
-        
-        # Create palette exactly as Waveshare library does
-        palette_colors = [
-            (0, 0, 0),       # Black
-            (255, 255, 255), # White  
-            (0, 255, 0),     # Green
-            (0, 0, 255),     # Blue
-            (255, 0, 0),     # Red
-            (255, 255, 0),   # Yellow
-            (255, 128, 0),   # Orange (Waveshare uses 128, not 165)
-        ]
-        
-        # Create palette image with exact same method as Waveshare
-        pal_image = Image.new("P", (1, 1))
-        # Flatten RGB tuples and pad to 256 colors * 3 values = 768 total
-        palette_flat = []
-        for color in palette_colors:
-            palette_flat.extend(color)
-        # Pad remaining slots with black
-        palette_flat.extend([0, 0, 0] * (256 - len(palette_colors)))
-        pal_image.putpalette(palette_flat)
-        
-        # Quantize with Floyd-Steinberg dithering (same as Waveshare)
-        quantized = img.quantize(palette=pal_image, dither=Image.Dither.FLOYDSTEINBERG)
-        
-        # Convert back to RGB for display driver
-        return quantized.convert('RGB')
 
     def scale(self, img):
         """
