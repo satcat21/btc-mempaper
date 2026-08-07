@@ -533,22 +533,27 @@ sudo systemctl enable mempaper.service
 The unit is generated rather than shipped because it embeds absolute paths and
 the resolved Python interpreter.
 
-**Defer Tor's startup** if Tor is installed. Its bootstrap is slow and CPU-hungry,
-and on a single-core Pi Zero it competes directly with mempaper's own
-time-critical startup:
+**Deprioritise Tor** if it is installed. Its bootstrap is slow and CPU-hungry,
+and on a single-core Pi Zero it competes with mempaper's own time-critical
+startup:
 
 ```bash
 sudo mkdir -p /etc/systemd/system/tor@default.service.d
 sudo tee /etc/systemd/system/tor@default.service.d/defer-startup.conf > /dev/null << 'EOF'
-[Unit]
-After=mempaper.service
-
 [Service]
 Nice=15
 IOSchedulingClass=idle
 EOF
 sudo systemctl daemon-reload
 ```
+
+> **Do not add `After=mempaper.service` here.** It looks tempting, and earlier
+> versions did it, but with mempool traffic over Tor mempaper cannot fetch
+> anything until tor is up — so ordering tor last costs a failed first request
+> and a 20-second connect timeout on every boot. The transport is switchable in
+> the web UI while this file is only written at install time, so the ordering
+> cannot follow it. The priority settings above give mempaper the CPU it needs
+> without creating that dependency.
 
 ---
 

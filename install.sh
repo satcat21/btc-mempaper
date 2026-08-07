@@ -871,21 +871,29 @@ sudo systemctl daemon-reload
 sudo systemctl enable mempaper.service
 ok "mempaper.service installed and enabled"
 
-# push behind mempaper.service and deprioritize.
+# Keep tor's bootstrap from competing with mempaper's startup on a single core.
+#
+# Priority only, deliberately no After=mempaper.service. Ordering was tried and
+# is wrong: with mempool traffic over Tor, mempaper cannot fetch anything until
+# tor is up, so starting tor last bought a failed first request and a 20 s
+# connect timeout on every boot. Worse, the transport is switchable in the web
+# UI while this file is only ever written at install time — so a device set up
+# on clearnet and later moved to Tor would have been stuck with the bad
+# ordering and no way to correct it.
+#
+# Nice and IOSchedulingClass give mempaper the CPU it needs during startup
+# without creating that dependency inversion, and are correct either way.
 if systemctl list-unit-files 'tor@*.service' >/dev/null 2>&1 && command -v tor >/dev/null 2>&1; then
     sudo mkdir -p /etc/systemd/system/tor@default.service.d
     sudo tee /etc/systemd/system/tor@default.service.d/defer-startup.conf > /dev/null << 'EOF'
-[Unit]
-After=mempaper.service
-
 [Service]
-# Lower CPU/IO priority so tor's slow bootstrap doesn't compete with
-# mempaper's own time-critical startup work running at the same time.
+# Written by mempaper install.sh. Priority only — see install.sh for why there
+# is deliberately no After= ordering here.
 Nice=15
 IOSchedulingClass=idle
 EOF
     sudo systemctl daemon-reload
-    ok "tor startup deferred until after mempaper.service, deprioritized"
+    ok "tor deprioritized (Nice=15, idle IO) without delaying its startup"
 fi
 
 # ── Step 7: WiFi/hotspot permissions ───────────────────────────────────────
