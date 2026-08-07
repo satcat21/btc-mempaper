@@ -1,4 +1,4 @@
-## Self-Hosting with Traefik & OIDC Authentication
+## Self-hosting with Traefik & OIDC authentication
 
 This guide walks through exposing your mempaper instance — and optionally a
 self-hosted mempool — to the internet, secured with OIDC login via
@@ -39,7 +39,7 @@ Traefik (:443, TLS termination)
 
 ---
 
-### Part 1 — Set Up Zitadel as Your OIDC Provider
+### Part 1 — Set up Zitadel as your OIDC provider
 
 Zitadel is a self-hosted identity platform that acts as the login gateway.
 
@@ -89,7 +89,7 @@ volumes:
 > Expose Zitadel behind Traefik at `https://login.yourdomain.com` exactly like any other service.
 > Full self-hosting docs: https://zitadel.com/docs/self-hosting/deploy/docker
 
-#### Create the OIDC Application in Zitadel
+#### Create the OIDC application in Zitadel
 
 After Zitadel is running, open `https://login.yourdomain.com`:
 
@@ -104,7 +104,7 @@ After Zitadel is running, open `https://login.yourdomain.com`:
    - **Post-Logout Redirect URI**: `https://mempaper.yourdomain.com`
 4. Save — note the **Client ID** and generate a **Client Secret**
 
-#### Enable Role Claims
+#### Enable role claims
 
 In the project's **Settings**, enable:
 - ☑ **Assert Roles on Authentication**
@@ -118,7 +118,7 @@ token issued to that user.
 
 ---
 
-### Part 2 — Set Up Traefik
+### Part 2 — Set up Traefik
 
 #### `traefik.yml` (static config)
 
@@ -183,7 +183,7 @@ services:
 
 ---
 
-### Part 3 — TLS Certificates
+### Part 3 — TLS certificates
 
 Use [LEGO](https://go-acme.github.io/lego/) with your DNS provider to issue a wildcard
 certificate (covers all `*.yourdomain.com` subdomains with one cert):
@@ -312,7 +312,7 @@ sets a session cookie, and forwards you into mempaper.
 
 ---
 
-### Part 5 — Expose Self-Hosted mempool (optional)
+### Part 5 — Expose self-hosted mempool (optional)
 
 If you run your own [mempool.space](https://github.com/mempool/mempool) instance, you can
 expose it through Traefik as well. Two differences from mempaper:
@@ -459,7 +459,7 @@ before forwarding to the mempool backend.
 
 ---
 
-### Part 7 — Event-Hub: Relay Lightning Donations Over the Internet (Optional)
+### Part 7 — Event-hub: relay Lightning donations over the internet (optional)
 
 When mempaper runs outside the direct reach of your LNbits server (e.g. the Pi is at home
 but LNbits is on a VPS, or both are on separate isolated LANs), LNbits cannot POST the payment webhook directly to
@@ -509,7 +509,7 @@ docker compose up -d --build
 
 > Generate `SESSION_SECRET` with `openssl rand -hex 32`.
 
-#### Create a Zitadel Application for event-hub
+#### Create a Zitadel application for event-hub
 
 In Zitadel, add a second application to your existing project:
 
@@ -565,7 +565,7 @@ http:
 > event-hub constructs. The `websocket-transport` (defined in `mempaper.yml`) keeps
 > `/ws/{token}` connections alive indefinitely.
 
-#### Create a Webhook Token
+#### Create a webhook token
 
 1. Open `https://webhook.yourdomain.com/auth/login` and log in via Zitadel
 2. Go to `https://webhook.yourdomain.com/admin`
@@ -611,7 +611,7 @@ on the dashboard within seconds.
 
 ---
 
-### Security Notes
+### Security notes
 
 | Topic | Detail |
 |---|---|

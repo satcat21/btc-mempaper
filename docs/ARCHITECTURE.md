@@ -82,6 +82,21 @@ information about which addresses you care about.
 This is the recommended setup if you display wallet balances — the only option
 that removes the query rather than disguising who sent it.
 
+**Leave `mempool_use_tor` off here.** Tor refuses to route private addresses, so
+with the toggle on a `192.168.x.x` host fails outright rather than merely running
+slowly — and there is nothing to gain, since the traffic never leaves the LAN. It
+also spares a single-core Pi the `tor` daemon.
+
+Do not confuse that with running the node itself over Tor. They are different
+hops:
+
+| Hop | Controlled by | In topology C |
+|---|---|---|
+| node ↔ Bitcoin P2P network | `onlynet=onion` in `bitcoin.conf` | your choice — see [What your ISP sees](#what-your-isp-sees) |
+| mempaper ↔ mempool host | `mempool_use_tor` in mempaper | **off** — plain HTTP across your LAN |
+
+A Tor-only node still answers mempaper over ordinary HTTP on the local network.
+
 ![Topology C: self-hosted mempool](diagrams/topology-self-hosted.svg)
 
 #### D — mempool.space over Tor
@@ -123,6 +138,11 @@ does see is **who you connect to, when, and how much**. Three distinctions matte
   a Bitcoin node. This is the only combination that hides both the query *and*
   the fact that it is Bitcoin. The cost is peering only with onion nodes: slower
   initial sync, and reachability depending on those peers.
+
+  This is a `bitcoin.conf` setting, not a mempaper one — it changes how your
+  **node reaches the Bitcoin network**, and has no bearing on how mempaper
+  reaches your node. `mempool_use_tor` stays off either way; mempaper still
+  talks plain HTTP to the node across your LAN.
 
 So the two threat models pull in opposite directions, and which option wins
 depends on how bitcoind itself is peered. If your concern is the mempool operator
@@ -275,6 +295,118 @@ over stdin/stdout. Keeping it alive between blocks avoids re-importing the
 Waveshare driver every time, which saves roughly 10 s per refresh. It reads its
 config once at startup and does not pick up live changes, so a change of display
 type restarts it.
+
+<details>
+<summary><b>Directory layout</b> — where each of those layers lives on disk</summary>
+
+```
+btc-mempaper/
+|
+|-- Entry Points
+|   |-- mempaper_app.py          Orchestrator: startup, scheduling, hotspot, display
+|   |-- serve.py                 Development server (quick start)
+|   |-- wsgi.py                  Production WSGI entry point
+|   +-- gunicorn.conf.py         Production server configuration
+|
+|-- routes/                      HTTP surface, one module per area
+|   |                            Each exposes register(self); MempaperApp calls
+|   |                            them all from _setup_routes
+|   |-- setup.py                 Onboarding: hotspot, captive portal, /api/setup/*
+|   |-- static_assets.py         Static serving, cache headers, dist/ fallback
+|   |-- pages.py                 Dashboard, config and login pages, /image
+|   |-- auth.py                  Login, logout, sessions, admin users, webhook
+|   |-- config_api.py            Read/write config, mempool validation
+|   |-- media.py                 Meme and OPSec upload, listing, thumbnails
+|   |-- wallet.py                On-chain balances and block-reward lookups
+|   |-- bitaxe.py                Miner telemetry (best difficulty per device)
+|   |-- system.py                Health, saved Wi-Fi, power control, SSH keys
+|   |-- updates.py               Releases, software update, display drivers
+|   +-- sockets.py               SocketIO event handlers
+|
+|-- services/                    MempaperApp behaviour, one mixin per area
+|   |                            MempaperApp inherits all of them, so each
+|   |                            method keeps the same self and call sites
+|   |-- wifi.py                  Wi-Fi, setup hotspot, captive portal, recovery
+|   |-- donations.py             Lightning donation state and webhook listener
+|   |-- recovery.py              Power-cycle detection and factory reset
+|   |-- display_worker.py        The persistent e-ink worker subprocess
+|   |-- caching.py               Cached images, precache loop, prerendering
+|   +-- updates.py               Scheduled updates, deferred Pillow rebuild
+|
+|-- lib/                         Core Business Logic
+|   |-- mempool_api.py           Mempool.space API client
+|   |-- btc_price_api.py         Bitcoin price data
+|   |-- bitaxe_api.py            Bitaxe miner integration
+|   |-- wallet_balance_api.py    Wallet balance & XPUB tracking
+|   |-- block_monitor.py         Block height monitoring
+|   |-- block_reward_cache.py    Persistent block reward storage
+|   |-- image_renderer.py        Layout orchestration and the info blocks
+|   |-- display_subprocess.py    Display refresh handler
+|   |-- websocket_client.py      Standalone client, used by tools/backup_manager
+|   |-- address_derivation.py    HD wallet address derivation
+|   +-- btc_holidays.py          Bitcoin historical events
+|
+|-- lib/render/                  ImageRenderer method groups, as mixins
+|   |-- dual_images.py           The two public entry points (web + e-ink)
+|   |-- colors.py                Theme lookup and e-paper quantisation
+|   |-- memes.py                 Meme/OPSec selection, cache, tags, cropping
+|   |-- hash_frame.py            Block-hash frame and the info drawn in it
+|   |-- text.py                  Wrapping, truncation, emoji-aware measurement
+|   +-- formatting.py            Fee colours, localised dates, date font size
+|
+|-- managers/                    Configuration & Security
+|   |-- config_manager.py        Load, save and watch config
+|   |-- config_schema.py         Web UI form schema (fields, labels, options)
+|   |-- config_validation.py     Validation, incl. the mempool transport slots
+|   |-- config_observer.py       Config change monitoring
+|   |-- auth_manager.py          Authentication & rate limiting
+|   |-- secure_config_manager.py Encrypted configuration storage
+|   |-- secure_password_manager.py   Argon2id password hashing
+|   |-- secure_cache_manager.py  Encrypted cache files
+|   +-- unified_secure_cache.py  Unified cache encryption
+|
+|-- utils/                       Utilities & Helpers
+|   |-- translations.py          Multi-language support (en, de, es, it, fr)
+|   |-- color_lut.py             E-Paper color palette mapping
+|   |-- epd_color_fix.py         Waveshare 7-color optimizations
+|   |-- privacy_utils.py         Bitcoin address masking for logs
+|   |-- security_config.py       Security constants & settings
+|   +-- technical_config.py      Technical constants & defaults
+|
+|-- tools/                       Developer & maintenance tools
+|   |-- minify.py                JS minifier (generates static/js/dist/)
+|   |-- configure_display.py     Display configuration wizard
+|   |-- setup_user.py            Create / update / delete admin users
+|   |-- delivery_state.py        Prepare device for delivery
+|   |-- sync_memes.py            Weekly meme sync (API client, placeholder)
+|   |-- diagnose_mempool_api.py  Mempool API diagnostics
+|   |-- generate_service_file.py Generate systemd service config
+|   |-- backup_manager.py        Backup & maintenance utility
+|   |-- reset_cache_rpi.sh       Cache reset for Raspberry Pi
+|   |-- install_wifi_permissions.sh  Polkit + sudoers rules for Wi-Fi hotspot
+|   +-- 90-mempaper-wifi.rules       Polkit rule for NetworkManager
+|
+|-- display/                     Display Drivers & Config
+|   |-- waveshare_display.py     Native Waveshare driver integration
+|   |-- show_image.py            Image display handler
+|   |-- prepare_image.py         Image preparation pipeline
+|   +-- drivers/                 Bundled Waveshare EPD drivers (MIT)
+|       |-- epd13in3E.py         13.3" 6-color driver
+|       |-- epd7in3f.py          7.3" 7-color driver
+|       +-- epdconfig.py         Shared SPI/GPIO config
+|
+|-- static/                      Web assets, memes, OPSec images
+|   +-- js/config/               The config page, split by section. Classic
+|                                scripts sharing one scope, so load order in
+|                                templates/config.html is the original order
+|
+|-- config/                      User configuration
+|-- cache/                       Runtime cache storage
+|-- templates/                   HTML templates
++-- docs/                        Documentation
+```
+
+</details>
 
 ---
 

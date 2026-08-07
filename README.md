@@ -17,6 +17,7 @@
   <a href="#gallery">Gallery</a> &nbsp;&bull;&nbsp;
   <a href="#getting-started">Getting Started</a> &nbsp;&bull;&nbsp;
   <a href="#configuration">Configuration</a> &nbsp;&bull;&nbsp;
+  <a href="#maintenance">Maintenance</a> &nbsp;&bull;&nbsp;
   <a href="docs/ARCHITECTURE.md">Architecture</a> &nbsp;&bull;&nbsp;
   <a href="#documentation">Documentation</a> &nbsp;&bull;&nbsp;
   <a href="#support-the-project">Support</a>
@@ -198,15 +199,103 @@ The memes on this display come from **[einundzwanzig-memes.space](https://einund
 
 ## GETTING STARTED
 
-### Shopping List
+**Three ways in — pick the one that describes you:**
 
-Here are the components needed to build your own mempaper display.
+| You are… | Go to |
+|---|---|
+| Setting up a **mempaper someone gave you** | [First-Time Setup](#first-time-setup-delivered-device) — power on, join the hotspot, connect your Wi-Fi. No SSH, no terminal. |
+| **Building one yourself** from parts | [Build Your Own](#build-your-own) — shopping list, one-line installer, display wiring |
+| Running a mempaper **already** | [Maintenance](#maintenance) — updates, SSH access, admin accounts |
 
-> **Note:** Prices are approximate and may vary by region and vendor. The Raspberry Pi Zero 2 W is recommended over the original Zero W for better performance.
+Handing a device to someone else? See [Preparing a Device for Someone Else](#preparing-a-device-for-someone-else).
 
-#### Shared Components (~63 EUR)
+<br/>
 
-These components are the same regardless of which display you choose:
+---
+
+### First-Time Setup (Delivered Device)
+
+This is the flow for a device that arrives with **no Wi-Fi configured** — one prepared for shipping, or a freshly flashed card. It walks you through Wi-Fi and creating your admin account entirely from your phone; no SSH or technical knowledge is required.
+
+> If you just ran the installer yourself, you do **not** need this. Your Pi is already on Wi-Fi and running — go straight to [Configuration](#configuration).
+
+#### Step 1 -- Delivery State (E-Ink)
+
+The device ships with the delivery-state image on the e-ink display.
+
+<p align="center"><img src="images/readme/onboarding_1_delivery_state.png" alt="Delivery state e-ink screen" width="600"/></p>
+
+#### Step 2 -- Setup Hotspot (E-Ink)
+
+On first boot the device detects that no Wi-Fi is configured and starts an open setup hotspot. **This takes between 90 seconds and 2 minutes 21 seconds** — the Pi has to boot, initialise the Wi-Fi radio, and switch to AP mode. Once ready, the e-ink display refreshes and shows the hotspot name and a QR code.
+
+- **SSID:** `mempaper-XXXX` (4-digit suffix derived from the device MAC)
+- **Security:** Open access point — there is no Wi-Fi password. A portal password shown on the e-ink display gates the setup page itself.
+- Scan the QR code with your phone to connect automatically
+
+> **Tip:** Wait for the display to change from the delivery-state image to the hotspot screen before trying to connect. If nothing has changed after 2 minutes, the hotspot failed to start — power-cycle the device and try again.
+
+<p align="center"><img src="images/readme/onboarding_2_hotspot.png" alt="Hotspot onboarding e-ink screen" width="600"/></p>
+
+#### Step 3 -- Wi-Fi Setup Page
+
+Once connected to the hotspot, open `http://10.42.0.1:5000/setup` — the QR code on the right of the e-ink screen goes to the same address. The page asks you to:
+
+1. **Select a language** (English, German, Spanish, French, Italian)
+2. **Choose your home Wi-Fi** from the scanned list, or enter a hidden SSID
+3. **Enter the Wi-Fi password**
+4. **Create an admin account** — username and password for the dashboard
+
+<p align="center"><img src="images/readme/onboarding_3_wifi_setup.png" alt="WiFi setup web page" width="400"/></p>
+
+#### Step 4 -- Connected (E-Ink)
+
+Once the device joins your home Wi-Fi, the display shows a success screen telling you how to reach the dashboard from your network.
+
+<p align="center"><img src="images/readme/onboarding_4_connected.png" alt="WiFi connected e-ink screen" width="600"/></p>
+
+After 60 seconds the display switches to normal operation and renders its first dashboard image. From here, see [Configuration](#configuration).
+
+#### Resetting a Device
+
+Forgotten admin password, or you want to start fresh? There are two ways.
+
+##### Option A -- Reset button on the setup page
+
+If the device is already in hotspot/setup mode (for example its stored Wi-Fi is unavailable), the setup page has a **Reset Device** button at the bottom. It clears:
+
+- All admin accounts
+- Wallet addresses and monitoring data
+- Bitaxe miner configuration
+- Donation history and webhook URLs
+- Mempool authentication
+
+The device stays in setup mode so you can reconfigure Wi-Fi and create a new admin account.
+
+##### Option B -- Power-cycle factory reset
+
+For a full reset **including saved Wi-Fi profiles**, power-cycle the device three times:
+
+1. **Power on** and wait for the e-ink display to refresh — on a Pi Zero this can take up to about **3 minutes 30 seconds**. Only then power off.
+2. **Repeat twice more.** On the third boot the reset triggers automatically; nothing else to press.
+
+The device recognises 3 boot timestamps inside a 15-minute window and then clears all user data (as in Option A), deletes every saved Wi-Fi profile, renders the delivery-state image, and restarts the setup hotspot.
+
+> **Important:** Wait for the e-ink refresh each time before cutting power. That refresh is the device's own confirmation that it finished booting, recorded the timestamp, and flushed writes to the SD card — pulling power earlier risks corrupting the filesystem. Three cycles of ~3:30 still fit comfortably inside the 15-minute window.
+
+<br/>
+
+---
+
+### Build Your Own
+
+#### Shopping List
+
+Everything needed to build a mempaper from scratch.
+
+> **Note:** Prices are approximate and vary by region and vendor. The Raspberry Pi Zero 2 W is recommended over the original Zero W for better performance.
+
+**Shared components (~63 EUR)** — the same whichever display you choose:
 
 | Component | Description | Price | Link |
 |-----------|-------------|-------|------|
@@ -218,7 +307,7 @@ These components are the same regardless of which display you choose:
 
 > **Cable Routing:** The USB-C to Micro-USB adapter and 90 deg panel mount cable allow you to cleanly route power from the Raspberry Pi to the back of the picture frame for a professional finish.
 
-#### Option A -- Waveshare 7.3" e-Paper (7-color) -- Total ~215 EUR
+**Option A -- Waveshare 7.3" e-Paper (7-color) -- total ~215 EUR**
 
 | Component | Description | Price | Link |
 |-----------|-------------|-------|------|
@@ -228,7 +317,7 @@ These components are the same regardless of which display you choose:
 
 > **Passepartout Dimensions:** The 7.3" display has a visible area of 160x96mm. The passepartout opening is 158x94mm (2mm smaller on each side) to hold the display securely in place.
 
-#### Option B -- Waveshare 13.3" e-Paper (6-color) -- Total ~518 EUR
+**Option B -- Waveshare 13.3" e-Paper (6-color) -- total ~518 EUR**
 
 | Component | Description | Price | Link |
 |-----------|-------------|-------|------|
@@ -265,15 +354,9 @@ These components are the same regardless of which display you choose:
 
 </details>
 
-### Quick Start
+#### Installation
 
-#### 1. Installation
-
-> **Supported OS:** Raspberry Pi OS Lite **32-bit** — both **Bookworm (Debian 12)** and **Trixie (Debian 13)** are supported. On Pi Zero 1 WH (ARMv6) with Trixie/Python 3.13, piwheels does not yet provide ARMv6 wheels for Python 3.13 and PyPI wheels target ARMv7+. The installer automatically detects this and rebuilds **gevent** and **Pillow** from source so their C extensions are compiled for the device's ARMv6 CPU. This takes 10–20 minutes on first install. Ship with Trixie — it receives OS security updates longer than Bookworm.
-
-**Raspberry Pi (one-click installer)**
-
-On a fresh Raspberry Pi OS, paste this single command:
+Flash **Raspberry Pi OS Lite 32-bit** (Trixie recommended), connect the Pi to your Wi-Fi, then paste this single command:
 
 ```bash
 sudo apt install -y git \
@@ -281,31 +364,39 @@ sudo apt install -y git \
 && cd btc-mempaper && bash install.sh
 ```
 
-Run as your normal user (e.g. `pi`) — **not** as root. The script uses `sudo` internally where needed.
+Run it as your normal user (e.g. `pi`) — **not** as root; the script uses `sudo` where it needs to. It asks every configuration question upfront (display type, admin account, Tor, optional security features), then installs without further interruption.
 
-The installer asks all configuration questions upfront (display, admin account, optional security features), then runs the full system update and installs everything without further interruption.
+> **Allow 10–20 minutes on a Pi Zero 1 WH.** On ARMv6 the installer compiles **gevent** and **Pillow** from source, because no prebuilt wheels exist for that CPU.
 
-The installer takes care of everything:
+When the installer finishes, the device goes **straight into normal operation** — it is already on your Wi-Fi, so there is no onboarding step. Open `http://<pi-ip>:5000` and log in with the admin account you just created.
+
+<details>
+<summary><b>What the installer does</b> (click to expand)</summary>
+
 - Creates the `mempaper` service account
 - Installs all system and Python packages
-- Rebuilds Pillow from source on Pi Zero 1 WH (armv6l) if the piwheels wheel is incompatible
+- Rebuilds gevent and Pillow from source on ARMv6 (Pi Zero 1 WH) where the piwheels build is incompatible
 - Copies the example config (skipped if `config/config.json` already exists)
 - Configures the e-ink display (interactive prompt)
 - Generates and installs the `mempaper.service` systemd unit
 - Sets up Wi-Fi hotspot permissions
+- Disables UFW and `nftables` — their default chains drop the DHCP broadcasts the setup hotspot depends on
 - Optionally configures fail2ban
 - Starts the service
 
-When the service starts the Pi enters **hotspot onboarding mode**. Connect to the `mempaper-XXXX` Wi-Fi network from your phone or laptop, then open [http://10.42.0.1:5000](http://10.42.0.1:5000) to complete setup.
+**Supported OS:** Raspberry Pi OS Lite **32-bit**, either **Bookworm (Debian 12)** or **Trixie (Debian 13)**. Prefer Trixie — it receives OS security updates for longer.
 
-**Service management after install:**
+</details>
+
+**Verify it came up:**
 ```bash
-sudo journalctl -u mempaper.service -f        # live logs
-sudo systemctl restart mempaper.service       # restart after config changes
-sudo systemctl status mempaper.service        # status
+sudo systemctl status mempaper.service
+sudo journalctl -u mempaper.service -f
 ```
 
-**PC / Windows (development only)**
+<details>
+<summary><b>PC / Windows</b> — development only, no e-ink display</summary>
+
 ```powershell
 git clone https://github.com/satcat21/btc-mempaper.git
 cd btc-mempaper
@@ -314,145 +405,27 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-#### 2. Configure SSH Admin Access (for shipped devices)
+</details>
 
-  Admins need SSH access for full system maintenance. Each admin generates a key pair **once on their own machine** — the private key never leaves their machine.
+> **Display wiring and SPI are handled by the installer.** It enables SPI, downloads the
+> Waveshare driver for the model you picked, and disables Wi-Fi power saving on the Pi Zero W.
+> **Changing display later** is not possible from the web UI — the Settings page shows
+> the configured model read-only. Re-run `install.sh`, or run the display tool directly:
+> ```bash
+> cd /home/mempaper/btc-mempaper
+> sudo -u mempaper .venv/bin/python tools/configure_display.py
+> ```
 
-  **Admin: generate your key pair (run on your laptop, not the Pi):**
-  ```bash
-  ssh-keygen -t ed25519 -C "your-name-mempaper"
-  cat ~/.ssh/id_ed25519.pub   # copy this output
-  ```
+> Prefer to do it by hand, or need to understand what the script touches?
+> [Manual Installation](docs/MANUAL_INSTALL.md) lists every command `install.sh` runs.
 
-  **On the device:** log into the web UI → General → SSH Access → paste the public key → click **Add Key**.
+### Preparing a Device for Someone Else
 
-  This writes the key to both the `mempaper` user (scoped sudo) and the `pi` user (full sudo). Each user gets their own key entry; keys can be removed via the same UI.
-
-  **Connect after delivery:**
-  ```bash
-  ssh mempaper@<pi-ip>   # scoped maintenance (apt-get upgrade, restart, reboot)
-  ssh pi@<pi-ip>         # full root access (apt dist-upgrade, system config, etc.)
-  ```
-
-  > **Note:** SSH must be enabled on the Pi. On Raspberry Pi OS, enable it via `sudo raspi-config` → Interface Options → SSH, or by placing an empty file named `ssh` in the `/boot` partition before first boot.
-
-  **Harden SSH (disable password login, key-only):**
-
-  Edit `/etc/ssh/sshd_config` on the Pi:
-  ```bash
-  sudo nano /etc/ssh/sshd_config
-  ```
-  Set or uncomment these lines:
-  ```
-  PubkeyAuthentication yes
-  PasswordAuthentication no
-  PermitRootLogin no
-  AuthorizedKeysFile .ssh/authorized_keys
-  ```
-  Apply:
-  ```bash
-  sudo systemctl restart ssh
-  ```
-  > **Important:** Verify key login works in a second terminal **before** closing your current session, or you will be locked out.
-
-  **Restrict SSH to LAN only:**
-
-  The `sshd_config` changes above disable password login. For home deployments, your router's NAT already blocks inbound connections from the internet — that is sufficient for the typical threat model.
-
-  > **Note:** Do not install UFW on mempaper devices. UFW's built-in chains drop DHCP broadcast packets (UDP/67) before user allow-rules can fire, which breaks the setup hotspot for users connecting for the first time. mempaper manages its own iptables rules for the hotspot.
-
-  **Verify installation:**
-
-  ```bash
-  sudo systemctl status mempaper.service
-  sudo journalctl -u mempaper.service -f
-  ```
-
-  **Expected behavior after delivery prep:**
-  - `mempaper.service` runs on boot
-  - On power-on, app first attempts normal Wi-Fi connection
-  - If no Wi-Fi is available after startup grace, app starts setup hotspot automatically
-  - User connects to `mempaper-XXXX`, opens `http://10.42.0.1:5000`, enters Wi-Fi credentials
-  - On successful connection, setup hotspot is disabled and normal operation resumes automatically
-
-6. **Disable Wi-Fi Power Saving (Raspberry Pi Zero W)**
-
-  The BCM43430 Wi-Fi chip on the Pi Zero W has power management **enabled by default**. This causes the chip to miss router beacons during idle periods, leading to the router deauthenticating the Pi and dropping the connection. Disabling it prevents intermittent disconnects.
-
-  ```bash
-  sudo tee /etc/NetworkManager/conf.d/99-disable-powersave.conf << 'EOF'
-  [connection]
-  wifi.powersave = 2
-  EOF
-  sudo systemctl restart NetworkManager
-  ```
-
-  Verify it took effect:
-  ```bash
-  iwconfig wlan0 | grep Power
-  # Should show: Power Management:off
-  ```
-
-  > `wifi.powersave = 2` means "disabled" in NetworkManager's enum (0 = default, 1 = ignore, 2 = disable, 3 = enable). The file is placed in the NM drop-in directory `/etc/NetworkManager/conf.d/` and survives reboots and NM restarts.
-
-### Display Setup (Raspberry Pi)
-
-mempaper supports Waveshare e-Paper displays. The **Waveshare 7.3inch F (7-color)** is the primary target.
-
-#### 1. Enable SPI Interface
-```bash
-sudo raspi-config
-# Navigate to: 3 Interface Options -> I4 SPI -> Yes
-```
-
-#### 2. Configure Display
-
-Run the configuration tool to select your display. It automatically downloads and installs the required driver files:
+Only needed if you are handing a mempaper to somebody who should set it up themselves. This resets the device and leaves it in the delivery state:
 
 ```bash
-python tools/configure_display.py
-```
-
-Supported native displays:
-- **13.3" E-Paper E (Spectra 6 / epd13in3E)** -- 6-color, recommended
-- **7.3" F (7-color / epd7in3f)**
-
-The driver files are placed in `display/drivers/<device>/` and loaded automatically. Driver files are MIT licensed by Waveshare Electronics (see [display/drivers/README.md](display/drivers/README.md)).
-
-**Option: Omni-EPD**
-Use this if you need support for many different display types or prefer the abstraction layer.
-
-```bash
-git clone https://github.com/robweber/omni-epd.git
-cd omni-epd
-pip3 install --upgrade pip setuptools wheel
-pip3 install --prefer-binary .
-```
-
-> **Note:** Service setup is covered in the [Quick Start](#quick-start) section above.
-
-### User Management
-
-Multiple admin users are supported. Users are stored as Argon2id hashes in `config/config.json` under the `admin_users` key.
-
-```bash
-python tools/setup_user.py                # Create or update a user
-python tools/setup_user.py --list         # List all configured users
-python tools/setup_user.py --delete alice # Delete a user
-```
-
-> The script refuses to delete the last remaining user to prevent lockout.
->
-> The script can be run while the service is running -- the application picks up the config change automatically. For password resets it is safer to stop the service first: `sudo systemctl stop mempaper`.
-
-**Existing installations** are migrated automatically on first startup: the single `admin_username` / `admin_password_hash` fields in the config are moved into the `admin_users` dict -- no manual action required.
-
-### Delivery Mode (Shipment)
-
-Prepare a reset device for shipment:
-
-```bash
-python tools/delivery_state.py
+cd /home/mempaper/btc-mempaper
+sudo -u mempaper .venv/bin/python tools/delivery_state.py
 ```
 
 What this does:
@@ -460,80 +433,12 @@ What this does:
 - leaves startup behavior in integrated mode (`mempaper.service` only)
 - clears setup-mode state so the next boot starts clean
 
-At next boot, `mempaper.service` automatically enables setup hotspot if Wi-Fi cannot connect.
+**What the recipient then experiences** is the [First-Time Setup](#first-time-setup-delivered-device) flow above — worth reading once, since it is what you are handing over:
 
-### Onboarding / First-Time Setup
-
-When a user powers on a freshly prepared device for the first time, the following onboarding flow guides them through WiFi configuration and admin account creation -- no SSH or technical knowledge required.
-
-#### Step 1 -- Delivery State (E-Ink)
-
-The device ships with the delivery-state image on the e-ink display.
-
-<p align="center"><img src="images/readme/onboarding_1_delivery_state.png" alt="Delivery state e-ink screen" width="600"/></p>
-
-#### Step 2 -- Setup Hotspot (E-Ink)
-
-On first boot, the device detects that no WiFi is configured and automatically starts an open setup hotspot. **This takes between 90 seconds and 2 minutes 21 seconds** -- the Pi needs to boot, initialize the WiFi radio, and switch to AP mode. Once ready, the e-ink display refreshes and shows the hotspot SSID and a QR code to connect.
-
-- **SSID:** `mempaper-XXXX` (4-digit suffix derived from the device MAC)
-- **Security:** Open AP (no WiFi password — a portal password shown on the e-ink display gates access to the setup page)
-- Scan the QR code with your phone to connect automatically
-
-> **Tip:** Wait until the e-ink display updates from the delivery-state image to the hotspot screen before trying to connect. If the display does not refresh after 2 minutes, the hotspot may have failed to start -- simply power-cycle the device and try again.
-
-<p align="center"><img src="images/readme/onboarding_2_hotspot.png" alt="Hotspot onboarding e-ink screen" width="600"/></p>
-
-#### Step 3 -- WiFi Setup Web Page
-
-After connecting to the hotspot, open `http://10.42.0.1:5000/setup` in your browser (this URL is also available as a QR code on the right side of the e-ink screen). The setup page allows the user to:
-
-1. **Select a language** (English, German, Spanish, French, Italian)
-2. **Choose your home WiFi** from a scanned list (or enter a hidden SSID)
-3. **Enter the WiFi password**
-4. **Create an admin account** (username + password for the dashboard)
-
-<p align="center"><img src="images/readme/onboarding_3_wifi_setup.png" alt="WiFi setup web page" width="400"/></p>
-
-#### Step 4 -- Connection Success (E-Ink)
-
-Once the device connects to the home WiFi, the e-ink display shows a success screen with instructions on how to access the dashboard from the home network.
-
-<p align="center"><img src="images/readme/onboarding_4_connected.png" alt="WiFi connected e-ink screen" width="600"/></p>
-
-After 60 seconds, the display switches to normal operation mode and shows the first dashboard image.
-
-#### Device Reset
-
-If the user forgets their admin password or needs to start fresh, there are two reset options:
-
-##### Option A -- Reset Button (Setup Page)
-
-If the device is in hotspot/setup mode (e.g. stored WiFi unavailable), the setup web page shows a **"Reset Device"** button at the bottom. This clears:
-
-- All admin accounts
-- Wallet addresses and monitoring data
-- Bitaxe miner configuration
-- Donation history and webhook URLs
-- Mempool authentication
-
-The device remains in setup mode so the user can reconfigure WiFi and create a new admin account.
-
-##### Option B -- Power-Cycle Factory Reset
-
-For a full factory reset (including WiFi profiles and e-ink display), the user can power-cycle the device rapidly:
-
-1. **Power on** the device and wait for the e-ink display to refresh -- on slower hardware (e.g. Pi Zero) this can take up to about **3 minutes 30 seconds**. Only then **power off**.
-2. **Repeat** two more times (3 power cycles total) -- the reset triggers automatically as soon as the device boots the 3rd time, no extra power-on needed.
-
-The device detects 3 recent boot timestamps within a 15-minute window and automatically:
-
-- Clears all user data (same as Option A)
-- Deletes all saved WiFi profiles
-- Renders and displays the delivery-state e-ink image
-- Starts the setup hotspot for fresh onboarding
-
-> **Important:** Wait for the e-ink refresh (up to ~3:30 on slower hardware) before powering off each time -- that refresh is the device's own confirmation that it finished booting, recorded the timestamp, and flushed all writes to the SD card. Cutting power too early risks corrupting the filesystem, and 3 cycles of ~3:30 each (~10:30 total) still comfortably fits inside the 15-minute detection window.
+- `mempaper.service` starts on boot and first attempts a normal Wi-Fi connection
+- Finding none after the startup grace period, it brings up the `mempaper-XXXX` setup hotspot
+- The recipient connects, opens `http://10.42.0.1:5000`, and enters their Wi-Fi credentials
+- On success the hotspot shuts down and normal operation resumes automatically
 
 ---
 
@@ -541,7 +446,7 @@ The device detects 3 recent boot timestamps within a 15-minute window and automa
 
 ## CONFIGURATION
 
-Navigate to **Settings** in the web interface ([http://mempaper-ip:5000](http://mempaper-ip:5000)).
+Navigate to **Settings** in the web interface at `http://<pi-ip>:5000`.
 
 - **Mempool Connection** -- Default is `mempool.space`. Change IP/Port to use a local node or self-hosted mempool instance.
 - **Display** -- Toggle "E-Ink Display Connected" to ON.
@@ -565,7 +470,53 @@ The dashboard image is composed of a meme and a set of optional info blocks disp
 
 > All blocks are **on** by default except Bitaxe, Wallet Balances, and Donation, which require additional setup.
 
-See [Configuration Reference](docs/CONFIG_REFERENCE.md) for detailed explanation of all settings.
+See [Configuration Reference](docs/CONFIG_REFERENCE.md) for every setting in detail.
+
+<br/>
+
+---
+
+<br/>
+
+## MAINTENANCE
+
+Everything for running a mempaper day to day, whether you built it, were given it, or look after several.
+
+**Service control** — over SSH:
+
+```bash
+sudo systemctl status mempaper.service       # is it running?
+sudo journalctl -u mempaper.service -f       # live logs
+sudo systemctl restart mempaper.service      # restart after manual config edits
+```
+
+For OS-level upkeep — safe `apt` upgrades and Python version changes — see the [Maintenance Guide](docs/MAINTENANCE_GUIDE.md).
+
+### SSH Admin Access
+
+Each admin generates an SSH key pair once on their own machine, then adds the public key through the web UI (**Settings → General → Advanced → SSH Access**). It gets installed for both the `mempaper` account (scoped sudo) and `pi` (full sudo).
+
+Full procedure, including disabling password login: [Security Guide → SSH keys and password login](docs/SECURITY_GUIDE.md#4-ssh-keys-and-password-login).
+
+### Admin Users
+
+Multiple admin users are supported. Users are stored as Argon2id hashes in `config/config.json` under the `admin_users` key.
+
+```bash
+cd /home/mempaper/btc-mempaper
+sudo -u mempaper .venv/bin/python tools/setup_user.py                # create or update
+sudo -u mempaper .venv/bin/python tools/setup_user.py --list         # list users
+sudo -u mempaper .venv/bin/python tools/setup_user.py --delete alice # delete a user
+```
+
+> Use the venv interpreter and the `mempaper` user, as above. A bare `python` misses
+> the dependencies, and running as `pi` writes a root-owned config the service cannot read.
+
+> The script refuses to delete the last remaining user to prevent lockout.
+>
+> The script can be run while the service is running -- the application picks up the config change automatically. For password resets it is safer to stop the service first: `sudo systemctl stop mempaper`.
+
+**Existing installations** are migrated automatically on first startup: the single `admin_username` / `admin_password_hash` fields in the config are moved into the `admin_users` dict -- no manual action required.
 
 ### Software Update
 
@@ -600,14 +551,29 @@ When enabled, mempaper checks for new releases at the configured time and day, i
 
 #### Manual Update via SSH
 
+The app lives in the service account's home directory and every file is owned by
+`mempaper`, so run the update steps as that user — otherwise pip writes
+root-owned files into the virtualenv and the service fails to start afterwards.
+
 ```bash
-ssh pi@mempaper.local
-cd ~/btc-mempaper
-git fetch --tags
-git checkout <tag>                                    # e.g. git checkout v2.1.0
-.venv/bin/pip install -r requirements.txt --quiet
+ssh pi@<pi-ip>
+cd /home/mempaper/btc-mempaper
+
+sudo -u mempaper git fetch --tags
+sudo -u mempaper git checkout <tag>          # e.g. git checkout v2.1.0
+sudo -u mempaper .venv/bin/pip install -r requirements.txt --quiet
+
+# Re-minify only if you opted into minification at install time.
+# This mirrors what the web updater does: it re-minifies when dist/ has content.
+[ -n "$(ls -A static/js/dist 2>/dev/null)" ] \
+  && sudo -u mempaper .venv/bin/python tools/minify.py
+
 sudo systemctl restart mempaper.service
 ```
+
+> Skipping the minify step on a device that *does* use minified assets leaves
+> `static/js/dist/` holding the previous release's JavaScript — the UI then runs
+> stale code against a new backend.
 
 #### Transferring Memes via SCP
 
@@ -639,7 +605,7 @@ GIT_API_TOKEN=glpat-xxxxxxxxxxxxxxxxxxxx
 
 #### Permissions
 
-The web UI update requires a sudoers entry for passwordless service restart. This is automatically installed by `install_wifi_permissions.sh` (see [Quick Start step 5](#quick-start)). To install it manually:
+The web UI update requires a sudoers entry for passwordless service restart. `install.sh` sets this up for you; to install it manually:
 
 ```bash
 echo "$(whoami) ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart mempaper.service" | sudo tee /etc/sudoers.d/mempaper-update
@@ -654,87 +620,16 @@ sudo chmod 0440 /etc/sudoers.d/mempaper-update
 
 - [Architecture](docs/ARCHITECTURE.md) -- Diagrams: deployment topologies, what data leaves the device, codebase map, block-to-image data flow
 - [Configuration Reference](docs/CONFIG_REFERENCE.md) -- Complete guide to all settings
-- [Security Guide](docs/SECURITY_GUIDE.md) -- Hardening guide: installation, SSH, UFW, threat model, audit checklist
+- [Manual Installation](docs/MANUAL_INSTALL.md) -- Every command `install.sh` runs, step by step
+- [Security Guide](docs/SECURITY_GUIDE.md) -- Hardening guide: installation, SSH, firewalls, threat model, audit checklist
 - [Maintenance Guide](docs/MAINTENANCE_GUIDE.md) -- Safe apt upgrades, Python version management
 - [Self-Hosting Guide](docs/SELF_HOSTING_GUIDE.md) -- Expose mempaper to the internet via Traefik, OIDC login, and TLS
 - [Cache System Documentation](docs/UNIFIED_CACHE_DOCUMENTATION.md) -- Technical cache implementation details
 
 ### Project Structure
 
-The codebase is organized into functional modules:
+The codebase is organised into four layers — adapters bring data in, one orchestrator schedules, one renderer produces both images, two sinks deliver them. See the [component map and directory layout](docs/ARCHITECTURE.md#codebase-map) in the Architecture doc.
 
-```
-btc-mempaper/
-|
-|-- Entry Points
-|   |-- mempaper_app.py          Main Flask application (core logic)
-|   |-- serve.py                 Development server (quick start)
-|   |-- wsgi.py                  Production WSGI entry point
-|   +-- gunicorn.conf.py         Production server configuration
-|
-|-- lib/                         Core Business Logic
-|   |-- mempool_api.py           Mempool.space API client
-|   |-- btc_price_api.py         Bitcoin price data
-|   |-- bitaxe_api.py            Bitaxe miner integration
-|   |-- wallet_balance_api.py    Wallet balance & XPUB tracking
-|   |-- block_monitor.py         Block height monitoring
-|   |-- block_reward_cache.py    Persistent block reward storage
-|   |-- image_renderer.py        Dashboard image generation
-|   |-- display_subprocess.py    Display refresh handler
-|   |-- websocket_client.py      Real-time mempool WebSocket
-|   |-- address_derivation.py    HD wallet address derivation
-|   +-- btc_holidays.py          Bitcoin historical events
-|
-|-- managers/                    Configuration & Security
-|   |-- config_manager.py        Configuration management
-|   |-- config_observer.py       Config change monitoring
-|   |-- auth_manager.py          Authentication & rate limiting
-|   |-- secure_config_manager.py Encrypted configuration storage
-|   |-- secure_password_manager.py   Argon2id password hashing
-|   |-- secure_cache_manager.py  Encrypted cache files
-|   +-- unified_secure_cache.py  Unified cache encryption
-|
-|-- utils/                       Utilities & Helpers
-|   |-- translations.py          Multi-language support (en, de, es, it, fr)
-|   |-- color_lut.py             E-Paper color palette mapping
-|   |-- epd_color_fix.py         Waveshare 7-color optimizations
-|   |-- privacy_utils.py         Bitcoin address masking for logs
-|   |-- security_config.py       Security constants & settings
-|   +-- technical_config.py      Technical constants & defaults
-|
-|-- tools/                       Developer & maintenance tools
-|   |-- minify.py                JS minifier (generates static/js/dist/)
-|   |-- configure_display.py     Display configuration wizard
-|   |-- setup_user.py            Create / update / delete admin users
-|   |-- delivery_state.py        Prepare device for delivery
-|   |-- diagnose_mempool_api.py  Mempool API diagnostics
-|   |-- generate_service_file.py Generate systemd service config
-|   |-- backup_manager.py        Backup & maintenance utility
-|   |-- reset_cache_rpi.sh       Cache reset for Raspberry Pi
-|   |-- install_wifi_permissions.sh  Polkit + sudoers rules for Wi-Fi hotspot
-|   +-- 90-mempaper-wifi.rules       Polkit rule for NetworkManager
-|
-|-- display/                     Display Drivers & Config
-|   |-- waveshare_display.py     Native Waveshare driver integration
-|   |-- show_image.py            Image display handler
-|   |-- prepare_image.py         Image preparation pipeline
-|   +-- drivers/                 Bundled Waveshare EPD drivers (MIT)
-|       |-- epd13in3E.py         13.3" 6-color driver
-|       |-- epd7in3f.py          7.3" 7-color driver
-|       +-- epdconfig.py         Shared SPI/GPIO config
-|
-|-- config/                      User configuration
-|-- cache/                       Runtime cache storage
-|-- static/                      Web assets, memes, OPSec images
-|-- templates/                   HTML templates
-+-- docs/                        Documentation
-```
-
-**Architecture:**
-- **Entry Points** load configuration, initialize **lib/** APIs, render via **display/**
-- **managers/** handle security, authentication, and configuration
-- **utils/** provide shared functionality across the application
-- **tools/** contains developer and maintenance utilities (setup, diagnostics, deployment helpers)
 
 <br/>
 

@@ -11,7 +11,7 @@ mempaper is designed for **trusted local networks**. It is not designed to be di
 | Scenario | Risk level | Required hardening |
 |---|---|---|
 | Home LAN, no port forwarding | Low | Strong password, default setup is sufficient |
-| Home LAN with internet exposure via Traefik | Medium | Traefik + OIDC + UFW (see Self-Hosting Guide) |
+| Home LAN with internet exposure via Traefik | Medium | Traefik + OIDC (see Self-Hosting Guide) |
 | Untrusted network (hotel, office) | High | VPN-only access, no direct port forwarding |
 
 ---
@@ -37,62 +37,147 @@ mempaper is designed for **trusted local networks**. It is not designed to be di
 ### 1. Run the installer
 
 ```bash
-# On the Pi, as the 'pi' user (or any sudo-capable user):
-git clone https://github.com/your-org/btc-mempaper.git ~/btc-mempaper
+# On the Pi, as the 'pi' user (or any sudo-capable user) — never as root:
+sudo apt install -y git
+git clone https://github.com/satcat21/btc-mempaper.git ~/btc-mempaper
 cd ~/btc-mempaper
 bash install.sh
 ```
 
-`install.sh` will:
-- Create the `mempaper` service user
-- Add it to the `gpio`, `spi`, `i2c`, `netdev` groups (required for display and WiFi)
-- Install the Python virtual environment as the `mempaper` user
-- Generate the systemd service file
+**The installer applies the hardening for you.** It asks these questions upfront
+and then runs unattended — there are no manual security steps to perform
+afterwards:
 
-### 2. Install WiFi and sudo permissions
+| Prompt | Default | Recommended | Effect |
+|---|---|---|---|
+| Admin username and password | — | password manager | Argon2id hash in `config/config.json`; enforced minimum 16 characters with upper, lower, digit and symbol |
+| Reach mempool.space over Tor | Yes | **Yes** | Queries go to the onion service, so the public instance never sees your home IP |
+| fail2ban | Yes | **Yes** | Bans repeated SSH authentication failures |
+| Unattended security updates | Yes | **Yes** | Patches land without you remembering to apply them |
+| ↳ auto-reboot after updates | Yes | **Yes**, off-hours | Skipped automatically while an SSH session is active |
+| Disable SSH password authentication | Yes | **Yes** — read the warning below | Key-only login |
+| Wi-Fi country code | `DE` | your own country | Lifts the rfkill block that otherwise keeps the radio disabled |
+| Minify JavaScript | Yes | Yes | Smaller payloads; no security effect |
+| Persistent logging | No | No, unless debugging | Journal survives reboots, at the cost of SD card wear |
+
+**Accepting every default gives you the hardened configuration** — the defaults
+were chosen to be the secure answer, so pressing Enter through the prompts is
+the right move for almost everyone. Two are worth a moment's thought:
+
+- **Disabling SSH password authentication locks you out until you add a key.**
+  The installer warns about this, and it is not reversible from the web UI —
+  recovering means physical access to the SD card. Accept it, then add your
+  public key immediately via **Settings → General → Advanced → SSH Access** (see
+  [step 4](#4-ssh-keys-and-password-login)). If you are installing remotely and
+  have no key ready, answer **no** and harden later.
+- **Tor is right for the public mempool.space, and wrong for a self-hosted one.**
+  Against the public instance it costs a few seconds of latency the dashboard
+  never notices — blocks arrive ten minutes apart — and it keeps your home IP
+  out of the picture. Against your own node on the LAN it buys nothing: the
+  traffic never leaves the house. Worse, **Tor refuses to route private
+  addresses**, so leaving the toggle on while `mempool_host` points at
+  `192.168.x.x` breaks mempool access completely rather than merely slowing it.
+  It also runs a `tor` daemon the Pi Zero does not need — the installer already
+  nices it to 15 and defers its startup precisely because it competes with
+  mempaper on a single core.
+
+  Switching to your own node is therefore two changes, not one: set
+  `mempool_host`, **and turn the Tor toggle off**. Nothing does it for you — the
+  config auto-*enables* Tor for a `.onion` host, but never disables it when you
+  move to a LAN address.
+
+Without asking, it also creates the `mempaper` service account and adds it to
+`gpio`/`spi`/`i2c`/`netdev`; builds the virtualenv and pins pip; installs the
+polkit rule, the scoped `/etc/sudoers.d/mempaper-wifi`, and the
+`/usr/local/bin/mempaper-apt-install` wrapper that restricts package installs to
+`apt-requirements.txt`; generates and enables the systemd unit; and disables UFW
+and `nftables` (see [Host firewall](#host-firewall-do-not-use-ufw)).
+
+> Answering **no** to a prompt is a deliberate choice, not something to fix
+> later by re-running the installer — a second run skips anything already
+> configured. The manual equivalents are in
+> [Manual Installation](MANUAL_INSTALL.md#17-optional-hardening).
+
+### 2. Verify what was applied
+
+Do this once, on a freshly installed device:
 
 ```bash
-sudo bash ~/btc-mempaper/tools/install_wifi_permissions.sh mempaper
+sudo sshd -T | grep -i '^passwordauthentication'   # expect: no
+systemctl is-active fail2ban                       # expect: active
+systemctl is-enabled mempaper.service              # expect: enabled
+sudo nft list ruleset                              # expect: empty
+sudo ufw status 2>/dev/null                        # expect: inactive or absent
 ```
 
-This installs:
-- Polkit rules for NetworkManager (WiFi onboarding)
-- A scoped `/etc/sudoers.d/mempaper-wifi` with exactly the commands mempaper needs
-- The `/usr/local/bin/mempaper-apt-install` wrapper (restricts package installs to `apt-requirements.txt`)
+Check `passwordauthentication` against `sshd -T` rather than reading
+`sshd_config`. Some Raspberry Pi OS images ship a
+`/etc/ssh/sshd_config.d/50-cloud-init.conf` that re-enables password login, and
+sshd's `Include` is first-match-wins — so the file can say one thing while the
+running daemon does another.
 
-### 3. Enable and start the service
+### 3. First login
+
+Open `http://<pi-ip>:5000` and sign in with the admin account you created during
+installation. If you skipped that prompt, create one now:
 
 ```bash
-sudo systemctl enable mempaper.service
-sudo systemctl start mempaper.service
+cd /home/mempaper/btc-mempaper
+sudo -u mempaper .venv/bin/python tools/setup_user.py
 ```
 
-### 4. First-time admin setup
+### 4. SSH keys and password login
 
-Open `http://<pi-ip>:5000` in a browser. You will be prompted to create an admin user. Use a strong, unique password (a password manager is recommended).
+If you accepted the SSH hardening prompt, password login is **already disabled**
+and you need a key to get back in. Add one before you log out of your current
+session.
 
-### 5. Harden SSH access (recommended)
+This is also the procedure for giving an admin ongoing access to a device that
+has already been delivered.
 
-Generate an SSH key pair on your computer:
+**On your own machine**, generate a key pair. The private key never leaves it:
 
 ```bash
-ssh-keygen -t ed25519 -C "mempaper-admin"
+ssh-keygen -t ed25519 -C "your-name-mempaper"
+cat ~/.ssh/id_ed25519.pub   # copy this output
 ```
 
-Add the public key to the Pi via **Settings → General → Advanced → SSH Access**, then disable password-based SSH:
+**On the device**, log into the web UI → **Settings → General → Advanced → SSH
+Access** → paste the public key → **Add Key**.
+
+The key is installed for *both* service accounts, each with its own entry that
+can be removed individually through the same page:
+
+| Account | Access level | Use it for |
+|---|---|---|
+| `mempaper` | Scoped sudo | `apt-get upgrade`, service restart, reboot |
+| `pi` | Full sudo | `apt dist-upgrade`, system configuration |
+
+```bash
+ssh mempaper@<pi-ip>
+ssh pi@<pi-ip>
+```
+
+**Then disable password login.** Edit `/etc/ssh/sshd_config`:
 
 ```bash
 # /etc/ssh/sshd_config
 PubkeyAuthentication yes
 PasswordAuthentication no
 PermitRootLogin no
+AuthorizedKeysFile .ssh/authorized_keys
 ```
 
 ```bash
 sudo systemctl restart ssh
 ```
 
-> **Test your SSH key login before closing the current session.**
+> **Test your SSH key login in a second terminal before closing the current
+> session** — otherwise a typo in `sshd_config` locks you out of the device.
+
+Password login is the only part of this worth doing for a home deployment;
+restricting SSH by source address is handled by your router, not by a firewall
+on the Pi. See [Host firewall](#host-firewall-do-not-use-ufw).
 
 ---
 
@@ -100,30 +185,34 @@ sudo systemctl restart ssh
 
 ### From `pi` user to `mempaper` user
 
-If your installation runs as the `pi` user instead of the dedicated `mempaper` service user, re-run the installer to switch it over:
+If your installation runs as the `pi` user instead of the dedicated `mempaper`
+service user, re-run the installer to switch it over:
 
 ```bash
 cd ~/btc-mempaper
 bash install.sh
 ```
 
-Then reinstall the WiFi permissions for the new user:
+That is the whole migration. The installer creates the service account, adds it
+to the `gpio`/`spi`/`i2c`/`netdev` groups, relocates the repo to
+`/home/mempaper/btc-mempaper`, reinstalls the polkit and sudoers rules for the
+new user, and regenerates the systemd unit. It skips anything already correct,
+so re-running it is safe.
+
+Group membership only takes effect after a reboot, so do that before deciding
+the display is broken:
 
 ```bash
-sudo bash tools/install_wifi_permissions.sh mempaper
+sudo reboot
+id mempaper            # afterwards: confirm gpio, spi, i2c, netdev
 ```
 
-Check that the display still works (the `mempaper` user needs the hardware groups):
+If the Waveshare drivers did not download — most likely the Pi was offline
+during the run — configure the display again:
 
 ```bash
-sudo usermod -aG gpio,spi,i2c mempaper
-# Reboot or log out and back in for group changes to take effect
-```
-
-If the Waveshare drivers were not downloaded, run the display configuration tool:
-
-```bash
-sudo -u mempaper .venv/bin/python tools/configure_display.py 1
+cd /home/mempaper/btc-mempaper
+sudo -u mempaper .venv/bin/python tools/configure_display.py
 ```
 
 ### Update the donation webhook URL
@@ -138,26 +227,42 @@ Requests to the bare `/api/donation-webhook` URL (without a valid token) return 
 
 ---
 
-## Firewall configuration (UFW)
+## Host firewall: do not use UFW
 
-For **all deployments**, apply UFW rules to limit surface:
+> **Do not install or enable UFW on a mempaper device**, and do not re-enable
+> `nftables`. The installer turns both off on purpose
+> ([`install.sh`](../install.sh)), and switching them back on breaks first-time
+> setup.
 
-```bash
-# Allow mempaper web UI only from your home network
-sudo ufw allow from 192.168.0.0/16 to any port 5000
-sudo ufw allow from 10.0.0.0/8 to any port 5000
-sudo ufw allow from 172.16.0.0/12 to any port 5000
+UFW's `ufw-after-input` chain unconditionally drops UDP port 67 (DHCP
+broadcasts) *before* any allow-rule you add can accept them. The setup hotspot
+runs its own DHCP server, so while UFW is active that server can never reply —
+a phone connecting to `mempaper-XXXX` gets no address and the setup page is
+unreachable. `nftables` on Trixie causes the same failure.
 
-# Restrict SSH to LAN only
-sudo ufw allow from 192.168.0.0/16 to any port 22
-sudo ufw allow from 10.0.0.0/8 to any port 22
-sudo ufw allow from 172.16.0.0/12 to any port 22
+The trap is that this stays invisible. A device already on Wi-Fi keeps working
+perfectly with UFW enabled; the breakage only surfaces later, when the device
+falls back to hotspot mode after a Wi-Fi change, a router swap, or a factory
+reset — exactly the moment you need it to work, and with no console to debug
+from. mempaper installs its own narrow `iptables` rules for the captive portal
+while the hotspot is up, and removes them when it shuts down.
 
-# Block everything else (including internet)
-sudo ufw --force enable
-```
+**What protects the device instead:**
 
-> `192.168.0.0/16` covers all common home router subnets including FritzBox (`192.168.178.x`).
+- **Your router.** NAT drops unsolicited inbound connections, and no port
+  forwarding means nothing from the internet reaches port 5000 or 22. This is
+  the control that actually matters for a home deployment.
+- **The application.** Argon2id password hashing plus login rate limiting gates
+  the config page; `public_dashboard` decides whether the read-only view needs
+  a login at all.
+- **SSH configuration.** Key-only authentication and `PermitRootLogin no`
+  restrict shell access without touching the packet filter (see below).
+
+**If you genuinely need per-source filtering** — an untrusted LAN, a shared
+office network — do it on the router or a managed switch rather than on the Pi.
+That keeps the device's own network stack free for the hotspot. Host-level
+filtering on the Pi is only safe if you are certain the device will never need
+hotspot onboarding again, and it will not warn you when that assumption breaks.
 
 ---
 
@@ -169,51 +274,70 @@ The default installation is sufficient for most home users:
 
 - Router NAT blocks all inbound internet connections
 - `mempaper` auth (Argon2id + rate limiting) is the only barrier needed
-- UFW is optional but recommended for defense in depth
+- No host firewall — see [above](#host-firewall-do-not-use-ufw)
 
 **Checklist:**
 - [x] Strong admin password (minimum 12 characters, unique)
 - [x] No port forwarding for port 5000 or 22 on your router
 - [x] `unattended-upgrades` enabled for automatic OS security patches (see below)
-- [ ] UFW enabled (optional, but good practice)
+- [x] UFW and `nftables` left disabled, as the installer configured them
 
 ### Internet-accessible via Traefik + OIDC
 
 See the [Self-Hosting Guide](SELF_HOSTING_GUIDE.md) for full Traefik setup. Additionally:
 
-**Set the `MEMPAPER_BEHIND_PROXY` environment variable** so the session cookie gets the `Secure` flag:
+**The session cookie is `HttpOnly` and `SameSite=Strict`, but not `Secure`.**
+mempaper is reached over plain HTTP on the LAN, and a `Secure` cookie is never
+sent over HTTP — setting it would break login for every local user. The flag is
+process-wide, so a device reachable both through Traefik and directly on the LAN
+cannot have it both ways.
 
-Add to `/etc/systemd/system/mempaper.service` in the `[Service]` section:
+The practical consequence: if someone reaches the Pi directly on port 5000
+instead of through Traefik, the session cookie travels in clear text on your
+LAN. Treat that as the reason to keep port 5000 unreachable from anywhere you do
+not trust, rather than something a cookie attribute will solve.
 
-```ini
-Environment="MEMPAPER_BEHIND_PROXY=1"
-```
+**Keep port 5000 off the internet:**
 
-Then reload:
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl restart mempaper.service
-```
-
-Without this flag, the `Secure` cookie attribute is not set, meaning browsers may send the session cookie over HTTP if the Pi is ever accessed directly (bypassing Traefik).
-
-**Restrict port 5000 with UFW:**
-
-If you want all traffic to go through Traefik (not directly to Flask), bind UFW to block direct port 5000 access from outside your LAN, and ensure Traefik is the only way in from the internet.
+Traefik should be the only route in from outside. Forward only Traefik's ports
+(80/443) on your router and never forward 5000 — that, not a host firewall,
+is what keeps Flask unreachable directly. Port 5000 stays open to your LAN by
+design; see [Known limitations](#known-limitations).
 
 ---
 
 ## Automatic OS security updates
 
-Install `unattended-upgrades` to keep the Pi patched automatically:
+**The installer sets this up** unless you declined the prompt. Confirm before
+adding it again:
+
+```bash
+systemctl is-enabled unattended-upgrades
+```
+
+If that reports anything other than `enabled`, install it:
 
 ```bash
 sudo apt install unattended-upgrades
 sudo dpkg-reconfigure --priority=low unattended-upgrades
 ```
 
-This installs security updates automatically without manual intervention.
+Optionally reboot automatically once patches need it. `Automatic-Reboot-WithUsers
+"false"` holds the reboot back while anyone is logged in over SSH, so it will not
+cut off a session mid-command:
+
+```bash
+sudo tee /etc/apt/apt.conf.d/52mempaper-reboot > /dev/null <<'EOF'
+Unattended-Upgrade::Automatic-Reboot "true";
+Unattended-Upgrade::Automatic-Reboot-WithUsers "false";
+Unattended-Upgrade::Automatic-Reboot-Time "04:00";
+EOF
+```
+
+Note that `apt-mark hold` keeps the Python minor version pinned, so unattended
+upgrades can never swap the interpreter out from under the virtualenv — security
+patches within the held minor still install. See the
+[Maintenance Guide](MAINTENANCE_GUIDE.md).
 
 ---
 
@@ -258,34 +382,39 @@ The encryption key is derived from the Pi's hardware fingerprint (CPU serial + M
 
 ## Security audit checklist
 
+A stock install with the default answers already satisfies the *Installation*
+and *SSH* sections — verify rather than perform them. Each item below can be
+checked with one command.
+
 ### Installation
 
-- [ ] `mempaper` service user created (not running as `pi` or `root`)
-- [ ] `install_wifi_permissions.sh mempaper` run (scoped sudoers, apt wrapper installed)
-- [ ] Admin password set via first-time setup (not the old default `mempaper2025`)
+- [ ] Service runs as `mempaper`, not `pi` or `root` — `systemctl show -p User mempaper.service`
+- [ ] Scoped sudoers and apt wrapper present — `ls /etc/sudoers.d/mempaper-wifi /usr/local/bin/mempaper-apt-install`
+- [ ] At least one admin account exists with a strong password — `sudo -u mempaper .venv/bin/python tools/setup_user.py --list`
+- [ ] Config not world-readable — `stat -c '%a' config/config.json` returns `640`
 
 ### SSH
 
-- [ ] SSH key uploaded via web UI (Settings → General → Advanced → SSH Access)
-- [ ] `PasswordAuthentication no` in `/etc/ssh/sshd_config`
-- [ ] `PermitRootLogin no` in `/etc/ssh/sshd_config`
-- [ ] SSH restricted to LAN via UFW
+- [ ] Password login off in the *effective* config — `sudo sshd -T | grep -i '^passwordauthentication'`
+- [ ] Root login off — `sudo sshd -T | grep -i '^permitrootlogin'`
+- [ ] A key is actually installed, or the above locks you out — `wc -l < /home/mempaper/.ssh/authorized_keys`
 
 ### Network
 
-- [ ] UFW enabled with LAN-only rules for port 5000 and 22
+- [ ] UFW and `nftables` still disabled (re-enabling them breaks hotspot setup) — `sudo nft list ruleset` is empty
 - [ ] No port forwarding for port 5000 or 22 on the router (for home users)
-- [ ] If using Traefik: `MEMPAPER_BEHIND_PROXY=1` set in systemd unit
+- [ ] If using Traefik: port 5000 not forwarded, so 80/443 via Traefik is the only way in
 
 ### Application
 
 - [ ] Donation webhook URL updated in LNbits to include the security token
-- [ ] `unattended-upgrades` installed and enabled
+- [ ] Unattended upgrades running — `systemctl is-enabled unattended-upgrades`
+- [ ] Mempool queries not leaking your IP — `mempool_host` is a `.onion`, or your own node
 
 ---
 
 ## Known limitations
 
 - **No CSRF tokens**: SameSite=Strict cookies prevent the vast majority of CSRF attacks, but token-based CSRF protection is not implemented. Risk is low for local network use.
-- **LAN bypass of Traefik/OIDC**: Port 5000 is accessible to any LAN device. The mempaper login is the only barrier for direct LAN access. Use UFW to restrict if needed.
+- **LAN bypass of Traefik/OIDC**: Port 5000 is accessible to any LAN device, and the mempaper login is the only barrier for direct LAN access. A host firewall is not the fix here — see [Host firewall](#host-firewall-do-not-use-ufw); restrict at the router or on a VLAN if your LAN is not trusted.
 - **Webhook relay trust**: If you use an event-hub relay, the relay URL should include a high-entropy secret token (32+ random bytes). The Pi trusts all events it receives over the WebSocket.

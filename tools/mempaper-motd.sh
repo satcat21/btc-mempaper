@@ -263,7 +263,7 @@ _shorten_host() {
     printf '%s...%s' "${h:0:7}" "${h: -10}"
 }
 
-# Block height — query mempool. A .onion host resolves only through the SOCKS
+# Block height — query mempool. An .onion host resolves only through the SOCKS
 # proxy, so without this the banner reports a perfectly healthy instance as
 # offline. --socks5-hostname (not --socks5) leaves resolution to Tor.
 # The longer budget covers circuit setup and the hidden-service descriptor

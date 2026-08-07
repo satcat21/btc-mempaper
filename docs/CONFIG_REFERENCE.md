@@ -1,11 +1,11 @@
-# CONFIGURATION REFERENCE
+# Configuration Reference
 
 This document provides a comprehensive list of all configuration settings available in mempaper.
 These settings can be modified via the Web Dashboard (recommended) or by editing `config/config.json`.
 
 ---
 
-## GENERAL APPEARANCE
+## General appearance
 
 | Web Label | Config Key | Type | Description | Allowed Values / Examples |
 | :--- | :--- | :--- | :--- | :--- |
@@ -16,7 +16,7 @@ These settings can be modified via the Web Dashboard (recommended) or by editing
 
 ---
 
-## COLOR CUSTOMIZATION
+## Color customization
 
 | Web Label | Config Key | Type | Description | Default Light / Dark |
 | :--- | :--- | :--- | :--- | :--- |
@@ -34,27 +34,56 @@ These settings can be modified via the Web Dashboard (recommended) or by editing
 
 ---
 
-## MEMPOOL INTEGRATION
+## Mempool integration
 
 | Web Label | Config Key | Type | Description | Allowed Values / Examples |
 | :--- | :--- | :--- | :--- | :--- |
 | **Mempool Host** | `mempool_host` | String | Mempool instance hostname. A `.onion` address enables Tor automatically and switches to http on port 80, since onion names cannot resolve without a proxy and the circuit already encrypts | `mempool.space` (public), `192.168.1.50` (local), `...onion` (via Tor) |
 | **Private/Self-Hosted** | `mempool_is_private` | Switch | Marks the instance as self-hosted on your local network; disables privacy warnings for wallet monitoring | `true` (private), `false` (public, default) |
-| **Connect via Tor** | `mempool_use_tor` | Switch | Route mempool traffic through a local Tor daemon, so a `.onion` host can be used and the instance never sees your IP. Requires `sudo apt install tor` on the device. Only mempool traffic is proxied -- Bitaxe miners stay on the LAN | `true` (via Tor), `false` (direct, default) |
+| **Connect via Tor** | `mempool_use_tor` | Switch | Route mempool traffic through the local Tor daemon (installed by `install.sh`), so a `.onion` host works and the instance never sees your IP. Only mempool traffic is proxied -- Bitaxe miners stay on the LAN. **Turn this off when pointing at a self-hosted mempool on your LAN:** Tor refuses to route private addresses, so a `192.168.x.x` host fails entirely while it is on | `true` (via Tor), `false` (direct, default) |
 | **Tor SOCKS Host** | `tor_socks_host` | String | Address of the Tor SOCKS proxy (Advanced) | `127.0.0.1` (default) |
 | **Tor SOCKS Port** | `tor_socks_port` | Number | Port of the Tor SOCKS proxy (Advanced) | `9050` (Tor daemon, default), `9150` (Tor Browser) |
 | **Use HTTPS/SSL** | `mempool_use_https` | Switch | Secure connection. Not used over Tor -- the onion circuit already encrypts and authenticates, so the setting is disabled while Tor is on | `true` (https://), `false` (http://) |
 | **Verify SSL Cert** | `mempool_verify_ssl` | Switch | Validate SSL certificate. Not used over Tor, for the same reason | `true` (Verify), `false` (Skip -- for self-signed) |
-| **REST Port** | `mempool_rest_port` | Number | API port | `443` (public), `80`, `3006` (local MyNode/Umbrel) |
-| **WebSocket Port** | `mempool_ws_port` | Number | Real-time data port | `443` (public), `8999` (local standard) |
+| **REST Port** | `mempool_rest_port` | Number | API port. Remembered separately for clearnet and Tor -- see below | `443` (public), `80` (onion), `4081`/`3006` (local mempool, MyNode/Umbrel) |
+| **WebSocket Port** | `mempool_ws_port` | Number | Real-time data port. Also remembered per transport | `443` (public), `80` (onion), `8999` (local standard) |
 | **WebSocket Path** | `mempool_ws_path` | String | Websocket endpoint path | `/api/v1/ws` (default) |
 | **Username** | `mempool_username` | String | Optional Basic auth username | Leave empty if not required |
 | **Password** | `mempool_password` | String | Optional Basic auth password | Leave empty if not required |
 | **Fee Preference** | `fee_parameter` | Select | Which fee to display | `fastestFee` (High Priority), `halfHourFee` (Standard), `hourFee` (Low Priority), `economyFee` (Economy), `minimumFee` (No Priority) |
 
+### Ports are remembered per transport
+
+Clearnet and Tor each keep their own ports permanently, and the **Connect via
+Tor** switch decides which pair is live. Toggling Tor therefore never destroys a
+custom port: switch on, and the fields change to the Tor pair; switch off, and
+your previous values come back exactly as they were.
+
+| Config Key | Default | Applies when |
+| :--- | :--- | :--- |
+| `mempool_use_https_clearnet` | `true` | Tor **off** |
+| `mempool_rest_port_clearnet` | `443` | Tor **off** |
+| `mempool_ws_port_clearnet` | `443` | Tor **off** |
+| `mempool_rest_port_tor` | `80` | Tor **on** |
+| `mempool_ws_port_tor` | `80` | Tor **on** |
+
+Editing a port writes to whichever slot is active, so a value typed while Tor is
+on belongs to the Tor slot and leaves the clearnet one untouched. `mempool_use_https`,
+`mempool_rest_port` and `mempool_ws_port` are the *live* values projected from the
+active slot — those are what the rest of the app reads.
+
+There is no HTTPS setting for Tor. An onion address **is** the service's public
+key, so the circuit already encrypts and authenticates the endpoint; TLS on top
+would add handshake cost a Pi Zero can ill afford and protect nothing. Tor
+traffic is always plain HTTP.
+
+Selecting a **known onion preset** overrides the Tor slot's port, because the
+service dictates its own: a port carried over from a clearnet instance would be
+refused by a hidden service listening on 80.
+
 ---
 
-## DISPLAY HARDWARE
+## Display hardware
 
 | Web Label | Config Key | Type | Description | Allowed Values / Examples |
 | :--- | :--- | :--- | :--- | :--- |
@@ -62,10 +91,28 @@ These settings can be modified via the Web Dashboard (recommended) or by editing
 | **Display Driver** | `omni_device_name` | String | Driver name (Native or Omni-EPD) | `epd13in3E` (Recommended -- Waveshare 13.3"), `epd7in3f` (Default -- Waveshare 7.3"), `inky.impression`, `inky.auto` |
 | **Display Width** | `display_width` | Number | Resolution Width (pixels) -- Auto-set by device selection | Automatically determined from selected device or orientation |
 | **Display Height** | `display_height` | Number | Resolution Height (pixels) -- Auto-set by device selection | Automatically determined from selected device or orientation |
+> **Changing the display model is not possible from this page.** The selector shows the configured model read-only; it can download missing drivers for that model, but not switch to another. Re-run `install.sh`, or `sudo -u mempaper .venv/bin/python tools/configure_display.py`.
+
+### Automatic disable and recovery
+
+Three consecutive refresh failures — a wrong driver, an SPI error, a dead panel —
+switch `e-ink-display-connected` off and persist it, so the device stops retrying
+a display that cannot work.
+
+**The next service restart or reboot turns it back on and tries again.** Without
+that, a transient fault leaves the panel dark permanently and the only cure is
+the dashboard, which is no help on a device handed to someone who never logs in.
+A retry costs at most three failed refreshes before the threshold trips again, so
+a genuinely dead panel does not spin.
+
+Only an automatic disable is retried. Switching the display off yourself in
+Settings clears `eink_auto_disabled`, and a reboot then leaves it off — your
+choice is never overridden. The marker is also cleared the moment a refresh
+succeeds.
 
 ---
 
-## BITCOIN PRICE BLOCK
+## Bitcoin price block
 
 | Web Label | Config Key | Type | Description | Allowed Values / Examples |
 | :--- | :--- | :--- | :--- | :--- |
@@ -75,7 +122,7 @@ These settings can be modified via the Web Dashboard (recommended) or by editing
 
 ---
 
-## BITAXE / MINING STATS
+## Bitaxe / mining stats
 
 | Web Label | Config Key | Type | Description | Allowed Values / Examples |
 | :--- | :--- | :--- | :--- | :--- |
@@ -86,7 +133,7 @@ These settings can be modified via the Web Dashboard (recommended) or by editing
 
 ---
 
-## WALLET MONITORING
+## Wallet monitoring
 
 | Web Label | Config Key | Type | Description | Allowed Values / Examples |
 | :--- | :--- | :--- | :--- | :--- |
@@ -97,7 +144,7 @@ These settings can be modified via the Web Dashboard (recommended) or by editing
 
 ---
 
-## BTC COUNTDOWN BLOCK
+## BTC countdown block
 
 | Web Label | Config Key | Type | Description | Allowed Values / Examples |
 | :--- | :--- | :--- | :--- | :--- |
@@ -105,7 +152,7 @@ These settings can be modified via the Web Dashboard (recommended) or by editing
 
 ---
 
-## HALVING BLOCK
+## Halving block
 
 | Web Label | Config Key | Type | Description | Allowed Values / Examples |
 | :--- | :--- | :--- | :--- | :--- |
@@ -113,7 +160,7 @@ These settings can be modified via the Web Dashboard (recommended) or by editing
 
 ---
 
-## NETWORK BLOCK
+## Network block
 
 | Web Label | Config Key | Type | Description | Allowed Values / Examples |
 | :--- | :--- | :--- | :--- | :--- |
@@ -121,7 +168,7 @@ These settings can be modified via the Web Dashboard (recommended) or by editing
 
 ---
 
-## DONATION BLOCK
+## Donation block
 
 Displays the latest (or largest) Lightning donation received via a LNbits webhook. Requires a webhook URL to be configured -- either a direct connection (same network) or via a self-hosted [event-hub](https://github.com/satcat21/event-hub) relay.
 
@@ -133,7 +180,7 @@ Displays the latest (or largest) Lightning donation received via a LNbits webhoo
 
 ---
 
-## SOFTWARE UPDATES
+## Software updates
 
 | Web Label | Config Key | Type | Description | Allowed Values / Examples |
 | :--- | :--- | :--- | :--- | :--- |
@@ -145,7 +192,33 @@ When automatic updates are enabled, mempaper checks for new releases at the conf
 
 ---
 
-## OPSEC MODE
+## Meme sync
+
+Fetches new memes from einundzwanzig-memes.space on a weekly schedule, via a
+cron entry for the `mempaper` user that mempaper writes and keeps in step with
+these settings.
+
+| Web Label | Config Key | Type | Description | Allowed Values / Examples |
+| :--- | :--- | :--- | :--- | :--- |
+| **Weekly Meme Sync** | `meme_sync_enabled` | Switch | Enable the scheduled download | `true`, `false` (default) |
+| **Sync Day** | `meme_sync_day` | Select | Day of the week, in cron numbering | `"0"` (Sun) … `"6"` (Sat), default `"4"` (Thu) |
+| **Sync Hour** | `meme_sync_hour` | Select | Hour of the day, 24-hour | `"0"` … `"23"`, default `"13"` |
+| **Download over Tor** | `tor_meme_downloads` | Switch | Append `--tor` so the download uses the Tor SOCKS proxy, keeping your IP off the meme host too | `true`, `false` (default) |
+
+**`install.sh` randomises the day and hour per device** at install time and sets
+`meme_sync_schedule_randomised` so it never does so again. Without that, every
+mempaper in the world would inherit the same Thursday 13:00 default and hit
+einundzwanzig-memes.space in the same hour. Changing the schedule in the web UI
+overrides it and is never overwritten by a later install run.
+
+> The sync script (`tools/sync_memes.py`) is currently a **placeholder** —
+> the upstream API endpoint does not exist yet. A scheduled run reports what it
+> would have done and exits 0, so the job shows as succeeding rather than
+> failing in the cron log until the implementation lands.
+
+---
+
+## OPSec mode
 
 When OPSec Mode is enabled the e-ink display shows a randomly selected cover image (e.g. a family photo) instead of Bitcoin data. The web dashboard is **not** affected and always shows normal BTC data.
 
@@ -157,7 +230,7 @@ Upload OPSec images via the **Meme Management** section of the config page, in t
 
 ---
 
-## SECURITY AND ADMIN
+## Security and admin
 
 | Web Label | Config Key | Type | Description | Allowed Values / Examples |
 | :--- | :--- | :--- | :--- | :--- |
@@ -167,7 +240,7 @@ Upload OPSec images via the **Meme Management** section of the config page, in t
 
 ---
 
-## ADVANCED (FILE-ONLY)
+## Advanced (file-only)
 
 These settings are typically managed by the system or only available in `config.json` directly.
 
@@ -184,3 +257,6 @@ These settings are typically managed by the system or only available in `config.
 | `xpub_bootstrap_increment` | `10` | Addresses per step during bootstrap search |
 | `font_regular` | `static/fonts/Roboto-Regular.ttf` | Path to regular font file |
 | `font_bold` | `static/fonts/Roboto-Bold.ttf` | Path to bold font file |
+| `eink_auto_disabled` | `false` | Set when three consecutive refresh failures switch the display off, so startup knows the shutdown was automatic rather than the operator's choice. See [Display hardware](#display-hardware) |
+| `web_orientation` | `vertical` | Layout used for the browser dashboard. Hidden in the web UI — the renderer reads it to decide whether to swap width and height |
+| `eink_orientation` | `vertical` | Layout rendered to the panel, also used by the display worker to decide rotation. Hidden in the web UI; config stores landscape dimensions and `vertical` swaps them at render time |

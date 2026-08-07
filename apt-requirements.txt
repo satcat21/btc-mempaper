@@ -37,6 +37,6 @@ hostapd
 # GPIO (Raspberry Pi)
 python3-gpiozero
 
-# Tor daemon: routes mempool traffic to a .onion instance (mempool_use_tor)
+# Tor daemon: routes mempool traffic to an .onion instance (mempool_use_tor)
 # and optionally the weekly meme sync (sync_memes.py --tor)
 tor

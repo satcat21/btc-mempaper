@@ -1,12 +1,12 @@
-# UNIFIED SECURE CACHE SYSTEM
+# Unified Secure Cache System
 
-## OVERVIEW
+## Overview
 
 The mempaper application uses a unified secure cache system that encrypts all sensitive cache data — Bitcoin addresses, balances, and transaction data — into a single `cache.secure.json` file, so nothing sensitive is ever written to disk in plain text.
 
 ---
 
-## SECURITY FEATURES
+## Security features
 
 ### Encryption
 
@@ -15,14 +15,14 @@ The mempaper application uses a unified secure cache system that encrypts all se
 - Device-specific key derivation for Raspberry Pi hardware
 - All sensitive cache data is encrypted at rest
 
-### Unified Storage
+### Unified storage
 
 - Single encrypted file: `cache/cache.secure.json`
 - Contains all cache types: block reward, wallet balance, and optimized balance
 - Atomic operations to prevent corruption
 - Thread-safe access with proper locking
 
-### Automatic Migration
+### Automatic migration
 
 - Seamless migration from individual cache files
 - Preserves all existing cache data during transition
@@ -31,23 +31,23 @@ The mempaper application uses a unified secure cache system that encrypts all se
 
 ---
 
-## CACHE TYPES
+## Cache types
 
 The unified cache stores three types of sensitive data:
 
-### 1. Block Reward Cache (`block_reward_cache`)
+### 1. Block reward cache (`block_reward_cache`)
 
 - Bitcoin addresses being monitored for mining rewards
 - Coinbase transaction counts per address
 - Block sync heights and scan progress
 
-### 2. Wallet Balance Cache (`wallet_balance_cache`)
+### 2. Wallet balance cache (`wallet_balance_cache`)
 
 - Wallet addresses with current balances
 - XPUB balance summaries
 - Address comments and metadata
 
-### 3. Optimized Balance Cache (`optimized_balance_cache`)
+### 3. Optimized balance cache (`optimized_balance_cache`)
 
 - XPUB-derived address caches
 - Performance optimization data for balance monitoring
@@ -55,9 +55,9 @@ The unified cache stores three types of sensitive data:
 
 ---
 
-## FILE STRUCTURE
+## File structure
 
-### New Structure (Secure)
+### New structure (secure)
 
 ```
 cache/
@@ -66,7 +66,7 @@ cache/
   *.migrated_backup          Backup of original files
 ```
 
-### Old Structure (Deprecated)
+### Old structure (deprecated)
 
 ```
 cache/
@@ -78,7 +78,7 @@ cache/
 
 ---
 
-## IMPLEMENTATION DETAILS
+## Implementation details
 
 ### Components
 
@@ -103,7 +103,7 @@ cache/
 - **Compatibility** -- Works with async cache for address derivation
 - **Dual Mode** -- Uses both unified cache (wallet data) and async cache (addresses)
 
-### Security Configuration
+### Security configuration
 
 The unified cache uses the same encryption key as the secure configuration system:
 
@@ -117,9 +117,9 @@ The unified cache uses the same encryption key as the secure configuration syste
 
 ---
 
-## API USAGE
+## API usage
 
-### Basic Cache Operations
+### Basic cache operations
 
 ```python
 from secure_cache_manager import get_unified_cache
@@ -139,7 +139,7 @@ info = cache.get_cache_info()
 print(f"Cache version: {info['cache_version']}")
 ```
 
-### Component Integration
+### Component integration
 
 ```python
 from block_reward_cache import BlockRewardCache
@@ -167,9 +167,9 @@ wallet_api = WalletBalanceAPI()   # Uses unified secure cache + async cache
 
 ---
 
-## MONITORING AND TROUBLESHOOTING
+## Monitoring and troubleshooting
 
-### Cache Status
+### Cache status
 
 ```python
 from secure_cache_manager import get_unified_cache
@@ -182,7 +182,7 @@ print(f"File size: {info.get('file_size', 0)} bytes")
 print(f"Last updated: {info.get('last_updated', 0)}")
 ```
 
-### Component Status
+### Component status
 
 ```python
 from block_reward_cache import BlockRewardCache
@@ -196,7 +196,7 @@ wallet_api = WalletBalanceAPI()
 print("Wallet API unified:", wallet_api.use_unified_cache)
 ```
 
-### Log Messages
+### Log messages
 
 - `Using unified secure cache` -- Component successfully using secure storage
 - `Failed to initialize unified cache` -- Fallback to individual files
@@ -205,7 +205,7 @@ print("Wallet API unified:", wallet_api.use_unified_cache)
 
 ---
 
-## FILE EXCLUSIONS
+## File exclusions
 
 The following files are excluded from version control (`.gitignore`):
 
@@ -227,7 +227,7 @@ cache/wallet_balance_cache.json
 
 ---
 
-## COMPATIBILITY
+## Compatibility
 
 ### Requirements
 
@@ -235,7 +235,7 @@ cache/wallet_balance_cache.json
 - `cryptography` library (already required for secure config)
 - Existing secure configuration system
 
-### Platform Support
+### Platform support
 
 - **Raspberry Pi** -- Full encryption with hardware-specific keys
 - **Development Systems** -- Compatible encryption with fallback entropy
