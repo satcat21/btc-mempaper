@@ -2755,7 +2755,17 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
                     
                     print(f"🌐 Enriching block notification with API data...")
                     base_url = self._get_mempool_base_url()
-                    block_response = requests.get(f"{base_url}/v1/block/{block_hash}", timeout=10, verify=False)
+                    # Route through Tor when configured. Without this the .onion
+                    # host is handed to the system resolver, which cannot resolve
+                    # it — every block logged a name-resolution failure — and a
+                    # clearnet host would be contacted directly, bypassing Tor.
+                    _proxies = build_mempool_proxies(self.config)
+                    block_response = requests.get(
+                        f"{base_url}/v1/block/{block_hash}",
+                        timeout=40 if _proxies else 10,   # a circuit needs longer
+                        verify=self.config.get("mempool_verify_ssl", True),
+                        proxies=_proxies,
+                    )
                     
                     if block_response.ok:
                         block_data = block_response.json()

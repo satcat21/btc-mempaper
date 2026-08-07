@@ -643,7 +643,8 @@ class BlockRewardCache:
             for height in range(batch_start, batch_end + 1):
                 try:
                     # Get block hash
-                    block_response = requests.get(f"{base_url}/block-height/{height}", timeout=10, verify=verify_ssl)
+                    block_response = requests.get(f"{base_url}/block-height/{height}", timeout=10, verify=verify_ssl,
+                                                  proxies=self._get_mempool_proxies())
                     if not block_response.ok:
                         processed_blocks += 1
                         continue
@@ -651,7 +652,8 @@ class BlockRewardCache:
                     block_hash = block_response.text.strip()
                     
                     # Get coinbase transaction directly using block info endpoint (more efficient)
-                    block_response = requests.get(f"{base_url}/block/{block_hash}", timeout=10, verify=verify_ssl)
+                    block_response = requests.get(f"{base_url}/block/{block_hash}", timeout=10, verify=verify_ssl,
+                                                  proxies=self._get_mempool_proxies())
                     if not block_response.ok:
                         processed_blocks += 1
                         continue
