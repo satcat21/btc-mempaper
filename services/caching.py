@@ -355,6 +355,10 @@ class CachingMixin:
         with self._precache['lock']:
             now = time.time()
 
+            # One summary line at the end rather than four scattered prints;
+            # this runs every five minutes and usually refreshes all of them.
+            _refreshed = []
+
             # Determine which block types will actually be shown.
             # None  → all blocks (default layout)
             # list  → only those types (pre-selected for prioritize_large_scaled_meme)
@@ -368,7 +372,7 @@ class CachingMixin:
                 if self._precache['price_data'] and (now - self._precache['price_last_update'] < 120):
                     price_data = self._precache['price_data']
                 else:
-                    print("🔄 Pre-cache stale, fetching fresh price...")
+                    _refreshed.append("price")
                     fresh_price_data = self.image_renderer.fetch_btc_price()
                     self._store_fresh_price_data(fresh_price_data, now)
                     # Fall back to the last known-good cached price on error rather
@@ -382,7 +386,7 @@ class CachingMixin:
                 if self._precache['bitaxe_data'] and (now - self._precache['bitaxe_last_update'] < 120):
                     bitaxe_data = self._precache['bitaxe_data']
                 else:
-                    print("🔄 Pre-cache stale, fetching fresh Bitaxe...")
+                    _refreshed.append("Bitaxe")
                     bitaxe_data = self.image_renderer.bitaxe_api.fetch_bitaxe_stats()
                     self._precache['bitaxe_data'] = bitaxe_data
                     self._precache['bitaxe_last_update'] = now
@@ -394,7 +398,7 @@ class CachingMixin:
                 fee_data = self._precache['fee_data']
                 block_height = self._precache['block_height']
             else:
-                print("🔄 Pre-cache stale, fetching fresh fees...")
+                _refreshed.append("fees")
                 try:
                     fee_data = self.mempool_api.get_fee_recommendations()
                     block_height = self.mempool_api.get_tip_height()
@@ -416,7 +420,7 @@ class CachingMixin:
                 if self._precache['network_data'] and (now - self._precache['network_last_update'] < 120):
                     network_data = self._precache['network_data']
                 else:
-                    print("🔄 Pre-cache stale, fetching fresh network stats...")
+                    _refreshed.append("network")
                     try:
                         hd = self.mempool_api.get_hashrate_and_difficulty()
                         da = self.mempool_api.get_difficulty_adjustment()
@@ -435,5 +439,8 @@ class CachingMixin:
                         network_data = self._precache.get('network_data')
             else:
                 network_data = None
+
+            if _refreshed:
+                print("🔄 Pre-cache refreshed: " + ", ".join(_refreshed))
 
             return price_data, bitaxe_data, fee_data, block_height, network_data

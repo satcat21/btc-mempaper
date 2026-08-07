@@ -62,8 +62,13 @@ def register(self):
             try:
                 # Block heights are public info — allow any connected client to subscribe
                 client_id = request.sid
-                self.block_notification_subscribers.add(client_id)
-                print(f"📡 Client subscribed to block notifications ({len(self.block_notification_subscribers)} total)")
+                # Clients re-subscribe on every reconnect and the set is
+                # idempotent, so logging unconditionally repeated an unchanged
+                # count several times a minute. Only a genuinely new subscriber
+                # is worth a line.
+                if client_id not in self.block_notification_subscribers:
+                    self.block_notification_subscribers.add(client_id)
+                    print(f"📡 Client subscribed to block notifications ({len(self.block_notification_subscribers)} total)")
                 self.socketio.emit('block_notification_status', {'status': 'subscribed', 'message': 'Subscribed to live block notifications'})
 
             except Exception as e:

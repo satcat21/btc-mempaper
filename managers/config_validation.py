@@ -178,9 +178,13 @@ def validate_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
     # This runs AFTER manual int_settings so device dimensions always take precedence.
     device_name = validated.get("omni_device_name", "")
     if device_name and device_name in DEVICE_DIMENSIONS:
-        validated["display_width"], validated["display_height"] = DEVICE_DIMENSIONS[device_name]
-        print(f"⚙️ Auto-set display dimensions for {device_name}: "
-              f"{validated['display_width']}×{validated['display_height']}")
+        _w, _h = DEVICE_DIMENSIONS[device_name]
+        _changed = (config.get("display_width"), config.get("display_height")) != (_w, _h)
+        validated["display_width"], validated["display_height"] = _w, _h
+        # Every save runs this, and the answer is fixed per device, so only a
+        # real change is worth reporting.
+        if _changed:
+            print(f"⚙️ Auto-set display dimensions for {device_name}: {_w}×{_h}")
 
     # Float settings with validation
     float_settings = {}

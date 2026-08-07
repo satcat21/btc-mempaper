@@ -108,6 +108,8 @@ class WalletBalanceAPI:
         """
         self.config = config or {}
         self._wallet_cache = None
+        # -1 = nothing logged yet, so the first result always reports.
+        self._last_logged_entry_count = -1
 
         # Initialize secure configuration manager
         if SECURE_CONFIG_AVAILABLE:
@@ -1396,11 +1398,17 @@ class WalletBalanceAPI:
             # Try new format first (objects with comments)
             wallet_entries_with_comments = secure_config.get("wallet_balance_addresses_with_comments", [])
             if wallet_entries_with_comments:
-                print(f"🔐 Loaded {len(wallet_entries_with_comments)} wallet entries with comments from secure configuration")
+                if self._last_logged_entry_count != len(wallet_entries_with_comments):
+                    print(f"🔐 Loaded {len(wallet_entries_with_comments)} wallet entries with comments from secure configuration")
+                    self._last_logged_entry_count = len(wallet_entries_with_comments)
                 return wallet_entries_with_comments
-            
-            # No fallback - only use modern table format
-            print("🔐 No wallet entries found in secure configuration")
+
+            # No fallback - only use modern table format. Logged once rather than
+            # per call: this runs on every block, and with no wallets configured
+            # it would otherwise repeat the same non-event forever.
+            if self._last_logged_entry_count != 0:
+                print("🔐 No wallet entries found in secure configuration")
+                self._last_logged_entry_count = 0
             return []
                 
         except Exception as e:

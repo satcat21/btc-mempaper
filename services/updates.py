@@ -112,9 +112,13 @@ class UpdateSchedulerMixin:
             self._auto_update_timer = threading.Timer(delay, _run_update)
             self._auto_update_timer.daemon = True
             self._auto_update_timer.start()
-            days = delay / 86400
-            print(f"🕐 Auto-update scheduled for {target.strftime('%Y-%m-%d %H:%M')} "
-                  f"(in {f'{days:.1f} days' if days >= 1 else f'{delay/3600:.1f}h'})")
+            # Every config save reschedules, so the same target was printed each
+            # time. Only report when it actually moves.
+            if getattr(self, '_last_logged_update_target', None) != target:
+                self._last_logged_update_target = target
+                days = delay / 86400
+                print(f"🕐 Auto-update scheduled for {target.strftime('%Y-%m-%d %H:%M')} "
+                      f"(in {f'{days:.1f} days' if days >= 1 else f'{delay/3600:.1f}h'})")
 
         # Expose so _on_config_change can reschedule without importing anything.
         self._reschedule_auto_update = _schedule
