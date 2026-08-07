@@ -1,23 +1,43 @@
 {
   "language": "en",
 
-  "mempool_use_https": true,
   "mempool_host": "mempool.space",
-  "mempool_rest_port": "443",
-  "mempool_ws_port": "443",
+  "mempool_use_https": true,
+  "mempool_rest_port": 443,
+  "mempool_ws_port": 443,
   "mempool_ws_path": "/api/v1/ws",
   "mempool_verify_ssl": true,
+  "mempool_is_private": false,
+  "mempool_username": "",
+  "mempool_password": "",
 
+  "mempool_use_tor": false,
+  "tor_socks_host": "127.0.0.1",
+  "tor_socks_port": 9050,
+  "tor_meme_downloads": false,
+
+  "mempool_use_https_clearnet": true,
+  "mempool_rest_port_clearnet": 443,
+  "mempool_ws_port_clearnet": 443,
+  "mempool_rest_port_tor": 80,
+  "mempool_ws_port_tor": 80,
+
+  "network_outage_tolerance_minutes": 45,
   "fee_parameter": "fastestFee",
 
-  "prioritize_large_scaled_meme": true,
+  "e-ink-display-connected": false,
+  "eink_auto_disabled": false,
+  "omni_device_name": "epd7in3f",
+  "display_width": 800,
+  "display_height": 480,
+  "eink_dark_mode": false,
   "color_mode_dark": true,
+  "prioritize_large_scaled_meme": true,
 
   "color_date_start_light": "#1c82c0",
   "color_date_end_light": "#c040a8",
   "color_date_start_dark": "#4FC3F7",
   "color_date_end_dark": "#BA68C8",
-
   "color_holiday_start_light": "#F7931A",
   "color_holiday_end_light": "#C62828",
   "color_holiday_start_dark": "#F7931A",
@@ -28,29 +48,21 @@
   "color_bitaxe_stats_dark": "#FFE566",
   "color_wallets_light": "#1565C0",
   "color_wallets_dark": "#09A3BA",
-
-  "e-ink-display-connected": false,
-  "omni_device_name": "epd7in3f",
-  "web_orientation": "vertical",
-  "eink_orientation": "vertical",
-  "display_width": 800,
-  "display_height": 480,
+  "color_countdown_light": "#C55A00",
+  "color_countdown_dark": "#FF9E40",
+  "color_halving_light": "#1565C0",
+  "color_halving_dark": "#4FC3F7",
+  "color_network_light": "#6A1B9A",
+  "color_network_dark": "#CE93D8",
+  "color_donation_light": "#F7931A",
+  "color_donation_dark": "#F7931A",
 
   "show_btc_price_block": true,
   "btc_price_currency": "USD",
   "moscow_time_unit": "hour",
-
   "show_countdown_block": true,
-  "color_countdown_light": "#C55A00",
-  "color_countdown_dark": "#FF9E40",
-
   "show_halving_block": true,
-  "color_halving_light": "#1565C0",
-  "color_halving_dark": "#4FC3F7",
-
   "show_network_block": true,
-  "color_network_light": "#6A1B9A",
-  "color_network_dark": "#CE93D8",
 
   "show_bitaxe_block": false,
   "bitaxe_display_mode": "difficulty",
@@ -59,14 +71,21 @@
   "show_wallet_balances_block": false,
   "wallet_balance_unit": "btc",
   "wallet_balance_currency": "EUR",
+  "wallet_balance_addresses_with_comments": [],
+  "block_reward_addresses_table": [],
 
   "show_donation_block": false,
   "donation_display_mode": "latest",
   "webhook_relay_ws_url": "",
-  "color_donation_light": "#F7931A",
-  "color_donation_dark": "#F7931A",
 
   "public_dashboard": false,
   "opsec_mode_enabled": false,
-  "eink_dark_mode": false
+
+  "auto_update_enabled": false,
+  "auto_update_time": "05:00",
+  "auto_update_days": ["mon", "wed", "fri"],
+
+  "meme_sync_enabled": false,
+  "meme_sync_day": "4",
+  "meme_sync_hour": "13"
 }
