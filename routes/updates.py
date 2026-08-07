@@ -249,14 +249,40 @@ def register(self):
                 apt_deps_changed = False
                 pillow_changed = False
                 try:
-                    diff_result = subprocess.run(
-                        ['git', 'diff', '--name-only', 'HEAD', f'refs/tags/{tag}', '--',
-                         'requirements.txt', 'apt-requirements.txt'],
-                        cwd=project_dir, capture_output=True, text=True
-                    )
-                    changed_files = diff_result.stdout.strip()
-                    deps_changed = 'requirements.txt' in changed_files
-                    apt_deps_changed = 'apt-requirements.txt' in changed_files
+                    def _effective_deps(ref, path):
+                        """The package list a file declares, ignoring comments."""
+                        out = subprocess.run(
+                            ['git', 'show', f'{ref}:{path}'],
+                            cwd=project_dir, capture_output=True, text=True
+                        )
+                        if out.returncode != 0:
+                            return None      # file absent in that ref
+                        return [
+                            ln.strip() for ln in out.stdout.splitlines()
+                            if ln.strip() and not ln.strip().startswith('#')
+                        ]
+
+                    def _deps_differ(path):
+                        """True only when the declared packages actually differ.
+
+                        Comparing the parsed list rather than the raw file keeps a
+                        comment edit from triggering a full apt or pip run — one
+                        word in a comment used to cost several minutes on a Pi
+                        Zero. Returns True when either side cannot be read, so an
+                        unreadable ref installs rather than silently skipping.
+                        """
+                        before = _effective_deps('HEAD', path)
+                        after = _effective_deps(f'refs/tags/{tag}', path)
+                        if before is None or after is None:
+                            return True
+                        return before != after
+
+                    # Exact per-file checks. The previous substring test
+                    # ('requirements.txt' in changed_files) also matched
+                    # 'apt-requirements.txt', so an apt-only change always
+                    # dragged the pip install along with it.
+                    deps_changed = _deps_differ('requirements.txt')
+                    apt_deps_changed = _deps_differ('apt-requirements.txt')
                     if deps_changed:
                         diff_content = subprocess.run(
                             ['git', 'diff', 'HEAD', f'refs/tags/{tag}', '--', 'requirements.txt'],
