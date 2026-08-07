@@ -224,7 +224,16 @@
     <script src="static/js/confirm-modal.js"></script>
     <script src="static/js/toast.js"></script>
     <script src="static/js/session-manager.js"></script>
-    <script src="static/js/config.js"></script>
+    <!-- config.js split by section. These are classic scripts sharing one global
+         scope, so the order below is the original file's order and must be kept. -->
+    <script src="static/js/config/01-validation.js"></script>
+    <script src="static/js/config/02-core.js"></script>
+    <script src="static/js/config/03-sections.js"></script>
+    <script src="static/js/config/04-navigation.js"></script>
+    <script src="static/js/config/05-preview.js"></script>
+    <script src="static/js/config/06-opsec.js"></script>
+    <script src="static/js/config/07-toasts.js"></script>
+    <script src="static/js/config/08-modals.js"></script>
     <script>
     (function() {
         var mole = document.getElementById('pepe-mole');

@@ -81,11 +81,15 @@ def process_dir(src_dir, out_dir_name, ext, skip_set, minify_fn, label, do_gzip=
         out_dir = os.path.join(src_dir, "dist")
         os.makedirs(out_dir, exist_ok=True)
 
-    files = [
-        f for f in os.listdir(src_dir)
-        if f.endswith(ext) and f not in skip_set
-        and not os.path.isdir(os.path.join(src_dir, f))
-    ]
+    # Walk subdirectories so grouped sources (static/js/config/*.js) are
+    # minified too, mirroring their relative path under dist/. The serving
+    # route uses a <path:> converter, so nested output is reachable as-is.
+    files = []
+    for root, dirs, names in os.walk(src_dir):
+        dirs[:] = [d for d in dirs if d != "dist"]      # never recurse into output
+        for n in names:
+            if n.endswith(ext) and n not in skip_set:
+                files.append(os.path.relpath(os.path.join(root, n), src_dir))
     if not files:
         print(f"  No {label} files found in {src_dir}")
         return
@@ -96,6 +100,7 @@ def process_dir(src_dir, out_dir_name, ext, skip_set, minify_fn, label, do_gzip=
     for filename in sorted(files):
         src_path = os.path.join(src_dir, filename)
         out_path = os.path.join(out_dir, filename)
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
 
         with open(src_path, "r", encoding="utf-8") as f:
             source = f.read()
