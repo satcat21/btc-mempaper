@@ -300,10 +300,13 @@ class CachingMixin:
                     network_data = self.mempool_api.get_network_stats()
                     if network_data:
                         self._precache['network_data'] = network_data
-                        self._precache['network_last_update'] = now
-                        hashrate = network_data["currentHashrate"]
-                        if hashrate != self._precache['last_hashrate']:
-                            print(f"🌐 Pre-cache updated: Hashrate {hashrate/1e18:.2f} EH/s")
+                        # A partial result is still worth caching for its pace fields,
+                        # but leave the timestamp so the next cycle retries hashrate.
+                        if not network_data.get('error'):
+                            self._precache['network_last_update'] = now
+                        hashrate = network_data.get("currentHashrate")
+                        if hashrate is not None and hashrate != self._precache['last_hashrate']:
+                            print(f"🌐 Pre-cache updated: Hashrate {self.image_renderer._format_hashrate(hashrate)}")
                             self._precache['last_hashrate'] = hashrate
                             data_changed = True
                             if hasattr(self, 'socketio') and self.socketio:

@@ -1028,6 +1028,8 @@ class ImageRenderer(ColorMixin, MemeMixin, HashFrameMixin, TextMixin,
     _HALVING_INTERVAL = 210000
     _GENESIS_SUBSIDY_SATS = 5000000000  # 50 BTC in satoshis
     _TARGET_BLOCK_SECONDS = 600.0  # what every retarget steers the pace back to
+    _MIN_PACE_SECONDS = 240.0      # below this a pace reading is noise, not hashrate
+    _MAX_PACE_SECONDS = 1200.0     # above this likewise; the 2021 drop reached ~840 s
 
     @staticmethod
     def _compute_supply_stats(height):
@@ -1061,10 +1063,15 @@ class ImageRenderer(ColorMixin, MemeMixin, HashFrameMixin, TextMixin,
         Prefers mempool's `adjustedTimeAvg` over the raw `timeAvg`: a fresh epoch
         averages over only a handful of blocks, so `timeAvg` routinely reads 15-20
         min/block in the hours after a retarget.
+
+        Readings outside 4-20 min are rejected rather than clamped, so the caller
+        falls back to the target pace instead of anchoring on a figure no plausible
+        hashrate swing produces. The bounds stay wide enough for real events — the
+        2021 hashrate drop reached about 14 min.
         """
         for key in ("adjustedTimeAvg", "timeAvg"):
             ms = network_data.get(key)
-            if ms and ms > 0:
+            if ms and ImageRenderer._MIN_PACE_SECONDS <= ms / 1000.0 <= ImageRenderer._MAX_PACE_SECONDS:
                 return ms / 1000.0
         return None
 
@@ -1136,16 +1143,24 @@ class ImageRenderer(ColorMixin, MemeMixin, HashFrameMixin, TextMixin,
             formatted = formatted.replace(".", ",")
         return f"{formatted}%"
 
+    # Largest first. Mainnet passed 900 EH/s in 2026, so ZH/s is the next tier the
+    # network block will actually need; a Bitaxe reports at the bottom of the table.
+    _HASHRATE_UNITS = (
+        (1e24, "YH/s"),
+        (1e21, "ZH/s"),
+        (1e18, "EH/s"),
+        (1e15, "PH/s"),
+        (1e12, "TH/s"),
+        (1e9, "GH/s"),
+        (1e6, "MH/s"),
+        (1e3, "kH/s"),
+    )
+
     def _format_hashrate(self, hs):
-        """Format hash rate (H/s) as human-readable string (EH/s, PH/s, TH/s)."""
-        if hs >= 1e18:
-            return f"{self._format_number(hs / 1e18, 2)} EH/s"
-        if hs >= 1e15:
-            return f"{self._format_number(hs / 1e15, 2)} PH/s"
-        if hs >= 1e12:
-            return f"{self._format_number(hs / 1e12, 2)} TH/s"
-        if hs >= 1e9:
-            return f"{self._format_number(hs / 1e9, 2)} GH/s"
+        """Format hash rate (H/s) as human-readable string (ZH/s, EH/s, TH/s, ...)."""
+        for scale, unit in ImageRenderer._HASHRATE_UNITS:
+            if hs >= scale:
+                return f"{self._format_number(hs / scale, 2)} {unit}"
         return f"{self._format_number(hs, 0)} H/s"
 
     def _format_difficulty(self, d):

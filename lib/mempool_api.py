@@ -219,21 +219,29 @@ class MempoolAPI:
         block pace; `epochRemainingBlocks` is how far the current difficulty epoch
         still has to run. Both are needed for a stable halving estimate.
 
+        The two lookups fail independently, since they feed different blocks. A missing
+        difficulty adjustment still renders hashrate and leaves the halving estimate on
+        the 600 s target; a missing hashrate sets an error marker so the network block
+        skips itself, while the halving keeps whatever pace fields did arrive.
+
         Returns:
-            dict or None if the hashrate lookup failed. A failed difficulty-adjustment
-            lookup is tolerated — the halving estimate falls back to the 600 s target.
+            dict, or None if both lookups failed.
         """
         hd = self.get_hashrate_and_difficulty()
-        if not hd:
-            return None
         da = self.get_difficulty_adjustment() or {}
-        return {
-            "currentHashrate": hd.get("currentHashrate", 0),
-            "currentDifficulty": hd.get("currentDifficulty", 0),
+        if not hd and not da:
+            return None
+        stats = {
             "timeAvg": da.get("timeAvg", 600000),
             "adjustedTimeAvg": da.get("adjustedTimeAvg"),
             "epochRemainingBlocks": da.get("remainingBlocks"),
         }
+        if hd:
+            stats["currentHashrate"] = hd.get("currentHashrate", 0)
+            stats["currentDifficulty"] = hd.get("currentDifficulty", 0)
+        else:
+            stats["error"] = "hashrate unavailable"
+        return stats
 
     def get_difficulty_adjustment(self):
         """

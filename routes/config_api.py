@@ -462,19 +462,21 @@ def register(self):
                 net = self._precache.get('network_data') if hasattr(self, '_precache') else None
                 if not net or net.get('error'):
                     fresh = self.mempool_api.get_network_stats()
-                    if fresh and not fresh.get('error'):
+                    if fresh:
+                        # Use it either way — a partial result still has the pace
+                        # fields — but never let an errored one warm the precache.
                         net = fresh
-                        if hasattr(self, '_precache'):
+                        if not fresh.get('error') and hasattr(self, '_precache'):
                             import time as _time
                             self._precache['network_data'] = net
                             self._precache['network_last_update'] = _time.time()
+                # An error marker means the hashrate lookup failed; the card is
+                # skipped, but `net` still carries the pace fields for the halving.
                 if net and not net.get('error'):
                     network_payload = {
                         'hashrate': net.get('currentHashrate', 0),
                         'difficulty': net.get('currentDifficulty', 0),
                     }
-                else:
-                    net = None
             except Exception:
                 net = None
 
