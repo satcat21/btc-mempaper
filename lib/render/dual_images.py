@@ -86,14 +86,7 @@ class DualImageMixin:
             if precached_network:
                 network_data = precached_network
             elif mempool_api:
-                _hd = mempool_api.get_hashrate_and_difficulty()
-                _da = mempool_api.get_difficulty_adjustment()
-                if _hd:
-                    network_data = {
-                        "currentHashrate": _hd.get("currentHashrate", 0),
-                        "currentDifficulty": _hd.get("currentDifficulty", 0),
-                        "timeAvg": _da.get("timeAvg", 600000) if _da else 600000,
-                    }
+                network_data = mempool_api.get_network_stats()
 
         # Unified block builder — handles both "all enabled" and "specific types" paths.
         def _add_block(block_type):
@@ -107,8 +100,7 @@ class DualImageMixin:
                 info_blocks.append((self.render_countdown_block, _supply))
                 displayed_blocks.append('countdown')
             elif block_type == 'halving' and config.get("show_halving_block", True):
-                _time_avg = (network_data or {}).get("timeAvg", 600000)
-                _halving = self._compute_halving_stats(block_height, _time_avg)
+                _halving = self._compute_halving_stats(block_height, network_data)
                 info_blocks.append((self.render_halving_block, _halving))
                 displayed_blocks.append('halving')
             elif block_type == 'network' and config.get("show_network_block", True):
@@ -311,14 +303,7 @@ class DualImageMixin:
             or config.get("show_network_block", True)
         )
         if _need_network and not _skip_info_blocks and network_data is None and mempool_api:
-            _hd = mempool_api.get_hashrate_and_difficulty()
-            _da = mempool_api.get_difficulty_adjustment()
-            if _hd:
-                network_data = {
-                    "currentHashrate": _hd.get("currentHashrate", 0),
-                    "currentDifficulty": _hd.get("currentDifficulty", 0),
-                    "timeAvg": _da.get("timeAvg", 600000) if _da else 600000,
-                }
+            network_data = mempool_api.get_network_stats()
 
         # Build info blocks ONCE
         info_blocks = []
@@ -330,8 +315,7 @@ class DualImageMixin:
                 _supply = self._compute_supply_stats(block_height)
                 info_blocks.append((self.render_countdown_block, _supply))
             if config.get("show_halving_block", True):
-                _time_avg = network_data.get("timeAvg", 600000) if network_data else 600000
-                _halving = self._compute_halving_stats(block_height, _time_avg)
+                _halving = self._compute_halving_stats(block_height, network_data)
                 info_blocks.append((self.render_halving_block, _halving))
             if config.get("show_network_block", True):
                 info_blocks.append((self.render_network_block, network_data or {}))

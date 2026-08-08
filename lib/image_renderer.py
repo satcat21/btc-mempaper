@@ -1027,6 +1027,7 @@ class ImageRenderer(ColorMixin, MemeMixin, HashFrameMixin, TextMixin,
     _MAX_SUPPLY_BTC = 20999999.97690000
     _HALVING_INTERVAL = 210000
     _GENESIS_SUBSIDY_SATS = 5000000000  # 50 BTC in satoshis
+    _TARGET_BLOCK_SECONDS = 600.0  # what every retarget steers the pace back to
 
     @staticmethod
     def _compute_supply_stats(height):
@@ -1054,14 +1055,52 @@ class ImageRenderer(ColorMixin, MemeMixin, HashFrameMixin, TextMixin,
         }
 
     @staticmethod
-    def _compute_halving_stats(height, time_avg_ms=600000):
-        """Compute next halving block, blocks remaining, estimated date from block height."""
+    def _epoch_pace_seconds(network_data):
+        """Average seconds per block for the current difficulty epoch, or None.
+
+        Prefers mempool's `adjustedTimeAvg` over the raw `timeAvg`: a fresh epoch
+        averages over only a handful of blocks, so `timeAvg` routinely reads 15-20
+        min/block in the hours after a retarget.
+        """
+        for key in ("adjustedTimeAvg", "timeAvg"):
+            ms = network_data.get(key)
+            if ms and ms > 0:
+                return ms / 1000.0
+        return None
+
+    @staticmethod
+    def _compute_halving_stats(height, network_data=None):
+        """Compute next halving block, blocks remaining, estimated date from block height.
+
+        Only the blocks left in the current difficulty epoch are projected at the
+        network's current pace; everything past the next retarget is projected at the
+        600 s the retarget algorithm targets. Extrapolating the current pace all the
+        way to the halving would amplify epoch-local jitter into months — there are
+        ~44 retargets left, and each one pulls the pace back to 600 s. This also caps
+        the blast radius of a bad pace reading at the ~2016 blocks it applies to.
+
+        The halving block is not on a retarget boundary (1,050,000 = 2016 x 520 +
+        1,680), but that does not matter here: the alignment of future epochs is
+        irrelevant when every one of them is projected at the same target pace.
+        """
         from datetime import datetime, timedelta
         h = int(height) if height else 0
         current_epoch = h // ImageRenderer._HALVING_INTERVAL
         next_halving_block = (current_epoch + 1) * ImageRenderer._HALVING_INTERVAL
         blocks_remaining = next_halving_block - h
-        seconds_remaining = blocks_remaining * (time_avg_ms / 1000.0)
+
+        epoch_blocks, epoch_pace = 0, ImageRenderer._TARGET_BLOCK_SECONDS
+        if network_data:
+            epoch_pace = ImageRenderer._epoch_pace_seconds(network_data) or epoch_pace
+            epoch_blocks = network_data.get("epochRemainingBlocks") or 0
+            # Once the halving is nearer than the next retarget the current pace
+            # governs the whole estimate, which is exactly what we want there.
+            epoch_blocks = max(0, min(int(epoch_blocks), blocks_remaining))
+
+        seconds_remaining = (
+            epoch_blocks * epoch_pace
+            + (blocks_remaining - epoch_blocks) * ImageRenderer._TARGET_BLOCK_SECONDS
+        )
         estimated_date = datetime.now() + timedelta(seconds=seconds_remaining)
         days_remaining = seconds_remaining / 86400.0
         hours_remaining = seconds_remaining / 3600.0

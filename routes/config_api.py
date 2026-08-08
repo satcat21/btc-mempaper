@@ -454,6 +454,30 @@ def register(self):
             except Exception:
                 pass
 
+            # Network stats — from precache; fetch synchronously if not cached yet.
+            # Resolved before the halving payload below, which needs the block pace.
+            network_payload = None
+            net = None
+            try:
+                net = self._precache.get('network_data') if hasattr(self, '_precache') else None
+                if not net or net.get('error'):
+                    fresh = self.mempool_api.get_network_stats()
+                    if fresh and not fresh.get('error'):
+                        net = fresh
+                        if hasattr(self, '_precache'):
+                            import time as _time
+                            self._precache['network_data'] = net
+                            self._precache['network_last_update'] = _time.time()
+                if net and not net.get('error'):
+                    network_payload = {
+                        'hashrate': net.get('currentHashrate', 0),
+                        'difficulty': net.get('currentDifficulty', 0),
+                    }
+                else:
+                    net = None
+            except Exception:
+                net = None
+
             # Countdown + Halving — computed from current block height
             countdown_payload = None
             halving_payload = None
@@ -478,32 +502,12 @@ def register(self):
                         'remaining_btc': round(sup['remaining_btc'], 2),
                         'pct_mined': sup['pct_mined'],
                     }
-                    hal = _IR._compute_halving_stats(bh)
+                    hal = _IR._compute_halving_stats(bh, net)
                     countdown_payload['block_height'] = int(bh)
                     halving_payload = {
                         'days_remaining': hal['days_remaining'],
                         'hours_remaining': hal['hours_remaining'],
                         'estimated_date': hal['estimated_date'].isoformat() if hal.get('estimated_date') else None,
-                    }
-            except Exception:
-                pass
-
-            # Network stats — from precache; fetch synchronously if not cached yet.
-            network_payload = None
-            try:
-                net = self._precache.get('network_data') if hasattr(self, '_precache') else None
-                if not net or net.get('error'):
-                    hd = self.mempool_api.get_hashrate_and_difficulty()
-                    if hd and not hd.get('error'):
-                        net = hd
-                        if hasattr(self, '_precache'):
-                            import time as _time
-                            self._precache['network_data'] = net
-                            self._precache['network_last_update'] = _time.time()
-                if net and not net.get('error'):
-                    network_payload = {
-                        'hashrate': net.get('currentHashrate', 0),
-                        'difficulty': net.get('currentDifficulty', 0),
                     }
             except Exception:
                 pass

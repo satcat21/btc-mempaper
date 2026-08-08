@@ -2730,7 +2730,7 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
                     from lib.image_renderer import ImageRenderer as _IR
                     bh = block_height
                     sup = _IR._compute_supply_stats(bh)
-                    hal = _IR._compute_halving_stats(bh)
+                    hal = _IR._compute_halving_stats(bh, self._precache.get('network_data'))
                     self.socketio.emit('countdown_updated', {
                         'countdown': {
                             'remaining_btc': round(sup['remaining_btc'], 2),

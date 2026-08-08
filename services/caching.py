@@ -297,14 +297,8 @@ class CachingMixin:
             )
             if _need_network and now - self._precache['network_last_update'] > update_interval:
                 try:
-                    hd = self.mempool_api.get_hashrate_and_difficulty()
-                    da = self.mempool_api.get_difficulty_adjustment()
-                    if hd:
-                        network_data = {
-                            "currentHashrate": hd.get("currentHashrate", 0),
-                            "currentDifficulty": hd.get("currentDifficulty", 0),
-                            "timeAvg": da.get("timeAvg", 600000) if da else 600000,
-                        }
+                    network_data = self.mempool_api.get_network_stats()
+                    if network_data:
                         self._precache['network_data'] = network_data
                         self._precache['network_last_update'] = now
                         hashrate = network_data["currentHashrate"]
@@ -422,14 +416,8 @@ class CachingMixin:
                 else:
                     _refreshed.append("network")
                     try:
-                        hd = self.mempool_api.get_hashrate_and_difficulty()
-                        da = self.mempool_api.get_difficulty_adjustment()
-                        if hd:
-                            network_data = {
-                                "currentHashrate": hd.get("currentHashrate", 0),
-                                "currentDifficulty": hd.get("currentDifficulty", 0),
-                                "timeAvg": da.get("timeAvg", 600000) if da else 600000,
-                            }
+                        network_data = self.mempool_api.get_network_stats()
+                        if network_data:
                             self._precache['network_data'] = network_data
                             self._precache['network_last_update'] = now
                         else:

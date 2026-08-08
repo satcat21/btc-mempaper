@@ -210,6 +210,31 @@ class MempoolAPI:
             print(f"Error fetching hashrate/difficulty: {e}")
             return None
 
+    def get_network_stats(self):
+        """
+        Get the combined network stats used by the network and halving blocks.
+
+        Merges hashrate/difficulty with the difficulty-adjustment fields so every
+        caller sees the same shape. `adjustedTimeAvg` is mempool's noise-corrected
+        block pace; `epochRemainingBlocks` is how far the current difficulty epoch
+        still has to run. Both are needed for a stable halving estimate.
+
+        Returns:
+            dict or None if the hashrate lookup failed. A failed difficulty-adjustment
+            lookup is tolerated — the halving estimate falls back to the 600 s target.
+        """
+        hd = self.get_hashrate_and_difficulty()
+        if not hd:
+            return None
+        da = self.get_difficulty_adjustment() or {}
+        return {
+            "currentHashrate": hd.get("currentHashrate", 0),
+            "currentDifficulty": hd.get("currentDifficulty", 0),
+            "timeAvg": da.get("timeAvg", 600000),
+            "adjustedTimeAvg": da.get("adjustedTimeAvg"),
+            "epochRemainingBlocks": da.get("remainingBlocks"),
+        }
+
     def get_difficulty_adjustment(self):
         """
         Get difficulty adjustment info including average block time for current epoch.
