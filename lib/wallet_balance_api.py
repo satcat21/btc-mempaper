@@ -1629,6 +1629,18 @@ class WalletBalanceAPI:
             entries_with_comments, user_addresses, user_xpubs = self._parse_wallet_entries()
             
             if not entries_with_comments:
+                # Zero configured entries is a real result, not a failure: the
+                # balance of nothing is nothing. Returning early without saying
+                # so left the last non-empty scan in the cache, and every reader
+                # of get_cached_wallet_balances - the config preview above all -
+                # kept serving that stale total for as long as the cache lived.
+                self.update_cache({
+                    "total_btc": 0.0,
+                    "addresses": [],
+                    "xpubs": [],
+                    "wallet_entries": [],
+                    "last_updated": time.time(),
+                })
                 return {"error": "No wallet addresses, XPUBs, or ZPUBs configured"}
             
             # Extract simple list for conflict detection (backwards compatibility)
