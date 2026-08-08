@@ -2754,8 +2754,6 @@ class ImageRenderer(ColorMixin, MemeMixin, HashFrameMixin, TextMixin,
                                         font_holiday_title, web_quality)
 
 
-    @staticmethod
-
     def _render_fallback_content(self, img, draw, meme_top_y, available_height, 
                                font_holiday_title, web_quality):
         """

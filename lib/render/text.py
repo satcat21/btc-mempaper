@@ -71,6 +71,7 @@ class TextMixin:
                 i += 1
         return total
 
+    @staticmethod
     def _wrap_text_to_lines(text: str, font, max_width: float, max_lines: int):
         """Word-wrap *text* into at most *max_lines* pixel-width-limited lines.
 
