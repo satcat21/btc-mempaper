@@ -59,7 +59,65 @@ class SecureConfigManager:
         # Initialize encryption key (uses class-level cache)
         self._encryption_key = None
         self._ensure_encryption_key()
-    
+
+        # Decrypted config, cached as JSON text against the on-disk stamp of
+        # both config files. See get_sensitive_fields_cached.
+        self._secure_cache_json = None
+        self._secure_cache_stamp = None
+
+    def _config_files_stamp(self):
+        """Identity of both config files, for cache invalidation.
+
+        Size is carried alongside mtime because coarse filesystem timestamps
+        can put two quick writes in the same tick.
+        """
+        stamp = []
+        for path in (self.config_file, self.encrypted_config_file):
+            try:
+                st = os.stat(path)
+                stamp.append((st.st_mtime_ns, st.st_size))
+            except OSError:
+                stamp.append(None)
+        return tuple(stamp)
+
+    def get_sensitive_fields_cached(self) -> Optional[Dict[str, Any]]:
+        """The sensitive fields only, without re-reading and re-decrypting
+        unchanged files.
+
+        load_secure_config costs two file reads plus a Fernet decrypt, and the
+        per-request mempool helpers reach it through
+        ConfigManager.get_current_config several times per outgoing HTTP
+        request. Keyed on the stamp of both files, so an outside writer is
+        still picked up; save_secure_config drops the cache outright.
+
+        Only the sensitive keys are kept, since that is all the caller merges,
+        which keeps the cached payload at a handful of keys rather than the
+        whole config. The plaintext is held as JSON text and parsed per call,
+        so callers get their own objects and cannot mutate what the next
+        caller sees.
+        """
+        stamp = self._config_files_stamp()
+        if stamp == self._secure_cache_stamp and self._secure_cache_json is not None:
+            return json.loads(self._secure_cache_json)
+
+        config = self.load_secure_config()
+        if config is None:
+            # A failed decrypt is not cached, so the next call retries.
+            self._secure_cache_json = None
+            self._secure_cache_stamp = None
+            return None
+
+        sensitive = {k: v for k, v in config.items() if k in self.sensitive_fields}
+        self._secure_cache_json = json.dumps(sensitive)
+        self._secure_cache_stamp = stamp
+        return sensitive
+
+    def _invalidate_secure_cache(self):
+        """Drop the cached plaintext after a write."""
+        self._secure_cache_json = None
+        self._secure_cache_stamp = None
+
+
     def _get_device_fingerprint(self) -> str:
         """
         Generate device-specific fingerprint for Raspberry Pi.
@@ -274,6 +332,8 @@ class SecureConfigManager:
             }
 
             atomic_write_json(self.encrypted_config_file, encrypted_config, mode=0o600, indent=2)
+
+            self._invalidate_secure_cache()
 
             print(f"🔒 Saved secure configuration:")
             print(f"   📄 Public data: {self.config_file}")

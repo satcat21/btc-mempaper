@@ -188,15 +188,15 @@ class ConfigManager:
             # Start with a copy of the regular config
             merged_config = self.config.copy()
             
-            # Merge secure config if available
+            # Merge secure config if available. The cached accessor skips the
+            # re-read and decrypt while the files are untouched: this runs
+            # several times per outgoing HTTP request via the mempool helpers
+            # in block_monitor and block_reward_cache.
             if self.secure_manager:
                 try:
-                    secure_config = self.secure_manager.load_secure_config()
+                    secure_config = self.secure_manager.get_sensitive_fields_cached()
                     if secure_config:
-                        # Merge secure fields into the config
-                        for key, value in secure_config.items():
-                            if key in self.secure_manager.sensitive_fields:
-                                merged_config[key] = value
+                        merged_config.update(secure_config)
                 except Exception as e:
                     logging.warning(f"Could not load secure config for web interface: {e}")
             
