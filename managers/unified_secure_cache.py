@@ -32,6 +32,7 @@ import threading
 import time
 from typing import Dict, Any, Optional, Literal
 from managers.secure_config_manager import SecureConfigManager
+from managers.tang_store import TangLocked
 
 
 # Minimum time between disk writes. Even the busiest path here (a new block,
@@ -139,9 +140,16 @@ class UnifiedSecureCache:
                             return
                         else:
                             print(f"⚠️ Invalid secure cache structure, will migrate individual files")
+                except TangLocked as e:
+                    # Sealed and currently unopenable. That is not the same as
+                    # absent: migrating from the legacy per-type files would
+                    # resurrect stale data and then fail to save it anyway.
+                    # Start empty and let the next unlock supply the real thing.
+                    print(f"🔒 Cache sealed and unavailable: {e}")
+                    return
                 except Exception as e:
                     print(f"⚠️ Failed to load secure cache: {e}, will migrate individual files")
-            
+
             # If no secure cache exists, migrate from individual files
             self._migrate_individual_cache_files()
     

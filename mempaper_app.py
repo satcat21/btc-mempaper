@@ -39,6 +39,7 @@ from utils.technical_config import (TechnicalConfig, build_mempool_api_url,
                                     build_mempool_proxies)
 from utils.security_config import SecurityConfig
 from managers.auth_manager import AuthManager
+from managers.tang_store import TangLocked
 from utils.webp_probe_cache import cached_probe
 from services.wifi import WifiHotspotMixin
 from services.donations import DonationsMixin
@@ -426,6 +427,9 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
         if self.tang_store.unlock():
             if self.tang_store.is_ready():
                 print("🔓 Tang: sealed store unlocked")
+                # A later outage should report again rather than stay quiet
+                # because an earlier one already logged.
+                self._tang_locked_logged.clear()
                 # Seal anything still in the clear. Normally a no-op, but a
                 # file can end up unsealed after a fault during a write, and
                 # without this the device would keep running as though it were
@@ -442,6 +446,12 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
         else:
             print(f"🔒 Tang: {self.tang_store.reason}")
             print("🔒 Sealed data stays unavailable until the Tang server returns")
+            # Almost always a startup race rather than a missing server: on a
+            # cold boot this runs before wlan0 has associated, so the LAN is
+            # simply not there yet. Retrying in the background turns that into
+            # a few seconds of degraded operation instead of staying sealed
+            # until somebody restarts the service.
+            self._start_tang_unlock_retry()
         
         # 🚀 Pre-rendered next-block images (ready before block arrives)
         self._prerendered = {
@@ -2229,6 +2239,77 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
         except Exception:
             return True
 
+    # Retry cadence for a Tang server that was not reachable at startup. Starts
+    # short because the usual cause is wlan0 still associating, and backs off so
+    # a genuinely absent server is not polled every few seconds forever.
+    TANG_RETRY_START_SECONDS = 5
+    TANG_RETRY_MAX_SECONDS = 300
+
+    def _start_tang_unlock_retry(self):
+        """Keep trying to unlock in the background until the server answers."""
+        if getattr(self, '_tang_retry_started', False):
+            return
+        self._tang_retry_started = True
+
+        def _retry():
+            delay = self.TANG_RETRY_START_SECONDS
+            while True:
+                time.sleep(delay)
+                if not self.tang_store.is_enabled():
+                    return                      # switched off while we waited
+                try:
+                    if self.tang_store.unlock() and self.tang_store.is_ready():
+                        print("🔓 Tang: server reachable — sealed store unlocked")
+                        self._tang_locked_logged.clear()
+                        self._on_tang_unlocked()
+                        return
+                except Exception as e:
+                    print(f"⚠️ Tang retry failed: {e}")
+                delay = min(delay * 2, self.TANG_RETRY_MAX_SECONDS)
+
+        threading.Thread(target=_retry, name='tang-unlock-retry', daemon=True).start()
+
+    def _on_tang_unlocked(self):
+        """Recover the state that could not be loaded while sealed.
+
+        Startup ran with the sensitive config and caches unavailable, so the
+        in-memory copies are empty rather than merely stale. Reloading the
+        config is what puts the wallet and donation settings back; the re-seal
+        pass covers anything a locked write left in the clear.
+        """
+        try:
+            self.config_manager._reload_config_from_file()
+            print("🔄 Tang: configuration reloaded from the sealed store")
+        except Exception as e:
+            print(f"⚠️ Tang: could not reload configuration: {e}")
+
+        try:
+            outcome = self.tang_store.enable()
+            if outcome['sealed']:
+                print(f"🔐 Tang: sealed {len(outcome['sealed'])} file(s) written "
+                      f"while the server was away: {outcome['sealed']}")
+        except Exception as e:
+            print(f"⚠️ Tang: re-seal after recovery failed: {e}")
+
+        try:
+            self._load_donations()
+        except Exception as e:
+            print(f"⚠️ Tang: could not reload donations: {e}")
+
+    _tang_locked_logged = set()
+
+    def _log_tang_locked_once(self, what):
+        """Report a skipped sealed write once per kind, not per attempt.
+
+        Every reader and writer hits this while the Tang server is down, so
+        logging each one buries the single line that matters under dozens of
+        identical ones. The set is cleared when the store unlocks.
+        """
+        if what in self._tang_locked_logged:
+            return
+        self._tang_locked_logged.add(what)
+        print(f"🔒 Tang unavailable — {what}")
+
     def _sealing_active(self):
         """True when rendered images must not be written to the card in clear."""
         store = getattr(self, 'tang_store', None)
@@ -2247,7 +2328,13 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
         data = buffer.getvalue()
 
         if self._sealing_active():
-            self.tang_store.write_file(path, data)
+            # Best effort while Tang is down: the image is already in RAM and
+            # being served, so a skipped write only costs a re-render after a
+            # restart. Writing it unsealed would defeat the point.
+            try:
+                self.tang_store.write_file(path, data)
+            except TangLocked:
+                self._log_tang_locked_once(f'{os.path.basename(path)} not persisted')
         else:
             with open(path, 'wb') as f:
                 f.write(data)
@@ -2283,16 +2370,22 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
                 f.write(data)
             return self.current_eink_image_path
 
-        # Seal first. If the store is locked this raises before anything has
-        # been written, which is the intended outcome - better a skipped
-        # refresh than a clear-text render left on the card.
-        self.tang_store.write_file(self.current_eink_image_path, data)
-
         if not self._eink_ram_path:
             raise RuntimeError('No tmpfs available for the sealed e-ink image')
+
+        # tmpfs first: it is RAM, so the panel keeps updating even while the
+        # sealed copy cannot be written.
         with open(self._eink_ram_path, 'wb') as f:
             f.write(data)
         os.chmod(self._eink_ram_path, 0o600)
+
+        # Persisting is best effort while Tang is down. Skipping it costs a
+        # re-render after a restart; writing it in the clear would cost the
+        # protection itself, so the write is dropped rather than downgraded.
+        try:
+            self.tang_store.write_file(self.current_eink_image_path, data)
+        except TangLocked:
+            self._log_tang_locked_once('e-ink image not persisted')
         return self._eink_ram_path
 
     def _eink_worker_path(self):
