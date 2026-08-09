@@ -23,6 +23,11 @@
   "mempool_ws_port_tor": 80,
 
   "network_outage_tolerance_minutes": 45,
+  "precache_update_interval_seconds": 300,
+  "precache_render_max_age_seconds": 120,
+  "precache_fee_max_age_seconds": 90,
+  "bitaxe_offline_retry_seconds": 30,
+  "cache_metadata_write_interval_seconds": 300,
   "fee_parameter": "fastestFee",
 
   "e-ink-display-connected": false,

@@ -246,7 +246,11 @@ These settings are typically managed by the system or only available in `config.
 
 | Config Key | Default | Description |
 | :--- | :--- | :--- |
-| `precache_update_interval_seconds` | `300` | How often to fetch price/Bitaxe data (seconds). Lower = fresher data but more CPU/API calls. 300s = 5 min (recommended for RPi Zero) |
+| `precache_update_interval_seconds` | `300` | How often the background loop refreshes price, Bitaxe, network and fee data. Lower = fresher data but more CPU and API calls. 300s is tuned for a Pi Zero |
+| `precache_render_max_age_seconds` | `120` | How stale cached price, Bitaxe or network data may be when an image is rendered before it is fetched again. Below the update interval on purpose: a current image is worth more than a saved request |
+| `precache_fee_max_age_seconds` | `90` | Same, for fees. Shorter because fees move fastest |
+| `bitaxe_offline_retry_seconds` | `30` | When every configured miner reports offline, retry after this instead of the full interval — that reading is often just the LAN not being up yet after a reboot |
+| `cache_metadata_write_interval_seconds` | `300` | Debounce for cache-metadata writes, limiting SD card wear |
 | `disable_config_file_watching` | `false` | Disable automatic config reload on file change. Set to `true` for faster startup on development machines |
 | `network_outage_tolerance_minutes` | `45` | Minutes to retry WebSocket reconnection during outages |
 | `xpub_enable_gap_limit` | `true` | Stop scanning XPUB after N unused addresses |

@@ -13,6 +13,38 @@ import time
 class CachingMixin:
     """Cached images and the precache: metadata on disk, the periodic refresh"""
 
+    def _interval(self, key):
+        """Read a pre-cache timing value, in seconds.
+
+        Every interval is a config key whose default lives in
+        get_default_config, so there is one authoritative value per setting
+        rather than a literal repeated at each call site. See
+        docs/CONFIG_REFERENCE.md, Advanced.
+
+        Falls back to the shipped default when the key is missing or not a
+        usable number, so a hand-edited config cannot stall the pre-cache loop.
+        An unknown key raises rather than defaulting silently: that means a
+        typo in the caller, which is a bug to fix, not to paper over.
+        """
+        value = self.config.get(key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0:
+            return value
+        return self.config_manager.get_default_config()[key]
+
+    def _precache_fresh(self, name, max_age, now=None):
+        """True when <name>_data is cached and <name>_last_update is younger than max_age.
+
+        Both the background updater and the render path ask this question, and
+        they used to answer it inline with different hardcoded numbers - the
+        updater at the update interval, the render path at 120 s or 90 s - so a
+        render landing between the two thresholds refetched data the updater
+        still considered fresh.
+        """
+        if not self._precache.get(f'{name}_data'):
+            return False
+        age = (now or time.time()) - self._precache.get(f'{name}_last_update', 0)
+        return age < max_age
+
     def _has_valid_cached_image(self) -> bool:
         """Check if we have a valid cached image for the current block."""
         if not (os.path.exists(self.current_image_path) and 
@@ -77,7 +109,7 @@ class CachingMixin:
     def _deferred_save_cache_metadata(self):
         """Deferred disk save — writes at most once per 5 minutes to reduce SD card wear."""
         now = time.time()
-        if now - self._last_disk_save_time < 300:
+        if now - self._last_disk_save_time < self._interval('cache_metadata_write_interval_seconds'):
             self._disk_save_pending = True
             return
         self._write_cache_metadata_to_disk()
@@ -139,7 +171,7 @@ class CachingMixin:
                 startup_retry_delay = min(startup_retry_delay * 2, 30)
 
             # Get update interval from config (default 5 minutes to reduce RPi load)
-            update_interval = self.config.get("precache_update_interval_seconds", 300)
+            update_interval = self._interval('precache_update_interval_seconds')
             last_date = datetime.now().date()
 
             while True:
@@ -297,9 +329,10 @@ class CachingMixin:
     def _update_precache_data(self):
         """Update pre-cached data (price, bitaxe, fees) in background."""
         data_changed = False
+        tip_height_seen = None
         with self._precache['lock']:
             now = time.time()
-            update_interval = self.config.get("precache_update_interval_seconds", 300)
+            update_interval = self._interval('precache_update_interval_seconds')
 
             # In prioritize_large_scaled_meme mode, pre-select the next meme and the
             # info block types that will actually be shown, so _get_precached_data()
@@ -340,7 +373,8 @@ class CachingMixin:
             # default) makes a transient miss look like a stuck-stale summary card.
             _last_bitaxe = self._precache.get('bitaxe_data') or {}
             _bitaxe_was_all_offline = _last_bitaxe.get('miners_total', 0) > 0 and _last_bitaxe.get('miners_online', 0) == 0
-            _bitaxe_interval = min(update_interval, 30) if _bitaxe_was_all_offline else update_interval
+            _bitaxe_interval = (min(update_interval, self._interval('bitaxe_offline_retry_seconds'))
+                                if _bitaxe_was_all_offline else update_interval)
             if _need_type('bitaxe') and self.config.get("show_bitaxe_block", True) and self.config.get("bitaxe_enabled", True) and now - self._precache['bitaxe_last_update'] > _bitaxe_interval:
                 try:
                     bitaxe_data = self.image_renderer.bitaxe_api.fetch_bitaxe_stats()
@@ -394,11 +428,8 @@ class CachingMixin:
                     fee_param = self.config.get("fee_parameter", "minimumFee")
                     fee_data = self.mempool_api.get_fee_recommendations()
                     block_height = self.mempool_api.get_tip_height()
-
-                    # The tip height was already being fetched here and thrown
-                    # away. Comparing it to the block we last rendered turns it
-                    # into a free stall detector — see _recover_missed_block.
-                    self._check_for_missed_block(block_height)
+                    # Checked after the lock is released — see below.
+                    tip_height_seen = block_height
 
                     if fee_data:
                         self._precache['fee_data'] = fee_data
@@ -417,7 +448,13 @@ class CachingMixin:
         # Invalidate pre-rendered image so it gets regenerated with fresh data
         if data_changed:
             self._invalidate_prerender()
-    
+
+        # Deliberately outside the lock. Catching up runs the full new-block
+        # path, which re-enters _get_precached_data and takes this same lock —
+        # and it is a plain Lock, not an RLock, so doing this inside would
+        # deadlock the pre-cache thread while holding it, blocking every render.
+        self._check_for_missed_block(tip_height_seen)
+
     def _get_precached_data(self):
         """Get pre-cached data with fallback to fresh fetch if needed.
 
@@ -426,6 +463,8 @@ class CachingMixin:
         """
         with self._precache['lock']:
             now = time.time()
+            _render_age = self._interval('precache_render_max_age_seconds')
+            _fee_age = self._interval('precache_fee_max_age_seconds')
 
             # One summary line at the end rather than four scattered prints;
             # this runs every five minutes and usually refreshes all of them.
@@ -441,7 +480,7 @@ class CachingMixin:
 
             # Price — needed by price block and wallet fiat conversion
             if _need_type('price', 'wallet'):
-                if self._precache['price_data'] and (now - self._precache['price_last_update'] < 120):
+                if self._precache_fresh('price', _render_age, now):
                     price_data = self._precache['price_data']
                 else:
                     _refreshed.append("price")
@@ -455,7 +494,7 @@ class CachingMixin:
 
             # Bitaxe — skip when block is disabled or not in pre-selected types
             if _need_type('bitaxe') and self.config.get("show_bitaxe_block", True) and self.config.get("bitaxe_enabled", True):
-                if self._precache['bitaxe_data'] and (now - self._precache['bitaxe_last_update'] < 120):
+                if self._precache_fresh('bitaxe', _render_age, now):
                     bitaxe_data = self._precache['bitaxe_data']
                 else:
                     _refreshed.append("Bitaxe")
@@ -466,7 +505,7 @@ class CachingMixin:
                 bitaxe_data = None
 
             # Fees — always needed (hash frame at bottom uses current fee rate)
-            if self._precache['fee_data'] and (now - self._precache['fee_last_update'] < 90):
+            if self._precache_fresh('fee', _fee_age, now):
                 fee_data = self._precache['fee_data']
                 block_height = self._precache['block_height']
             else:
@@ -489,7 +528,7 @@ class CachingMixin:
                 or self.config.get("show_network_block", True)
             )
             if _need_network:
-                if self._precache['network_data'] and (now - self._precache['network_last_update'] < 120):
+                if self._precache_fresh('network', _render_age, now):
                     network_data = self._precache['network_data']
                 else:
                     _refreshed.append("network")

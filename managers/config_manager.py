@@ -322,6 +322,26 @@ class ConfigManager:
             "mempool_username": "",
             "mempool_password": "",
             "network_outage_tolerance_minutes": 45,  # Time to retry connection before giving up
+
+            # Pre-cache timing. All in seconds, all file-only — the web UI does
+            # not expose them. Defaults are tuned for a single-core Pi Zero:
+            # long enough to keep API traffic and CPU low, short enough that a
+            # rendered image is never meaningfully out of date.
+            #
+            # The two max-age values govern the render path: how stale cached
+            # data may be before a render fetches it again. Keeping them below
+            # the update interval means a render occasionally refreshes ahead of
+            # the background loop, which is the intended trade — a fresh image
+            # matters more than one saved request. Fees get a shorter window
+            # because they move fastest.
+            "precache_update_interval_seconds": 300,
+            "precache_render_max_age_seconds": 120,
+            "precache_fee_max_age_seconds": 90,
+            # Every configured miner reporting offline may just mean the LAN was
+            # not up yet, so that reading is retried sooner than a normal cycle.
+            "bitaxe_offline_retry_seconds": 30,
+            # Debounce for cache-metadata writes, to limit SD card wear.
+            "cache_metadata_write_interval_seconds": 300,
             "fee_parameter": "minimumFee",
             "display_width": 800,
             "display_height": 480,
