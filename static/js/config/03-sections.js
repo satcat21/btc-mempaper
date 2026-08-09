@@ -1493,6 +1493,28 @@ function _applyTorMode(torOn) {
             : '';
     });
 
+    // Basic Auth is redundant over Tor: an onion address is self-authenticating,
+    // so the circuit already establishes both who the service is and that nobody
+    // else can read it. Hide the credential fields to keep the form clean.
+    //
+    // Only when they are empty, though. A stored password that is invisible but
+    // still sent on every request is worse than a little clutter, so an existing
+    // value stays on screen, dimmed, and remains editable so it can be cleared.
+    ['mempool_username', 'mempool_password'].forEach(k => {
+        const el = document.querySelector(`[data-config-key="${k}"]`);
+        if (!el) return;
+        const group = el.closest('.form-group') || el.parentElement;
+        if (!group) return;
+        const hasValue = !!(typeof el.getValue === 'function' ? el.getValue() : el.value);
+        group.style.display = (torOn && !hasValue) ? 'none' : '';
+        group.style.opacity = (torOn && hasValue) ? '0.45' : '';
+        group.title = (torOn && hasValue)
+            ? (t.auth_not_needed_over_tor
+               || 'Not needed over Tor — the onion address authenticates the service. '
+                  + 'Clear this unless your onion mempool also requires Basic Auth.')
+            : '';
+    });
+
     ['tor_socks_host', 'tor_socks_port'].forEach(k => {
         const el = document.querySelector(`[data-config-key="${k}"]`);
         const group = el && (el.closest('.form-group') || el.parentElement);

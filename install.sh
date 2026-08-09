@@ -120,14 +120,29 @@ echo ""
 echo -e "  ${CYAN}Admin account${NC}"
 ADMIN_USERNAME=""
 ADMIN_PASSWORD=""
-# Check if config already has users (system python3, before venv exists)
+# Check whether admin users already exist.
+#
+# admin_users is a sensitive field, so save_secure_config writes it to the
+# encrypted config/config.secure.json and deliberately keeps it out of
+# config/config.json. Inspecting the plain file therefore never finds it, and
+# this prompt reappeared on every re-run of an already-installed device even
+# though the credentials were then discarded.
+#
+# Ask the application instead, which can decrypt. On a genuine first install
+# there is no venv yet - and no users either - so the plain-file check below
+# still covers that, along with builds that run without secure config.
 _HAS_USERS=false
-if [ -f "config/config.json" ]; then
+if [ -x ".venv/bin/python" ] && [ -f "tools/setup_user.py" ]; then
+    if .venv/bin/python tools/setup_user.py --list 2>/dev/null | grep -q "user(s) configured"; then
+        _HAS_USERS=true
+    fi
+fi
+if [ "$_HAS_USERS" = "false" ] && [ -f "config/config.json" ]; then
     _HAS_USERS=$(python3 -c "
 import json, sys
 try:
     c = json.load(open('config/config.json'))
-    print('true' if c.get('admin_users') else 'false')
+    print('true' if c.get('admin_users') or c.get('admin_password_hash') else 'false')
 except Exception:
     print('false')
 " 2>/dev/null || echo "false")
