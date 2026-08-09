@@ -470,6 +470,9 @@ little: **3.7 MiB RAM idle** and a 12 KB key store.
 If the Tang host is unreachable, mempaper still starts and runs — the wallet and donation
 blocks are disabled until it returns, then restore themselves automatically.
 
+**Enable it before entering your xpubs.** Deleted data lingers in freed flash blocks, so
+sealing later cannot reach addresses already written to the card in clear text.
+
 Setup, `docker-compose.yml`, LXC sizing and the limits of this approach:
 [Self-Hosting Guide → Tang](docs/SELF_HOSTING_GUIDE.md#part-8--tang-network-bound-encryption-for-wallet-data-optional).
 

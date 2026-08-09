@@ -626,6 +626,31 @@ because there is nothing to guess. Recovery would require the Tang server's priv
 > access on a running mempaper can simply ask it to unseal, exactly as the app does.
 > Tang also cannot help while the thief is still on your LAN.
 
+#### Do this before entering wallet data
+
+**Enable Tang first, then add your xpubs.** Doing it in that order is the difference
+between real protection and partial protection, and it costs nothing.
+
+Deleting a file on an SD card does not erase it. Flash controllers do wear-levelling:
+an updated file is written to fresh cells and the old ones are merely marked free, so
+the previous contents stay physically present until those cells are reused. They remain
+recoverable from the raw NAND, and a `dd` image copies them along with everything else.
+
+So if you run for a while with addresses in clear text and enable Tang afterwards,
+mempaper re-seals the live data but **cannot reach what was already committed to the
+card**. Nothing in software can — that layer is owned by the controller.
+
+If you are retrofitting Tang onto a device that already held wallet data:
+
+| Option | Effect |
+|---|---|
+| Re-flash the card and set up with Tang enabled from the start | The only reliable erasure |
+| `sudo fstrim /`, and enable `fstrim.timer` | Asks the controller to erase freed blocks — best effort, many cards ignore it |
+| Do nothing | New data is sealed; the old plaintext may remain recoverable |
+
+`install.sh` enables `fstrim.timer` automatically where the card supports it, and says so
+when it does not.
+
 #### What you need
 
 An always-on host on the same LAN — a node, a NAS, or a small Proxmox LXC. Tang is
@@ -881,7 +906,8 @@ under a key that no longer exists on the SD card.
 | Tang host down or LAN unreachable at boot | mempaper starts normally, wallet and donation blocks are disabled, the dashboard shows why |
 | Tang host comes back | mempaper re-seals and restores those blocks automatically, no restart needed |
 | `tang-keys` volume lost with no backup | **Sealed wallet data is unrecoverable.** Re-enter your xpubs |
-| Device stolen, taken off your LAN | Wallet data cannot be decrypted |
+| Device stolen, taken off your LAN | Sealed data cannot be decrypted |
+| Tang enabled after xpubs were already saved | New writes are sealed; earlier plaintext may survive in freed flash blocks |
 | Device stolen while still on your LAN | Not protected — Tang answers as normal |
 | Attacker has SSH or admin access | Not protected — they can unseal exactly as mempaper does |
 

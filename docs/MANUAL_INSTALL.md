@@ -663,7 +663,37 @@ sudo sshd -T | grep -i passwordauthentication    # expect: passwordauthenticatio
 > Add your public key through **Settings → General → Advanced → SSH Access** *before* doing
 > this, or you will need physical access to get back in.
 
+**Periodic TRIM** — lets the card actually erase deleted data.
+
+```bash
+sudo fstrim /                             # succeeds only if the card supports discard
+sudo systemctl enable --now fstrim.timer  # weekly
+```
+
+Deleting a file on flash does not erase it: the controller marks the old cells free
+and writes elsewhere, leaving the previous contents recoverable from the raw NAND.
+TRIM asks it to erase them. Best effort — many SD cards ignore discard, and `fstrim`
+will say so. This matters mainly if wallet addresses were ever written in clear text;
+see the ordering note below.
+
+It applies to freed blocks only, whatever they contained — TRIM works at the block
+layer and never reads the data, so encrypted and plaintext files are treated alike.
+Files currently in use are untouched. Config and cache saves go through
+`atomic_write_json` (temp file, then rename), which is what leaves a full copy of the
+*previous* version behind on every save.
+
+**TRIM does not shorten card life.** A discard command updates the controller's
+mapping table rather than writing cells, and knowing which blocks are dead lets it
+skip relocating them during garbage collection — less write amplification, not more.
+`fstrim.timer` is used in preference to the `discard` mount option, which fires on
+every delete and behaves poorly on cheap controllers.
+
 **Network-bound encryption (Tang)** — makes wallet data undecryptable on a stolen device.
+
+> **Enable Tang before entering any wallet addresses.** Sealing the live data later
+> cannot reach copies already committed to the card by wear-levelling. Retrofitting onto
+> a device that already held xpubs means re-flashing for a clean start, or accepting that
+> the old plaintext may remain recoverable.
 
 `clevis` is part of [section 5](#5-system-packages) and is inert until switched on, so
 install it whether or not you have a Tang server yet:
