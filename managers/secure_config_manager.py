@@ -187,22 +187,47 @@ class SecureConfigManager:
         self._secure_cache_stamp = None
 
     def _tang_store(self):
-        """The shared Tang store, or None when sealing is unavailable.
+        """The shared Tang store, or None when sealing is genuinely off.
 
         Imported lazily: tang_store imports this module, so a module-level
         import would be circular.
+
+        Only a disabled configuration returns None. An error here used to
+        return None too, which the writer read as "Tang is off" and answered by
+        writing clear text - so a fault anywhere in this path silently undid the
+        sealing of every file it touched. A failure now propagates, because
+        refusing to write is recoverable and quietly unsealing is not.
+        """
+        from managers.tang_store import get_shared_store
+        store = get_shared_store()
+        return store if store.is_enabled() else None
+
+    def _tang_enabled_on_disk(self):
+        """Whether sealing is switched on, straight from config.json.
+
+        Used as an independent check so a broken store cannot be mistaken for
+        a disabled one.
         """
         try:
-            from managers.tang_store import get_shared_store
-            store = get_shared_store()
-            return store if store.is_enabled() else None
+            with open(self.config_file, encoding='utf-8') as f:
+                return bool(json.load(f).get('tang_enabled'))
         except Exception:
-            return None
+            return False
 
     def _write_possibly_sealed(self, path, obj):
-        """Write JSON, sealed against Tang when that is switched on."""
+        """Write JSON, sealed against Tang when that is switched on.
+
+        The plain-config check is a second opinion, not belt-and-braces: if
+        sealing is configured, this must not fall back to clear text for any
+        reason. Writing plaintext over a sealed file is silent and permanent -
+        the protection is gone and nothing says so.
+        """
         store = self._tang_store()
         if store is None:
+            if self._tang_enabled_on_disk():
+                raise RuntimeError(
+                    'Tang is enabled but the sealed store is unavailable; '
+                    'refusing to write this file in clear text')
             atomic_write_json(path, obj, mode=0o600, indent=2)
             return
         payload = json.dumps(obj, indent=2).encode('utf-8')

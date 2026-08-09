@@ -426,6 +426,19 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
         if self.tang_store.unlock():
             if self.tang_store.is_ready():
                 print("🔓 Tang: sealed store unlocked")
+                # Seal anything still in the clear. Normally a no-op, but a
+                # file can end up unsealed after a fault during a write, and
+                # without this the device would keep running as though it were
+                # protected. enable() is idempotent and reuses the existing key.
+                try:
+                    outcome = self.tang_store.enable()
+                    if outcome['sealed']:
+                        print(f"🔐 Tang: sealed {len(outcome['sealed'])} file(s) "
+                              f"found in clear text: {outcome['sealed']}")
+                    for failure in outcome['failed']:
+                        print(f"⚠️ Tang: could not seal {failure['label']}: {failure['error']}")
+                except Exception as e:
+                    print(f"⚠️ Tang: re-seal check failed: {e}")
         else:
             print(f"🔒 Tang: {self.tang_store.reason}")
             print("🔒 Sealed data stays unavailable until the Tang server returns")

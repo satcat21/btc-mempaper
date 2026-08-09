@@ -73,7 +73,10 @@ class TangLocked(Exception):
 
 
 _shared_store = None
-_shared_lock = threading.Lock()
+# Re-entrant on purpose. Any path that reaches back into get_shared_store while
+# it is building the store would deadlock on a plain Lock rather than fail, and
+# a hung startup is far harder to diagnose than an exception.
+_shared_lock = threading.RLock()
 
 
 def get_shared_store(config_manager=None):
@@ -111,6 +114,8 @@ class TangStore:
         self._state = self.DISABLED
         self._reason = ''
         self._lock = threading.Lock()
+        self._plain_cache = None
+        self._plain_stamp = None
 
     # ── state ────────────────────────────────────────────────────────────────
 
@@ -124,31 +129,44 @@ class TangStore:
         return self._reason
 
     def _plain_config(self):
-        """tang_* read straight from config.json.
+        """tang_* read straight from config.json, cached against its stamp.
 
-        The store has to answer before ConfigManager has finished building,
-        because the first thing that manager does is read config.sensitive.json -
-        which may itself be sealed. None of the three tang keys are sensitive,
-        so they live in the plain file and can be read without the app.
+        Deliberately never routed through ConfigManager. That manager answers
+        get_current_config by reading the sensitive file, which may itself be
+        sealed, so asking it whether sealing is on recurses straight back into
+        this store:
+
+            load_secure_config -> _read_possibly_sealed -> is_enabled
+              -> get_current_config -> load_secure_config -> ...
+
+        The three tang keys are not sensitive, so save_secure_config leaves
+        them in the plain file, where they can be read without the app and
+        without recursion. The stamp cache keeps this to one stat per call
+        rather than a parse on every seal and open.
         """
         import json
+        path = os.path.join(PROJECT_ROOT, 'config', 'config.json')
         try:
-            with open(os.path.join(PROJECT_ROOT, 'config', 'config.json'),
-                      encoding='utf-8') as f:
-                return json.load(f)
+            st = os.stat(path)
+            stamp = (st.st_mtime_ns, st.st_size)
+        except OSError:
+            return {}
+
+        if stamp == self._plain_stamp and self._plain_cache is not None:
+            return self._plain_cache
+
+        try:
+            with open(path, encoding='utf-8') as f:
+                cfg = json.load(f)
         except Exception:
             return {}
 
+        self._plain_cache = cfg
+        self._plain_stamp = stamp
+        return cfg
+
     def is_enabled(self):
-        cfg = {}
-        if self.config_manager is not None:
-            try:
-                cfg = self.config_manager.get_current_config() or {}
-            except Exception:
-                cfg = {}
-        if 'tang_enabled' not in cfg:
-            cfg = self._plain_config()
-        return bool(cfg.get('tang_enabled'))
+        return bool(self._plain_config().get('tang_enabled'))
 
     def is_ready(self):
         return self._state == self.READY

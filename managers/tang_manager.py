@@ -16,6 +16,8 @@ import re
 import shutil
 import subprocess
 
+from utils.paths import PROJECT_ROOT
+
 # Tang answers in milliseconds on a LAN. These bounds exist so an unreachable
 # or half-open host cannot wedge a config-page request or the boot path.
 ADV_TIMEOUT = 10
@@ -64,8 +66,21 @@ class TangManager:
     # ── configuration ────────────────────────────────────────────────────────
 
     def settings(self):
-        """(enabled, url, thumbprint) from config, with the URL normalised."""
-        cfg = self.config_manager.get_current_config() if self.config_manager else {}
+        """(enabled, url, thumbprint) from config, with the URL normalised.
+
+        Read from config.json rather than through ConfigManager. That manager
+        answers by loading the sensitive file, which may itself be sealed, so
+        going through it while sealing or unsealing recurses back here. All
+        three tang keys are non-sensitive and stay in the plain file precisely
+        so this lookup can never depend on the thing it is used to unlock.
+        """
+        cfg = {}
+        try:
+            with open(os.path.join(PROJECT_ROOT, 'config', 'config.json'),
+                      encoding='utf-8') as f:
+                cfg = json.load(f)
+        except Exception:
+            cfg = {}
         url = (cfg.get('tang_url') or '').strip().rstrip('/')
         return (bool(cfg.get('tang_enabled')), url,
                 (cfg.get('tang_thumbprint') or '').strip())
