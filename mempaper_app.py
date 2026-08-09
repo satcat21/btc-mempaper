@@ -2165,9 +2165,30 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
         except Exception:
             pass
 
+    def _has_authenticated_clients(self):
+        """True if any client is currently in the 'authenticated' room.
+
+        Asks Socket.IO rather than keeping a parallel count: room membership
+        is already maintained there, and a second copy could drift and
+        silently cut a logged-in user off from updates. On any error assume a
+        client is present, so a library change costs wasted requests rather
+        than a dead config page.
+        """
+        try:
+            participants = self.socketio.server.manager.get_participants('/', 'authenticated')
+            return any(True for _ in participants)
+        except Exception:
+            return True
+
     def _emit_config_page_updates(self):
         """Push live updates to the config page via Socket.IO (bitaxe stats & found blocks)."""
         if not hasattr(self, 'socketio') or not self.socketio:
+            return
+        # Everything below is emitted only to the 'authenticated' room and the
+        # Bitaxe branch costs one HTTP request per miner. With nobody logged in
+        # the pre-cache loop was polling every miner on every cycle and throwing
+        # the answers away.
+        if not self._has_authenticated_clients():
             return
         try:
             config = self.config_manager.get_current_config()

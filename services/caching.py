@@ -31,6 +31,18 @@ class CachingMixin:
             return value
         return self.config_manager.get_default_config()[key]
 
+    def _need_block_type(self, *types):
+        """True when any of these info-block types will be drawn this cycle.
+
+        In prioritize_large_scaled_meme mode the updater pre-selects which
+        blocks fit beside the meme, and both it and the render path skip
+        fetching data for the rest. None means no preselection is in force
+        (balanced layout, or not yet chosen this cycle), so everything is
+        fetched — the behaviour before preselection existed.
+        """
+        selected = self._precache.get('selected_block_types')
+        return selected is None or any(t in selected for t in types)
+
     def _precache_fresh(self, name, max_age, now=None):
         """True when <name>_data is cached and <name>_last_update is younger than max_age.
 
@@ -298,21 +310,22 @@ class CachingMixin:
     def _recover_missed_block(self, tip_height):
         """Process a block the WebSocket never delivered, and kick the socket.
 
-        The hash has to be fetched: the WebSocket carries it, the tip-height
-        endpoint does not. Once resolved this goes through the ordinary
-        new-block path, so pre-rendering, the e-ink refresh and client
-        notifications behave exactly as they would have.
+        Only the hash needs fetching: the WebSocket carries it, the tip-height
+        endpoint does not, and the caller already has the height. Asking for
+        the hash alone rather than get_current_block_info, which re-resolves
+        both, halves the requests — worth it over Tor. Once resolved this goes
+        through the ordinary new-block path, so pre-rendering, the e-ink
+        refresh and client notifications behave exactly as they would have.
         """
         try:
-            info = self.mempool_api.get_current_block_info()
-            block_hash = (info or {}).get('block_hash')
-            height = (info or {}).get('block_height') or tip_height
+            block_hash = self.mempool_api.get_tip_hash()
             if not block_hash:
                 print("⚠️ Catch-up aborted: could not resolve the block hash")
                 return
         except Exception as e:
             print(f"⚠️ Catch-up aborted: {e}")
             return
+        height = tip_height
 
         # Force the monitor to rebuild its connection. Without this the socket
         # stays wedged and every future block needs this same recovery.
@@ -349,15 +362,8 @@ class CachingMixin:
                 self._precache['next_meme_path'] = None
                 self._precache['selected_block_types'] = None
 
-            # Mirrors _get_precached_data()'s _need_type(): None (balanced mode, or
-            # types not yet preselected this cycle) always fetches, same as before.
-            _selected = self._precache.get('selected_block_types')
-
-            def _need_type(*types):
-                return _selected is None or any(t in _selected for t in types)
-
             # Update price data if stale
-            if _need_type('price', 'wallet') and now - self._precache['price_last_update'] > update_interval:
+            if self._need_block_type('price', 'wallet') and now - self._precache['price_last_update'] > update_interval:
                 try:
                     price_data = self.image_renderer.fetch_btc_price()
                     if self._store_fresh_price_data(price_data, now):
@@ -375,7 +381,7 @@ class CachingMixin:
             _bitaxe_was_all_offline = _last_bitaxe.get('miners_total', 0) > 0 and _last_bitaxe.get('miners_online', 0) == 0
             _bitaxe_interval = (min(update_interval, self._interval('bitaxe_offline_retry_seconds'))
                                 if _bitaxe_was_all_offline else update_interval)
-            if _need_type('bitaxe') and self.config.get("show_bitaxe_block", True) and self.config.get("bitaxe_enabled", True) and now - self._precache['bitaxe_last_update'] > _bitaxe_interval:
+            if self._need_block_type('bitaxe') and self.config.get("show_bitaxe_block", True) and self.config.get("bitaxe_enabled", True) and now - self._precache['bitaxe_last_update'] > _bitaxe_interval:
                 try:
                     bitaxe_data = self.image_renderer.bitaxe_api.fetch_bitaxe_stats()
                     if bitaxe_data and not bitaxe_data.get('error'):
@@ -394,7 +400,7 @@ class CachingMixin:
                     print(f"⚠️ Failed to pre-cache Bitaxe: {e}")
             
             # Update network stats when at least one network-dependent block is enabled.
-            _need_network = _need_type('countdown', 'halving', 'network') and (
+            _need_network = self._need_block_type('countdown', 'halving', 'network') and (
                 self.config.get("show_countdown_block", True)
                 or self.config.get("show_halving_block", True)
                 or self.config.get("show_network_block", True)
@@ -470,16 +476,8 @@ class CachingMixin:
             # this runs every five minutes and usually refreshes all of them.
             _refreshed = []
 
-            # Determine which block types will actually be shown.
-            # None  → all blocks (default layout)
-            # list  → only those types (pre-selected for prioritize_large_scaled_meme)
-            _selected = self._precache.get('selected_block_types')  # None or list
-
-            def _need_type(*types):
-                return _selected is None or any(t in _selected for t in types)
-
             # Price — needed by price block and wallet fiat conversion
-            if _need_type('price', 'wallet'):
+            if self._need_block_type('price', 'wallet'):
                 if self._precache_fresh('price', _render_age, now):
                     price_data = self._precache['price_data']
                 else:
@@ -493,7 +491,7 @@ class CachingMixin:
                 price_data = None
 
             # Bitaxe — skip when block is disabled or not in pre-selected types
-            if _need_type('bitaxe') and self.config.get("show_bitaxe_block", True) and self.config.get("bitaxe_enabled", True):
+            if self._need_block_type('bitaxe') and self.config.get("show_bitaxe_block", True) and self.config.get("bitaxe_enabled", True):
                 if self._precache_fresh('bitaxe', _render_age, now):
                     bitaxe_data = self._precache['bitaxe_data']
                 else:
@@ -522,7 +520,7 @@ class CachingMixin:
                     block_height = None
 
             # Network stats — only when at least one network-dependent block is selected
-            _need_network = _need_type('countdown', 'halving', 'network') and (
+            _need_network = self._need_block_type('countdown', 'halving', 'network') and (
                 self.config.get("show_countdown_block", True)
                 or self.config.get("show_halving_block", True)
                 or self.config.get("show_network_block", True)
