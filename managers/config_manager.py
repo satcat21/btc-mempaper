@@ -292,10 +292,19 @@ class ConfigManager:
         if plain_config:
             merged_config.update(plain_config)
         
-        # Try secure config for sensitive fields only
+        # Try secure config for sensitive fields only.
+        #
+        # Track whether this succeeded. When it fails - a sealed file that
+        # cannot currently be opened, say - the sensitive keys below keep the
+        # empty values they got from get_default_config. Saving that state
+        # would write those empties over the real wallet addresses, admin
+        # users and mempool password, so save_config refuses while this is
+        # False. Losing them to a silent overwrite is not recoverable.
+        self._sensitive_loaded = not self.secure_manager
         if self.secure_manager:
             secure_config = self.secure_manager.load_secure_config()
             if secure_config is not None:
+                self._sensitive_loaded = True
                 # Only update with sensitive fields from secure config
                 if self.secure_manager:
                     sensitive_fields = self.secure_manager.sensitive_fields
@@ -429,6 +438,17 @@ class ConfigManager:
             bool: True if successful, False otherwise
         """
         config_to_save = config if config is not None else self.config
+
+        # Refuse while the sensitive half could not be read. Those keys are
+        # sitting at their empty defaults, so writing now would replace real
+        # wallet addresses, admin users and the mempool password with nothing,
+        # silently and permanently. Better a failed save the operator can see
+        # and retry than a successful one that destroys data.
+        if not getattr(self, '_sensitive_loaded', True):
+            print("❌ Refusing to save: sensitive configuration could not be read, "
+                  "so saving now would erase it")
+            print("   Restore access to the sealed store (Tang) and try again")
+            return False
         
         try:
             # Temporarily disable file watching during save to prevent reload race condition
