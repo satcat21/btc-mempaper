@@ -446,7 +446,30 @@ if (saveButton) {
                 if (languageChanged) {
                     pendingLanguageChange = null;
                 }
-                showNotification(window.translations?.configuration_saved || 'Configuration saved successfully!', 'success');
+                if (result.partial && Array.isArray(result.skipped_sensitive) && result.skipped_sensitive.length) {
+                    // The public settings were written but the encrypted ones
+                    // could not be. A success toast here would let the operator
+                    // believe an edit took effect when it did not, so this is a
+                    // modal: it names what was left unchanged and has to be
+                    // acknowledged rather than fading away unread.
+                    const t = window.translations || {};
+                    const body =
+                        (t.configuration_saved_partial
+                         || 'General settings were saved. Encrypted storage is currently unavailable, so these were left unchanged:')
+                        + '\n\n• ' + result.skipped_sensitive.join('\n• ')
+                        + '\n\n' + (t.tang_retry_hint
+                                    || 'Their existing values on the device are untouched. Restore the Tang server and save again to apply your changes.');
+                    if (typeof window.showAlertModal === 'function') {
+                        window.showAlertModal({
+                            title: t.configuration_saved_partial_title || 'Partially saved',
+                            message: body,
+                        });
+                    } else {
+                        showNotification(body, 'warning', 20000);
+                    }
+                } else {
+                    showNotification(window.translations?.configuration_saved || 'Configuration saved successfully!', 'success');
+                }
                 _markClean();
             } else {
                 showNotification(result.message || window.translations?.failed_to_save_configuration || 'Failed to save configuration', 'error');

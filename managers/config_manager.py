@@ -426,6 +426,70 @@ class ConfigManager:
             "auto_update_days": ["mon", "wed", "fri"],
         }
     
+    # Sensitive keys named the way an operator would recognise them, for the
+    # message shown when a save could not include them.
+    SENSITIVE_FIELD_LABELS = {
+        'wallet_balance_addresses_with_comments': 'Wallet addresses and xpubs',
+        'block_reward_addresses_table': 'Block reward addresses',
+        'admin_users': 'Admin users',
+        'admin_password_hash': 'Admin password',
+        'secret_key': 'Session signing key',
+        'mempool_password': 'Mempool password',
+    }
+
+    def _save_public_only(self, config_to_save: Dict[str, Any]) -> bool:
+        """Write the non-sensitive settings, leaving the sealed file untouched.
+
+        Used when the sensitive half is unreadable. Records which sensitive
+        settings the caller tried to change and could not, in
+        last_skipped_sensitive, so the UI can name them rather than claiming
+        everything was saved.
+        """
+        sensitive = (self.secure_manager.sensitive_fields
+                     if self.secure_manager else set(self.SENSITIVE_FIELD_LABELS))
+
+        # Only report what the operator actually altered. The form posts every
+        # field, so comparing against the in-memory copy distinguishes a real
+        # edit from a field that merely came along for the ride.
+        skipped = [key for key in sensitive
+                   if key in config_to_save
+                   and config_to_save.get(key) != self.config.get(key)]
+        self.last_skipped_sensitive = [
+            self.SENSITIVE_FIELD_LABELS.get(key, key) for key in sorted(skipped)]
+
+        try:
+            file_watching_was_enabled = self.watching_enabled
+            self.watching_enabled = False
+
+            validated_config = self.validate_config(config_to_save)
+            public_config = {k: v for k, v in validated_config.items()
+                             if k not in sensitive}
+            atomic_write_json(self.config_path, public_config, indent=2)
+
+            with self.config_lock:
+                # Keep the sensitive keys as they are in memory. They are the
+                # empty defaults, but overwriting them with the posted values
+                # would make the app act as though an unsaved edit had taken.
+                merged = dict(self.config)
+                merged.update(public_config)
+                self.config = merged
+
+            if self.last_skipped_sensitive:
+                print("⚠️ Saved general settings only — the sealed store is "
+                      "unavailable, so these were left unchanged: "
+                      + ", ".join(self.last_skipped_sensitive))
+            else:
+                print("✅ Saved general settings (sealed store unavailable, "
+                      "nothing sensitive was being changed)")
+
+            if file_watching_was_enabled:
+                threading.Timer(2.0, lambda: setattr(self, 'watching_enabled', True)).start()
+            return True
+        except Exception as e:
+            print(f"❌ Failed to save general settings: {e}")
+            self.watching_enabled = True
+            return False
+
     def save_config(self, config: Dict[str, Any] = None) -> bool:
         """
         Save configuration to file with validation.
@@ -439,17 +503,20 @@ class ConfigManager:
         """
         config_to_save = config if config is not None else self.config
 
-        # Refuse while the sensitive half could not be read. Those keys are
-        # sitting at their empty defaults, so writing now would replace real
-        # wallet addresses, admin users and the mempool password with nothing,
-        # silently and permanently. Better a failed save the operator can see
-        # and retry than a successful one that destroys data.
+        # When the sensitive half could not be read, those keys are sitting at
+        # their empty defaults, so writing them would replace real wallet
+        # addresses, admin users and the mempool password with nothing. The
+        # public half is unaffected though, and refusing the whole save would
+        # block ordinary settings for as long as the sealed store is away.
+        #
+        # So the public file is written and the sensitive one is left exactly
+        # as it is. Edits to sensitive fields are dropped rather than applied,
+        # and the caller is told which ones so the UI can say so instead of
+        # reporting a clean save.
+        self.last_skipped_sensitive = []
         if not getattr(self, '_sensitive_loaded', True):
-            print("❌ Refusing to save: sensitive configuration could not be read, "
-                  "so saving now would erase it")
-            print("   Restore access to the sealed store (Tang) and try again")
-            return False
-        
+            return self._save_public_only(config_to_save)
+
         try:
             # Temporarily disable file watching during save to prevent reload race condition
             file_watching_was_enabled = self.watching_enabled

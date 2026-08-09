@@ -744,6 +744,22 @@ def register(self):
 
                 threading.Thread(target=_post_save_background, daemon=True).start()
 
+                # A save made while the sealed store is unreachable writes the
+                # public settings and leaves the sensitive ones alone. Say which
+                # ones did not take, rather than reporting a clean save and
+                # letting the operator believe an edit was applied.
+                skipped = getattr(self.config_manager, 'last_skipped_sensitive', []) or []
+                if skipped:
+                    return jsonify({
+                        'success': True,
+                        'partial': True,
+                        'skipped_sensitive': skipped,
+                        'message': 'General settings saved. Encrypted storage is '
+                                   'unavailable, so these were left unchanged: '
+                                   + ', '.join(skipped),
+                        'current_user': session.get('username', '')
+                    })
+
                 return jsonify({
                     'success': True,
                     'message': 'Configuration saved successfully',
