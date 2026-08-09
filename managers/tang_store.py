@@ -250,6 +250,11 @@ class TangStore:
         write, not downgrade it.
         """
         if self._state == self.DISABLED:
+            if self.is_enabled():
+                # Config says sealing is on but this store never unlocked, so
+                # passing the bytes through would write clear text under a
+                # configuration that promises otherwise. Refuse instead.
+                raise TangLocked('Tang is enabled but this store is not unlocked')
             return data
         if self._state != self.READY or self._fernet is None:
             raise TangLocked(self._reason or 'Tang key unavailable')
@@ -262,6 +267,12 @@ class TangStore:
         on does not orphan what is already there.
         """
         if self._state == self.DISABLED:
+            if self.is_enabled() and self.looks_sealed(data):
+                # Sealed content with no key to open it. Returning it verbatim
+                # is how this surfaced in the field: the caller handed
+                # ciphertext to json.loads and reported a parse error, hiding
+                # the real cause. Say what is actually wrong.
+                raise TangLocked('Tang is enabled but this store is not unlocked')
             return data
         if self._state != self.READY or self._fernet is None:
             raise TangLocked(self._reason or 'Tang key unavailable')

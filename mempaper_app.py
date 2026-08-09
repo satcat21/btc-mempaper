@@ -416,8 +416,13 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
                 self._eink_ram_path = os.path.join(_ram_dir, 'mempaper-eink.png')
                 break
 
-        from managers.tang_store import TangStore
-        self.tang_store = TangStore(self.config_manager)
+        # The shared instance, not a private one. The config and cache managers
+        # reach the store through get_shared_store during their own startup, so
+        # constructing a second here would leave two objects disagreeing about
+        # whether sealing is active - one sealing writes while the other passed
+        # the same bytes through untouched.
+        from managers.tang_store import get_shared_store
+        self.tang_store = get_shared_store(self.config_manager)
         if self.tang_store.unlock():
             if self.tang_store.is_ready():
                 print("🔓 Tang: sealed store unlocked")
