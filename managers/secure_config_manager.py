@@ -23,6 +23,7 @@ from typing import Dict, Any, Optional
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from argon2.low_level import Type as Argon2Type, hash_secret_raw
 import platform
 
 from utils.atomic_io import atomic_write_json
@@ -34,7 +35,22 @@ class SecureConfigManager:
     # Class-level cache for encryption key (shared across all instances)
     _cached_encryption_key = None
     _key_file_mtime = None
-    
+    _cached_legacy_keys = None
+    _cached_salt = None
+
+    # Current device-key scheme. Bump when the fingerprint or the KDF changes,
+    # and keep the superseded derivation reachable from
+    # _get_device_fingerprint so existing data stays readable.
+    FINGERPRINT_VERSION = 2
+
+    # Argon2id cost. Memory is the parameter that hurts a GPU attacker. The
+    # derived key is cached on the class, so this is paid once per process
+    # rather than per instance, but it still lands in the boot path on a Pi
+    # Zero and so is sized for that rather than maximised.
+    ARGON2_TIME_COST = 3
+    ARGON2_MEMORY_KIB = 16384  # 16 MiB
+    ARGON2_PARALLELISM = 1
+
     def __init__(self, config_file: str = "config/config.json"):
         """
         Initialize secure config manager.
@@ -56,6 +72,10 @@ class SecureConfigManager:
             'mempool_password'
         }
         
+        # Set when a decrypt only succeeded under a superseded key, meaning
+        # the file on disk still needs rewriting. See migrate_to_current_scheme.
+        self._used_legacy_key = False
+
         # Initialize encryption key (uses class-level cache)
         self._encryption_key = None
         self._ensure_encryption_key()
@@ -117,11 +137,127 @@ class SecureConfigManager:
         self._secure_cache_json = None
         self._secure_cache_stamp = None
 
+    def migrate_to_current_scheme(self) -> bool:
+        """Rewrite the encrypted config if it is still under an older key.
 
-    def _get_device_fingerprint(self) -> str:
+        The cache files re-encrypt themselves, since they are rewritten
+        whenever a balance changes. config.secure.json is only written when
+        something saves the configuration, so without this an untouched
+        device would keep its secrets under the superseded key indefinitely
+        and never benefit from the current scheme.
+
+        Returns True only when a rewrite actually happened.
+        """
+        if not os.path.exists(self.encrypted_config_file):
+            return False
+
+        self._used_legacy_key = False
+        config = self.load_secure_config()
+        if config is None or not self._used_legacy_key:
+            return False
+
+        print(f"🔄 Re-encrypting {self.encrypted_config_file} "
+              f"under key scheme v{self.FINGERPRINT_VERSION}")
+        if self.save_secure_config(config):
+            print("✅ Secure configuration migrated to the current key scheme")
+            return True
+
+        # Not fatal: the old key still reads the data, so the next attempt
+        # can retry rather than leaving the device unable to start.
+        print("⚠️ Could not re-encrypt the secure configuration; will retry")
+        return False
+
+
+    def _get_device_fingerprint(self, version: int = None) -> str:
+        """Device fingerprint for the requested scheme version.
+
+        Version 2 is current. Version 1 is kept byte-for-byte so that data
+        written before the change still decrypts; see _decrypt_data.
+        """
+        version = self.FINGERPRINT_VERSION if version is None else version
+        if version == 1:
+            return self._get_device_fingerprint_v1()
+        return self._get_device_fingerprint_v2()
+
+    def _read_text(self, path: str) -> str:
+        """First line of a small sysfs/procfs file, or empty. Device-tree
+        values carry a trailing NUL, which would otherwise land in the hash."""
+        try:
+            with open(path, 'r', errors='ignore') as f:
+                return f.read(256).replace('\x00', '').strip()
+        except (OSError, UnicodeDecodeError):
+            return ''
+
+    def _hardware_macs(self) -> list:
+        """MAC addresses of real interfaces, sorted, all-zero ones dropped.
+
+        Sorted because interface enumeration order is not guaranteed stable
+        across reboots, and an unstable fingerprint means unreadable data.
+        Virtual interfaces are excluded for the same reason: docker and
+        wireguard devices come and go.
+        """
+        skip_prefixes = ('lo', 'docker', 'veth', 'br-', 'virbr', 'tun', 'tap',
+                         'wg', 'zt', 'tailscale')
+        macs = set()
+        try:
+            import psutil
+            for name, addresses in psutil.net_if_addrs().items():
+                if name.startswith(skip_prefixes):
+                    continue
+                for address in addresses:
+                    if getattr(address, 'family', None) != psutil.AF_LINK:
+                        continue
+                    mac = (address.address or '').strip().lower()
+                    if mac and set(mac) - set(':-0'):
+                        macs.add(mac)
+        except (ImportError, AttributeError, OSError):
+            pass
+        return sorted(macs)
+
+    def _get_device_fingerprint_v2(self) -> str:
+        """Device fingerprint bound to the SoC where one is available.
+
+        Replaces the v1 inputs, which were weaker than intended: v1 took the
+        first interface psutil reported, and on Linux that is the loopback
+        device, whose MAC is 00:00:00:00:00:00. The supposed MAC component
+        was therefore a constant contributing nothing.
+
+        On a Pi the CPU serial is the only identifier that lives in the SoC
+        rather than on the card, so it alone decides the key when present.
+        Hardware MACs are the fallback for non-Pi hosts. They are deliberately
+        not mixed in alongside the serial: adding a USB network adapter would
+        then change the fingerprint and orphan the encrypted data.
+        """
+        parts = []
+
+        serial = ''
+        for line in self._read_text('/proc/cpuinfo').splitlines():
+            if line.startswith('Serial'):
+                serial = line.split(':', 1)[-1].strip()
+                break
+        if not serial:
+            serial = self._read_text('/proc/device-tree/serial-number')
+
+        if serial:
+            parts.append(f'serial={serial}')
+        else:
+            macs = self._hardware_macs()
+            if macs:
+                parts.append('macs=' + ','.join(macs))
+            else:
+                parts.append('node=' + platform.node())
+
+        parts.append('machine=' + platform.machine())
+
+        return hashlib.sha256('|'.join(parts).encode()).hexdigest()
+
+    def _get_device_fingerprint_v1(self) -> str:
         """
         Generate device-specific fingerprint for Raspberry Pi.
         Uses hardware-specific information available on RPi.
+
+        Superseded by _get_device_fingerprint_v2 and retained only so that
+        data encrypted under the old scheme can still be read. Do not change.
         """
         fingerprint_data = []
         
@@ -182,21 +318,56 @@ class SecureConfigManager:
         fingerprint_str = '|'.join(str(d) for d in fingerprint_data if d)
         return hashlib.sha256(fingerprint_str.encode()).hexdigest()
     
-    def _derive_key_from_device(self, salt: bytes) -> bytes:
+    def _derive_key_from_device(self, salt: bytes, version: int = None) -> bytes:
         """
         Derive encryption key from device fingerprint.
-        Uses PBKDF2 for key stretching.
+
+        Version 2 uses Argon2id. The fingerprint it stretches is worth only
+        about 32 bits on a Pi - the unique part of the CPU serial - and no
+        hardware source can raise that, so the remaining lever is the cost of
+        a guess. PBKDF2-SHA256 parallelises well on a GPU; Argon2id is
+        memory-hard and does not, which is worth roughly an order of
+        magnitude here. See docs/SECURITY_GUIDE.md.
+
+        Version 1 is PBKDF2 and is kept only to read old data.
         """
-        device_fingerprint = self._get_device_fingerprint()
-        
-        kdf = PBKDF2HMAC(
-            algorithm=hashes.SHA256(),
-            length=32,  # 256-bit key
+        version = self.FINGERPRINT_VERSION if version is None else version
+        device_fingerprint = self._get_device_fingerprint(version)
+
+        if version == 1:
+            kdf = PBKDF2HMAC(
+                algorithm=hashes.SHA256(),
+                length=32,  # 256-bit key
+                salt=salt,
+                iterations=100000,  # Moderate for RPi Zero W
+            )
+            return kdf.derive(device_fingerprint.encode())
+
+        return hash_secret_raw(
+            secret=device_fingerprint.encode(),
             salt=salt,
-            iterations=100000,  # Moderate for RPi Zero W
+            time_cost=self.ARGON2_TIME_COST,
+            memory_cost=self.ARGON2_MEMORY_KIB,
+            parallelism=self.ARGON2_PARALLELISM,
+            hash_len=32,
+            type=Argon2Type.ID,
         )
-        
-        return kdf.derive(device_fingerprint.encode())
+
+    def _legacy_encryption_keys(self, salt: bytes) -> list:
+        """Keys for superseded schemes, newest first.
+
+        Decryption accepts these so an in-place upgrade does not orphan data
+        already on disk; encryption always uses the current scheme, so a
+        record migrates the next time it is written.
+        """
+        keys = []
+        for version in range(self.FINGERPRINT_VERSION - 1, 0, -1):
+            try:
+                keys.append(base64.urlsafe_b64encode(
+                    self._derive_key_from_device(salt, version)))
+            except Exception:
+                continue
+        return keys
     
     def _ensure_encryption_key(self) -> None:
         """Ensure encryption key exists or create new one."""
@@ -205,16 +376,22 @@ class SecureConfigManager:
             current_mtime = os.path.getmtime(self.key_file)
             
             # Use class-level cached key if available and key file hasn't changed
-            if (SecureConfigManager._cached_encryption_key is not None and 
+            if (SecureConfigManager._cached_encryption_key is not None and
                 SecureConfigManager._key_file_mtime == current_mtime):
                 self._encryption_key = SecureConfigManager._cached_encryption_key
+                # Carry the salt across too. Without it this instance cannot
+                # derive a superseded key, and data written under the old
+                # scheme would look corrupt rather than being migrated.
+                self._salt = SecureConfigManager._cached_salt
                 return
             
             # Load existing key
             try:
                 with open(self.key_file, 'rb') as f:
                     salt = f.read(32)  # First 32 bytes are salt
-                    
+
+                self._salt = salt
+                SecureConfigManager._cached_salt = salt
                 key = self._derive_key_from_device(salt)
                 self._encryption_key = base64.urlsafe_b64encode(key)
                 
@@ -236,8 +413,10 @@ class SecureConfigManager:
         """Create new encryption key and save salt."""
         # Generate random salt
         salt = os.urandom(32)
-        
+
         # Derive key from device fingerprint
+        self._salt = salt
+        SecureConfigManager._cached_salt = salt
         key = self._derive_key_from_device(salt)
         self._encryption_key = base64.urlsafe_b64encode(key)
         
@@ -270,13 +449,42 @@ class SecureConfigManager:
             raise ValueError("Encryption key not initialized")
         
         try:
-            fernet = Fernet(self._encryption_key)
             encrypted_bytes = base64.urlsafe_b64decode(encrypted_str.encode())
-            decrypted_bytes = fernet.decrypt(encrypted_bytes)
-            return json.loads(decrypted_bytes.decode())
         except Exception as e:
             print(f"⚠️ Decryption failed: {e}")
             return None
+
+        try:
+            decrypted_bytes = Fernet(self._encryption_key).decrypt(encrypted_bytes)
+            return json.loads(decrypted_bytes.decode())
+        except Exception as current_error:
+            # Fall back to superseded schemes: a device upgraded in place still
+            # holds data written under the old key. Rewriting it happens on the
+            # next save, which always encrypts with the current scheme.
+            for key in self._get_legacy_keys():
+                try:
+                    decrypted_bytes = Fernet(key).decrypt(encrypted_bytes)
+                except Exception:
+                    continue
+                self._used_legacy_key = True
+                return json.loads(decrypted_bytes.decode())
+
+            print(f"⚠️ Decryption failed: {current_error}")
+            return None
+
+    def _get_legacy_keys(self) -> list:
+        """Superseded device keys, derived once per process.
+
+        Deriving them is as costly as deriving the real key, so this only runs
+        when a decrypt has already failed, and the result is cached.
+        """
+        if SecureConfigManager._cached_legacy_keys is not None:
+            return SecureConfigManager._cached_legacy_keys
+        salt = getattr(self, '_salt', None)
+        if not salt:
+            return []
+        SecureConfigManager._cached_legacy_keys = self._legacy_encryption_keys(salt)
+        return SecureConfigManager._cached_legacy_keys
     
     def _is_root_readonly(self) -> bool:
         """Check if / is mounted read-only."""

@@ -454,6 +454,25 @@ Navigate to **Settings** in the web interface at `http://<pi-ip>:5000`.
 
 For advanced manual configuration, edit `config/config.json`.
 
+### Protecting Wallet Data Against Device Theft
+
+Wallet addresses and xpubs are stored encrypted, but the key is derived from the Pi
+itself — so anyone holding the hardware can recompute it. That defends a copied SD image
+and **does not defend against physical theft**. It is deliberately not advertised as
+more than that.
+
+If a stolen device must not give up your addresses and balances, run a
+[Tang](https://github.com/latchset/tang) server on your LAN — a node, a NAS, or a small
+Proxmox LXC. mempaper then seals its wallet data with a random 256-bit key held off the
+device, so carried off your network it cannot be decrypted at all. Tang needs very
+little: **3.7 MiB RAM idle** and a 12 KB key store.
+
+If the Tang host is unreachable, mempaper still starts and runs — the wallet and donation
+blocks are disabled until it returns, then restore themselves automatically.
+
+Setup, `docker-compose.yml`, LXC sizing and the limits of this approach:
+[Self-Hosting Guide → Tang](docs/SELF_HOSTING_GUIDE.md#part-8--tang-network-bound-encryption-for-wallet-data-optional).
+
 ### Info Blocks
 
 The dashboard image is composed of a meme and a set of optional info blocks displayed alongside it. Each block can be independently enabled or disabled in Settings. If more blocks are enabled than fit the available space, a random subset is shown each refresh.
@@ -623,7 +642,7 @@ sudo chmod 0440 /etc/sudoers.d/mempaper-update
 - [Manual Installation](docs/MANUAL_INSTALL.md) -- Every command `install.sh` runs, step by step
 - [Security Guide](docs/SECURITY_GUIDE.md) -- Hardening guide: installation, SSH, firewalls, threat model, audit checklist
 - [Maintenance Guide](docs/MAINTENANCE_GUIDE.md) -- Safe apt upgrades, Python version management
-- [Self-Hosting Guide](docs/SELF_HOSTING_GUIDE.md) -- Expose mempaper to the internet via Traefik, OIDC login, and TLS
+- [Self-Hosting Guide](docs/SELF_HOSTING_GUIDE.md) -- Expose mempaper to the internet via Traefik, OIDC login, and TLS; run a Tang server so wallet data cannot be decrypted off your network
 - [Cache System Documentation](docs/UNIFIED_CACHE_DOCUMENTATION.md) -- Technical cache implementation details
 
 ### Project Structure

@@ -663,6 +663,62 @@ sudo sshd -T | grep -i passwordauthentication    # expect: passwordauthenticatio
 > Add your public key through **Settings → General → Advanced → SSH Access** *before* doing
 > this, or you will need physical access to get back in.
 
+**Network-bound encryption (Tang)** — makes wallet data undecryptable on a stolen device.
+
+`clevis` is part of [section 5](#5-system-packages) and is inert until switched on, so
+install it whether or not you have a Tang server yet:
+
+```bash
+sudo apt-get install -y clevis     # already covered by apt-requirements.txt
+```
+
+Adding it to an existing mempaper that was installed earlier is the same one command —
+no reinstall. The web updater also picks it up from `apt-requirements.txt` on the next
+update, so a device updated through the UI gets it without SSH.
+
+Everything below is optional and needs a Tang server on your LAN
+([setup guide](SELF_HOSTING_GUIDE.md#part-8--tang-network-bound-encryption-for-wallet-data-optional)).
+
+```bash
+TANG_URL=http://192.168.1.50:7500
+
+# 1. Confirm it answers
+curl -sSf --max-time 10 "$TANG_URL/adv" -o /tmp/adv.json && echo reachable
+
+# 2. Read the signing-key thumbprint. This is the value clevis pins - the
+#    exchange key has a different one and would always fail.
+THP=$(jose fmt --json /tmp/adv.json -g payload -y -o- \
+      | jose jwk use -i- -r -u verify -o- \
+      | jose jwk thp -i-)
+echo "$THP"
+
+# 3. Prove a full round trip before trusting it with anything
+echo check | clevis encrypt tang "{\"url\":\"$TANG_URL\",\"thp\":\"$THP\"}" > /tmp/t.jwe
+clevis decrypt < /tmp/t.jwe        # expect: check
+```
+
+If step 3 prints `check`, set the three keys in `config/config.json`:
+
+```json
+{
+  "tang_enabled": true,
+  "tang_url": "http://192.168.1.50:7500",
+  "tang_thumbprint": "faYWs5gMZ4MOKVmw_70zIvgZuzPd6AZnrsF86OgewnI"
+}
+```
+
+Then `sudo systemctl restart mempaper.service`. The same three settings are editable in
+**Settings → General → Advanced**, so this can equally be done from the web UI later
+without SSH.
+
+```bash
+rm -f /tmp/adv.json /tmp/t.jwe
+```
+
+> Verify that decryption **fails** with the Tang server stopped before you rely on this.
+> A setup where it still succeeds is not protecting anything — the procedure is in the
+> [self-hosting guide](SELF_HOSTING_GUIDE.md#verify-before-pointing-mempaper-at-it).
+
 ---
 
 ## 18. Start the service

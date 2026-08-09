@@ -40,3 +40,11 @@ python3-gpiozero
 # Tor daemon: routes mempool traffic to an .onion instance (mempool_use_tor)
 # and optionally the weekly meme sync (sync_memes.py --tor)
 tor
+
+# clevis: client for network-bound encryption against a Tang server on the LAN
+# (tang_enabled). Tang ships no client of its own, so this is what performs the
+# key exchange. Installed unconditionally and inert unless tang_enabled is set,
+# so the option can be switched on later from the web UI without SSH.
+# Pulls jose and curl; also pulls luksmeta and cracklib, which mempaper does
+# not use - they are hard dependencies of the LUKS pins we never touch.
+clevis

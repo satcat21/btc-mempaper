@@ -1,0 +1,19 @@
+<?xml version="1.0" standalone='no'?>
+<!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+<!--
+  Advertise this Tang server over mDNS so mempaper can find it without anyone
+  typing an address. Copy to /etc/avahi/services/tang.service on the Tang host
+  and reload avahi-daemon.
+
+  This publishes only the host and port. The keys are not exposed, and Tang is
+  equally reachable without it - discovery is a convenience, not a credential.
+  Publishing on a LAN you do not trust simply tells that LAN where Tang lives;
+  pin the thumbprint in mempaper either way.
+-->
+<service-group>
+  <name replace-wildcards="yes">Tang on %h</name>
+  <service>
+    <type>_tang._tcp</type>
+    <port>7500</port>
+  </service>
+</service-group>

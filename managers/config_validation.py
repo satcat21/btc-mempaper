@@ -57,6 +57,7 @@ def validate_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
         "opsec_mode_enabled",
         "public_dashboard",
         "auto_update_enabled",
+        "tang_enabled",
     ]
     for setting in bool_settings:
         if setting in config:
@@ -144,6 +145,8 @@ def validate_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
         "omni_device_name",
         "admin_username",
         "admin_password",
+        "tang_url",
+        "tang_thumbprint",
     ]
     for setting in string_settings:
         if setting in config and isinstance(config[setting], str):

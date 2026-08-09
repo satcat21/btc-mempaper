@@ -586,6 +586,53 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
             "label": t.get("meme_management", "Meme Management"),
             "category": "meme_management"
         },
+        # --- Network-bound encryption (Tang) ---
+        "tang_enabled": {
+            "type": "boolean",
+            "label": t.get("tang_enabled", "Network-Bound Encryption (Tang)"),
+            "_lk": "tang_enabled",
+            "description": t.get("tang_enabled_desc", "Seal wallet addresses, balance caches and rendered images with a key held on a Tang server on your LAN, so a stolen device cannot decrypt them. If the server is unreachable those blocks are disabled until it returns; the rest of mempaper keeps running. Requires the clevis package and a reachable Tang server."),
+            "_dk": "tang_enabled_desc",
+            "default": False,
+            "category": "general",
+            "advanced": True,
+            "order": 40
+        },
+        "tang_url": {
+            "type": "text",
+            "label": t.get("tang_url", "Tang Server URL"),
+            "_lk": "tang_url",
+            "placeholder": "http://192.168.1.50:7500",
+            "default": "",
+            "description": t.get("tang_url_desc", "Address of the Tang server on your local network. Never expose this to the internet - reachability is what grants access."),
+            "_dk": "tang_url_desc",
+            "category": "general",
+            "advanced": True,
+            "order": 41
+        },
+        "tang_thumbprint": {
+            "type": "text",
+            "label": t.get("tang_thumbprint", "Tang Key Thumbprint"),
+            "_lk": "tang_thumbprint",
+            "placeholder": "faYWs5gMZ4MOKVmw_70zIvgZuzPd6AZnrsF86OgewnI",
+            "default": "",
+            "description": t.get("tang_thumbprint_desc", "Signing-key thumbprint of your Tang server, from tang-show-keys. Pinning it stops anything else on the LAN from impersonating the server. Leave empty only if you accept that risk."),
+            "_dk": "tang_thumbprint_desc",
+            "category": "general",
+            "advanced": True,
+            "order": 42
+        },
+        "tang_check": {
+            "type": "tang_check",
+            "label": t.get("tang_check", "Tang Connection"),
+            "label_check": t.get("check_tang_connection", "Check Tang Connection"),
+            "_lk": "tang_check",
+            "description": t.get("tang_check_desc", "Tests the whole path against the values above: reaches the server, reads its signing key, then seals and unseals a throwaway key. Nothing is written and no wallet data is touched."),
+            "_dk": "tang_check_desc",
+            "category": "general",
+            "advanced": True,
+            "order": 43
+        },
         "opsec_mode_enabled": {
             "type": "boolean",
             "label": t.get("opsec_mode_enabled", "OPSec Mode"),

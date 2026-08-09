@@ -834,7 +834,7 @@ function createFormField(key, field, value) {
     }
 
     // Skip adding label for self-managed interfaces and pure info boxes
-    const skipLabel = field.type === 'meme_management' || field.type === 'donation_history' || field.type === 'info_text' || field.type === 'open_url_button' || field.type === 'connection_check' || field.type === 'mempool_actions' || field.type === 'hidden';
+    const skipLabel = field.type === 'meme_management' || field.type === 'donation_history' || field.type === 'info_text' || field.type === 'open_url_button' || field.type === 'connection_check' || field.type === 'mempool_actions' || field.type === 'tang_check' || field.type === 'hidden';
     if (!skipLabel) {
         const label = document.createElement('label');
         label.className = 'form-label';
@@ -1133,6 +1133,113 @@ function createFormField(key, field, value) {
             break;
 
         case 'mempool_actions':
+        case 'tang_check': {
+            const row = document.createElement('div');
+            row.className = 'mempool-action-row';
+
+            const tangBtn = document.createElement('button');
+            tangBtn.type = 'button';
+            tangBtn.className = 'mempool-action-btn';
+            tangBtn.textContent = field.label_check || 'Check Tang Connection';
+            tangBtn.addEventListener('click', () => {
+                // Test what is currently in the form rather than what was last
+                // saved, so a value can be verified before committing to it.
+                const urlEl = document.querySelector('[data-config-key="tang_url"]');
+                const thpEl = document.querySelector('[data-config-key="tang_thumbprint"]');
+                const url = (urlEl && urlEl.value || '').trim();
+                const thp = (thpEl && thpEl.value || '').trim();
+
+                const originalLabel = tangBtn.textContent;
+                tangBtn.style.width = tangBtn.offsetWidth + 'px';
+                tangBtn.disabled = true;
+                tangBtn.innerHTML = `Checking<span class="mpa-dots"></span>`;
+
+                const qs = new URLSearchParams();
+                if (url) qs.set('url', url);
+                if (thp) qs.set('thumbprint', thp);
+
+                fetch('/api/tang/validate?' + qs.toString())
+                    .then(r => r.ok ? r.json() : Promise.reject(r.status))
+                    .then(data => {
+                        const checks = data.checks || [];
+                        const allOk = checks.length > 0 && checks.every(c => c.ok);
+                        const accentColor = allOk ? '#22c55e' : '#ef4444';
+                        const body = document.createDocumentFragment();
+
+                        checks.forEach(c => {
+                            const line = document.createElement('div');
+                            line.style.cssText = 'display:flex;gap:8px;align-items:center;padding:2px 0;';
+                            const icon = _mpaIcon(c.ok ? 'check' : 'error', c.ok ? '#22c55e' : '#ef4444', 13);
+                            if (icon) line.appendChild(icon);
+                            const name = document.createElement('span');
+                            name.style.fontSize = '11px';
+                            name.textContent = c.name;
+                            line.appendChild(name);
+                            body.appendChild(line);
+                        });
+
+                        // Nothing pinned yet: offer the value instead of making
+                        // the operator read it off the server by hand.
+                        const pinned = checks.some(c => c.name === 'Thumbprint pinned' && !c.ok);
+                        if (pinned && data.suggested_thumbprint && thpEl) {
+                            const fillBtn = document.createElement('button');
+                            fillBtn.type = 'button';
+                            fillBtn.textContent = 'Use this server’s thumbprint';
+                            fillBtn.style.cssText = 'margin-top:8px;width:100%;padding:5px 10px;background:transparent;'
+                                + 'border:1px solid rgba(128,128,128,0.3);border-radius:6px;color:inherit;cursor:pointer;'
+                                + 'font-size:11px;font-family:inherit;';
+                            fillBtn.addEventListener('click', e => {
+                                e.stopPropagation();
+                                thpEl.value = data.suggested_thumbprint;
+                                thpEl.dispatchEvent(new Event('input', { bubbles: true }));
+                                fillBtn.textContent = 'Filled in — remember to save';
+                                fillBtn.disabled = true;
+                            });
+                            body.appendChild(fillBtn);
+                        }
+
+                        const logBtn = document.createElement('button');
+                        logBtn.type = 'button';
+                        logBtn.textContent = 'Open Log';
+                        logBtn.style.cssText = 'margin-top:8px;width:100%;padding:5px 10px;background:transparent;'
+                            + 'border:1px solid rgba(128,128,128,0.3);border-radius:6px;color:inherit;cursor:pointer;'
+                            + 'font-size:11px;font-family:inherit;';
+                        logBtn.addEventListener('click', e => {
+                            e.stopPropagation();
+                            _mpaShowLogModal(checks);
+                        });
+                        logBtn.addEventListener('mouseenter', () => {
+                            logBtn.style.borderColor = accentColor;
+                            logBtn.style.color = accentColor;
+                        });
+                        logBtn.addEventListener('mouseleave', () => {
+                            logBtn.style.borderColor = 'rgba(128,128,128,0.3)';
+                            logBtn.style.color = 'inherit';
+                        });
+                        body.appendChild(logBtn);
+
+                        _buildLiveToast(
+                            [_mpaIcon(allOk ? 'check' : 'error', accentColor, 15),
+                             allOk ? 'Tang — All OK' : 'Tang — Issues Found'],
+                            body, accentColor, 15000);
+                    })
+                    .catch(() => {
+                        _buildLiveToast(
+                            [_mpaIcon('error', '#ef4444', 15), 'Tang Check Failed'],
+                            ['Could not reach the server.'], '#ef4444', 30000);
+                    })
+                    .finally(() => {
+                        tangBtn.disabled = false;
+                        tangBtn.textContent = originalLabel;
+                        tangBtn.style.width = '';
+                    });
+            });
+
+            row.appendChild(tangBtn);
+            row.getValue = () => null;
+            input = row;
+            break;
+        }
         case 'connection_check':
         case 'open_url_button': {
             const row = document.createElement('div');
@@ -1302,7 +1409,7 @@ function createFormField(key, field, value) {
     if (input) {
         // Ensure the input has the data-config-key attribute for form collection
         // (skip for composite widgets and hidden_boolean fields managed inline by another field)
-        if (field.type !== 'date_color_group' && field.type !== 'holiday_color_group' && field.type !== 'hidden_boolean' && field.type !== 'open_url_button' && field.type !== 'info_text' && field.type !== 'connection_check' && field.type !== 'mempool_actions') {
+        if (field.type !== 'date_color_group' && field.type !== 'holiday_color_group' && field.type !== 'hidden_boolean' && field.type !== 'open_url_button' && field.type !== 'info_text' && field.type !== 'connection_check' && field.type !== 'mempool_actions' && field.type !== 'tang_check') {
             if (input.dataset) {
                 input.dataset.configKey = key;
             } else {

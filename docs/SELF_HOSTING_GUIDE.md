@@ -611,6 +611,289 @@ on the dashboard within seconds.
 
 ---
 
+### Part 8 — Tang: network-bound encryption for wallet data (optional)
+
+Everything mempaper encrypts on the Pi is protected by a key derived from the device
+itself, so anyone holding the hardware can recompute it. That is fine against a copied
+SD image and useless against physical theft. Tang fixes the theft case by keeping the
+key off the device: mempaper seals a random 256-bit key to a Tang server on your LAN and
+can only unseal it while that server is reachable.
+
+Carried off your network, the wallet data cannot be decrypted at all — not by guessing,
+because there is nothing to guess. Recovery would require the Tang server's private key.
+
+> **This protects a stolen device, not a compromised one.** Anyone with SSH or admin
+> access on a running mempaper can simply ask it to unseal, exactly as the app does.
+> Tang also cannot help while the thief is still on your LAN.
+
+#### What you need
+
+An always-on host on the same LAN — a node, a NAS, or a small Proxmox LXC. Tang is
+tiny: measured at **3.7 MiB RAM idle**, a 12 KB key store, and one short HTTP request
+per unseal.
+
+**Proxmox LXC sizing** (Debian 13, unprivileged, running Tang in Docker):
+
+| Resource | Recommended | Minimum |
+|---|---|---|
+| CPU cores | 1 | 1 |
+| RAM | 512 MB | 256 MB |
+| Swap | 512 MB | 256 MB |
+| Disk | 8 GB | 4 GB |
+
+Almost all of that is the Docker daemon and the 87 MB image, not Tang. Running Tang
+natively instead (`apt install tang && systemctl enable --now tangd.socket`) is simpler
+in an LXC and fits comfortably in **256 MB RAM and 2 GB disk** — use that if you do not
+already run containers on the host. The compose route below is worth it mainly if you
+manage everything else on that host with compose.
+
+#### `docker-compose.yml`
+
+```yaml
+services:
+  tang:
+    build: .
+    image: mempaper-tang:latest
+    container_name: tang
+    restart: unless-stopped
+
+    # Bind to the LAN interface only. Tang has no authentication by design -
+    # reachability is the access control - so it must never be exposed to the
+    # internet or forwarded through a router.
+    ports:
+      - "7500:7500"
+
+    # The keys live here. Lose this volume and every sealed device loses its
+    # wallet data permanently; back it up.
+    volumes:
+      - tang-keys:/var/lib/tang
+
+    mem_limit: 128m
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+
+    healthcheck:
+      test: ["CMD", "sh", "-c", "socat -u OPEN:/dev/null TCP:127.0.0.1:7500 || exit 1"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  tang-keys:
+```
+
+#### `Dockerfile`
+
+```dockerfile
+FROM debian:trixie-slim
+
+# tang provides tangd and tangd-keygen; socat turns the inetd-style tangd
+# into a TCP listener, which is what the upstream systemd unit does with
+# socket activation. jose is only used to print key thumbprints at startup.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends tang socat jose \
+ && rm -rf /var/lib/apt/lists/*
+
+VOLUME /var/lib/tang
+EXPOSE 7500
+
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
+```
+
+#### `entrypoint.sh`
+
+```sh
+#!/bin/sh
+# Start a Tang server, generating signing and exchange keys on first run.
+set -eu
+
+DB=${TANG_DB:-/var/lib/tang}
+PORT=${TANG_PORT:-7500}
+LIBEXEC=/usr/libexec
+
+mkdir -p "$DB"
+
+if [ -z "$(ls -A "$DB" 2>/dev/null)" ]; then
+    echo "Generating Tang signing and exchange keys in $DB"
+    "$LIBEXEC/tangd-keygen" "$DB"
+fi
+
+# tangd-keygen writes two keys: one for signing the advertisement and one for
+# key exchange. clevis pins the signing key, so print only that one - printing
+# both and leaving the choice to the reader is a coin flip, since the files are
+# named after their thumbprints and sort arbitrarily.
+echo "Pin this thumbprint in mempaper as tang_thumbprint:"
+for jwk in "$DB"/*.jwk; do
+    [ -e "$jwk" ] || continue
+    if jose jwk use -i "$jwk" -r -u verify -o /dev/null 2>/dev/null; then
+        printf '  %s\n' "$(jose jwk thp -i "$jwk")"
+    fi
+done
+
+echo "Serving tangd on 0.0.0.0:$PORT (db=$DB)"
+exec socat TCP-LISTEN:"$PORT",reuseaddr,fork,bind=0.0.0.0 EXEC:"$LIBEXEC/tangd $DB"
+```
+
+All three files are in [`deploy/tang/`](../deploy/tang/).
+
+#### Start it and note the thumbprint
+
+```bash
+cd deploy/tang
+docker compose up -d --build     # podman compose up -d --build works too
+docker compose logs
+```
+
+```
+Generating Tang signing and exchange keys in /var/lib/tang
+Pin this thumbprint in mempaper as tang_thumbprint:
+  Ik2_NDde06uwYnJxJl6llWFPzTtOO3PJFBwJsj7L9B8
+Serving tangd on 0.0.0.0:7500 (db=/var/lib/tang)
+```
+
+Copy that thumbprint. Pinning it means mempaper verifies which server it is talking to
+instead of trusting whatever answers on that address — without it, anything that can win
+a race on your LAN could hand over its own key.
+
+> `tangd-keygen` writes **two** keys, one for signing the advertisement and one for key
+> exchange, but only the signing key's thumbprint is the one clevis pins. The entrypoint
+> filters for it, and `tang-show-keys 7500` returns the same value.
+
+#### Alternative: native install, no containers
+
+Simpler in a Debian LXC, and what I would use if the host does not already run
+containers. The two commands people usually quote are not sufficient on Debian — the
+package ships **no keys** and the socket listens on **port 80**:
+
+```bash
+apt install tang
+
+# 1. Generate the keys. The package ships none, and tangd serves nothing until
+#    they exist. The directory differs by release - check which one your unit
+#    actually reads rather than guessing:
+#      Debian 13 (trixie):   /var/lib/tang
+#      Debian 12 (bookworm): /var/db/tang
+grep ExecStart /usr/lib/systemd/system/tangd@.service
+
+/usr/libexec/tangd-keygen /var/lib/tang        # use the path printed above
+
+# 2. Move off port 80 and bind to the LAN address.
+systemctl edit tangd.socket
+```
+
+```ini
+# The empty ListenStream= is required: it clears the inherited port 80 before
+# the new values are added. Keep the loopback line - tang-show-keys hardcodes
+# localhost, so binding only to the LAN address leaves local tools unable to
+# reach a server that is in fact running fine.
+[Socket]
+ListenStream=
+ListenStream=127.0.0.1:7500
+ListenStream=192.168.1.50:7500
+```
+
+```bash
+systemctl daemon-reload
+systemctl restart tangd.socket        # restart, not just enable --now: systemd
+systemctl enable tangd.socket         # warns that a changed socket needs one
+systemctl status tangd.socket
+
+# 3. Read the thumbprint to pin (this is the signing key, the value clevis wants)
+tang-show-keys 7500
+```
+
+If you bound only to the LAN address, `tang-show-keys` fails with
+`Failed to connect to localhost port 7500` even though the server is healthy.
+Query it over the LAN address instead:
+
+```bash
+curl -sSf http://192.168.1.50:7500/adv \
+  | jose fmt --json=- -g payload -y -o- \
+  | jose jwk use -i- -r -u verify -o- \
+  | jose jwk thp -i-
+```
+
+From here the verification steps and mempaper configuration below are identical —
+substitute `systemctl stop tangd.socket` for `docker compose stop` when testing that
+decryption fails.
+
+To rotate keys later: `/usr/libexec/tangd-rotate-keys -d /var/lib/tang`. Rotation keeps
+the old key readable so already-sealed devices keep working; it only stops the old key
+being advertised for new seals.
+
+#### Verify before pointing mempaper at it
+
+```bash
+curl -s http://tang-host-ip:7500/adv | head -c 100
+```
+
+A JSON advertisement means it is serving. To prove the protection actually works:
+
+```bash
+# Seal a test value, pinning the thumbprint
+echo secret | clevis encrypt tang '{"url":"http://tang-host-ip:7500","thp":"PASTE-THUMBPRINT"}' > test.jwe
+
+clevis decrypt < test.jwe        # -> secret
+
+docker compose stop              # simulate the device leaving your network
+clevis decrypt < test.jwe        # -> must FAIL: Error communicating with server
+
+docker compose start
+clevis decrypt < test.jwe        # -> secret, recovered automatically
+```
+
+The third command failing is the whole point. If it succeeds, the data is not protected.
+
+#### Point mempaper at it
+
+Tang is only the server half. It answers the key-exchange request and deliberately ships
+no client, so the Pi needs **clevis**, the reference client that performs the exchange
+and writes the sealed file:
+
+```bash
+sudo apt install clevis    # on the Pi, not the Tang host
+```
+
+Then in `config/config.json` on the Pi:
+
+```json
+{
+  "tang_enabled": true,
+  "tang_url": "http://tang-host-ip:7500",
+  "tang_thumbprint": "UdzROszslgpklGvL0-9fDsayN1vXtzKTr-MJcBr0sCY"
+}
+```
+
+Restart mempaper. Wallet data, the balance caches and the rendered images are re-sealed
+under a key that no longer exists on the SD card.
+
+#### Operational consequences — read before enabling
+
+| Situation | Behaviour |
+|---|---|
+| Tang host down or LAN unreachable at boot | mempaper starts normally, wallet and donation blocks are disabled, the dashboard shows why |
+| Tang host comes back | mempaper re-seals and restores those blocks automatically, no restart needed |
+| `tang-keys` volume lost with no backup | **Sealed wallet data is unrecoverable.** Re-enter your xpubs |
+| Device stolen, taken off your LAN | Wallet data cannot be decrypted |
+| Device stolen while still on your LAN | Not protected — Tang answers as normal |
+| Attacker has SSH or admin access | Not protected — they can unseal exactly as mempaper does |
+
+**Back up `tang-keys`.** It is 12 KB and it is the only copy of the key that unlocks
+every device you have sealed.
+
+> **The e-ink panel is bistable.** A stolen device is still physically displaying the
+> last image, including any balance that was on it, with no power applied. No encryption
+> changes that — if that matters to you, turn off the wallet block or enable OPSec mode.
+
+---
+
 ### Security notes
 
 | Topic | Detail |

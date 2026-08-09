@@ -1,0 +1,35 @@
+services:
+  tang:
+    build: .
+    image: mempaper-tang:latest
+    container_name: tang
+    restart: unless-stopped
+
+    # Bind to the LAN interface only. Tang has no authentication by design -
+    # reachability is the access control - so it must never be exposed to the
+    # internet or forwarded through a router.
+    ports:
+      - "7500:7500"
+
+    # The keys live here. Lose this volume and every sealed device loses its
+    # wallet data permanently; back it up.
+    volumes:
+      - tang-keys:/var/lib/tang
+
+    # Tang answers one short HTTP request per unseal and is idle otherwise.
+    mem_limit: 128m
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+
+    healthcheck:
+      test: ["CMD", "sh", "-c", "socat -u OPEN:/dev/null TCP:127.0.0.1:7500 || exit 1"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  tang-keys:

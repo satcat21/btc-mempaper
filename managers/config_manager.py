@@ -99,6 +99,15 @@ class ConfigManager:
             print("⚠️ Secure configuration requested but not available (install cryptography)")
         
         self.config = self.load_config()
+
+        # Bring an existing install onto the current encryption scheme. Only
+        # rewrites when the data was read with a superseded key.
+        if self.secure_manager:
+            try:
+                self.secure_manager.migrate_to_current_scheme()
+            except Exception as e:
+                print(f"⚠️ Secure config migration skipped: {e}")
+
         self.config_lock = threading.RLock()  # Thread-safe config access
         self.change_callbacks = []  # List of callbacks to call when config changes
         self.file_observer = None
@@ -376,6 +385,10 @@ class ConfigManager:
             "wallet_balance_currency": "EUR",  # USD, EUR, GBP, CAD, CHF, AUD, JPY - fiat currency for wallet balance display
             "prioritize_large_scaled_meme": False,
             "color_mode_dark": True,
+            "tang_enabled": False,
+            "tang_url": "",
+            "tang_thumbprint": "",
+
             "opsec_mode_enabled": False,
             # --- Meme sync schedule ---
             "meme_sync_enabled": False,

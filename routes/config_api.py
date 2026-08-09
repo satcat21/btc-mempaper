@@ -20,6 +20,43 @@ def register(self):
     """Register the config api routes."""
     from mempaper_app import _read_reboot_time, _safe_error
 
+    @self.app.route('/api/tang/validate', methods=['GET'])
+    @require_auth(self.auth_manager)
+    def validate_tang_connection():
+        """Check the Tang link end to end and return per-step status.
+
+        Accepts url and thumbprint as query parameters so the config page can
+        test what is currently typed into the form, before it is saved.
+        """
+        from managers.tang_manager import TangManager
+        from flask import request as _request
+
+        url = _request.args.get('url')
+        thumbprint = _request.args.get('thumbprint')
+        manager = TangManager(self.config_manager)
+        try:
+            checks = manager.check(url=url, thumbprint=thumbprint)
+        except Exception as e:
+            checks = [{'name': 'Tang check', 'ok': False, 'error': str(e)[:200]}]
+
+        # Offer the value the operator needs when nothing is pinned yet, so the
+        # page can fill it in rather than making them copy it off the server.
+        suggested = ''
+        for check in checks:
+            if check['name'] == 'Advertisement valid' and check.get('detail'):
+                suggested = check['detail']
+        return jsonify({'checks': checks, 'suggested_thumbprint': suggested})
+
+    @self.app.route('/api/tang/discover', methods=['GET'])
+    @require_auth(self.auth_manager)
+    def discover_tang_servers():
+        """Tang servers advertising themselves over mDNS, if any."""
+        from managers.tang_manager import TangManager
+        try:
+            return jsonify({'servers': TangManager(self.config_manager).discover()})
+        except Exception as e:
+            return jsonify({'servers': [], 'error': str(e)[:200]})
+
     @self.app.route('/api/mempool/validate', methods=['GET'])
     @require_auth(self.auth_manager)
     def validate_mempool_connection():

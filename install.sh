@@ -297,6 +297,30 @@ if ! echo "$WIFI_COUNTRY" | grep -qE '^[A-Z]{2}$'; then
     WIFI_COUNTRY="DE"
 fi
 echo ""
+echo -e "  ${CYAN}Network-bound encryption (Tang)${NC} — optional, protects a stolen device"
+echo "  Wallet addresses, balance caches and the rendered images are otherwise"
+echo "  readable by anyone holding the SD card: the key is derived from the Pi"
+echo "  itself. A Tang server on your LAN keeps that key off the device, so a"
+echo "  device carried off your network cannot decrypt them at all."
+echo ""
+echo "  The clevis client is installed either way, so you can turn this on later"
+echo "  from Settings > General > Advanced without touching the command line."
+echo "  Skip this unless you already run a Tang server — see docs/SELF_HOSTING_GUIDE.md."
+echo ""
+read -rp "  Connect to a Tang server now?              [y/N]: " TANG_CHOICE
+TANG_CHOICE="${TANG_CHOICE:-N}"
+TANG_URL=""
+TANG_THUMBPRINT=""
+if echo "$TANG_CHOICE" | grep -qi '^y'; then
+    read -rp "    Tang server URL (http://host:7500):      " TANG_URL
+    TANG_URL="${TANG_URL%/}"
+    if [ -z "$TANG_URL" ]; then
+        warn "No URL given — skipping Tang setup, configure it later in the web UI"
+    else
+        read -rp "    Signing-key thumbprint (blank to fetch):  " TANG_THUMBPRINT
+    fi
+fi
+echo ""
 echo -e "  ${CYAN}SSH hardening${NC} — disable password login, require SSH key"
 echo "  Add your public key via Settings > General > Advanced > SSH Access after install."
 echo "  Without a key, physical access is needed to SSH in."
@@ -801,6 +825,63 @@ tmp.write_text(json.dumps(cfg, indent=2))
 tmp.replace(p)
 print(f"   weekly meme sync scheduled for {names[day]} at {hour:02d}:00")
 PYEOF
+fi
+
+# ── Network-bound encryption (Tang) ───────────────────────────────────────────
+# Only reached when a URL was given upfront. Everything is verified before it is
+# written: a config pointing at a Tang server that cannot actually unseal would
+# leave the device booting into degraded mode with no obvious cause.
+if [ -n "$TANG_URL" ]; then
+    step "Configuring network-bound encryption (Tang)"
+
+    if ! command -v clevis >/dev/null 2>&1; then
+        warn "clevis is not installed — skipping. Enable Tang later from the web UI"
+    elif ! curl -sSf --max-time 10 "${TANG_URL}/adv" -o /tmp/tang_adv.json 2>/dev/null; then
+        warn "No advertisement from ${TANG_URL} — is it running and reachable?"
+        warn "Skipping. Configure it later in Settings > General > Advanced"
+    else
+        # Pin the signing key, which is the one clevis compares against. The
+        # exchange key has a different thumbprint and would always fail.
+        if [ -z "$TANG_THUMBPRINT" ]; then
+            TANG_THUMBPRINT=$(jose fmt --json /tmp/tang_adv.json -g payload -y -o- 2>/dev/null \
+                | jose jwk use -i- -r -u verify -o- 2>/dev/null \
+                | jose jwk thp -i- 2>/dev/null || true)
+            [ -n "$TANG_THUMBPRINT" ] && echo "   fetched thumbprint: ${TANG_THUMBPRINT}"
+        fi
+
+        if [ -z "$TANG_THUMBPRINT" ]; then
+            warn "Could not determine the thumbprint — skipping Tang setup"
+        elif ! echo mempaper-tang-check \
+                | clevis encrypt tang "{\"url\":\"${TANG_URL}\",\"thp\":\"${TANG_THUMBPRINT}\"}" \
+                  > /tmp/tang_test.jwe 2>/dev/null; then
+            warn "Sealing failed — thumbprint may not match this server. Skipping"
+        elif [ "$(clevis decrypt < /tmp/tang_test.jwe 2>/dev/null)" != "mempaper-tang-check" ]; then
+            warn "Unsealing failed — Tang answered but could not recover the key. Skipping"
+        else
+            sudo -u "$SERVICE_USER" env \
+                MP_TANG_URL="$TANG_URL" MP_TANG_THP="$TANG_THUMBPRINT" \
+                python3 - <<'PYEOF' && ok "Tang configured — wallet data will be sealed to ${TANG_URL}" || warn "Could not write Tang settings (non-fatal)"
+import json, os, sys
+from pathlib import Path
+
+p = Path("config/config.json")
+try:
+    cfg = json.loads(p.read_text())
+except Exception as e:
+    print(f"   could not read config.json: {e}")
+    sys.exit(1)
+
+cfg["tang_enabled"] = True
+cfg["tang_url"] = os.environ["MP_TANG_URL"]
+cfg["tang_thumbprint"] = os.environ["MP_TANG_THP"]
+
+tmp = p.with_suffix(".json.tmp")
+tmp.write_text(json.dumps(cfg, indent=2))
+tmp.replace(p)
+PYEOF
+        fi
+        rm -f /tmp/tang_adv.json /tmp/tang_test.jwe
+    fi
 fi
 
 # Secure config directory and file (contains password hashes and API keys).
