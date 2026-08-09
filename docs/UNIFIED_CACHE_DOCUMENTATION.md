@@ -2,7 +2,7 @@
 
 ## Overview
 
-The mempaper application uses a unified secure cache system that encrypts all sensitive cache data — Bitcoin addresses, balances, and transaction data — into a single `cache.secure.json` file, so nothing sensitive is ever written to disk in plain text.
+The mempaper application uses a unified secure cache system that encrypts all sensitive cache data — Bitcoin addresses, balances, and transaction data — into a single `cache.sensitive.json` file, so nothing sensitive is ever written to disk in plain text.
 
 ---
 
@@ -10,14 +10,14 @@ The mempaper application uses a unified secure cache system that encrypts all se
 
 ### Encryption
 
-- Uses the same encryption system as `config.secure.json`
+- Uses the same encryption system as `config.sensitive.json`
 - AES-256 encryption via Fernet (cryptography library)
 - Device-specific key derivation for Raspberry Pi hardware
 - All sensitive cache data is encrypted at rest
 
 ### Unified storage
 
-- Single encrypted file: `cache/cache.secure.json`
+- Single encrypted file: `cache/cache.sensitive.json`
 - Contains all cache types: block reward, wallet balance, and optimized balance
 - Atomic operations to prevent corruption
 - Thread-safe access with proper locking
@@ -61,7 +61,7 @@ The unified cache stores three types of sensitive data:
 
 ```
 cache/
-  cache.secure.json          All sensitive cache data (encrypted)
+  cache.sensitive.json          All sensitive cache data (encrypted)
   cache_metadata.json        Non-sensitive metadata
   *.migrated_backup          Backup of original files
 ```
@@ -211,8 +211,9 @@ The following files are excluded from version control (`.gitignore`):
 
 ```gitignore
 # Secure cache files
-cache/cache.secure.json
-cache/async_wallet_address_cache.secure.json
+cache/cache.sensitive.json
+cache/async_wallet_address_cache.sensitive.json
+*.sensitive.json
 *.secure.json
 
 # Individual cache files (deprecated but excluded for safety)

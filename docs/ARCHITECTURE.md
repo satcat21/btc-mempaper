@@ -284,7 +284,7 @@ renderer produces both images, two sinks deliver them.
 | `_precache` | Price, fee and network data, refreshed on a 5-minute cycle |
 | `_prerendered` | The next block's image, rendered ahead of time and held in RAM |
 | block lock | Rejects duplicate and out-of-order block events |
-| `config_manager` | Watches and validates config, holds encrypted secrets |
+| `config_manager` | Watches and validates config, splits sensitive fields into their own file |
 
 The renderer produces the web and e-ink images from a single layout pass, with
 colours resolved separately per target — that is why `eink_dark_mode` is
@@ -363,7 +363,7 @@ btc-mempaper/
 |   |-- secure_config_manager.py Encrypted configuration storage
 |   |-- secure_password_manager.py   Argon2id password hashing
 |   |-- secure_cache_manager.py  Encrypted cache files
-|   +-- unified_secure_cache.py  Unified cache encryption
+|   +-- unified_secure_cache.py  Unified sensitive-data cache
 |
 |-- utils/                       Utilities & Helpers
 |   |-- translations.py          Multi-language support (en, de, es, it, fr)
@@ -456,5 +456,5 @@ pre-cache pass does not fetch what nothing is about to show.
 - [Configuration Reference](CONFIG_REFERENCE.md) — every setting
 - [Security Guide](SECURITY_GUIDE.md) — hardening, threat model, audit checklist
 - [Self-Hosting Guide](SELF_HOSTING_GUIDE.md) — Traefik, OIDC, TLS, exposing mempool
-- [Cache System](UNIFIED_CACHE_DOCUMENTATION.md) — encrypted cache internals
+- [Cache System](UNIFIED_CACHE_DOCUMENTATION.md) — cache internals
 - [Diagram sources](diagrams/README.md) — embedding and regeneration notes

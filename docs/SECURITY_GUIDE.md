@@ -366,17 +366,57 @@ The apt install wrapper (`/usr/local/bin/mempaper-apt-install`) is root-owned an
 
 ## Sensitive data storage
 
-Sensitive fields are stored in an encrypted configuration file:
+Sensitive fields live in a separate file from the rest of the configuration:
 
 | Field | Storage |
 |---|---|
-| `admin_password_hash` (Argon2id) | `config/config.secure.json` (AES-128) |
-| `wallet_balance_addresses` | `config/config.secure.json` |
-| `block_reward_addresses` | `config/config.secure.json` |
+| `admin_password_hash`, `admin_users` | `config/config.sensitive.json` (Argon2id hashes) |
+| `wallet_balance_addresses`, `block_reward_addresses` | `config/config.sensitive.json` |
+| `mempool_password` | `config/config.sensitive.json` |
 | `secret_key` (Flask session) | `config/.secret_key` (permissions 600) |
-| `donation_webhook_token` | `config/config.json` (not sensitive to encrypt, required for webhook validation) |
+| `donation_webhook_token` | `config/config.json` (required for webhook validation) |
 
-The encryption key is derived from the Pi's hardware fingerprint (CPU serial + MAC address) — the encrypted config cannot be decrypted on a different device.
+The separate file is kept at permissions `600` while `config/config.json` stays
+group-readable, it is the unit Tang seals, and keeping `tang_url` out of it is
+what lets the Tang client start up before the sensitive file is read.
+
+### Encryption at rest
+
+**This file is stored in the clear unless Tang is configured, and that is a
+deliberate choice.**
+
+Any key mempaper could derive on its own would have to be reconstructible from
+the device, so that anyone holding the Pi could reconstruct it too. Encryption
+under such a key looks like protection without being any, and an owner who
+believes their addresses are protected makes different decisions than one who
+knows they are not.
+
+So the guarantee is stated plainly instead:
+
+- **Physical access to the device means access to this data.**
+- File permissions are the only barrier: `600` on the sensitive file, `640` on
+  `config/config.json`. That stops other local accounts, not someone with the
+  card.
+- Nothing is derived at startup, so there is no boot-time cost for a protection
+  that would not hold.
+
+**Password hashing is different, and uses Argon2id.** A password carries enough
+entropy for a slow hash to be worth the cost, and it is not recoverable from the
+hardware, so the maths works out the opposite way. Hashes are safe to store in
+the clear by design.
+
+### Protecting the data against a stolen device
+
+Use [Tang](SELF_HOSTING_GUIDE.md#part-8--tang-network-bound-encryption-for-wallet-data-optional).
+It seals the sensitive config, the balance caches, the donation history and the
+rendered images with a random 256-bit key held on a server on your LAN, so the
+key is not on the card at all. Carried off your network the data cannot be
+decrypted — there is nothing to guess.
+
+Tang does not protect against SSH or admin access on a running device, or a
+thief still on your LAN. Enable it **before** entering wallet addresses: freed
+flash blocks retain earlier clear-text copies, which sealing afterwards cannot
+reach.
 
 ---
 

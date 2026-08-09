@@ -123,7 +123,7 @@ ADMIN_PASSWORD=""
 # Check whether admin users already exist.
 #
 # admin_users is a sensitive field, so save_secure_config writes it to the
-# encrypted config/config.secure.json and deliberately keeps it out of
+# encrypted config/config.sensitive.json and deliberately keeps it out of
 # config/config.json. Inspecting the plain file therefore never finds it, and
 # this prompt reappeared on every re-run of an already-installed device even
 # though the credentials were then discarded.

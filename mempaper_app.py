@@ -393,6 +393,37 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
         # In-memory image cache for instant web serving (avoids disk I/O)
         self._cached_web_image_base64 = None  # Ready-to-emit data URI string
         self._cached_eink_image = None  # PIL Image for e-ink (avoids disk read-back)
+
+        # Data-at-rest sealing against a Tang server on the LAN.
+        #
+        # Unlocked once, here, rather than per read: clevis is a shell script
+        # and costs a process spawn of 100-300 ms, which would be felt on a Pi
+        # Zero. Afterwards the key stays in memory and sealing is Fernet.
+        #
+        # With Tang disabled every call is a pass-through, so this costs
+        # nothing and changes nothing on disk. When Tang is enabled but the
+        # server cannot be reached the store stays locked and refuses to write,
+        # which is what keeps a temporary outage from quietly producing clear
+        # text; callers degrade instead.
+        # Where the display subprocess reads the e-ink PNG from when it is
+        # sealed on disk. tmpfs is RAM-backed, so the decrypted copy never
+        # reaches the SD card and disappears on reboot. /run/shm is the same
+        # mount under a different name on some images; a cache path is the last
+        # resort and only ever used when sealing is off anyway.
+        self._eink_ram_path = None
+        for _ram_dir in ('/dev/shm', '/run/shm'):
+            if os.path.isdir(_ram_dir):
+                self._eink_ram_path = os.path.join(_ram_dir, 'mempaper-eink.png')
+                break
+
+        from managers.tang_store import TangStore
+        self.tang_store = TangStore(self.config_manager)
+        if self.tang_store.unlock():
+            if self.tang_store.is_ready():
+                print("🔓 Tang: sealed store unlocked")
+        else:
+            print(f"🔒 Tang: {self.tang_store.reason}")
+            print("🔒 Sealed data stays unavailable until the Tang server returns")
         
         # 🚀 Pre-rendered next-block images (ready before block arrives)
         self._prerendered = {
@@ -905,7 +936,7 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
             if self.e_ink_enabled:
                 threading.Thread(
                     target=self._display_on_epaper_async,
-                    args=(self.current_eink_image_path, self.current_block_height, self.current_block_hash),
+                    args=(self._eink_worker_path(), self.current_block_height, self.current_block_hash),
                     daemon=True
                 ).start()
             
@@ -981,7 +1012,7 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
                 return "missing"
             
             cache_manager = self.image_renderer.wallet_api.async_cache_manager
-            cache_file_path = "cache/async_wallet_address_cache.secure.json"
+            cache_file_path = "cache/async_wallet_address_cache.sensitive.json"
             
             if not os.path.exists(cache_file_path):
                 return "missing"
@@ -1352,7 +1383,7 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
                 print("🔄 Pushing fast e-ink refresh after reboot/install...")
                 threading.Thread(
                     target=self._display_on_epaper_async,
-                    args=(self.current_eink_image_path, self.current_block_height, self.current_block_hash),
+                    args=(self._eink_worker_path(), self.current_block_height, self.current_block_hash),
                     daemon=True
                 ).start()
 
@@ -1985,7 +2016,7 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
                 self._cache_web_image(web_img)
                 self._cached_eink_image = eink_img
                 if eink_img is not None:
-                    eink_img.save(self.current_eink_image_path, compress_level=1)
+                    self._write_eink_image(eink_img)
                 self._save_images_to_disk(web_img, None)  # eink already saved above
                 
                 # Update cache metadata (deferred to reduce SD writes)
@@ -1996,7 +2027,7 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
                 if self.e_ink_enabled:
                     threading.Thread(
                         target=self._display_on_epaper_async,
-                        args=(self.current_eink_image_path, self.current_block_height, self.current_block_hash),
+                        args=(self._eink_worker_path(), self.current_block_height, self.current_block_hash),
                         daemon=True
                     ).start()
                 
@@ -2117,12 +2148,12 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
                 return  # _regenerate_image_with_cached_meme handles save + display push
 
             # Save the new e-ink image (only reached for the opsec-enabled path)
-            eink_img.save(self.current_eink_image_path, compress_level=1)
+            self._write_eink_image(eink_img)
 
             # Display on e-Paper in background thread
             threading.Thread(
                 target=self._display_on_epaper_async,
-                args=(self.current_eink_image_path, self.current_block_height, self.current_block_hash),
+                args=(self._eink_worker_path(), self.current_block_height, self.current_block_hash),
                 daemon=True
             ).start()
 
@@ -2179,6 +2210,90 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
             return any(True for _ in participants)
         except Exception:
             return True
+
+    def _sealing_active(self):
+        """True when rendered images must not be written to the card in clear."""
+        store = getattr(self, 'tang_store', None)
+        return store is not None and store.is_enabled()
+
+    def _write_rendered_image(self, pil_image, path, **save_kwargs):
+        """Persist a rendered image, sealed when Tang is on.
+
+        Encoding goes through a buffer because a sealed file has to be written
+        as bytes; PIL infers the format from the file extension, so callers
+        pass it explicitly here.
+        """
+        import io
+        buffer = io.BytesIO()
+        pil_image.save(buffer, **save_kwargs)
+        data = buffer.getvalue()
+
+        if self._sealing_active():
+            self.tang_store.write_file(path, data)
+        else:
+            with open(path, 'wb') as f:
+                f.write(data)
+        return data
+
+    def _read_rendered_image(self, path):
+        """Bytes of a rendered image, opening it if sealed. None when absent."""
+        if self._sealing_active():
+            return self.tang_store.read_file(path)
+        try:
+            with open(path, 'rb') as f:
+                return f.read()
+        except FileNotFoundError:
+            return None
+
+    def _write_eink_image(self, eink_img):
+        """Persist the e-ink render and return the path the display worker reads.
+
+        With sealing off this is the plain cache file, exactly as before.
+
+        With sealing on, the card gets the sealed copy and the subprocess gets a
+        decrypted one on tmpfs: the worker is a separate process with no key, so
+        handing it the sealed file would simply fail. tmpfs keeps that copy in
+        RAM, so nothing readable is committed to flash.
+        """
+        import io
+        buffer = io.BytesIO()
+        eink_img.save(buffer, format='PNG', compress_level=1)
+        data = buffer.getvalue()
+
+        if not self._sealing_active():
+            with open(self.current_eink_image_path, 'wb') as f:
+                f.write(data)
+            return self.current_eink_image_path
+
+        # Seal first. If the store is locked this raises before anything has
+        # been written, which is the intended outcome - better a skipped
+        # refresh than a clear-text render left on the card.
+        self.tang_store.write_file(self.current_eink_image_path, data)
+
+        if not self._eink_ram_path:
+            raise RuntimeError('No tmpfs available for the sealed e-ink image')
+        with open(self._eink_ram_path, 'wb') as f:
+            f.write(data)
+        os.chmod(self._eink_ram_path, 0o600)
+        return self._eink_ram_path
+
+    def _eink_worker_path(self):
+        """Path for the display worker, materialising from the sealed copy if needed.
+
+        Used by callers that display an image they did not just render, such as
+        a refresh after startup.
+        """
+        if not self._sealing_active():
+            return self.current_eink_image_path
+        if self._eink_ram_path and os.path.exists(self._eink_ram_path):
+            return self._eink_ram_path
+        data = self.tang_store.read_file(self.current_eink_image_path)
+        if not data or not self._eink_ram_path:
+            return self.current_eink_image_path
+        with open(self._eink_ram_path, 'wb') as f:
+            f.write(data)
+        os.chmod(self._eink_ram_path, 0o600)
+        return self._eink_ram_path
 
     def _emit_config_page_updates(self):
         """Push live updates to the config page via Socket.IO (bitaxe stats & found blocks)."""
@@ -2318,12 +2433,14 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
         """Get the web image as base64 data URI, from RAM cache or disk fallback."""
         if self._cached_web_image_base64:
             return self._cached_web_image_base64
-        # Fallback: read from disk (e.g. after restart before first generation)
-        if os.path.exists(self.current_image_path):
-            with open(self.current_image_path, 'rb') as f:
-                data = 'data:image/png;base64,' + base64.b64encode(f.read()).decode()
-                self._cached_web_image_base64 = data  # warm RAM cache
-                return data
+        # Fallback after a restart, before anything has been rendered. Opens the
+        # sealed copy when Tang is on, so the image survives a reboot without a
+        # re-render, and warms the RAM cache so later requests never touch disk.
+        raw = self._read_rendered_image(self.current_image_path)
+        if raw:
+            data = 'data:image/png;base64,' + base64.b64encode(raw).decode()
+            self._cached_web_image_base64 = data  # warm RAM cache
+            return data
         return None
 
     def _save_images_to_disk(self, web_img, eink_img):
@@ -2331,17 +2448,17 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
         def _save():
             try:
                 if web_img is not None:
-                    web_img.save(self.current_image_path, compress_level=1)
+                    self._write_rendered_image(web_img, self.current_image_path, format='PNG', compress_level=1)
                     if _WEBP_ENCODING_OK:
                         try:
-                            web_img.save(self.current_webp_image_path, format='WEBP', quality=82, method=4)
+                            self._write_rendered_image(web_img, self.current_webp_image_path, format='WEBP', quality=82, method=4)
                         except Exception:
                             try:
                                 os.remove(self.current_webp_image_path)
                             except OSError:
                                 pass
                 if eink_img is not None:
-                    eink_img.save(self.current_eink_image_path, compress_level=1)
+                    self._write_eink_image(eink_img)
             except Exception as e:
                 print(f"⚠️ Background image save failed: {e}")
         threading.Thread(target=_save, daemon=True).start()
@@ -2492,10 +2609,10 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
 
         # Start e-ink display immediately
         if self.e_ink_enabled and eink_img_patched is not None:
-            eink_img_patched.save(self.current_eink_image_path, compress_level=1)
+            self._write_eink_image(eink_img_patched)
             threading.Thread(
                 target=self._display_on_epaper_async,
-                args=(self.current_eink_image_path, block_height, block_hash),
+                args=(self._eink_worker_path(), block_height, block_hash),
                 daemon=True
             ).start()
 
@@ -2503,12 +2620,12 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
         def _persist():
             if web_img_patched is not None:
                 try:
-                    web_img_patched.save(self.current_image_path, compress_level=1)
+                    self._write_rendered_image(web_img_patched, self.current_image_path, format='PNG', compress_level=1)
                 except Exception as e:
                     print(f"⚠️ Background web image save failed: {e}")
                 if _WEBP_ENCODING_OK:
                     try:
-                        web_img_patched.save(self.current_webp_image_path, format='WEBP', quality=82, method=4)
+                        self._write_rendered_image(web_img_patched, self.current_webp_image_path, format='WEBP', quality=82, method=4)
                     except Exception:
                         try:
                             os.remove(self.current_webp_image_path)
@@ -2598,7 +2715,7 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
             self._cached_eink_image = eink_img
             # E-ink display subprocess needs file on disk — save synchronously
             if eink_img is not None:
-                eink_img.save(self.current_eink_image_path, compress_level=1)
+                self._write_eink_image(eink_img)
             # Web image only needed on disk for crash recovery — save in background (PNG + WebP)
             if web_img is not None:
                 self._save_images_to_disk(web_img, None)
@@ -2626,7 +2743,7 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
             if int(block_height or 0) != int(current_eink_height) or force_eink:
                 threading.Thread(
                     target=self._display_on_epaper_async,
-                    args=(self.current_eink_image_path, block_height, block_hash),
+                    args=(self._eink_worker_path(), block_height, block_hash),
                     daemon=True
                 ).start()
         

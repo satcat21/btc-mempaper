@@ -186,7 +186,7 @@ def start_service():
 
 
 def clear_admin_users():
-    """Remove all admin users from config (including encrypted config.secure.json).
+    """Remove all admin users from config (including encrypted config.sensitive.json).
 
     Uses ConfigManager + SecureConfigManager so the encrypted blob is properly
     rewritten without the credential keys.  After this, ``is_password_set()``
@@ -213,7 +213,7 @@ def clear_admin_users():
         del full_cfg[k]
 
     # Write directly through the secure config manager so both config.json
-    # (public fields) and config.secure.json (encrypted fields) are updated.
+    # (public fields) and config.sensitive.json (encrypted fields) are updated.
     if cm.secure_manager:
         if not cm.secure_manager.save_secure_config(full_cfg):
             print("❌ Failed to persist cleared admin credentials to disk — "
@@ -587,7 +587,7 @@ def main():
         pass
 
     # Clear admin users so the onboarding page shows the account creation form.
-    # Admin credentials live in the encrypted config.secure.json, not config.json.
+    # Admin credentials live in the encrypted config.sensitive.json, not config.json.
     print()
     print("🧹 Clearing admin users…")
     clear_admin_users()

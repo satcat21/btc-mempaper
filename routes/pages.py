@@ -60,7 +60,17 @@ def register(self):
                 if request.headers.get('If-None-Match') == etag:
                     return '', 304
 
-            response = send_file(served_path, mimetype=served_mime)
+            # A sealed file on disk is ciphertext, so sending it by path would
+            # hand the browser a corrupt image. Open it and serve the bytes;
+            # the decrypted copy exists only for the duration of the response.
+            if self._sealing_active():
+                data = self.tang_store.read_file(served_path)
+                if data:
+                    response = send_file(io.BytesIO(data), mimetype=served_mime)
+                else:
+                    return '', 404
+            else:
+                response = send_file(served_path, mimetype=served_mime)
             # no-cache forces an ETag revalidation on every load (cheap — a 304 with
             # no body) instead of trusting a max-age window, so a mid-block regen
             # (config save, donation, wallet update) is never served stale from the

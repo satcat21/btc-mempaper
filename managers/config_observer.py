@@ -148,7 +148,7 @@ class ConfigurationObserver:
 class AsyncAddressCacheManager:
     """Manages asynchronous address derivation and caching."""
     
-    def __init__(self, cache_file: str = "cache/async_wallet_address_cache.secure.json"):
+    def __init__(self, cache_file: str = "cache/async_wallet_address_cache.sensitive.json"):
         """
         Initialize async cache manager.
         
@@ -156,9 +156,9 @@ class AsyncAddressCacheManager:
             cache_file: Path to cache file (uses secure encrypted cache)
         """
         # Always use the base name without .secure for the SecureCacheManager
-        # The SecureCacheManager will automatically handle the .secure.json file
-        if cache_file.endswith('.secure.json'):
-            cache_file = cache_file.replace('.secure.json', '.json')
+        # The SecureCacheManager will automatically handle the .sensitive.json file
+        if cache_file.endswith('.sensitive.json'):
+            cache_file = cache_file.replace('.sensitive.json', '.json')
         self.cache_file = cache_file
         self.address_derivation = AddressDerivation()
         

@@ -87,6 +87,15 @@ class ConfigManager:
         self.config_key_path = "config/.config_key"
         self.enable_secure_config = enable_secure_config
         
+        # Rename the old .secure.json files before anything opens them. The
+        # name claimed a protection the device-key scheme never delivered.
+        if SECURE_CONFIG_AVAILABLE:
+            try:
+                from managers.secure_config_manager import migrate_legacy_filenames
+                migrate_legacy_filenames()
+            except Exception as e:
+                print(f"⚠️ Legacy filename migration skipped: {e}")
+
         # Initialize secure config manager if available and enabled
         self.secure_manager = None
         if enable_secure_config and SECURE_CONFIG_AVAILABLE:
@@ -105,6 +114,7 @@ class ConfigManager:
         if self.secure_manager:
             try:
                 self.secure_manager.migrate_to_current_scheme()
+                self.secure_manager.migrate_encrypted_to_plaintext()
             except Exception as e:
                 print(f"⚠️ Secure config migration skipped: {e}")
 

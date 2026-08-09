@@ -1439,6 +1439,15 @@ function createFormField(key, field, value) {
 
     formGroup.appendChild(input);
 
+    // Long opaque values are visual noise in a settings form. Reuse the same
+    // overlay the wallet tables use: a shortened preview at rest, the real
+    // value on focus. Applied after appendChild because the overlay inserts a
+    // wrapper around the element and needs it to already have a parent.
+    if (field.masked && input.tagName === 'INPUT'
+        && typeof _addAddressMaskOverlay === 'function') {
+        _addAddressMaskOverlay(input);
+    }
+
     if (field.description) {
         const description = document.createElement('div');
         description.className = 'form-description';

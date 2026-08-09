@@ -456,10 +456,10 @@ For advanced manual configuration, edit `config/config.json`.
 
 ### Protecting Wallet Data Against Device Theft
 
-Wallet addresses and xpubs are stored encrypted, but the key is derived from the Pi
-itself — so anyone holding the hardware can recompute it. That defends a copied SD image
-and **does not defend against physical theft**. It is deliberately not advertised as
-more than that.
+Wallet addresses and xpubs live in a separate `600` file, **not encrypted**. Any key
+the device could derive by itself would also be reconstructible by whoever holds the
+device, so encrypting under one would imply a protection it could not deliver.
+**Physical access to the device means access to this data.**
 
 If a stolen device must not give up your addresses and balances, run a
 [Tang](https://github.com/latchset/tang) server on your LAN — a node, a NAS, or a small

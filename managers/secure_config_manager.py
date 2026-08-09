@@ -29,6 +29,42 @@ import platform
 from utils.atomic_io import atomic_write_json
 
 
+# Files renamed when the device-key encryption was removed. "secure" claimed a
+# protection the scheme never provided; these hold sensitive data, which is what
+# the name now says. Renaming rather than leaving the old name avoids a file
+# whose name misleads whoever finds it on a card.
+LEGACY_FILE_RENAMES = [
+    ('config/config.secure.json', 'config/config.sensitive.json'),
+    ('cache/cache.secure.json', 'cache/cache.sensitive.json'),
+    ('cache/async_wallet_address_cache.secure.json',
+     'cache/async_wallet_address_cache.sensitive.json'),
+]
+
+
+def migrate_legacy_filenames(root=None):
+    """Rename the old .secure.json files, once, keeping their contents.
+
+    Runs before anything opens them. Skips a rename when the new name already
+    exists, so an interrupted upgrade cannot clobber converted data with a
+    stale copy left behind.
+    """
+    base = root or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    renamed = []
+    for old_rel, new_rel in LEGACY_FILE_RENAMES:
+        old_path = os.path.join(base, old_rel)
+        new_path = os.path.join(base, new_rel)
+        if not os.path.exists(old_path) or os.path.exists(new_path):
+            continue
+        try:
+            os.replace(old_path, new_path)
+            renamed.append((old_rel, new_rel))
+        except OSError as e:
+            print(f"⚠️ Could not rename {old_rel}: {e}")
+    for old_rel, new_rel in renamed:
+        print(f"🔄 Renamed {old_rel} -> {new_rel}")
+    return renamed
+
+
 class SecureConfigManager:
     """Lightweight encryption for sensitive configuration data."""
     
@@ -59,7 +95,7 @@ class SecureConfigManager:
             config_file: Path to configuration file
         """
         self.config_file = config_file
-        self.encrypted_config_file = "config/config.secure.json"
+        self.encrypted_config_file = "config/config.sensitive.json"
         self.key_file = "config/.config_key"
         
         # Define sensitive fields that should be encrypted
@@ -76,9 +112,22 @@ class SecureConfigManager:
         # the file on disk still needs rewriting. See migrate_to_current_scheme.
         self._used_legacy_key = False
 
-        # Initialize encryption key (uses class-level cache)
+        # The device key is derived lazily, only if a file written by an older
+        # version is encountered. New writes are not encrypted at all.
+        #
+        # Deriving it eagerly used to cost an Argon2id pass at every process
+        # start - one to three seconds on a Pi Zero - to protect data against a
+        # key an attacker holding the device can simply recompute. That was
+        # never worth it; see docs/SECURITY_GUIDE.md. Real protection against a
+        # stolen device is Tang, whose key is not on the card at all.
+        #
+        # Once every file has been read once and rewritten in the clear, this
+        # derivation never runs again and the whole path can be deleted.
         self._encryption_key = None
-        self._ensure_encryption_key()
+
+        # Set when a read had to fall back to device-encrypted content,
+        # so the file gets rewritten in the clear exactly once.
+        self._needs_plaintext_rewrite = False
 
         # Decrypted config, cached as JSON text against the on-disk stamp of
         # both config files. See get_sensitive_fields_cached.
@@ -137,11 +186,76 @@ class SecureConfigManager:
         self._secure_cache_json = None
         self._secure_cache_stamp = None
 
+    def _tang_store(self):
+        """The shared Tang store, or None when sealing is unavailable.
+
+        Imported lazily: tang_store imports this module, so a module-level
+        import would be circular.
+        """
+        try:
+            from managers.tang_store import get_shared_store
+            store = get_shared_store()
+            return store if store.is_enabled() else None
+        except Exception:
+            return None
+
+    def _write_possibly_sealed(self, path, obj):
+        """Write JSON, sealed against Tang when that is switched on."""
+        store = self._tang_store()
+        if store is None:
+            atomic_write_json(path, obj, mode=0o600, indent=2)
+            return
+        payload = json.dumps(obj, indent=2).encode('utf-8')
+        store.write_file(path, payload, mode=0o600)
+
+    def _read_possibly_sealed(self, path):
+        """Read JSON written by _write_possibly_sealed, or None if absent.
+
+        Handles a file written before Tang was enabled: read_file passes
+        unsealed content straight through.
+        """
+        store = self._tang_store()
+        if store is None:
+            try:
+                with open(path, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            except FileNotFoundError:
+                return None
+        raw = store.read_file(path)
+        return json.loads(raw.decode('utf-8')) if raw else None
+
+    def migrate_encrypted_to_plaintext(self) -> bool:
+        """Rewrite a still-encrypted sensitive config in the clear, once.
+
+        Reading sets _needs_plaintext_rewrite when it had to fall back to the
+        device key. Without this the file would only convert on the next
+        configuration save, so a device nobody touches would keep paying the
+        Argon2id cost at every start forever.
+
+        Returns True only when a rewrite happened.
+        """
+        if not os.path.exists(self.encrypted_config_file):
+            return False
+
+        self._needs_plaintext_rewrite = False
+        config = self.load_secure_config()
+        if config is None or not self._needs_plaintext_rewrite:
+            return False
+
+        print("🔄 Rewriting the sensitive config without device encryption")
+        if self.save_secure_config(config):
+            print("✅ Sensitive config converted; the device key is no longer needed")
+            return True
+
+        # Not fatal: the old key still reads it, so the next start can retry.
+        print("⚠️ Could not convert the sensitive config; will retry")
+        return False
+
     def migrate_to_current_scheme(self) -> bool:
         """Rewrite the encrypted config if it is still under an older key.
 
         The cache files re-encrypt themselves, since they are rewritten
-        whenever a balance changes. config.secure.json is only written when
+        whenever a balance changes. config.sensitive.json is only written when
         something saves the configuration, so without this an untouched
         device would keep its secrets under the superseded key indefinitely
         and never benefit from the current scheme.
@@ -443,11 +557,26 @@ class SecureConfigManager:
         encrypted_bytes = fernet.encrypt(json_str.encode())
         return base64.urlsafe_b64encode(encrypted_bytes).decode()
     
+    def _ensure_key_for_legacy_read(self) -> bool:
+        """Derive the device key, on demand, to read pre-plaintext data.
+
+        Called only when an _encrypted envelope is actually found, so a device
+        that has finished migrating never pays the Argon2id cost.
+        """
+        if self._encryption_key is not None:
+            return True
+        try:
+            self._ensure_encryption_key()
+        except Exception as e:
+            print(f"⚠️ Could not derive the legacy device key: {e}")
+            return False
+        return self._encryption_key is not None
+
     def _decrypt_data(self, encrypted_str: str) -> Any:
-        """Decrypt sensitive data."""
-        if self._encryption_key is None:
-            raise ValueError("Encryption key not initialized")
-        
+        """Decrypt data written by a version that still encrypted at rest."""
+        if not self._ensure_key_for_legacy_read():
+            return None
+
         try:
             encrypted_bytes = base64.urlsafe_b64decode(encrypted_str.encode())
         except Exception as e:
@@ -533,13 +662,27 @@ class SecureConfigManager:
             # (e.g. a factory/delivery-state reset that clears admin_users
             # with no other sensitive field to keep the dict non-empty) would
             # leave stale credentials sitting in the old encrypted file.
+            # Written in the clear. The device-derived key that used to wrap
+            # this was recomputable by anyone holding the Pi, so it never
+            # defended the case it appeared to. Keeping it would have implied a
+            # protection the scheme could not deliver. Physical protection of
+            # the device, or Tang, is what actually defends this file.
+            #
+            # The separate file still earns its place: it stays 0600 while
+            # config.json is group-readable, it is the unit Tang seals, and it
+            # keeps tang_url readable so the store can bootstrap.
             encrypted_config = {
-                '_encrypted': True,
-                '_version': '1.0',
-                'data': self._encrypt_data(secure_config)
+                '_encrypted': False,
+                '_version': '2.0',
+                'data': secure_config,
             }
 
-            atomic_write_json(self.encrypted_config_file, encrypted_config, mode=0o600, indent=2)
+            # Sealed on top of the device-key encryption when Tang is on. The
+            # two layers are independent: the device key still protects a
+            # copied image, and Tang additionally makes a stolen card useless.
+            # Reading reverses both, so the layers can be unwound separately if
+            # the device scheme is ever retired.
+            self._write_possibly_sealed(self.encrypted_config_file, encrypted_config)
 
             self._invalidate_secure_cache()
 
@@ -574,16 +717,22 @@ class SecureConfigManager:
             # Load encrypted config (sensitive fields only)
             secure_config = {}
             if os.path.exists(self.encrypted_config_file):
-                with open(self.encrypted_config_file, 'r') as f:
-                    encrypted_data = json.load(f)
-                
+                encrypted_data = self._read_possibly_sealed(self.encrypted_config_file) or {}
+
+                payload = encrypted_data.get('data')
                 if encrypted_data.get('_encrypted'):
-                    decrypted_data = self._decrypt_data(encrypted_data['data'])
+                    # Written by a version that still encrypted at rest. Derive
+                    # the device key just for this, then let the next save
+                    # rewrite the file in the clear.
+                    decrypted_data = self._decrypt_data(payload)
                     if decrypted_data:
                         secure_config = decrypted_data
+                        self._needs_plaintext_rewrite = True
                     else:
                         print("⚠️ Failed to decrypt secure configuration")
                         return None
+                elif isinstance(payload, dict):
+                    secure_config = payload
             
             # Merge configurations - sensitive fields from encrypted, non-sensitive from plain
             complete_config = {**public_config, **secure_config}

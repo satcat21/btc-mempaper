@@ -162,7 +162,7 @@ def register(self):
             removed = []
             for cache_file in [
                 'cache/wallet_balances.json',
-                'cache/async_wallet_address_cache.secure.json',
+                'cache/async_wallet_address_cache.sensitive.json',
             ]:
                 try:
                     if os.path.exists(cache_file):

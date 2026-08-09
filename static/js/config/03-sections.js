@@ -1522,6 +1522,111 @@ function _applyTorMode(torOn) {
     });
 }
 
+// ── Tang disable guard ─────────────────────────────────────────────────
+// Switching Tang off has to unseal everything first, which needs the server.
+// If it cannot be reached the sealed data can never be opened again, so the
+// only way off is to delete it. That is not something to do on a stray click,
+// and it must never happen silently, so the toggle is intercepted here and the
+// operator is told exactly what would be destroyed.
+async function _confirmTangDisable() {
+    let preview;
+    try {
+        const resp = await fetch('/api/tang/disable-preview');
+        if (!resp.ok) throw new Error('preview failed');
+        preview = await resp.json();
+    } catch (e) {
+        // Cannot tell how bad this is, so assume the worst rather than
+        // letting a silent failure delete anything.
+        preview = { recoverable: false, items: [], reason: 'Could not reach mempaper.' };
+    }
+
+    if (preview.recoverable) return true;
+
+    const t = window.translations || {};
+    // Labels only. The path is still returned by the endpoint and goes to the
+    // server log, but a filename in a confirmation dialog tells a non-technical
+    // owner nothing about what they are losing.
+    const list = (preview.items || []).map(i => `  • ${i.label}`).join('\n');
+    const message =
+        (t.tang_disable_unreachable
+         || 'The Tang server cannot be reached, so this data cannot be decrypted and '
+          + 'turning encryption off would delete it permanently.')
+        + '\n\n' + (preview.reason || '')
+        + '\n\n' + (t.tang_disable_will_delete || 'This will be deleted:')
+        + '\n' + (list || (t.tang_nothing_sealed || '  (nothing sealed yet)'))
+        + '\n\n' + (t.tang_disable_recover_hint
+                    || 'Bring the Tang server back online and try again to keep it. '
+                     + 'Wallet addresses would have to be entered again.');
+
+    return await window.showConfirmModal({
+        title: t.tang_disable_title || 'Delete encrypted data?',
+        message,
+        confirmText: t.tang_disable_confirm || 'Delete permanently',
+        cancelText: t.cancel || 'Cancel',
+        danger: true,
+    });
+}
+
+function _initTangToggleWatch() {
+    const toggle = document.querySelector('[data-config-key="tang_enabled"]');
+    if (!toggle || toggle.dataset.tangGuard === '1') return;
+    toggle.dataset.tangGuard = '1';
+
+    const readState = () => {
+        if (typeof toggle.getValue === 'function') return !!toggle.getValue();
+        if (toggle.type === 'checkbox') return toggle.checked;
+        return !!(window.currentConfig || {}).tang_enabled;
+    };
+
+    const wasEnabled = !!(window.currentConfig || {}).tang_enabled;
+    if (!wasEnabled) return;   // nothing sealed, nothing to lose
+
+    const restore = () => {
+        if (typeof toggle.setValue === 'function') toggle.setValue(true);
+        else if (toggle.type === 'checkbox') toggle.checked = true;
+        else toggle.click();
+    };
+
+    ['change', 'click'].forEach(ev => toggle.addEventListener(ev, () => setTimeout(async () => {
+        if (readState()) return;                     // being switched on, not off
+
+        const proceed = await _confirmTangDisable();
+        if (proceed !== true) { restore(); return; }
+
+        // Unlike every other field on this page, this cannot wait for Save.
+        // Turning sealing off has to rewrite each file in the clear, or delete
+        // what can no longer be opened, and that is a server-side migration.
+        // Merely flipping the flag and saving would leave the data sealed while
+        // the app treated it as plain text - unreadable, with the key gone.
+        // The endpoint performs the migration and persists tang_enabled itself.
+        const t = window.translations || {};
+        try {
+            const resp = await fetch('/api/tang/disable', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ discard: true }),
+            });
+            const data = await resp.json().catch(() => ({}));
+            if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+
+            if (window.currentConfig) window.currentConfig.tang_enabled = false;
+            const summary = data.deleted
+                ? `${data.deleted} sealed file(s) deleted.`
+                : `${data.unsealed || 0} file(s) decrypted and kept.`;
+            if (typeof window.showNotification === 'function') {
+                window.showNotification(`${t.tang_disabled || 'Tang encryption disabled'} — ${summary}`, 'success');
+            }
+        } catch (e) {
+            // The migration did not complete, so the data is still sealed.
+            // Leaving the toggle off would misrepresent that.
+            restore();
+            if (typeof window.showNotification === 'function') {
+                window.showNotification(`${t.tang_disable_failed || 'Could not disable Tang'}: ${e.message}`, 'error');
+            }
+        }
+    }, 0)));
+}
+
 function _initTorToggleWatch() {
     const toggle = document.querySelector('[data-config-key="mempool_use_tor"]');
     if (!toggle) return;

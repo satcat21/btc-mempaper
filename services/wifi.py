@@ -312,8 +312,9 @@ class WifiHotspotMixin:
         for cache_file in ['cache/wallet_balances.json',
                            'cache/observer_cache.json',
                            'cache/bitaxe_cache.json',
-                           'cache/async_wallet_address_cache.secure.json',
-                           'cache/cache.secure.json',
+                           'cache/async_wallet_address_cache.sensitive.json',
+                           'cache/cache.sensitive.json',
+                           'cache/mobile_tokens.sensitive.json',
                            'cache/mobile_tokens.secure.json',
                            'cache/mobile_tokens.json']:
             try:

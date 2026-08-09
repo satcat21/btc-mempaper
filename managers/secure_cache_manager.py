@@ -13,11 +13,9 @@ Security Features:
 """
 
 import os
-import json
 import threading
 from typing import Dict, Any
 from managers.secure_config_manager import SecureConfigManager
-from utils.atomic_io import atomic_write_json
 
 
 class SecureCacheManager:
@@ -31,7 +29,7 @@ class SecureCacheManager:
             cache_file: Path to cache file to encrypt
         """
         self.cache_file = cache_file
-        self.encrypted_cache_file = cache_file.replace('.json', '.secure.json')
+        self.encrypted_cache_file = cache_file.replace('.json', '.sensitive.json')
         self.cache_lock = threading.RLock()
         
         # Ensure cache directory exists
@@ -66,15 +64,20 @@ class SecureCacheManager:
             # Load encrypted cache only
             if self.encryption_available and os.path.exists(self.encrypted_cache_file):
                 try:
-                    with open(self.encrypted_cache_file, 'r') as f:
-                        encrypted_data = json.load(f)
-                    
+                    encrypted_data = self.secure_manager._read_possibly_sealed(
+                        self.encrypted_cache_file) or {}
+
                     if encrypted_data.get('_encrypted_cache'):
+                        # Written by a version that still encrypted at rest.
+                        # Decrypt once; the next save rewrites it in the clear.
                         decrypted_data = self.secure_manager._decrypt_data(encrypted_data['data'])
                         if decrypted_data is not None:
+                            self.save_cache(decrypted_data)
                             return decrypted_data
                         else:
                             print(f"⚠️ Failed to decrypt cache: {self.encrypted_cache_file}")
+                    elif isinstance(encrypted_data.get('data'), dict):
+                        return encrypted_data['data']
                 except Exception as e:
                     print(f"⚠️ Error loading encrypted cache: {e}")
             
@@ -95,16 +98,18 @@ class SecureCacheManager:
             try:
                 # Only save encrypted cache
                 if self.encryption_available and self.secure_manager:
+                    # Plain, like the other sensitive files. The device key it
+                    # used to be wrapped in was recomputable by anyone holding
+                    # the Pi; Tang seals this file when it is switched on.
                     encrypted_cache = {
-                        '_encrypted_cache': True,
-                        '_version': '1.0',
+                        '_encrypted_cache': False,
+                        '_version': '2.0',
                         '_cache_type': 'address_derivation',
-                        'data': self.secure_manager._encrypt_data(cache_data)
+                        'data': cache_data
                     }
-                    
-                    atomic_write_json(self.encrypted_cache_file, encrypted_cache, mode=0o600, indent=2)
 
-                    print(f" Saved encrypted cache: {self.encrypted_cache_file}")
+                    self.secure_manager._write_possibly_sealed(
+                        self.encrypted_cache_file, encrypted_cache)
                     return True
                 else:
                     print(f"❌ Encryption not available - cannot save cache")

@@ -146,7 +146,7 @@ class DisplayWorkerMixin:
                     print(f"📌 Executing pending e-ink refresh...")
                     threading.Thread(
                         target=self._display_on_epaper_async,
-                        args=(self.current_eink_image_path, self.current_block_height, self.current_block_hash),
+                        args=(self._eink_worker_path(), self.current_block_height, self.current_block_hash),
                         daemon=True
                     ).start()
 

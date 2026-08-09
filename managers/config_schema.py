@@ -616,6 +616,9 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
             "_lk": "tang_thumbprint",
             "placeholder": "faYWs5gMZ4MOKVmw_70zIvgZuzPd6AZnrsF86OgewnI",
             "default": "",
+            # 43 characters of base64 is unreadable noise at rest. Shortened
+            # like a wallet address, full value on click.
+            "masked": True,
             "description": t.get("tang_thumbprint_desc", "Signing-key thumbprint of your Tang server, from tang-show-keys. Pinning it stops anything else on the LAN from impersonating the server. Leave empty only if you accept that risk."),
             "_dk": "tang_thumbprint_desc",
             "category": "general",

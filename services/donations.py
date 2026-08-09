@@ -15,8 +15,16 @@ class DonationsMixin:
         """Load persisted donation history from disk on startup."""
         try:
             if os.path.exists(self._donations_file):
-                with open(self._donations_file, "r", encoding="utf-8") as f:
-                    data = json.load(f)
+                # read_file opens a sealed file and passes a clear-text one
+                # straight through, so a history written before Tang was
+                # enabled still loads.
+                store = getattr(self, 'tang_store', None)
+                if store is not None and store.is_enabled():
+                    raw = store.read_file(self._donations_file)
+                    data = json.loads(raw.decode('utf-8')) if raw else {}
+                else:
+                    with open(self._donations_file, "r", encoding="utf-8") as f:
+                        data = json.load(f)
                 self._donation_history = data.get("history", [])
                 self._latest_donation = self._donation_history[0] if self._donation_history else None
                 if self._donation_history:
@@ -98,12 +106,31 @@ class DonationsMixin:
         return _tag(self._latest_donation)
 
     def _save_donations(self):
-        """Persist donation history to disk."""
+        """Persist donation history to disk, sealed when Tang is enabled.
+
+        Amounts and donor comments say something about who is behind the
+        device, so this belongs in the sealed set rather than beside the
+        public chain data.
+        """
+        payload = {
+            "history": self._donation_history,
+            "latest_donation_block_height": self._latest_donation_block_height,
+        }
+        store = getattr(self, 'tang_store', None)
         try:
-            atomic_write_json(self._donations_file, {
-                "history": self._donation_history,
-                "latest_donation_block_height": self._latest_donation_block_height,
-            }, ensure_ascii=False, indent=2)
+            if store is not None and store.is_enabled():
+                # Sealed writes go through the store, which refuses while the
+                # Tang server is unreachable rather than silently producing
+                # clear text. Losing one donation update is recoverable; a
+                # plaintext history on a stolen card is not.
+                store.write_file(
+                    self._donations_file,
+                    json.dumps(payload, ensure_ascii=False, indent=2).encode('utf-8'),
+                    mode=0o600,
+                )
+            else:
+                atomic_write_json(self._donations_file, payload,
+                                  ensure_ascii=False, indent=2)
         except Exception as e:
             print(f"⚠️ Could not save donations file: {e}")
 

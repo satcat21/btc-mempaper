@@ -47,6 +47,63 @@ def register(self):
                 suggested = check['detail']
         return jsonify({'checks': checks, 'suggested_thumbprint': suggested})
 
+    @self.app.route('/api/tang/disable-preview', methods=['GET'])
+    @require_auth(self.auth_manager)
+    def preview_tang_disable():
+        """What turning Tang off would do, so the UI can warn before it does.
+
+        recoverable=false means the server cannot be reached, so the sealed
+        data can never be opened again and switching off can only discard it.
+        """
+        store = getattr(self, 'tang_store', None)
+        if store is None:
+            return jsonify({'recoverable': True, 'items': [], 'reason': ''})
+        try:
+            return jsonify(store.disable_preview())
+        except Exception as e:
+            return jsonify({'recoverable': False, 'items': [],
+                            'reason': str(e)[:200]}), 500
+
+    @self.app.route('/api/tang/disable', methods=['POST'])
+    @require_auth(self.auth_manager)
+    def disable_tang():
+        """Turn sealing off.
+
+        Unseals everything when the server answers. Otherwise refuses unless
+        discard is explicitly set, which deletes data that cannot be recovered
+        - the UI must have confirmed that with the operator first.
+        """
+        from managers.tang_store import TangLocked
+        from flask import request as _request
+
+        store = getattr(self, 'tang_store', None)
+        if store is None:
+            return jsonify({'error': 'Tang store unavailable'}), 500
+
+        payload = _request.get_json(silent=True) or {}
+        discard = bool(payload.get('discard'))
+        try:
+            result = store.disable(discard=discard)
+        except TangLocked as e:
+            # 409: the request is valid but conflicts with current state. The
+            # UI turns this into the confirmation prompt.
+            return jsonify({'error': str(e), 'needs_confirmation': True}), 409
+        except Exception as e:
+            return jsonify({'error': str(e)[:200]}), 500
+
+        try:
+            cfg = self.config_manager.get_current_config()
+            cfg['tang_enabled'] = False
+            self.config_manager.save_config(cfg)
+        except Exception as e:
+            print(f"⚠️ Tang disabled but config not updated: {e}")
+
+        return jsonify({
+            'ok': True,
+            'unsealed': len(result['unsealed']),
+            'deleted': len(result['deleted']),
+        })
+
     @self.app.route('/api/tang/discover', methods=['GET'])
     @require_auth(self.auth_manager)
     def discover_tang_servers():
@@ -632,6 +689,25 @@ def register(self):
 
                 def _post_save_background():
                     try:
+                        # Tang switched on: provision a key and seal whatever is
+                        # already on disk. Runs before the rest so later steps
+                        # write through the store rather than in the clear.
+                        # Switching off is not handled here - that has to unseal
+                        # or discard, so it goes through /api/tang/disable before
+                        # the config is ever saved.
+                        if (not (_old_cfg or {}).get('tang_enabled')
+                                and _new_cfg.get('tang_enabled')):
+                            try:
+                                store = getattr(self, 'tang_store', None)
+                                if store is not None:
+                                    outcome = store.enable()
+                                    print(f"🔐 Tang enabled — sealed: {outcome['sealed']}, "
+                                          f"already sealed: {len(outcome['already_sealed'])}")
+                                    for failure in outcome['failed']:
+                                        print(f"⚠️ Could not seal {failure['label']}: {failure['error']}")
+                            except Exception as e:
+                                print(f"❌ Tang could not be enabled: {e}")
+
                         # Clean up cache for removed wallet addresses
                         if _old_cfg:
                             self._cleanup_removed_wallet_caches(_old_cfg, _new_cfg)

@@ -1720,6 +1720,7 @@ async function loadConfiguration() {
         // Enhance display select with availability badges from API
         setTimeout(_enhanceDisplaySelect, 150);
     setTimeout(_initTorToggleWatch, 160);
+    setTimeout(_initTangToggleWatch, 160);
     } catch (error) {
         // console.error('Configuration load error:', error);
         const failedMessage = window.translations?.failed_to_load_configuration || 'Failed to load configuration';

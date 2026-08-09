@@ -38,6 +38,7 @@ cache.json
 wallet_balance_cache.json
 optimized_balance_cache.json
 *.secure.json
+*.sensitive.json
 *.backup
 *.migrated_backup
 *.log

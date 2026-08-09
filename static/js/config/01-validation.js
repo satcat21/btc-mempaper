@@ -585,6 +585,7 @@ function setLanguage(lang) {
     // enabled) - re-lock it, same as the initial page load does.
     setTimeout(_enhanceDisplaySelect, 150);
     setTimeout(_initTorToggleWatch, 160);
+    setTimeout(_initTangToggleWatch, 160);
 
     window.scrollTo({ top: savedScrollY, behavior: 'instant' });
 }

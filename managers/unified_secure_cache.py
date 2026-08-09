@@ -6,8 +6,8 @@ Provides encryption for all sensitive cache data including:
 - Optimized balance cache (XPUB data and derived addresses)  
 - Wallet balance cache (address balances and comments)
 
-All cache data is encrypted into a single cache.secure.json file using the same
-encryption system as config.secure.json.
+All cache data is encrypted into a single cache.sensitive.json file using the same
+encryption system as config.sensitive.json.
 
 Security Features:
 - Single encrypted file for all cache data
@@ -32,7 +32,6 @@ import threading
 import time
 from typing import Dict, Any, Optional, Literal
 from managers.secure_config_manager import SecureConfigManager
-from utils.atomic_io import atomic_write_json
 
 
 # Minimum time between disk writes. Even the busiest path here (a new block,
@@ -57,7 +56,7 @@ class UnifiedSecureCache:
             cache_dir: Directory where cache files are stored
         """
         self.cache_dir = cache_dir
-        self.secure_cache_file = os.path.join(cache_dir, "cache.secure.json")
+        self.secure_cache_file = os.path.join(cache_dir, "cache.sensitive.json")
         self.cache_lock = threading.RLock()
 
         # Debounce disk writes — this cache is touched on every new block
@@ -114,19 +113,32 @@ class UnifiedSecureCache:
             # Try to load existing secure cache first
             if os.path.exists(self.secure_cache_file):
                 try:
-                    with open(self.secure_cache_file, 'r') as f:
-                        encrypted_data = json.load(f)
-                    
-                    # Decrypt the data
-                    if 'encrypted_data' in encrypted_data:
-                        decrypted_data = self.secure_manager._decrypt_data(encrypted_data['encrypted_data'])
-                        if decrypted_data and isinstance(decrypted_data, dict):
-                            # Validate cache structure
-                            if self._validate_cache_structure(decrypted_data):
-                                self.cache_data = decrypted_data
-                                return
-                            else:
-                                print(f"⚠️ Invalid secure cache structure, will migrate individual files")
+                    encrypted_data = self.secure_manager._read_possibly_sealed(
+                        self.secure_cache_file) or {}
+
+                    # version 3 is plain; version 2 was device-encrypted and is
+                    # decrypted once here, then rewritten in the clear by the
+                    # next save so the device key is never needed again.
+                    if 'data' in encrypted_data:
+                        loaded = encrypted_data['data']
+                    elif 'encrypted_data' in encrypted_data:
+                        loaded = self.secure_manager._decrypt_data(encrypted_data['encrypted_data'])
+                        if loaded:
+                            self._needs_plaintext_rewrite = True
+                    else:
+                        loaded = None
+
+                    if loaded and isinstance(loaded, dict):
+                        # Validate cache structure
+                        if self._validate_cache_structure(loaded):
+                            self.cache_data = loaded
+                            if getattr(self, '_needs_plaintext_rewrite', False):
+                                self._needs_plaintext_rewrite = False
+                                print("🔄 Rewriting the cache without device encryption")
+                                self._write_cache_to_disk()
+                            return
+                        else:
+                            print(f"⚠️ Invalid secure cache structure, will migrate individual files")
                 except Exception as e:
                     print(f"⚠️ Failed to load secure cache: {e}, will migrate individual files")
             
@@ -196,17 +208,20 @@ class UnifiedSecureCache:
         try:
             self.cache_data["last_updated"] = time.time()
 
-            # Encrypt the cache data
-            encrypted_data = self.secure_manager._encrypt_data(self.cache_data)
-
-            # Save to file
+            # Written in the clear, like the sensitive config: the device key
+            # that used to wrap this was recomputable by anyone holding the Pi,
+            # so it protected nothing it appeared to. Tang seals the file when
+            # it is switched on, which is the protection that actually holds.
             secure_data = {
-                "encrypted_data": encrypted_data,
-                "version": "2.0",
+                "data": self.cache_data,
+                "version": "3.0",
                 "created": time.time()
             }
 
-            atomic_write_json(self.secure_cache_file, secure_data, mode=0o600, indent=2)
+            # Sealed against Tang when that is on, reusing the config manager's
+            # helper so both files follow the same rule. Falls back to a plain
+            # atomic write otherwise.
+            self.secure_manager._write_possibly_sealed(self.secure_cache_file, secure_data)
             self._last_disk_save_time = time.time()
             self._save_pending = False
 

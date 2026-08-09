@@ -238,6 +238,52 @@ Upload OPSec images via the **Meme Management** section of the config page, in t
 | **Password** | `admin_password_hash` | String | *Hashed managed field* | *Managed by `setup_secure_password.py`* |
 | **Public Dashboard** | `public_dashboard` | Switch | Allow unauthenticated users to view the dashboard (settings still require login) | `true`, `false` (default: `false`) |
 
+### Network-bound encryption (Tang)
+
+Found under **Settings → General → Advanced**. Seals wallet addresses, balance
+caches, the donation history and the rendered images with a key held on a Tang
+server on your LAN, so a stolen device cannot decrypt them — carried off the
+network there is nothing to guess. Requires the `clevis` package, which
+`install.sh` installs whether or not you use this.
+
+| Web Label | Config Key | Type | Description | Allowed Values / Examples |
+| :--- | :--- | :--- | :--- | :--- |
+| **Network-Bound Encryption (Tang)** | `tang_enabled` | Switch | Seal sensitive data against a Tang server. If the server is unreachable the device still boots, the affected blocks are disabled, and they restore themselves when it returns | `true`, `false` (default: `false`) |
+| **Tang Server URL** | `tang_url` | String | Address of the Tang server on your LAN. Never expose it to the internet — reachability *is* the access control | `http://192.168.1.50:7500` |
+| **Tang Key Thumbprint** | `tang_thumbprint` | String | Signing-key thumbprint, from `tang-show-keys`. Pinning it stops anything else on the LAN impersonating the server. Empty means trust-on-first-use | `faYWs5gMZ4MOKVmw_70zIvgZuzPd6AZnrsF86OgewnI` |
+| **Check Tang Connection** | *(button)* | Action | Tests the whole path against the values in the form: reaches the server, reads its signing key, then seals and unseals a throwaway key. Writes nothing | — |
+
+> **Enable this before entering wallet addresses.** Deleted data lingers in freed
+> flash blocks, so sealing later cannot reach xpubs already written to the card in
+> clear text. See
+> [Self-Hosting Guide → Tang](SELF_HOSTING_GUIDE.md#part-8--tang-network-bound-encryption-for-wallet-data-optional).
+
+> **Turning it off needs the server.** Disabling rewrites every sealed file in the
+> clear, which requires the key. If the Tang server is gone for good the web UI
+> offers to discard the sealed data instead — permanently, after confirmation
+> listing exactly what is lost.
+
+What gets sealed when `tang_enabled` is on:
+
+| File | Contents |
+| :--- | :--- |
+| `config/config.sensitive.json` | Wallet addresses and xpubs |
+| `cache/cache.sensitive.json` | Balance and block-reward caches |
+| `cache/async_wallet_address_cache.sensitive.json` | Derived wallet addresses |
+| `cache/donations.json` | Lightning donation history |
+| `cache/current.png`, `cache/current.webp` | Rendered dashboard image |
+| `cache/current_eink.png` | Rendered e-ink image |
+
+`config/tang_key.jwe` holds the sealed data key (mode `0600`). It is useless
+without the Tang server. **Back up the server's key store** — `/var/lib/tang` on
+Debian 13, `/var/db/tang` on Debian 12 — because losing it makes every sealed
+device unrecoverable.
+
+Not covered by Tang: `admin_password_hash`, `admin_users`, `secret_key` and
+`mempool_password` stay readable so the device can boot and be logged into while
+the server is unreachable. The password hashes are Argon2id and safe to store
+openly; the other two are secrets, and that trade is deliberate.
+
 ---
 
 ## Advanced (file-only)
