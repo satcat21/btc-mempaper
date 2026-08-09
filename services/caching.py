@@ -224,6 +224,76 @@ class CachingMixin:
             }, room='authenticated')
         return True
 
+    def _check_for_missed_block(self, tip_height):
+        """Notice when the chain has moved on without us and catch up.
+
+        New blocks arrive over a single WebSocket. When that connection dies in
+        a way it cannot detect, no block event is ever delivered again and the
+        device sits on a stale height indefinitely.
+
+        This is not specific to Tor, though Tor makes it far likelier: a circuit
+        can keep TCP nominally alive while carrying nothing, and a reconnect can
+        hang in the SOCKS handshake. Clearnet reaches the same state through a
+        router dropping an idle NAT mapping, a Wi-Fi roam leaving the socket
+        alive but unrouted, or a reverse proxy in front of a self-hosted mempool
+        closing an idle connection without a FIN arriving. Ping/pong catches many
+        of these, but not a reconnect that never completes — nothing sets a
+        connect timeout, so that attempt can block forever.
+
+        Observed in the wild on Tor: the socket dropped, announced a reconnect,
+        and no further block was seen while REST calls over the same proxy kept
+        working perfectly.
+
+        The pre-cache loop already fetches the tip height every cycle for the
+        fee display, so comparing it against the block we last rendered costs
+        nothing and bounds any stall to one pre-cache interval — whatever the
+        transport, and whatever wedged the socket.
+        """
+        try:
+            if not tip_height:
+                return
+            tip = int(tip_height)
+            current = self.current_block_height
+            if current is None or tip <= int(current):
+                return
+        except (TypeError, ValueError):
+            return
+
+        print(f"⚠️ Chain is at {tip} but the last block seen was {current} — "
+              f"the block WebSocket has gone quiet, catching up")
+        self._recover_missed_block(tip)
+
+    def _recover_missed_block(self, tip_height):
+        """Process a block the WebSocket never delivered, and kick the socket.
+
+        The hash has to be fetched: the WebSocket carries it, the tip-height
+        endpoint does not. Once resolved this goes through the ordinary
+        new-block path, so pre-rendering, the e-ink refresh and client
+        notifications behave exactly as they would have.
+        """
+        try:
+            info = self.mempool_api.get_current_block_info()
+            block_hash = (info or {}).get('block_hash')
+            height = (info or {}).get('block_height') or tip_height
+            if not block_hash:
+                print("⚠️ Catch-up aborted: could not resolve the block hash")
+                return
+        except Exception as e:
+            print(f"⚠️ Catch-up aborted: {e}")
+            return
+
+        # Force the monitor to rebuild its connection. Without this the socket
+        # stays wedged and every future block needs this same recovery.
+        try:
+            monitor = getattr(self, 'block_monitor', None)
+            if monitor is not None and getattr(monitor, 'ws', None) is not None:
+                monitor.ws.close()
+                print("⚙️ Closed the stale block WebSocket to force a reconnect")
+        except Exception as e:
+            print(f"⚠️ Could not close the stale WebSocket: {e}")
+
+        self.on_new_block_received(height, block_hash)
+
     def _update_precache_data(self):
         """Update pre-cached data (price, bitaxe, fees) in background."""
         data_changed = False
@@ -324,7 +394,12 @@ class CachingMixin:
                     fee_param = self.config.get("fee_parameter", "minimumFee")
                     fee_data = self.mempool_api.get_fee_recommendations()
                     block_height = self.mempool_api.get_tip_height()
-                    
+
+                    # The tip height was already being fetched here and thrown
+                    # away. Comparing it to the block we last rendered turns it
+                    # into a free stall detector — see _recover_missed_block.
+                    self._check_for_missed_block(block_height)
+
                     if fee_data:
                         self._precache['fee_data'] = fee_data
                         self._precache['block_height'] = block_height
