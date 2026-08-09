@@ -165,11 +165,11 @@ class DualImageMixin:
             # Only try to convert to fiat if we have valid wallet data
             if wallet_data.get("total_btc") is not None and not wallet_data.get("error"):
                 if btc_price_data:
-                    wallet_data["total_fiat"] = self.wallet_api._convert_to_fiat(wallet_data["total_btc"], wallet_data["fiat_currency"])
+                    wallet_data["total_fiat"] = self.wallet_api._convert_to_fiat(wallet_data["total_btc"], wallet_data.get("fiat_currency", "USD"))
                 else:
                     btc_price_data = self.btc_price_api.fetch_btc_price()
                     if btc_price_data:
-                        wallet_data["total_fiat"] = self.wallet_api._convert_to_fiat(wallet_data["total_btc"], wallet_data["fiat_currency"])
+                        wallet_data["total_fiat"] = self.wallet_api._convert_to_fiat(wallet_data["total_btc"], wallet_data.get("fiat_currency", "USD"))
                     else:
                         print("⚠️ Failed to fetch BTC price data for wallet balance updates. Use cache as it is.")
 
@@ -336,11 +336,11 @@ class DualImageMixin:
                 # Only try to convert to fiat if we have valid wallet data
                 if wallet_data.get("total_btc") is not None and not wallet_data.get("error"):
                     if btc_price_data:
-                        wallet_data["total_fiat"] = self.wallet_api._convert_to_fiat(wallet_data["total_btc"], wallet_data["fiat_currency"])
+                        wallet_data["total_fiat"] = self.wallet_api._convert_to_fiat(wallet_data["total_btc"], wallet_data.get("fiat_currency", "USD"))
                     else:
                         btc_price_data = self.btc_price_api.fetch_btc_price()
                         if btc_price_data:
-                            wallet_data["total_fiat"] = self.wallet_api._convert_to_fiat(wallet_data["total_btc"], wallet_data["fiat_currency"])
+                            wallet_data["total_fiat"] = self.wallet_api._convert_to_fiat(wallet_data["total_btc"], wallet_data.get("fiat_currency", "USD"))
                         else:
                             print("⚠️ Failed to fetch BTC price data for wallet balance updates. Use cache as it is.")
 

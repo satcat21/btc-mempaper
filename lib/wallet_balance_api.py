@@ -1634,12 +1634,18 @@ class WalletBalanceAPI:
                 # so left the last non-empty scan in the cache, and every reader
                 # of get_cached_wallet_balances - the config preview above all -
                 # kept serving that stale total for as long as the cache lived.
+                # Same keys as a successful scan below: readers take the cache as
+                # a complete result once it carries no error, so a short dict
+                # crashes whichever consumer reaches for a field it dropped.
                 self.update_cache({
-                    "total_btc": 0.0,
                     "addresses": [],
                     "xpubs": [],
-                    "wallet_entries": [],
-                    "last_updated": time.time(),
+                    "total_btc": 0.0,
+                    "total_fiat": 0.0,
+                    "fiat_currency": self.config.get("wallet_balance_currency", "EUR"),
+                    "unit": self.config.get("wallet_balance_unit", "BTC"),
+                    "duplicates_removed": 0,
+                    "show_fiat": True,
                 })
                 return {"error": "No wallet addresses, XPUBs, or ZPUBs configured"}
             
