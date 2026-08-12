@@ -1,0 +1,28 @@
+# JavaScript / npm dependencies for OSV CVE scanning
+#
+# This project has no package.json and no Node build step -- all browser JS is
+# either first-party (static/js/**, minified by tools/minify.py, pure stdlib)
+# or vendored directly into the repo. This file is the hand-maintained
+# inventory of the vendored third-party JS, in the same spirit as
+# requirements.txt (PyPI) and apt-requirements.txt (Debian).
+#
+# Format: one "name@version" per line, npm ecosystem, "#" starts a comment.
+# Keep versions exact -- OSV matches on a concrete version, not a range.
+#
+# When bumping a vendored file, update the version here in the same commit.
+
+# Socket.IO browser client.
+# Vendored at: static/js/socket.io.min.js
+# Version read from the bundle banner ("Socket.IO v4.8.1").
+# Loaded by templates/dashboard.html and templates/config.html.
+# Server side is Python (flask-socketio), tracked in requirements.txt.
+socket.io-client@4.8.1
+
+# --- Bundled transitively, no independently declared version ---
+# socket.io.min.js is a browser bundle that inlines engine.io-client. The
+# minified file carries no engine.io version string (only the wire protocol
+# marker EIO=4), so it is deliberately NOT pinned here rather than guessed.
+# socket.io-client 4.8.1 resolves engine.io-client to the ~6.6 line; if you
+# want that surface scanned too, verify the exact patch against the
+# socket.io-client 4.8.1 release and uncomment:
+# engine.io-client@6.6.x
