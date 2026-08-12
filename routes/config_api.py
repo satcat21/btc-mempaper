@@ -665,6 +665,29 @@ def register(self):
                         admin_users[requested_admin_username] = admin_users.pop(rename_source)
                     new_config['admin_users'] = admin_users
 
+            # Provision the sealed key before the save, not after it. save_config
+            # writes the plain half first, which lands tang_enabled=True on disk;
+            # the sensitive half that follows is then refused, because the store
+            # reads that flag and reports itself enabled while no key exists yet.
+            # Any sensitive field edited in this same request was dropped that way.
+            # Only the key is created here — sealing the files already on disk
+            # stays in the post-save background step, so a save that fails after
+            # this point leaves an unused key rather than sealed files with
+            # tang_enabled still false on disk, which nothing could read.
+            if (not (old_config or {}).get('tang_enabled')
+                    and new_config.get('tang_enabled')):
+                try:
+                    store = getattr(self, 'tang_store', None)
+                    if store is not None and not store.has_sealed_key():
+                        store.provision()
+                        print("🔐 Tang: sealed key provisioned before saving")
+                except Exception as e:
+                    # Refuse the save rather than persist tang_enabled with no key.
+                    return jsonify({
+                        'success': False,
+                        'message': _safe_error(e, 'Could not provision the Tang key')
+                    }), 503
+
             if self.config_manager.save_config(new_config):
                 if requested_admin_username and (
                     requested_admin_username != old_admin_username or not session_username
