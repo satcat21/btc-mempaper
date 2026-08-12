@@ -352,11 +352,21 @@ class CachingMixin:
             # (the on-demand render path) can skip fetching data for blocks that
             # won't be drawn this cycle.
             if self.config.get("prioritize_large_scaled_meme", False):
-                next_meme = self.image_renderer.pick_random_meme()
-                selected = self.image_renderer._preselect_info_blocks(next_meme)
-                # selected: None (shouldn't happen here), [] (meme fills screen), or list
-                self._precache['next_meme_path'] = next_meme
-                self._precache['selected_block_types'] = selected if selected is not None else []
+                # Only pre-select when nothing is already queued. This runs every
+                # precache_update_interval_seconds (5 min) but a block arrives only
+                # every ~10 min, so re-picking each pass threw away roughly half of
+                # the selections -- and each discarded one still consumed a slot in
+                # the recent-meme window and the no-repeat cycle. The render path
+                # clears next_meme_path once it has consumed it.
+                pending = self._precache.get('next_meme_path')
+                if pending and not os.path.exists(pending):
+                    pending = None  # file vanished (meme sync/delete) -- pick again
+                if not pending:
+                    next_meme = self.image_renderer.pick_random_meme()
+                    selected = self.image_renderer._preselect_info_blocks(next_meme)
+                    # selected: None (shouldn't happen here), [] (meme fills screen), or list
+                    self._precache['next_meme_path'] = next_meme
+                    self._precache['selected_block_types'] = selected if selected is not None else []
             else:
                 # Clear meme-first preselection artifacts when switching back to balanced mode.
                 self._precache['next_meme_path'] = None

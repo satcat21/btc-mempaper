@@ -10,6 +10,25 @@ import os
 import random
 
 
+# Roughly how many blocks Bitcoin produces per day -- the number of memes the
+# panel gets through in 24h, used to size the holiday share below.
+_BLOCKS_PER_DAY = 144
+
+# How often a single holiday-tagged meme may appear on its holiday. A holiday
+# with only 2-3 matching memes would otherwise fill all ~144 blocks of the day
+# with those same images. Instead the holiday pool is used with a probability
+# proportional to its size, so a small pool is padded out with general memes
+# while a large one takes over the day completely.
+#
+# 24 shows/day is exactly once an hour (144 blocks / 24 h = 6 blocks per hour),
+# which reduces the share to a clean pool/6:
+#   1 meme -> 1/6 of blocks    3 memes -> 1/2 of blocks
+#   2 memes-> 1/3 of blocks    6+      -> every block
+# Often enough that the theme of the day is unmistakable, rare enough that the
+# panel never looks stuck on one image.
+_HOLIDAY_SHOWS_PER_MEME = 24
+
+
 class MemeMixin:
     """Meme and OPSec image selection: the on-disk cache, tag and rename"""
 
@@ -278,34 +297,67 @@ class MemeMixin:
                 print(f"No local memes matched keywords {keywords}, using random")
                 return None
 
+            # Small pools are diluted with general memes rather than shown on
+            # repeat all day -- see _HOLIDAY_SHOWS_PER_MEME. Returning None here
+            # hands this block back to the normal library-wide selection.
+            share = min(1.0, (_HOLIDAY_SHOWS_PER_MEME * len(matches)) / _BLOCKS_PER_DAY)
+            if share < 1.0 and random.random() > share:
+                return None
+
+            # Cycle through the matching memes before repeating any of them, so a
+            # 3-meme holiday rotates instead of picking the same one twice in a row.
+            sig = "|".join(sorted(keywords))
+            cycle_seen = self._holiday_cycle_seen.setdefault(sig, set())
+            unused = [m for m in matches if m not in cycle_seen]
+            if not unused:
+                cycle_seen.clear()
+                unused = matches
+
             # Prefer memes not recently shown
             recent_set = set(self._recent_memes)
             s2f = self._meme_cache_stem_to_file
-            unseen = [m for m in matches
+            unseen = [m for m in unused
                       if os.path.join(self.meme_dir, s2f.get(m, f"{m}.webp")) not in recent_set]
-            pool = unseen if unseen else matches
+            pool = unseen if unseen else unused
 
             chosen = random.choice(pool)
+            cycle_seen.add(chosen)
             chosen_file = s2f.get(chosen, f"{chosen}.webp")
-            print(f"Holiday meme match (keywords={keywords}, pool={len(pool)}/{len(matches)}): {chosen_file}")
+            print(f"Holiday meme match (keywords={keywords}, pool={len(pool)}/{len(matches)}, "
+                  f"share={share:.0%}): {chosen_file}")
             return os.path.join(self.meme_dir, chosen_file)
         except Exception as e:
             print(f"Error in holiday meme selection: {e}")
             return None
 
     def _pick_local_meme(self):
-        """Select a random meme from the local memes directory."""
+        """Select a meme, showing every one in the library before repeating any.
+
+        Draws only from memes not yet used in the current cycle (sampling
+        without replacement). Picking uniformly at random instead would repeat a
+        meme roughly three times a day on a 4800-image library and still leave
+        ~40% of it unseen after a month -- the birthday paradox, not a weak RNG.
+        """
         try:
             memes = self.get_cached_meme_files()
             if not memes:
                 print("No meme images found in directory")
                 return None
-            # Prefer memes not recently shown
+            # Memes deleted since the cycle began simply drop out of `memes`, and
+            # newly synced ones join the current cycle right away.
+            unused = [f for f in memes if f not in self._meme_cycle_seen]
+            if not unused:
+                print(f"🔄 Showed all {len(memes)} memes — starting a new cycle")
+                self._meme_cycle_seen.clear()
+                unused = memes
+            # Recent-window guard on top of the cycle: without it the meme that
+            # closed one cycle could open the next one straight after.
             recent_set = set(self._recent_memes)
-            unseen = [f for f in memes
+            unseen = [f for f in unused
                       if os.path.join(self.meme_dir, f) not in recent_set]
-            pool = unseen if unseen else memes
+            pool = unseen if unseen else unused
             selected = random.choice(pool)
+            self._meme_cycle_seen.add(selected)
             return os.path.join(self.meme_dir, selected)
         except Exception as e:
             print(f"Error selecting meme: {e}")

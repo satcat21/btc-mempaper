@@ -518,6 +518,12 @@ class ImageRenderer(ColorMixin, MemeMixin, HashFrameMixin, TextMixin,
         self._recent_memes = []              # last N meme paths to avoid repeats
         self._RECENT_MEMES_MAX = 50          # remember this many recent selections
         self._holiday_rr_index = {}          # round-robin index per date key (MM-DD)
+        # Sampling *without* replacement: every meme is shown once before any is
+        # shown twice. Plain random.choice over 4800 memes still repeats ~3x a day
+        # (birthday paradox) and only reaches ~60% of the library in a month.
+        # Holds filenames already used in the current cycle; cleared when exhausted.
+        self._meme_cycle_seen = set()
+        self._holiday_cycle_seen = {}        # keyword-signature -> set of used stems
         self._imagemagick_available = None   # cached check; None = not yet tested
 
         self.font_regular = os.path.join("static", "fonts", "Roboto-Regular.ttf")
