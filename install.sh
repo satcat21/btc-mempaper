@@ -873,11 +873,22 @@ if [ -n "$TANG_URL" ]; then
         elif [ "$(clevis decrypt < /tmp/tang_test.jwe 2>/dev/null)" != "mempaper-tang-check" ]; then
             warn "Unsealing failed — Tang answered but could not recover the key. Skipping"
         else
+            # Provision the data key here, in the same step that proved the
+            # server answers. Writing tang_enabled without a key would leave the
+            # admin account step below unable to store anything: the sealed store
+            # refuses a sensitive write it cannot seal rather than putting the
+            # password hash on disk in clear text. Provisioning now is also what
+            # makes that hash sealed from its very first write, with no window
+            # where it exists unsealed on the card.
+            # Needs the venv python — this imports cryptography, unlike the
+            # stdlib-only config edit it used to be.
             sudo -u "$SERVICE_USER" env \
                 MP_TANG_URL="$TANG_URL" MP_TANG_THP="$TANG_THUMBPRINT" \
-                python3 - <<'PYEOF' && ok "Tang configured — wallet data will be sealed to ${TANG_URL}" || warn "Could not write Tang settings (non-fatal)"
+                "$VENV_DIR/bin/python" - <<'PYEOF' && ok "Tang configured — credentials and wallet data sealed to ${TANG_URL}" || warn "Could not configure Tang (non-fatal) — enable it later in the web UI"
 import json, os, sys
 from pathlib import Path
+
+sys.path.insert(0, os.getcwd())
 
 p = Path("config/config.json")
 try:
@@ -886,13 +897,39 @@ except Exception as e:
     print(f"   could not read config.json: {e}")
     sys.exit(1)
 
+original = dict(cfg)
+
+
+def write(obj):
+    tmp = p.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(obj, indent=2))
+    tmp.replace(p)
+
+
 cfg["tang_enabled"] = True
 cfg["tang_url"] = os.environ["MP_TANG_URL"]
 cfg["tang_thumbprint"] = os.environ["MP_TANG_THP"]
+write(cfg)
 
-tmp = p.with_suffix(".json.tmp")
-tmp.write_text(json.dumps(cfg, indent=2))
-tmp.replace(p)
+# enable() provisions the key and seals whatever already exists. On a fresh
+# install that is usually nothing; on a re-run it converts the files in place.
+try:
+    from managers.tang_store import get_shared_store
+    outcome = get_shared_store().enable()
+except Exception as e:
+    # Nothing was provisioned - enable() only raises before it starts sealing,
+    # and per-file errors are collected rather than thrown. Putting the original
+    # settings back leaves an unsealed but working install instead of one that
+    # claims to be sealed and cannot write.
+    write(original)
+    print(f"   could not provision the sealed key: {e}")
+    sys.exit(1)
+
+for failure in outcome["failed"]:
+    print(f"   warning: could not seal {failure['label']}: {failure['error']}")
+
+print(f"   sealed key provisioned"
+      + (f"; {len(outcome['sealed'])} existing file(s) sealed" if outcome["sealed"] else ""))
 PYEOF
         fi
         rm -f /tmp/tang_adv.json /tmp/tang_test.jwe
