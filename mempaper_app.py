@@ -430,6 +430,18 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
                 # A later outage should report again rather than stay quiet
                 # because an earlier one already logged.
                 self._tang_locked_logged.clear()
+                # ConfigManager ran load_config() back at construction, before
+                # anything had opened the store, so every sealed field came back
+                # empty - admin_users among them. Unlocking here does not undo
+                # that on its own: without this re-read the process spends its
+                # whole life with no configured users, and every login is
+                # answered "Invalid credentials" no matter what is typed. The
+                # retry path already recovered this way via _on_tang_unlocked;
+                # the path where the server answers first time did not, so the
+                # working case was the broken one.
+                self.config_manager._reload_config_from_file()
+                self.config = self.config_manager.get_current_config()
+                self.config.update(TechnicalConfig.get_all_technical_settings())
                 # Seal anything still in the clear. Normally a no-op, but a
                 # file can end up unsealed after a fault during a write, and
                 # without this the device would keep running as though it were
