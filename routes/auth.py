@@ -79,7 +79,24 @@ def register(self):
                     except:
                         raise resp_err
             else:
-                return jsonify({'success': False, 'message': 'Invalid credentials'}), 401
+                # A sealed store that could not be opened leaves admin_users
+                # empty, so every password is wrong and the generic message
+                # sends the operator hunting for a typo that does not exist.
+                # Name the real cause: the unlock retry runs in the background,
+                # so this resolves itself once the Tang server answers.
+                if not getattr(self.config_manager, '_sensitive_loaded', True):
+                    return jsonify({
+                        'success': False,
+                        'message': self.translations.get(
+                            'login_sealed_store',
+                            'Configuration is sealed — the Tang server cannot be '
+                            'reached, so credentials cannot be verified. '
+                            'Retrying in the background.')
+                    }), 503
+                return jsonify({
+                    'success': False,
+                    'message': self.translations.get('login_failed', 'Invalid credentials')
+                }), 401
 
         except Exception as e:
             traceback.print_exc()

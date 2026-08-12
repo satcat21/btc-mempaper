@@ -21,6 +21,7 @@ translations = {
         "configuration_saved": "Configuration saved successfully!",
         "configuration_save_error": "Error saving configuration!",
         "login_failed": "Invalid credentials",
+        "login_sealed_store": "Configuration is sealed — the Tang server cannot be reached, so credentials cannot be verified. Retrying in the background.",
  
         # Configuration Categories
         "general_settings": "General",
@@ -770,6 +771,7 @@ translations = {
         "configuration_saved": "Konfiguration erfolgreich gespeichert!",
         "configuration_save_error": "Fehler beim Speichern der Konfiguration!",
         "login_failed": "Ungültige Anmeldedaten",
+        "login_sealed_store": "Konfiguration ist versiegelt — der Tang-Server ist nicht erreichbar, daher können die Anmeldedaten nicht geprüft werden. Es wird im Hintergrund erneut versucht.",
 
         # Configuration Categories
         "general_settings": "Allgemein",
@@ -1522,6 +1524,7 @@ translations = {
         "configuration_saved": "¡Configuración guardada exitosamente!",
         "configuration_save_error": "Error al guardar la configuración.",
         "login_failed": "Credenciales inválidas",
+        "login_sealed_store": "La configuración está sellada: no se puede acceder al servidor Tang, por lo que no se pueden verificar las credenciales. Reintentando en segundo plano.",
 
         # Configuration Categories
         "general_settings": "General",
@@ -2258,6 +2261,7 @@ translations = {
         "configuration_saved": "Configuration sauvegardée avec succès !",
         "configuration_save_error": "Erreur lors de la sauvegarde de la configuration.",
         "login_failed": "Identifiants invalides",
+        "login_sealed_store": "La configuration est scellée : le serveur Tang est injoignable, les identifiants ne peuvent donc pas être vérifiés. Nouvelle tentative en arrière-plan.",
 
         # Configuration Categories
         "general_settings": "Général",
@@ -2995,6 +2999,7 @@ translations = {
         "configuration_saved": "Configurazione salvata con successo!",
         "configuration_save_error": "Errore nel salvataggio della configurazione!",
         "login_failed": "Credenziali non valide",
+        "login_sealed_store": "La configurazione è sigillata: il server Tang non è raggiungibile, quindi le credenziali non possono essere verificate. Nuovo tentativo in background.",
 
         # Configuration Categories
         "general_settings": "Generale",
