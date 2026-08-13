@@ -307,14 +307,22 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
             # is_pi_zero = os.path.exists('/proc/device-tree/model') and 'Zero' in open('/proc/device-tree/model', 'rb').read().decode('utf-8', errors='ignore')
             
             socketio_config = {
-                'cors_allowed_origins': '*', 
+                # cors_allowed_origins is deliberately not set: Engine.IO then
+                # allows the same origin only, which covers every way the panel
+                # is reached (LAN address, hostname, reverse-proxied domain)
+                # without naming any of them. '*' let any site on the internet
+                # open a socket to the device.
                 'async_mode': async_mode,  # Auto-detect: gevent for production, threading for development
                 'ping_timeout': 120,       # Increase timeout to 2 minutes
                 'ping_interval': 45,       # Increase ping interval  
                 'max_http_buffer_size': 10000000,  # 10MB buffer
                 'engineio_logger': False,  # Disable engineio logger to suppress transport warnings
                 'logger': False,           # Disable SocketIO logger to reduce noise
-                'always_connect': True,    # Force connection acceptance
+                # False is the library default and is what lets the connect
+                # handler refuse a socket outright. With True the connection is
+                # accepted before the handler runs, so a rejected client is
+                # briefly connected and can still send events.
+                'always_connect': False,
                 'manage_session': False,   # Don't manage Flask sessions for SocketIO
                 'cors_credentials': False, # Disable credentials for CORS to simplify
                 'transports': ['websocket', 'polling']  # Explicitly allow websocket and polling

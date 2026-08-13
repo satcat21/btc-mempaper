@@ -10,11 +10,29 @@ def register(self):
     """Register the sockets routes."""
     # WebSocket event handlers (only if SocketIO is enabled)
     if self.socketio:
+        def _may_view_dashboard():
+            """Whether this socket may see rendered dashboard content.
+
+            Mirrors the rule the HTTP dashboard applies: a login is required
+            unless public_dashboard is on. The socket used to answer differently
+            from the page it belongs to, so anything able to reach /socket.io/
+            could pull the rendered image even with public_dashboard off — and
+            that image carries whatever the panel draws, wallet balances
+            included when that block is enabled.
+            """
+            return (self.config.get('public_dashboard', False)
+                    or self.auth_manager.is_authenticated())
+
         @self.socketio.on('connect')
         def handle_connect():
             """Handle client connection. Join 'authenticated' room if logged in."""
             if self.auth_manager.is_authenticated():
                 join_room('authenticated')
+            elif not self.config.get('public_dashboard', False):
+                # Returning False refuses the connection. Block heights and the
+                # other public events are not worth an open socket on a device
+                # whose dashboard requires a login.
+                return False
 
         @self.socketio.on('disconnect')
         def handle_disconnect(*args):
@@ -36,11 +54,16 @@ def register(self):
         @self.socketio.on('request_latest_image')
         def handle_request_latest_image():
             """Handle client request for latest image - avoid unnecessary regeneration."""
+            # Checked here as well as on connect: a refused socket should never
+            # reach this, but the image is the one piece of genuinely private
+            # content this handler serves, so it does not rely on that alone.
+            if not _may_view_dashboard():
+                return
             try:
                 # Try serving from RAM cache first (instant)
                 image_data = self._get_web_image_base64()
                 if image_data and self._has_valid_cached_image():
-                    self.socketio.emit('new_image', {'image': image_data})
+                    self.socketio.emit('new_image', {'image': image_data}, room=request.sid)
                     return
 
                 # No current image — generate in background
@@ -49,9 +72,11 @@ def register(self):
                     daemon=True
                 ).start()
 
-                # Send stale image while generating fresh one
+                # Send stale image while generating fresh one.
+                # Addressed to the caller: broadcasting meant one client's
+                # request pushed a full base64 PNG to every open socket.
                 if image_data:
-                    self.socketio.emit('new_image', {'image': image_data})
+                    self.socketio.emit('new_image', {'image': image_data}, room=request.sid)
 
             except Exception as e:
                 print(f"❌ Error handling latest image request: {e}")
