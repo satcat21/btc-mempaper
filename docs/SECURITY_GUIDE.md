@@ -286,6 +286,16 @@ The default installation is sufficient for most home users:
 
 See the [Self-Hosting Guide](SELF_HOSTING_GUIDE.md) for full Traefik setup. Additionally:
 
+**The `/socket.io/` path is normally exempt from OIDC**, because the login redirect
+breaks the WebSocket upgrade. That path is therefore reachable from the internet
+without ever passing your identity provider — and Socket.IO serves a plain HTTP
+long-polling transport there too, so a `curl` reaches it just as easily as a browser.
+
+mempaper closes that itself: an unauthenticated socket is refused unless
+`public_dashboard` is enabled, applying the same rule the dashboard page does. Treat `public_dashboard`
+as what it says — with it on, the rendered image is genuinely public to anyone who
+can reach the host, including through the socket.
+
 **The session cookie is `HttpOnly` and `SameSite=Strict`, but not `Secure`.**
 mempaper is reached over plain HTTP on the LAN, and a `Secure` cookie is never
 sent over HTTP — setting it would break login for every local user. The flag is

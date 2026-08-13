@@ -220,9 +220,25 @@ mempaper uses **Socket.IO** for real-time display updates. Socket.IO sends a sta
 request to `/socket.io/?...` and negotiates a WebSocket upgrade. The OIDC middleware would
 intercept this and redirect it to the login page — which breaks the WebSocket protocol.
 
-The solution is a **priority router** that matches `/socket.io/` with higher priority and
-*no* OIDC middleware. Only browsers that completed OIDC login on the main route will ever
-load the page that triggers this WebSocket, so skipping OIDC on this path is safe.
+The workaround is a **priority router** that matches `/socket.io/` with higher priority and
+*no* OIDC middleware.
+
+> **This exemption is only safe because mempaper authenticates the socket itself.**
+> The tempting justification — that only browsers which completed OIDC login can reach
+> this path — is wrong. `/socket.io/` is directly reachable by anyone who knows the
+> hostname, and Socket.IO also serves a plain HTTP **long-polling** transport from the
+> same path, so an attacker does not even need a WebSocket client: a single `curl` will
+> do. Nothing about the priority router prevents that.
+>
+> What makes it acceptable is that mempaper applies the same rule to the socket as to
+> the dashboard page: an unauthenticated connection is **refused** unless
+> `public_dashboard` is enabled, and the handler that returns the rendered dashboard
+> image re-checks it. Keep mempaper current — older versions accepted any socket and
+> would hand the rendered image, wallet balances included when that block is enabled,
+> to anyone who asked for it.
+>
+> If your reverse proxy can apply OIDC to WebSocket upgrades without breaking them,
+> doing so as well is worth it — defence in depth costs nothing here.
 
 #### `config/middlewares.yml`
 
@@ -284,9 +300,10 @@ http:
         serversTransport: websocket-transport
 
   routers:
-    # Socket.IO WebSocket path — higher priority, NO OIDC middleware.
-    # Only browsers that completed OIDC login on the main route can load the
-    # page that triggers this WebSocket, so skipping OIDC here is safe.
+    # Socket.IO path — higher priority, NO OIDC middleware, because the OIDC
+    # redirect breaks the upgrade. This path is reachable by anyone, including
+    # over plain HTTP long-polling; mempaper authenticates the socket itself,
+    # which is what makes the exemption acceptable. See the note above.
     mempaper-ws:
       rule: "Host(`mempaper.yourdomain.com`) && PathPrefix(`/socket.io/`)"
       entryPoints: ["websecure"]
@@ -342,9 +359,11 @@ matches the no-auth router even though the public router would also match.
 # Install apache2-utils if not present
 apt install apache2-utils
 
-# Generate a credential hash (replace YOUR_SECRET)
-htpasswd -nb mempool YOUR_SECRET
-# Output: mempool:$apr1$xxxxxxxx$...
+# Generate a credential hash (replace YOUR_SECRET).
+# -B selects bcrypt. Without it htpasswd emits $apr1$ (MD5-crypt), which is
+# fast enough to brute-force offline if the config file ever leaks.
+htpasswd -nbB mempool YOUR_SECRET
+# Output: mempool:$2y$05$xxxxxxxx...
 ```
 
 Paste the output into the config below.
@@ -364,7 +383,7 @@ http:
     mempool-secret-auth:
       basicAuth:
         users:
-          - "mempool:$apr1$..."   # paste htpasswd output here
+          - "mempool:$2y$05$..."   # paste htpasswd -nbB output here
         removeHeader: true        # strip Authorization before forwarding to backend
 
   services:
@@ -924,9 +943,9 @@ every device you have sealed.
 
 | Topic | Detail |
 |---|---|
-| OIDC `Secret` | Signs the session cookie — generate randomly with `openssl rand -hex 16`, keep private |
-| Zitadel `ClientSecret` | Never commit to Git — use environment variables or Docker secrets |
-| Basic Auth hash | Safe to store in config files; it is a bcrypt hash, not the secret itself |
+| OIDC `Secret` | Signs the session cookie for **every** service behind the middleware, so whoever holds it can forge authenticated sessions for all of them — a worse exposure than the client secret. Generate with `openssl rand -hex 16`. Changing it logs everyone out, which is what you want after a leak. |
+| Zitadel `ClientSecret` | Never commit to Git. Note that "use environment variables" is not directly possible here: Traefik's **file provider does not expand `${VAR}`** in dynamic configuration. Keep a `dynamic.yml.template` in Git and render the real file at deploy time (`envsubst`, sourcing a gitignored `.env`), or use Docker secrets. Pass an explicit variable list to `envsubst` so `${1}` in any `redirectRegex` survives. |
+| Basic Auth hash | A hash, not the password — but generate it with `htpasswd -nbB` (bcrypt). The default `-nb` produces `$apr1$` MD5-crypt, which is cheap to crack offline if the file leaks. Keep it out of Git regardless. |
 | `privacy-headers` | Suppresses `Referer` and search-engine indexing for private instances |
 | `insecureSkipVerify: true` | Intentional: mempool's backend cert is self-signed on the LAN; Traefik handles public TLS |
 | LAN bypass | Only works correctly if Traefik receives the real client IP — if a VPS or proxy sits in front, set `forwardedHeaders.trustedIPs` to its IP in `traefik.yml` |
