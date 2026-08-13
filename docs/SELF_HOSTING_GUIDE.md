@@ -49,8 +49,8 @@ Zitadel is a self-hosted identity platform that acts as the login gateway.
 # docker-compose.yml (Zitadel + Postgres)
 services:
   zitadel:
-    image: ghcr.io/zitadel/zitadel:latest
-    command: start-from-init --masterkey "${ZITADEL_MASTERKEY}" --tlsMode disabled
+    image: ghcr.io/zitadel/zitadel:v2.71.4   # pin exact version
+    command: start --masterkey "${ZITADEL_MASTERKEY}" --tlsMode disabled
     environment:
       ZITADEL_DATABASE_POSTGRES_HOST: zitadel-db
       ZITADEL_DATABASE_POSTGRES_PORT: "5432"
@@ -66,6 +66,11 @@ services:
       zitadel-db:
         condition: service_healthy
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - traefik-public
+      - zitadel-internal
 
   zitadel-db:
     image: postgres:16
@@ -80,14 +85,26 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - zitadel-internal
 
 volumes:
   zitadel-db-data:
+
+networks:
+  traefik-public:
+  zitadel-internal:
+    internal: true   # DB unreachable from outside
 ```
 
 > Set `ZITADEL_MASTERKEY` to a random 32-character string (`openssl rand -base64 24`).
 > Expose Zitadel behind Traefik at `https://login.yourdomain.com` exactly like any other service.
 > Full self-hosting docs: https://zitadel.com/docs/self-hosting/deploy/docker
+>
+> **First deploy only**: replace `start` with `start-from-init` to run database migrations.
+> On subsequent starts, use `start` — it skips the init phase and starts faster.
 
 #### Create the OIDC application in Zitadel
 
@@ -125,6 +142,7 @@ token issued to that user.
 ```yaml
 api:
   dashboard: true
+  insecure: false   # dashboard only accessible via a routed entrypoint with auth
 
 log:
   level: INFO
@@ -147,26 +165,35 @@ entryPoints:
     address: ":443"
     transport:
       respondingTimeouts:
-        readTimeout: 0s    # Required: keeps WebSocket connections alive indefinitely
-        writeTimeout: 0s
-        idleTimeout: 0s
+        readTimeout: 300s
+        writeTimeout: 300s
+        idleTimeout: 180s
+
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      email: you@example.com
+      storage: /letsencrypt/acme.json
+      dnsChallenge:
+        provider: YOUR_DNS_PROVIDER   # see https://doc.traefik.io/traefik/https/acme/#providers
 
 experimental:
   plugins:
     traefik-oidc-auth:
       moduleName: "github.com/sevensolutions/traefik-oidc-auth"
-      version: "v0.18.0"
+      version: "v0.21.0"
 ```
 
-> **Why zero timeouts?** Both mempaper (Socket.IO) and mempool use long-lived WebSocket
-> connections. A non-zero `readTimeout` or `writeTimeout` drops idle connections mid-session.
+> **Entrypoint timeouts** are set to sane defaults that protect against slowloris attacks.
+> WebSocket persistence is handled per-service via `serversTransport` (see Part 4), not
+> at the entrypoint level where it would affect all routes.
 
 #### `docker-compose.yml`
 
 ```yaml
 services:
   traefik:
-    image: traefik:v3.7
+    image: traefik:v3.7.10
     restart: unless-stopped
     ports:
       - "80:80"
@@ -175,18 +202,67 @@ services:
       - ./traefik.yml:/traefik.yml:ro
       - ./config:/config:ro
       - ./letsencrypt:/letsencrypt
-      - /var/run/docker.sock:/var/run/docker.sock:ro
     dns:
       - 9.9.9.9
       - 208.67.222.222
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    mem_limit: 256m
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 ```
+
+> The Docker socket mount (`/var/run/docker.sock`) is omitted because this setup uses
+> the file provider, not Docker labels. If you need the Docker provider, use a socket
+> proxy like [tecnativa/docker-socket-proxy](https://github.com/Tecnativa/docker-socket-proxy)
+> instead of mounting the socket directly.
 
 ---
 
 ### Part 3 — TLS certificates
 
-Use [LEGO](https://go-acme.github.io/lego/) with your DNS provider to issue a wildcard
-certificate (covers all `*.yourdomain.com` subdomains with one cert):
+Traefik’s built-in ACME client handles certificate issuance and renewal automatically
+via the `certificatesResolvers.letsencrypt` block in `traefik.yml` (see Part 2). No
+cron jobs, no manual file copying.
+
+To use it, set your DNS provider’s API credentials as environment variables on the
+Traefik container (provider list: https://doc.traefik.io/traefik/https/acme/#providers).
+Then reference the resolver in your routers with `tls: { certResolver: letsencrypt }`.
+
+For a wildcard certificate covering all `*.yourdomain.com`:
+
+```yaml
+# In traefik.yml (already present from Part 2)
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      email: you@example.com
+      storage: /letsencrypt/acme.json
+      dnsChallenge:
+        provider: YOUR_DNS_PROVIDER
+```
+
+```yaml
+# In any router definition
+tls:
+  certResolver: letsencrypt
+  domains:
+    - main: "yourdomain.com"
+      sans:
+        - "*.yourdomain.com"
+```
+
+#### Alternative: external LEGO
+
+If you prefer managing certificates outside Traefik (e.g. sharing them with other
+services), use [LEGO](https://go-acme.github.io/lego/) with a cron job:
 
 ```bash
 lego \
@@ -251,10 +327,10 @@ http:
         traefik-oidc-auth:
           Provider:
             Url: "https://login.yourdomain.com"
-            ClientId: "YOUR_CLIENT_ID"           # from Zitadel application
-            ClientSecret: "YOUR_CLIENT_SECRET"   # from Zitadel application
+            ClientId: "${file:/run/secrets/oidc_client_id}"
+            ClientSecret: "${file:/run/secrets/oidc_client_secret}"
           LogoutRedirectUri: "https://login.yourdomain.com/oidc/v1/end_session"
-          Secret: "RANDOM_32_CHAR_STRING"         # openssl rand -hex 16
+          Secret: "${file:/run/secrets/oidc_session_secret}"
           CookieName: "_traefik_oidc"
           CookieSameSite: "lax"
           CookieSecure: true
@@ -272,15 +348,30 @@ http:
             Username: "preferred_username"
             Roles: "urn:zitadel:iam:org:project:roles"
 
-    privacy-headers:
+    security-headers:
       headers:
         customResponseHeaders:
           Referrer-Policy: "no-referrer"
           X-Robots-Tag: "noindex, noimageindex"
+          X-Content-Type-Options: "nosniff"
+          X-Frame-Options: "DENY"
+          Permissions-Policy: "camera=(), microphone=(), geolocation=()"
+        stsSeconds: 63072000
+        stsIncludeSubdomains: true
+        stsPreload: true
+
+    rate-limit:
+      rateLimit:
+        average: 100
+        burst: 200
+        period: 1m
 ```
 
-> `Secret` signs the OIDC session cookie — keep it private, never commit it.
-> Generate it with: `openssl rand -hex 16`
+> **`${file:/path}` syntax** (new in traefik-oidc-auth v0.21.0) loads secrets from files
+> at runtime. Create the secret files in a directory mounted into the Traefik container
+> (e.g. `./secrets:/run/secrets:ro`) and keep them out of Git.
+>
+> Generate `Secret` with: `openssl rand -hex 16`
 
 #### `config/mempaper.yml`
 
@@ -318,7 +409,8 @@ http:
       service: mempaper-service
       tls: {}
       middlewares:
-        - "privacy-headers"
+        - "security-headers"
+        - "rate-limit"
         - "oidc-auth"
 ```
 
@@ -426,6 +518,7 @@ http:
       tls: {}
       priority: 100
       middlewares:
+        - "rate-limit"
         - "mempool-secret-auth"
 
     # Internet — REST API (Basic Auth)
@@ -436,6 +529,7 @@ http:
       tls: {}
       priority: 90
       middlewares:
+        - "rate-limit"
         - "mempool-secret-auth"
 
     # Internet — Frontend (Basic Auth)
@@ -445,7 +539,8 @@ http:
       service: mempool-service
       tls: {}
       middlewares:
-        - "privacy-headers"
+        - "security-headers"
+        - "rate-limit"
         - "mempool-secret-auth"
 ```
 
@@ -575,7 +670,8 @@ http:
       service: eventhub-service
       tls: {}
       middlewares:
-        - "privacy-headers"
+        - "security-headers"
+        - "rate-limit"
 ```
 
 > No OIDC middleware here — event-hub handles its own Zitadel login internally.
@@ -949,3 +1045,13 @@ every device you have sealed.
 | `privacy-headers` | Suppresses `Referer` and search-engine indexing for private instances |
 | `insecureSkipVerify: true` | Intentional: mempool's backend cert is self-signed on the LAN; Traefik handles public TLS |
 | LAN bypass | Only works correctly if Traefik receives the real client IP — if a VPS or proxy sits in front, set `forwardedHeaders.trustedIPs` to its IP in `traefik.yml` |
+
+> **Before every deployment**, review the pinned versions in your compose and config
+> files against their upstream release pages for known CVEs and available patches.
+> Deploy the latest **stable patch** of each component — not floating tags like `:latest`
+> or minor-only pins like `:v3.7` that give you no control over what actually runs.
+> Subscribe to release notifications for
+> [traefik/traefik](https://github.com/traefik/traefik/releases),
+> [traefik-oidc-auth](https://github.com/sevensolutions/traefik-oidc-auth/releases), and
+> [zitadel/zitadel](https://github.com/zitadel/zitadel/releases) so you hear about
+> security fixes before attackers do.
