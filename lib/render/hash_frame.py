@@ -232,18 +232,20 @@ class HashFrameMixin:
             # Compute fee_color or use a default
             fee_color = self.get_color("fee", web_quality) if hasattr(self, 'get_color') else "gray"
             self._update_block_fee_cache(display_block_height, fee_data, fee_color)
-        # Colour reads each block's own median fee, not the configured fee
-        # recommendation. The baseline is a median of block medians, so anything
-        # else puts a different kind of number over it: fastestFee sits above
-        # that median by construction and hourFee below it, which tilted every
-        # ratio by the chosen tier rather than by the market. fee_parameter now
-        # selects only the fee printed under the height.
+        # Colour reads the fee the user actually cares about - the configured
+        # tier - against the rolling median of block medians. The tier is the
+        # question being asked: "is next-block inclusion expensive right now"
+        # and "is a min-fee transaction worth broadcasting" are different
+        # questions with different answers, and the scale is meant to shift
+        # with the one selected. fastestFee therefore sits warm of the median
+        # and minimumFee cool of it, by design rather than by accident.
+        fee_parameter = self.config.get("fee_parameter", "minimumFee")
         _fee_cache = self._block_fee_cache
-        prev_fee = self._block_median_fee(_fee_cache["previous"]["height"], mempool_api)
-        curr_fee = self._block_median_fee(_fee_cache["current"]["height"], mempool_api)
-        # The network's own minimum, from the same recommendations the label
-        # uses. Below it there is nothing cheaper to wait for; it goes to zero
-        # on a cleared mempool, where no floor is the right answer.
+        prev_fee = self._get_fee_for_parameter(_fee_cache["previous"]["height"], fee_parameter)
+        curr_fee = self._get_fee_for_parameter(_fee_cache["current"]["height"], fee_parameter)
+        # The network's own minimum, from the same recommendations the tier
+        # comes from. Below it there is nothing cheaper to wait for; it goes to
+        # zero on a cleared mempool, where no floor is the right answer.
         cheap_floor = self._get_fee_for_parameter(_fee_cache["current"]["height"],
                                                   "minimumFee")
         block_height_start_color, block_height_end_color = self.fee_to_colors(

@@ -51,7 +51,7 @@ These settings can be modified via the Web Dashboard (recommended) or by editing
 | **WebSocket Path** | `mempool_ws_path` | String | Websocket endpoint path | `/api/v1/ws` (default) |
 | **Username** | `mempool_username` | String | Optional Basic auth username | Leave empty if not required |
 | **Password** | `mempool_password` | String | Optional Basic auth password | Leave empty if not required |
-| **Fee Preference** | `fee_parameter` | Select | Which fee to display | `fastestFee` (High Priority), `halfHourFee` (Standard), `hourFee` (Low Priority), `economyFee` (Economy), `minimumFee` (No Priority) |
+| **Fee Preference** | `fee_parameter` | Select | Which fee is printed under the block height **and** compared against the rolling median to color it. Pick the priority you actually transact at — see [Block height color scale](#block-height-color-scale) | `fastestFee` (High Priority), `halfHourFee` (Standard), `hourFee` (Low Priority), `economyFee` (Economy), `minimumFee` (No Priority) |
 | **Fee Baseline Window** | `fee_baseline_days` | Number | Days of history behind "normal" (Advanced) | `3`–`90`, default `30` |
 | **Neutral Band** | `fee_neutral_band_pct` | Number | How close to the median still reads as normal (Advanced) | `0`–`50`, default `5` |
 
@@ -81,16 +81,25 @@ Notes that matter in practice:
 
 - **Both ends of the gradient are fee readings** — the previous block at the top,
   the current one at the bottom — so the digits show the move, not just the level.
+- **`fee_parameter` chooses which fee is measured**, and so decides where the
+  scale sits against the baseline. The baseline is a median of what blocks
+  actually cost, so `fastestFee` reads warm more often and `minimumFee` cool.
+  That is the intent, not a side effect: *"is next-block inclusion expensive
+  right now"* and *"is a minimum-fee transaction worth broadcasting"* are
+  different questions, and the color should answer the one you asked.
 - **The base color is yours, one per theme.** See below. It is what an *ordinary*
   block reads as, and defaults to a neutral grey so it does not compete with the
   fee hues on either side of it.
 - **The scale is logarithmic.** Each whole step is a doubling, so 1→2 sat/vB
   occupies as much of the range as 20→40. A linear ratio axis would squash the
   entire cheap half into a sliver.
-- **1 sat/vB reads as the cheapest color** whatever the ratio says — but only
-  while the median is above it. Blocks now clear at fractions of a sat/vB, so
-  once the median itself falls to 1 or below the ratio takes over: at a median of
-  0.5, a 1 sat/vB block is twice the going rate and is colored as such.
+- **The floor comes from the network, not a constant.** A fee at or under the
+  mempool's current `minimumFee` reads as the cheapest color whatever the ratio
+  says, because nothing is waiting to be undercut. That figure is read live, so
+  it follows a relay minimum of 0.1 sat/vB as readily as one of 1, and drops to
+  no floor at all once the mempool has cleared entirely. It applies only while
+  the median is above it: at a median of 0.5, a 1 sat/vB block is twice the
+  going rate and is colored as such.
 - **The median is used, not the mean.** One inscription weekend at 300 sat/vB
   would drag a mean upward for a month and make genuinely expensive blocks look
   ordinary; the median barely moves.

@@ -236,23 +236,6 @@ class FeeBaseline:
             return fees[mid]
         return (fees[mid - 1] + fees[mid]) / 2.0
 
-    def fee_for(self, height):
-        """One block's own median fee, or None if it is not in the window.
-
-        This is what the colour scale reads. The baseline is a median of block
-        medians, so the number placed over it has to be the same kind of number.
-        A fee recommendation is not: fastestFee sits above the block median by
-        construction and hourFee below it, so the ratio moved with whichever
-        tier was configured rather than with the market.
-        """
-        try:
-            key = str(int(height))
-        except (TypeError, ValueError):
-            return None
-        with self._lock:
-            entry = self._samples.get(key)
-        return entry['fee'] if entry else None
-
     def stats(self):
         """Diagnostics for the config UI and logs."""
         with self._lock:
