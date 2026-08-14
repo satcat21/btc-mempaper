@@ -197,7 +197,10 @@ fi
 step "Re-locking Python ${CURRENT_MAJOR}.${NEW_MINOR}"
 HOLD_PKGS=()
 for _pkg in python3 python3-dev python3-venv; do
-    if dpkg-query -W -f='${Status}' "$_pkg" 2>/dev/null | grep -q '^install ok installed$'; then
+    # ' ok installed$' matches the state field only. Anchoring the want flag to
+    # 'install' would read an already-held package as absent and skip its hold,
+    # silently dropping the very version pin this step exists to restore.
+    if dpkg-query -W -f='${Status}' "$_pkg" 2>/dev/null | grep -q ' ok installed$'; then
         HOLD_PKGS+=("$_pkg")
     else
         warn "$_pkg is not installed — leaving it unheld so apt can still install it later"

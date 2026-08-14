@@ -70,11 +70,15 @@ if [ ${#PKGS[@]} -eq 0 ]; then
     exit 0
 fi
 
+# '${Status}' is "want error state". Only the state says whether the files are
+# on disk; matching the whole of 'install ok installed' also keyed on the want
+# flag, which 'apt-mark hold' sets to 'hold' - so every held package read as
+# missing and was then reported as blocked below. Match the state alone.
 _missing() {
     local p
     for p in "$@"; do
         dpkg-query -W -f='${Status}' "$p" 2>/dev/null \
-            | grep -q '^install ok installed$' || echo "$p"
+            | grep -q ' ok installed$' || echo "$p"
     done
 }
 

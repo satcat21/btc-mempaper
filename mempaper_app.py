@@ -596,7 +596,15 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
         Matching on '${Package}' alone was not enough: dpkg-query prints a name
         for anything it knows about, including packages removed but not purged
         ('deinstall ok config-files'), so a removed package read as present.
-        Only 'install ok installed' means the files are actually on disk.
+
+        '${Status}' is three fields - want, error flag, state - and only the
+        third says whether the files are on disk. Matching the whole of
+        'install ok installed' therefore keyed on the want flag too, and
+        'apt-mark hold' sets that flag to 'hold': every held package read as
+        missing, which sent the installer after packages that were already
+        installed and could not be 'reinstalled' because they were held.
+        Match the state alone, and require 'ok' so a package needing repair
+        ('install reinstreq installed') is still reported.
 
         Returns [] when the query itself fails, so an unreadable dpkg database
         does not trigger an install run on a guess.
@@ -614,7 +622,7 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
         installed = {
             line.split(' ', 1)[0]
             for line in (result.stdout or '').splitlines()
-            if line.endswith(' install ok installed')
+            if line.endswith(' ok installed')
         }
         return [p for p in pkgs if p not in installed]
 
