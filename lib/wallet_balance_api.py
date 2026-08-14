@@ -21,6 +21,17 @@ import os
 import threading
 from typing import Dict, List, Optional, Union, Tuple, Set
 
+
+def _count(n, singular, plural=None):
+    """'1 address', '2 addresses' - a count with a noun that agrees with it.
+
+    The wallet log lines are read by operators diagnosing a scan, and a scan
+    that reports 1 addresses reads like a bug in the counting rather than in
+    the wording.
+    """
+    return f"{n} {singular if n == 1 else (plural or singular + 's')}"
+
+
 # Optional import for secure config - graceful fallback if not available
 try:
     from managers.secure_config_manager import SecureConfigManager
@@ -378,12 +389,12 @@ class WalletBalanceAPI:
                             # Check if this is NEW compared to what balance cache knows about
                             if test_count > cached_address_count:
                                 fresh_addresses_found = True
-                                print(f"⚙️ [BALANCE] Fresh gap limit data found ({len(cached_addresses)} addresses vs {cached_address_count} in balance cache) - full rescan needed")
+                                print(f"⚙️ [BALANCE] Fresh gap limit data found ({_count(len(cached_addresses), 'address', 'addresses')} vs {cached_address_count} in balance cache) - full rescan needed")
                                 break
                             # Also check if balance cache shows 0 but we have addresses (stale cache)
                             elif total_balance == 0.0 and test_count >= cached_address_count:
                                 fresh_addresses_found = True
-                                print(f"⚙️ [BALANCE] Balance cache shows 0 BTC but {len(cached_addresses)} addresses exist - full rescan needed")
+                                print(f"⚙️ [BALANCE] Balance cache shows 0 BTC but {_count(len(cached_addresses), 'address', 'addresses')} exist - full rescan needed")
                                 break
                 
                 # In startup mode, check if cache is still valid for balance calculation
@@ -456,7 +467,7 @@ class WalletBalanceAPI:
                 start_time = time.time()
                 addresses = self.get_xpub_addresses(xpub, startup_mode=False)
                 scan_time = time.time() - start_time
-                print(f"👁️ [BALANCE] Gap limit scan completed in {scan_time:.1f}s → {len(addresses)} addresses")
+                print(f"👁️ [BALANCE] Gap limit scan completed in {scan_time:.1f}s → {_count(len(addresses), 'address', 'addresses')}")
                 
             else:
                 addresses = self.get_xpub_addresses(xpub, startup_mode=False)
@@ -469,7 +480,7 @@ class WalletBalanceAPI:
             funded_addresses = []
             total_balance = 0.0
             
-            print(f"🚀 [BALANCE] Scanning {len(addresses)} addresses for XPUB balance calculation...")
+            print(f"🚀 [BALANCE] Scanning {_count(len(addresses), 'address', 'addresses')} for XPUB balance calculation...")
             
             # Use parallel processing for better performance
             import concurrent.futures
@@ -565,7 +576,7 @@ class WalletBalanceAPI:
                                 monitoring_addresses.append(address_list[i])
                             # Skip spent addresses (i in spent_indices) - privacy protection
                     
-                    print(f"📍 [PRIVACY] Monitoring {len(monitoring_addresses)} addresses (excluding {len(spent_indices)} spent addresses)")
+                    print(f"📍 [PRIVACY] Monitoring {_count(len(monitoring_addresses), 'address', 'addresses')} (excluding {_count(len(spent_indices), 'spent address', 'spent addresses')})")
                     print(f"   💰 Active addresses: {len(funded_indices)} (with positive balance)")
                     print(f"   ⭕ Never used addresses: {len(never_used_indices)} (available for future use)")
                     print(f"   🚫 Spent addresses: {len(spent_indices)} (excluded to prevent reuse)")
@@ -805,14 +816,14 @@ class WalletBalanceAPI:
                         cache_key = f"{xpub}:gap_limit:{test_count}"
                         cached_addresses = self.async_cache_manager.get_addresses(cache_key)
                         if cached_addresses:
-                            print(f"🚀 [STARTUP] Using cached gap limit result ({test_count} addresses)")
+                            print(f"🚀 [STARTUP] Using cached gap limit result ({_count(test_count, 'address', 'addresses')})")
                             return set(cached_addresses)
                     
                     # Fallback to regular cached derivation
                     derivation_count = 20
                     cached_addresses = self.async_cache_manager.get_addresses(f"{xpub}:{derivation_count}")
                     if cached_addresses:
-                        print(f"🚀 [STARTUP] Using cached addresses ({derivation_count} addresses)")
+                        print(f"🚀 [STARTUP] Using cached addresses ({_count(derivation_count, 'address', 'addresses')})")
                         return set(cached_addresses)
                 
                 print(f"⚠️ [STARTUP] No cached addresses found for {xpub[:20]}... - will use minimal derivation")
@@ -885,13 +896,13 @@ class WalletBalanceAPI:
                 # Store in async cache with gap limit key
                 cache_key = f"{xpub}:gap_limit:{final_count}"
                 self.async_cache_manager.cache_addresses(cache_key, address_list)
-                print(f"💾 Cached {len(address_list)} addresses (gap limit, {derivation_time:.1f}s)")
+                print(f"💾 Cached {_count(len(address_list), 'address', 'addresses')} (gap limit, {derivation_time:.1f}s)")
                 
                 return set(address_list)
                 
             except Exception as e:
                 print(f"⚠️ Gap limit detection failed for {xpub[:20]}...: {e}")
-                print(f"⚙️ Falling back to regular derivation ({derivation_count} addresses)")
+                print(f"⚙️ Falling back to regular derivation ({_count(derivation_count, 'address', 'addresses')})")
                 # Fall through to regular caching logic below
         
         # Regular async caching (gap limit disabled or fallback)
@@ -900,11 +911,11 @@ class WalletBalanceAPI:
         # Check if addresses are already cached
         cached_addresses = self.async_cache_manager.get_addresses(cache_key)
         if cached_addresses:
-            print(f"🚀 Async cache HIT for {xpub[:20]}... ({derivation_count} addresses)")
+            print(f"🚀 Async cache HIT for {xpub[:20]}... ({_count(derivation_count, 'address', 'addresses')})")
             return set(cached_addresses)
         
         # Cache miss - derive addresses and cache them
-        print(f"💻 Async cache MISS for {xpub[:20]}... - deriving {derivation_count} addresses...")
+        print(f"💻 Async cache MISS for {xpub[:20]}... - deriving {_count(derivation_count, 'address', 'addresses')}...")
         start_time = time.time()
         
         derived_addresses = self.address_derivation.derive_addresses(xpub, derivation_count)
@@ -915,7 +926,7 @@ class WalletBalanceAPI:
         
         # Store in async cache
         self.async_cache_manager.cache_addresses(cache_key, address_list)
-        print(f"💾 Async cached {len(address_list)} addresses (derived in {derivation_time:.3f}s)")
+        print(f"💾 Async cached {_count(len(address_list), 'address', 'addresses')} (derived in {derivation_time:.3f}s)")
         
         return set(address_list)
     
@@ -925,11 +936,11 @@ class WalletBalanceAPI:
         cached_addresses = self._get_cached_addresses(xpub, derivation_count)
         
         if cached_addresses is not None:
-            print(f"🚀 Simple cache HIT for {xpub[:20]}... ({derivation_count} addresses)")
+            print(f"🚀 Simple cache HIT for {xpub[:20]}... ({_count(derivation_count, 'address', 'addresses')})")
             return {addr for addr, idx in cached_addresses}
         
         # Cache miss - derive addresses
-        print(f"💾 Simple cache MISS for {xpub[:20]}... - deriving {derivation_count} addresses...")
+        print(f"💾 Simple cache MISS for {xpub[:20]}... - deriving {_count(derivation_count, 'address', 'addresses')}...")
         start_time = time.time()
         
         derived_addresses = self.address_derivation.derive_addresses(xpub, derivation_count)
@@ -941,7 +952,7 @@ class WalletBalanceAPI:
         
         address_set = {addr for addr, idx in derived_addresses}
         
-        print(f"💾 Simple cached {len(address_set)} addresses (derived in {derivation_time:.3f}s)")
+        print(f"💾 Simple cached {_count(len(address_set), 'address', 'addresses')} (derived in {derivation_time:.3f}s)")
         
         return address_set
     
@@ -1299,7 +1310,7 @@ class WalletBalanceAPI:
                         
                         # Safety limit for bootstrap
                         if current_count > self.bootstrap_max_addresses:
-                            print(f"   ⚠️ Bootstrap safety limit reached at {current_count} addresses")
+                            print(f"   ⚠️ Bootstrap safety limit reached at {_count(current_count, 'address', 'addresses')}")
                             print(f"   ⚠️ Proceeding with current addresses found")
                             bootstrap_complete = True
                 else:
@@ -1309,7 +1320,7 @@ class WalletBalanceAPI:
                     
                     # Safety limit
                     if current_count > self.bootstrap_max_addresses:
-                        print(f"   ⚠️ Bootstrap safety limit reached at {current_count} addresses")
+                        print(f"   ⚠️ Bootstrap safety limit reached at {_count(current_count, 'address', 'addresses')}")
                         bootstrap_complete = True
         else:
             print(f"⏭️ Bootstrap search disabled - using standard gap limit logic")
@@ -1356,7 +1367,7 @@ class WalletBalanceAPI:
                         
                         # Safety limit for standard phase
                         if current_count > 500:
-                            print(f"   ⚠️ Standard phase safety limit reached at {current_count} addresses")
+                            print(f"   ⚠️ Standard phase safety limit reached at {_count(current_count, 'address', 'addresses')}")
                             break
                     else:
                         # No usage in last batch → gap limit satisfied
@@ -1364,7 +1375,7 @@ class WalletBalanceAPI:
                         break
                 else:
                     # Not enough addresses to check gap limit
-                    print(f"   ✅ Gap limit satisfied - only {len(addresses_with_indices)} addresses derived")
+                    print(f"   ✅ Gap limit satisfied - only {_count(len(addresses_with_indices), 'address', 'addresses')} derived")
                     break
 
         # Convert stored address info back to the expected format (address, index) tuples
@@ -1384,7 +1395,7 @@ class WalletBalanceAPI:
         positive_balance_addresses = sum(1 for _, (_, info) in all_addresses_info.items() if info.get('current_balance', 0) > 0)
         used_addresses = sum(1 for _, (_, info) in all_addresses_info.items() if info.get('was_ever_used', False) or info.get('total_received', 0) > 0)
         
-        print(f"💾 Gap limit result: {total_addresses} addresses scanned, {positive_balance_addresses} with balance, {used_addresses} ever used")
+        print(f"💾 Gap limit result: {_count(total_addresses, 'address', 'addresses')} scanned, {positive_balance_addresses} with balance, {used_addresses} ever used")
         
         return final_addresses, current_count
     
@@ -1556,7 +1567,7 @@ class WalletBalanceAPI:
             addresses_with_balance = 0
             
             if len(addresses) > 1:  # Use parallel processing for 2+ addresses (was 10)
-                print(f"🚀 [PARALLEL] Fetching balances for {len(addresses)} addresses...")
+                print(f"🚀 [PARALLEL] Fetching balances for {_count(len(addresses), 'address', 'addresses')}...")
                 
                 def fetch_address_balance(address):
                     """Fetch balance for a single address."""
@@ -1586,7 +1597,7 @@ class WalletBalanceAPI:
                         total_balance += balance
                         addresses_with_balance += 1
             
-            print(f"✅ XPUB/ZPUB {xpub[:20]}... total: {total_balance:.8f} BTC from {addresses_with_balance}/{len(addresses)} addresses")
+            print(f"✅ XPUB/ZPUB {xpub[:20]}... total: {total_balance:.8f} BTC from {addresses_with_balance}/{_count(len(addresses), 'address', 'addresses')}")
             
             # Cache the balance for future requests (but not in startup mode)
             if not startup_mode:
@@ -1670,7 +1681,8 @@ class WalletBalanceAPI:
             if conflicts and conflicts.get("has_conflicts"):
                 return {"error": conflicts["error_message"], "conflicts": conflicts}
             
-            print(f"📊 Wallet scan: {len(user_xpubs)} extended keys, {len(user_addresses)} addresses")
+            print(f"📊 Wallet scan: {_count(len(user_xpubs), 'extended key')}, "
+                  f"{_count(len(user_addresses), 'address', 'addresses')}")
             
             # 1. Fetch all addresses from all XPUBs/ZPUBs
             all_xpub_addresses = set()
