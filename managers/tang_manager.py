@@ -41,7 +41,23 @@ _TANG_URL_RE = re.compile(
 
 
 class TangError(Exception):
-    """A Tang operation failed. The message is safe to show to an operator."""
+    """A Tang operation failed. The message is safe to show to an operator.
+
+    Safe means it says what went wrong without quoting the thing that said so.
+    The config page renders these verbatim in the browser, so a message built
+    from a requests exception or from clevis stderr puts filesystem paths,
+    internal hostnames and library internals on a page anyone holding a session
+    can read. Use _detail() to send that text to the journal instead, where it
+    is more useful anyway - the check dialog has an Open Log button for exactly
+    this.
+    """
+
+
+def _detail(context, text):
+    """Log the raw text of a failure and keep it out of the exception."""
+    text = (text or '').strip()
+    if text:
+        print(f"⚠️ {context}: {text}")
 
 
 class TangManager:
@@ -139,8 +155,22 @@ class TangManager:
             resp = requests.get(f'{url}/adv', timeout=ADV_TIMEOUT, proxies={'http': None, 'https': None})
             resp.raise_for_status()
             return resp.text
+        except requests.exceptions.Timeout as e:
+            _detail('Tang advertisement timed out', str(e))
+            raise TangError(f'No answer within {ADV_TIMEOUT} s')
+        except requests.exceptions.HTTPError as e:
+            # The status code is the useful half and carries nothing internal.
+            _detail('Tang advertisement rejected', str(e))
+            code = getattr(e.response, 'status_code', None)
+            raise TangError(f'Server answered HTTP {code}' if code
+                            else 'Server rejected the request')
+        except requests.exceptions.RequestException as e:
+            _detail('Tang server unreachable', str(e))
+            raise TangError('Could not connect - check the address and that '
+                            'tangd is running on it')
         except Exception as e:
-            raise TangError(str(e))
+            _detail('Tang advertisement failed', str(e))
+            raise TangError('Could not read the advertisement')
 
     def signing_thumbprint(self, advertisement):
         """Thumbprint of the advertisement's signing key.
@@ -157,7 +187,8 @@ class TangManager:
         )
         thumbprint = out.decode('utf-8', 'replace').strip()
         if not ok or not _THUMBPRINT_RE.match(thumbprint):
-            raise TangError(err or 'could not read a signing key from the advertisement')
+            _detail('jose could not read the signing key', err)
+            raise TangError('Could not read a signing key from the advertisement')
         return thumbprint
 
     # ── seal and unseal ──────────────────────────────────────────────────────
@@ -179,7 +210,8 @@ class TangManager:
 
         ok, out, err = self._run(cmd, stdin_bytes=data)
         if not ok or not out:
-            raise TangError(err or 'clevis could not seal the key')
+            _detail('clevis encrypt failed', err)
+            raise TangError('clevis could not seal the key')
         return out
 
     def unseal(self, jwe: bytes) -> bytes:
@@ -187,7 +219,8 @@ class TangManager:
         which is the entire point of sealing them this way."""
         ok, out, err = self._run(['clevis', 'decrypt'], stdin_bytes=jwe)
         if not ok:
-            raise TangError(err or 'clevis could not unseal the key')
+            _detail('clevis decrypt failed', err)
+            raise TangError('clevis could not unseal the key')
         return out
 
     # ── discovery ────────────────────────────────────────────────────────────
