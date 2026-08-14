@@ -87,9 +87,10 @@ Notes that matter in practice:
 - **The scale is logarithmic.** Each whole step is a doubling, so 1→2 sat/vB
   occupies as much of the range as 20→40. A linear ratio axis would squash the
   entire cheap half into a sliver.
-- **1 sat/vB is always the cheapest color**, whatever the baseline says. It is
-  the relay minimum — there is nothing cheaper to wait for, so a quiet week that
-  drags the median down to 1 must not make 1 read as merely "normal".
+- **1 sat/vB reads as the cheapest color** whatever the ratio says — but only
+  while the median is above it. Blocks now clear at fractions of a sat/vB, so
+  once the median itself falls to 1 or below the ratio takes over: at a median of
+  0.5, a 1 sat/vB block is twice the going rate and is colored as such.
 - **The median is used, not the mean.** One inscription weekend at 300 sat/vB
   would drag a mean upward for a month and make genuinely expensive blocks look
   ordinary; the median barely moves.

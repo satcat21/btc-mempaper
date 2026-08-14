@@ -87,10 +87,16 @@ LIGHTEN_AMOUNT = 0.45
 # No baseline yet, or no fee at all.
 UNKNOWN_COLOR = (120, 120, 130)
 
-# Below the relay minimum there is nothing cheaper to wait for, so 1 sat/vB is
-# always the cheapest colour no matter what the baseline says. Without this a
-# quiet week drags the baseline down to 1 and then 1 sat/vB reads as "normal",
-# which is exactly backwards - it is as good as it ever gets.
+# A fee at or under this reads as the cheapest colour whatever the ratio says,
+# so a busy month cannot make 1 sat/vB look merely below average when it is as
+# good as the network ever gets.
+#
+# Only while the baseline is above it, though. Blocks now clear at fractions of
+# a sat/vB, and applying this unconditionally meant that once the median itself
+# fell to 1 or below, every fee up to 1 took the cheapest colour - including the
+# median, which should read neutral, and including fees well above it. At a
+# median of 0.5 a fee of 1.0 is twice the going rate and was rendering as the
+# best moment in a month.
 ABSOLUTE_CHEAP_FLOOR = 1.0
 
 
@@ -139,7 +145,7 @@ class FormattingMixin:
         if mode == "absolute" or not baseline or baseline <= 0:
             return _interpolate(self._absolute_stops(), fee)
 
-        if fee <= ABSOLUTE_CHEAP_FLOOR:
+        if fee <= ABSOLUTE_CHEAP_FLOOR < baseline:
             cheapest = (RELATIVE_RAINBOW_STOPS if mode == "relative_rainbow"
                         else RELATIVE_NEUTRAL_COOL)[0][1]
             return cheapest
@@ -250,9 +256,17 @@ class FormattingMixin:
         # Without a baseline there is no "normal" to sit either side of, so fall
         # back to figures that read the same way against the absolute table.
         normal = float(baseline) if baseline and baseline > 0 else 20.0
-        cheap = max(1.0, round(normal * 0.4, 1))
-        dear = round(normal * 2.0, 1)
-        normal = round(normal, 1)
+
+        # Two decimals under 1 sat/vB, one above. Blocks clear at fractions of a
+        # sat/vB in a quiet month, and rounding those to a whole number collapsed
+        # every scenario in the preview to the same figure - a median near 1
+        # rendered as 1 -> 1, 1 -> 1, 1 -> 2, which shows nothing.
+        def _fee(v):
+            return round(v, 2) if v < 1 else round(v, 1)
+
+        cheap = _fee(max(0.1, normal * 0.4))
+        dear = _fee(normal * 2.0)
+        normal = _fee(normal)
 
         scenarios = [
             {"key": "steady", "prev": normal, "curr": normal},
