@@ -12,7 +12,8 @@ import urllib3
 import traceback
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-from utils.technical_config import build_mempool_api_url, build_mempool_proxies
+from utils.technical_config import (build_mempool_api_url, build_mempool_proxies,
+                                    apply_tor_identity, mempool_request_timeout)
 import hashlib
 import json
 import time
@@ -977,8 +978,14 @@ class WalletBalanceAPI:
 
         try:
             url = f"{self.base_url}/address/{address}"
-            # Use reasonable timeout (30s) to allow for server load
-            response = self.session.get(url, timeout=30, verify=self.mempool_verify_ssl)
+            # Use reasonable timeout (30s) to allow for server load, widened
+            # over Tor where reaching the host costs a circuit build first.
+            response = self.session.get(
+                url, timeout=mempool_request_timeout(30, self.mempool_proxies),
+                # Per request rather than the session's copy, so a circuit
+                # rotation reaches a session built once at construction.
+                proxies=apply_tor_identity(self.mempool_proxies),
+                verify=self.mempool_verify_ssl)
             response.raise_for_status()
             data = response.json()
             
@@ -1024,8 +1031,14 @@ class WalletBalanceAPI:
 
         try:
             url = f"{self.base_url}/address/{address}"
-            # Use reasonable timeout (30s) to allow for server load
-            response = self.session.get(url, timeout=30, verify=self.mempool_verify_ssl)
+            # Use reasonable timeout (30s) to allow for server load, widened
+            # over Tor where reaching the host costs a circuit build first.
+            response = self.session.get(
+                url, timeout=mempool_request_timeout(30, self.mempool_proxies),
+                # Per request rather than the session's copy, so a circuit
+                # rotation reaches a session built once at construction.
+                proxies=apply_tor_identity(self.mempool_proxies),
+                verify=self.mempool_verify_ssl)
             response.raise_for_status()
             data = response.json()
             

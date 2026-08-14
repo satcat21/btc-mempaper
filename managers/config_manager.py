@@ -323,7 +323,16 @@ class ConfigManager:
     def get_default_config(self) -> Dict[str, Any]:
         """
         Get default configuration settings.
-        
+
+        What each setting does, and which values it accepts, is documented for
+        the operator in docs/CONFIG_REFERENCE.md — not repeated here, where it
+        would go stale unseen. Comments below explain only why a default is
+        what it is, for the next person changing one.
+
+        Note that these are not the only defaults: fields defined in
+        config_schema.py carry their own, which is where the colour keys and
+        the select fields get theirs.
+
         Returns:
             Dict containing default configuration
         """
@@ -347,28 +356,26 @@ class ConfigManager:
             "mempool_ws_port_tor": 80,
             "tor_socks_host": "127.0.0.1",
             "tor_socks_port": 9050,
+            # Off by default: the last rung of the Tor recovery ladder needs a
+            # sudoers rule the installer does not write. See utils/tor_recovery.
+            "tor_auto_restart": False,
             "mempool_username": "",
             "mempool_password": "",
-            "network_outage_tolerance_minutes": 45,  # Time to retry connection before giving up
+            "network_outage_tolerance_minutes": 45,
 
-            # Pre-cache timing. All in seconds, all file-only — the web UI does
-            # not expose them. Defaults are tuned for a single-core Pi Zero:
-            # long enough to keep API traffic and CPU low, short enough that a
-            # rendered image is never meaningfully out of date.
-            #
-            # The two max-age values govern the render path: how stale cached
-            # data may be before a render fetches it again. Keeping them below
-            # the update interval means a render occasionally refreshes ahead of
-            # the background loop, which is the intended trade — a fresh image
-            # matters more than one saved request. Fees get a shorter window
-            # because they move fastest.
+            # Tuned for a single-core Pi Zero: long enough to keep API traffic
+            # and CPU low, short enough that a rendered image is never
+            # meaningfully out of date. The two max-age values sit below the
+            # update interval on purpose, so a render occasionally refreshes
+            # ahead of the background loop — a fresh image is worth more than
+            # a saved request.
             "precache_update_interval_seconds": 300,
             "precache_render_max_age_seconds": 120,
             "precache_fee_max_age_seconds": 90,
-            # Every configured miner reporting offline may just mean the LAN was
-            # not up yet, so that reading is retried sooner than a normal cycle.
+            # Every miner reporting offline may just mean the LAN was not up
+            # yet, so that reading is retried sooner than a normal cycle.
             "bitaxe_offline_retry_seconds": 30,
-            # Debounce for cache-metadata writes, to limit SD card wear.
+            # Debounced to limit SD card wear.
             "cache_metadata_write_interval_seconds": 300,
             "fee_parameter": "minimumFee",
             "display_width": 800,
@@ -377,11 +384,11 @@ class ConfigManager:
             # Set only when repeated failures switch the display off; startup
             # retries such a device so it can recover without dashboard access.
             "eink_auto_disabled": False,
-            "omni_device_name": "epd7in3f",  # Default to native Waveshare 7.3" driver
+            "omni_device_name": "epd7in3f",
             "public_dashboard": False,
-            # --- Info block config additions ---
+            # --- Info blocks ---
             "show_btc_price_block": True,
-            "btc_price_currency": "USD",  # USD, EUR, GBP, CAD, CHF, AUD, JPY
+            "btc_price_currency": "USD",
             # --- Countdown block (BTC supply scarcity) ---
             "show_countdown_block": True,
             "color_countdown_light": "#C55A00",
@@ -395,14 +402,13 @@ class ConfigManager:
             "color_network_light": "#6A1B9A",
             "color_network_dark": "#CE93D8",
             "show_bitaxe_block": False,
-            "bitaxe_display_mode": "blocks",  # "blocks" or "difficulty"
-            "bitaxe_miner_table": [],  # List of {address, comment} objects for table view
-            "block_reward_addresses_table": [],  # List of {address, comment} objects for block reward monitoring
+            "bitaxe_display_mode": "blocks",
+            "bitaxe_miner_table": [],
+            "block_reward_addresses_table": [],
             "show_wallet_balances_block": False,
-            "wallet_balance_addresses_with_comments": [],  # List of {address, comment, type} objects for table view
-            "wallet_balance_unit": "sats",  # "btc" or "sats"
-            "wallet_balance_currency": "EUR",  # USD, EUR, GBP, CAD, CHF, AUD, JPY - fiat currency for wallet balance display
-            "prioritize_large_scaled_meme": False,
+            "wallet_balance_addresses_with_comments": [],
+            "wallet_balance_unit": "sats",
+            "wallet_balance_currency": "EUR",
             "color_mode_dark": True,
             "tang_enabled": False,
             "tang_url": "",
@@ -410,9 +416,11 @@ class ConfigManager:
 
             "opsec_mode_enabled": False,
             # --- Meme sync schedule ---
+            # install.sh randomises day and hour per device, so the world's
+            # mempapers do not all hit the meme host in the same Thursday hour.
             "meme_sync_enabled": False,
-            "meme_sync_day": "4",   # Thursday (cron: 0=Sun … 6=Sat)
-            "meme_sync_hour": "13", # 13:00
+            "meme_sync_day": "4",
+            "meme_sync_hour": "13",
             "tor_meme_downloads": False,
             # --- Donation block ---
             "show_donation_block": False,

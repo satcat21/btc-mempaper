@@ -9,6 +9,7 @@ for efficient caching and incremental updates.
 
 import json
 import os
+import random
 import requests
 import threading
 import time
@@ -18,7 +19,9 @@ import urllib3
 from requests.auth import HTTPBasicAuth
 from urllib.parse import quote, urlsplit
 from utils.technical_config import (build_mempool_api_url, build_mempool_proxies,
-                                    build_mempool_ws_proxy_kwargs)
+                                    build_mempool_ws_proxy_kwargs,
+                                    mempool_request_timeout)
+from utils.tor_recovery import tor_recovery
 
 # Import the new caching system
 from lib.block_reward_cache import BlockRewardCache
@@ -56,6 +59,7 @@ class BlockRewardMonitor:
         self.valid_blocks_count = 0
         self.blocks_by_address = {}  # Track found blocks per address
         self.ws = None
+        self._ws_opened_at = None  # When the current connection opened; drives the backoff reset
         self.monitoring_thread = None
         self.running = False
         
@@ -120,6 +124,10 @@ class BlockRewardMonitor:
         if not self.config_manager:
             return None
         return build_mempool_proxies(self.config_manager.get_current_config())
+
+    def _mempool_timeout(self, base):
+        """Timeout for one REST call, widened when it routes over Tor."""
+        return mempool_request_timeout(base, self._get_mempool_proxies())
 
     def _get_mempool_base_url(self) -> str:
         """Get mempool API base URL from configuration."""
@@ -295,7 +303,7 @@ class BlockRewardMonitor:
         block_height = None
         try:
             base_url = self._get_mempool_base_url()
-            response = requests.get(f"{base_url}/block/{block_hash}", timeout=5, verify=False,
+            response = requests.get(f"{base_url}/block/{block_hash}", timeout=self._mempool_timeout(5), verify=False,
                                     proxies=self._get_mempool_proxies())
             if response.ok:
                 block_data = response.json()
@@ -367,7 +375,7 @@ class BlockRewardMonitor:
                 try:
                     print(f"👁️ Trying endpoint: {endpoint} (auth={auth_mode})")
                     # Use verify=False for self-signed HTTPS certificates
-                    txids_resp = requests.get(endpoint, timeout=10, verify=False, auth=mempool_auth,
+                    txids_resp = requests.get(endpoint, timeout=self._mempool_timeout(10), verify=False, auth=mempool_auth,
                                                proxies=self._get_mempool_proxies())
                     txids_resp.raise_for_status()
                     txids = txids_resp.json()
@@ -407,7 +415,7 @@ class BlockRewardMonitor:
             coinbase_txid = transaction_ids[0]
             
             # Get coinbase transaction details
-            tx_resp = requests.get(f"{BASE_URL}/tx/{coinbase_txid}", timeout=10, verify=False, auth=mempool_auth,
+            tx_resp = requests.get(f"{BASE_URL}/tx/{coinbase_txid}", timeout=self._mempool_timeout(10), verify=False, auth=mempool_auth,
                                proxies=self._get_mempool_proxies())
             tx_resp.raise_for_status()
             
@@ -437,7 +445,7 @@ class BlockRewardMonitor:
         # Startup catch-up: check current block height and process missed blocks
         try:
             base_url = self._get_mempool_base_url()
-            resp = requests.get(f"{base_url}/blocks/tip", timeout=10, verify=False,
+            resp = requests.get(f"{base_url}/blocks/tip", timeout=self._mempool_timeout(10), verify=False,
                                 proxies=self._get_mempool_proxies())
             if resp.ok:
                 tip_data = resp.json()
@@ -447,7 +455,7 @@ class BlockRewardMonitor:
                     print(f"⚙️ Missed blocks detected: {last_cached_height} → {current_height}. Generating images for missed blocks...")
                     for h in range(last_cached_height + 1, current_height + 1):
                         # Fetch block hash for height
-                        block_resp = requests.get(f"{base_url}/block-height/{h}", timeout=10, verify=False,
+                        block_resp = requests.get(f"{base_url}/block-height/{h}", timeout=self._mempool_timeout(10), verify=False,
                                                      proxies=self._get_mempool_proxies())
                         if block_resp.ok:
                             block_json = block_resp.json()
@@ -487,13 +495,40 @@ class BlockRewardMonitor:
             self.ws.close()
         print("🛑 Stopped block reward monitoring")
     
+    # Backoff between reconnection attempts, in seconds. The first retry stays
+    # quick because most drops are a single lost connection that comes straight
+    # back; a run of failures is a transport problem that more attempts cannot
+    # fix, and on a single-core Pi each attempt is CPU that tor needs to build
+    # the very circuit being waited on. Retrying every 30 s through a Tor
+    # outage actively slowed recovery.
+    RECONNECT_DELAYS = (30, 60, 120, 300)
+
+    # How long a connection has to survive before the backoff resets. A socket
+    # that opens and dies immediately is still a failure, so resetting on open
+    # would turn the ceiling back into a 30 s loop.
+    RECONNECT_RESET_AFTER = 60
+
+    def _reconnect_delay(self, consecutive_failures):
+        """Next backoff step, jittered.
+
+        Jitter keeps a fleet of devices that lost the same uplink from
+        retrying in lockstep, and keeps this device's own retries from
+        landing on the same moment as its block rendering every time.
+        """
+        base = self.RECONNECT_DELAYS[min(consecutive_failures,
+                                         len(self.RECONNECT_DELAYS) - 1)]
+        return round(base * random.uniform(0.8, 1.2))
+
     def _monitor_blocks(self):
         """WebSocket monitoring loop."""
         if not WEBSOCKET_AVAILABLE:
             return
-            
+
         heartbeat_count = 0
+        consecutive_failures = 0
         while self.running:
+            self._ws_opened_at = None
+            _proxy_kwargs = {}
             try:
                 if not self.config_manager:
                      # This should not happen if initialized correctly
@@ -554,6 +589,18 @@ class BlockRewardMonitor:
             except Exception as e:
                 print(f"⚠️ WebSocket error: {e}")
 
+            # A connection that never opened is a transport failure, and this
+            # is the loop that notices it first — the REST calls only run on
+            # their own schedule. Reported over Tor so the recovery ladder can
+            # act on a wedged circuit instead of retrying it forever.
+            if self._ws_opened_at is None:
+                tor_recovery.record_failure("block WebSocket", bool(_proxy_kwargs))
+
+            # A connection that held is not a failure, whatever ended it.
+            if (self._ws_opened_at
+                    and time.time() - self._ws_opened_at >= self.RECONNECT_RESET_AFTER):
+                consecutive_failures = 0
+
             # run_forever() returns normally on an ordinary connection failure
             # (DNS error, refused connection) — it doesn't raise, it just calls
             # _on_error/_on_close and returns. Without this delay outside the
@@ -562,11 +609,17 @@ class BlockRewardMonitor:
             # doing a fresh synchronous DNS lookup hundreds of times a minute,
             # starving the single CPU core other startup threads need.
             if self.running:
-                print("⚙️ Reconnecting in 30 seconds...")
-                time.sleep(30)
+                delay = self._reconnect_delay(consecutive_failures)
+                consecutive_failures += 1
+                print(f"⚙️ Reconnecting in {delay} seconds...")
+                time.sleep(delay)
     
     def _on_open(self, ws):
         """WebSocket connection opened."""
+        self._ws_opened_at = time.time()
+        # Reaching the host is the only thing the ladder tracks, so an open
+        # socket clears an outage even if no block arrives for ten minutes.
+        tor_recovery.record_success()
         ws.send(json.dumps({"action": "want", "data": ["blocks"]}))
     
     def _on_message(self, ws, message):

@@ -9,6 +9,9 @@ Version: 1.0
 """
 
 import os
+from urllib.parse import quote
+
+from utils.tor_recovery import current_identity
 
 
 class TechnicalConfig:
@@ -219,14 +222,61 @@ def build_mempool_proxies(config):
 
     socks5h (rather than socks5) hands hostname resolution to the proxy, which
     is required for .onion names: the local resolver cannot resolve them.
+
+    The credentials are not authentication — tor's SOCKS port has none. They
+    select a circuit: IsolateSOCKSAuth is on by default, so changing the
+    username moves subsequent requests onto a fresh path. tor_recovery owns
+    when that happens; here we only stamp whatever the current identity is.
     """
     if not config or not config.get("mempool_use_tor", False):
         return None
 
     host = config.get("tor_socks_host", "127.0.0.1") or "127.0.0.1"
     port = config.get("tor_socks_port", 9050) or 9050
-    endpoint = f"socks5h://{host}:{port}"
+    user, password = current_identity()
+    endpoint = f"socks5h://{quote(user, safe='')}:{quote(password, safe='')}@{host}:{port}"
     return {"http": endpoint, "https": endpoint}
+
+
+def apply_tor_identity(proxies):
+    """Restamp a proxies dict with the current circuit identity.
+
+    For callers that built their proxies once and kept them: a rotation has to
+    reach them too, or they carry on down the path that just failed. Returns
+    the input untouched when Tor is off.
+    """
+    if not proxies:
+        return proxies
+
+    user, password = current_identity()
+    userinfo = f"{quote(user, safe='')}:{quote(password, safe='')}@"
+    restamped = {}
+    for scheme, endpoint in proxies.items():
+        head, _, tail = str(endpoint).partition("://")
+        if not tail:
+            restamped[scheme] = endpoint
+            continue
+        # Drop any identity already in there before stamping the current one.
+        restamped[scheme] = f"{head}://{userinfo}{tail.rpartition('@')[2]}"
+    return restamped
+
+
+# How long a request routed through Tor may take to reach the point where the
+# server answers. Tor sets this floor, not us:
+#
+#   - After a run of circuit timeouts, tor discards what it learned about the
+#     network and resets its adaptive CircuitBuildTimeout to the conservative
+#     60 s default ("Resetting timeout to 60000ms" in tor's log).
+#   - A failed circuit is not a failed request. Tor retries on a fresh path and
+#     only gives up at SocksTimeout, 120 s by default.
+#
+# A client deadline under those two numbers aborts attempts tor is still
+# working on, and does it forever, so a merely slow network reads as a total
+# outage until circuits happen to get fast again. Observed on 2026-08-14: a
+# 60 s WebSocket deadline and 20 s REST deadlines against a 60 s circuit
+# timeout kept a device offline for three and a half hours while tor was
+# connecting the whole time.
+TOR_CONNECT_TIMEOUT = 130
 
 
 def build_mempool_ws_proxy_kwargs(config):
@@ -234,6 +284,10 @@ def build_mempool_ws_proxy_kwargs(config):
 
     Mirrors build_mempool_proxies() for the WebSocket path. Returns {} when Tor
     is off so callers can splat it unconditionally.
+
+    http_proxy_timeout is set explicitly because python-socks otherwise applies
+    its own 60 s default — see TOR_CONNECT_TIMEOUT for why that number is the
+    wrong one.
     """
     if not config or not config.get("mempool_use_tor", False):
         return {}
@@ -242,7 +296,29 @@ def build_mempool_ws_proxy_kwargs(config):
         "proxy_type": "socks5h",
         "http_proxy_host": config.get("tor_socks_host", "127.0.0.1") or "127.0.0.1",
         "http_proxy_port": int(config.get("tor_socks_port", 9050) or 9050),
+        "http_proxy_timeout": TOR_CONNECT_TIMEOUT,
+        # Circuit selection, not authentication — see build_mempool_proxies().
+        # The kwargs are rebuilt for every reconnect, so a rotation between
+        # attempts puts the next one on a different path.
+        "http_proxy_auth": current_identity(),
     }
+
+
+def mempool_request_timeout(base, proxies):
+    """requests timeout for a mempool call, widened when it goes over Tor.
+
+    Returns base unchanged for a LAN or clearnet instance, where the call sites'
+    own numbers are right, and a (connect, read) pair over Tor.
+
+    Splitting the two matters: reaching an onion costs a circuit build and a
+    descriptor lookup, which is what needs the long deadline, while data over
+    an already-established circuit is merely slow rather than minutes-slow. A
+    single scaled scalar would have to be as long as the connect budget and
+    would then let a stalled transfer hold the caller for two minutes.
+    """
+    if not proxies:
+        return base
+    return (TOR_CONNECT_TIMEOUT, max(base * 3, 30))
 
 
 def build_mempool_api_url(host, port, use_https=False):

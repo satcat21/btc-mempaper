@@ -1014,19 +1014,19 @@ ok "mempaper.service installed and enabled"
 # on clearnet and later moved to Tor would have been stuck with the bad
 # ordering and no way to correct it.
 #
-# Nice and IOSchedulingClass give mempaper the CPU it needs during startup
-# without creating that dependency inversion, and are correct either way.
+# Nice gives mempaper the CPU it needs during startup without creating that
+# dependency inversion, and is correct either way.
 if systemctl list-unit-files 'tor@*.service' >/dev/null 2>&1 && command -v tor >/dev/null 2>&1; then
     sudo mkdir -p /etc/systemd/system/tor@default.service.d
     sudo tee /etc/systemd/system/tor@default.service.d/defer-startup.conf > /dev/null << 'EOF'
 [Service]
 # Written by mempaper install.sh. Priority only — see install.sh for why there
-# is deliberately no After= ordering here.
-Nice=15
-IOSchedulingClass=idle
+# is deliberately no After= ordering here, and why this value is mild.
+# IOSchedulingClass is deliberately not set: circuit crypto is CPU-bound.
+Nice=5
 EOF
     sudo systemctl daemon-reload
-    ok "tor deprioritized (Nice=15, idle IO) without delaying its startup"
+    ok "tor slightly deprioritized (Nice=5) without delaying its startup"
 fi
 
 # ── Step 7: WiFi/hotspot permissions ───────────────────────────────────────

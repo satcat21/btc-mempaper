@@ -37,6 +37,7 @@ from utils.translations import translations
 from managers.config_manager import ConfigManager
 from utils.technical_config import (TechnicalConfig, build_mempool_api_url,
                                     build_mempool_proxies)
+from utils.tor_recovery import tor_recovery
 from utils.security_config import SecurityConfig
 from managers.auth_manager import AuthManager
 from managers.tang_store import TangLocked
@@ -751,6 +752,7 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
         mempool_password = self.config.get("mempool_password", "")
         
         mempool_proxies = build_mempool_proxies(self.config)
+        tor_recovery.set_auto_restart(self.config.get("tor_auto_restart", False))
 
         if not hasattr(self, '_api_clients_initialized'):
             print(f"🌐 Mempool API: {build_mempool_api_url(mempool_host, mempool_rest_port, mempool_use_https)}")

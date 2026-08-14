@@ -9,7 +9,9 @@ This module handles all interactions with the Bitcoin mempool API including:
 
 import requests
 from requests.auth import HTTPBasicAuth
-from utils.technical_config import build_mempool_api_url
+from utils.technical_config import (build_mempool_api_url, apply_tor_identity,
+                                    mempool_request_timeout)
+from utils.tor_recovery import tor_recovery
 
 
 class MempoolAPI:
@@ -28,19 +30,43 @@ class MempoolAPI:
         self.proxies = proxies
         self.base_url = build_mempool_api_url(host, port, use_https)
 
-        # Timeouts below are tuned for a LAN or clearnet instance. Over Tor a
-        # request also pays circuit setup and hidden-service descriptor lookup,
-        # which alone can exceed the 5 s fast-path budget — so a working onion
-        # would otherwise be reported as unreachable. Scale rather than replace,
-        # keeping the relative fast/slow distinction between call sites.
-        self._timeout_scale = 4 if proxies else 1
-        
         # Fallback values for when API is unavailable
         self.fallback_data = {
             "block_height": 0,
             "block_hash": "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"
         }
-    
+
+    def _timeout(self, base):
+        """Timeout for one call: the number below on a LAN, widened over Tor.
+
+        The per-call numbers stay tuned for a LAN or clearnet instance, and
+        mempool_request_timeout() holds the Tor reasoning in one place.
+        """
+        return mempool_request_timeout(base, self.proxies)
+
+    def _get(self, url, base_timeout):
+        """GET one mempool endpoint, reporting the outcome to the Tor ladder.
+
+        Every call goes through here so that "has anything reached the mempool
+        host lately" has a single answer, and so a circuit rotation reaches a
+        client that was handed its proxies once at construction.
+
+        Any HTTP response counts as success, including an error status: the
+        ladder repairs the transport, and a 500 proves the transport worked.
+        """
+        over_tor = bool(self.proxies)
+        try:
+            response = requests.get(
+                url, timeout=self._timeout(base_timeout), verify=self.verify_ssl,
+                auth=self.auth, proxies=apply_tor_identity(self.proxies))
+        except requests.RequestException:
+            if over_tor:
+                tor_recovery.record_failure("mempool REST", over_tor)
+            raise
+        if over_tor:
+            tor_recovery.record_success()
+        return response
+
     def get_tip_height(self):
         """
         Get the current blockchain tip height.
@@ -50,7 +76,7 @@ class MempoolAPI:
         """
         try:
             url = f"{self.base_url}/blocks/tip/height"
-            response = requests.get(url, timeout=5 * self._timeout_scale, verify=self.verify_ssl, auth=self.auth, proxies=self.proxies)
+            response = self._get(url, 5)
             response.raise_for_status()
             height_str = response.text.strip()
             
@@ -77,7 +103,7 @@ class MempoolAPI:
         """
         try:
             url = f"{self.base_url}/blocks/tip/hash"
-            response = requests.get(url, timeout=5 * self._timeout_scale, verify=self.verify_ssl, auth=self.auth, proxies=self.proxies)
+            response = self._get(url, 5)
             response.raise_for_status()
             return response.text.strip()
         except requests.RequestException as e:
@@ -96,7 +122,7 @@ class MempoolAPI:
         """
         try:
             url = f"{self.base_url}/block/{block_hash}"
-            response = requests.get(url, timeout=5 * self._timeout_scale, verify=self.verify_ssl, auth=self.auth, proxies=self.proxies)
+            response = self._get(url, 5)
             response.raise_for_status()
             data = response.json()
             return int(data.get("height", 0))
@@ -166,7 +192,7 @@ class MempoolAPI:
         """
         try:
             url = f"{self.base_url}/v1/fees/recommended"
-            response = requests.get(url, timeout=10 * self._timeout_scale, verify=self.verify_ssl, auth=self.auth, proxies=self.proxies)
+            response = self._get(url, 10)
             response.raise_for_status()
             return response.json()
         except requests.RequestException as e:
@@ -199,7 +225,7 @@ class MempoolAPI:
         """
         try:
             url = f"{self.base_url}/v1/mining/hashrate/1m"
-            response = requests.get(url, timeout=10 * self._timeout_scale, verify=self.verify_ssl, auth=self.auth, proxies=self.proxies)
+            response = self._get(url, 10)
             response.raise_for_status()
             data = response.json()
             return {
@@ -253,7 +279,7 @@ class MempoolAPI:
         """
         try:
             url = f"{self.base_url}/v1/difficulty-adjustment"
-            response = requests.get(url, timeout=10 * self._timeout_scale, verify=self.verify_ssl, auth=self.auth, proxies=self.proxies)
+            response = self._get(url, 10)
             response.raise_for_status()
             return response.json()
         except requests.RequestException as e:

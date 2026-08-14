@@ -14,6 +14,7 @@
   "mempool_use_tor": false,
   "tor_socks_host": "127.0.0.1",
   "tor_socks_port": 9050,
+  "tor_auto_restart": false,
   "tor_meme_downloads": false,
 
   "mempool_use_https_clearnet": true,
@@ -35,6 +36,8 @@
   "omni_device_name": "epd7in3f",
   "display_width": 800,
   "display_height": 480,
+  "web_orientation": "vertical",
+  "eink_orientation": "vertical",
   "eink_dark_mode": false,
   "color_mode_dark": true,
   "prioritize_large_scaled_meme": true,
