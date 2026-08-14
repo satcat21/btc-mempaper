@@ -37,7 +37,11 @@ def register(self):
         try:
             checks = manager.check(url=url, thumbprint=thumbprint)
         except Exception as e:
-            checks = [{'name': 'Tang check', 'ok': False, 'error': str(e)[:200]}]
+            # check() reports its own per-step failures, so reaching here means
+            # something unexpected broke. The operator gets the "Open Log"
+            # button in this dialog, which is where the detail belongs.
+            checks = [{'name': 'Tang check', 'ok': False,
+                       'error': _safe_error(e, 'Tang check failed')}]
 
         # Offer the value the operator needs when nothing is pinned yet, so the
         # page can fill it in rather than making them copy it off the server.
@@ -62,7 +66,7 @@ def register(self):
             return jsonify(store.disable_preview())
         except Exception as e:
             return jsonify({'recoverable': False, 'items': [],
-                            'reason': str(e)[:200]}), 500
+                            'reason': _safe_error(e, 'Tang disable preview failed')}), 500
 
     @self.app.route('/api/tang/disable', methods=['POST'])
     @require_auth(self.auth_manager)
@@ -86,10 +90,17 @@ def register(self):
             result = store.disable(discard=discard)
         except TangLocked as e:
             # 409: the request is valid but conflicts with current state. The
-            # UI turns this into the confirmation prompt.
-            return jsonify({'error': str(e), 'needs_confirmation': True}), 409
+            # UI turns this into the confirmation prompt. The reason carried by
+            # the exception can quote clevis, so it goes to the log and the
+            # prompt gets the one fact it has to convey.
+            print(f"⚠️ Tang disable needs confirmation: {e}")
+            return jsonify({
+                'error': 'The sealed key cannot be opened right now, so nothing '
+                         'can be unsealed. Check the server log for details.',
+                'needs_confirmation': True,
+            }), 409
         except Exception as e:
-            return jsonify({'error': str(e)[:200]}), 500
+            return jsonify({'error': _safe_error(e, 'Tang disable failed')}), 500
 
         try:
             cfg = self.config_manager.get_current_config()
@@ -112,7 +123,8 @@ def register(self):
         try:
             return jsonify({'servers': TangManager(self.config_manager).discover()})
         except Exception as e:
-            return jsonify({'servers': [], 'error': str(e)[:200]})
+            return jsonify({'servers': [],
+                            'error': _safe_error(e, 'Tang discovery failed')})
 
     @self.app.route('/api/mempool/validate', methods=['GET'])
     @require_auth(self.auth_manager)

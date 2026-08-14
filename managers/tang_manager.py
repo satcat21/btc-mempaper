@@ -24,7 +24,20 @@ ADV_TIMEOUT = 10
 CLEVIS_TIMEOUT = 20
 DISCOVER_TIMEOUT = 5
 
-_THUMBPRINT_RE = re.compile(r'^[A-Za-z0-9_-]{20,}$')
+# \Z rather than $, which also matches before a trailing newline - these guard
+# what is handed to a subprocess, so the end of the string has to mean the end.
+_THUMBPRINT_RE = re.compile(r'^[A-Za-z0-9_-]{20,}\Z')
+
+# The URL and thumbprint reach a command line: clevis-encrypt-tang is a shell
+# script that hands both to curl. A value starting with '-' would be read as a
+# curl option rather than an address, so anything outside this shape is refused
+# rather than quoted or escaped - no real Tang URL needs the difference.
+_TANG_URL_RE = re.compile(
+    r'^https?://'
+    r'(?:\[[0-9A-Fa-f:]+\]|[A-Za-z0-9._-]+)'   # host, or bracketed IPv6 literal
+    r'(?::[0-9]{1,5})?'
+    r'(?:/[A-Za-z0-9._~/-]*)?\Z'
+)
 
 
 class TangError(Exception):
@@ -63,6 +76,33 @@ class TangManager:
             return False, b'', str(e)
         return proc.returncode == 0, proc.stdout, proc.stderr.decode('utf-8', 'replace').strip()
 
+    # ── input the command line will see ──────────────────────────────────────
+
+    @staticmethod
+    def _checked_url(url):
+        """Return the normalised URL, or raise TangError if it is not one.
+
+        Both the config file and the config page can supply this, and it ends
+        up as an argument to clevis, so it is validated at every entry rather
+        than trusted because it came from disk.
+        """
+        url = (url or '').strip().rstrip('/')
+        if not url:
+            raise TangError('no Tang URL configured')
+        if not _TANG_URL_RE.match(url):
+            raise TangError('Tang URL must look like http://host:port '
+                            '(no spaces, credentials or query string)')
+        return url
+
+    @staticmethod
+    def _checked_thumbprint(thumbprint):
+        """Return the thumbprint, empty for none, or raise TangError."""
+        thumbprint = (thumbprint or '').strip()
+        if thumbprint and not _THUMBPRINT_RE.match(thumbprint):
+            raise TangError('Thumbprint must be at least 20 characters of '
+                            'base64url (A-Z a-z 0-9 - _)')
+        return thumbprint
+
     # ── configuration ────────────────────────────────────────────────────────
 
     def settings(self):
@@ -94,6 +134,7 @@ class TangManager:
         traffic cannot accidentally capture a LAN request.
         """
         import requests
+        url = self._checked_url(url)
         try:
             resp = requests.get(f'{url}/adv', timeout=ADV_TIMEOUT, proxies={'http': None, 'https': None})
             resp.raise_for_status()
@@ -124,10 +165,8 @@ class TangManager:
     def seal(self, data: bytes, url=None, thumbprint=None) -> bytes:
         """Seal bytes to the Tang server, returning a JWE."""
         _, cfg_url, cfg_thp = self.settings()
-        url = (url or cfg_url).rstrip('/')
-        thumbprint = thumbprint or cfg_thp
-        if not url:
-            raise TangError('no Tang URL configured')
+        url = self._checked_url(url or cfg_url)
+        thumbprint = self._checked_thumbprint(thumbprint or cfg_thp)
 
         pin = {'url': url}
         if thumbprint:
@@ -216,7 +255,18 @@ class TangManager:
             add('Tang URL configured', False,
                 error='No Tang server URL set. Enter one above, then check again.')
             return checks
+        try:
+            url = self._checked_url(url)
+        except TangError as e:
+            add('Tang URL configured', False, error=str(e))
+            return checks
         add('Tang URL configured', True, target=url)
+
+        try:
+            thumbprint = self._checked_thumbprint(thumbprint)
+        except TangError as e:
+            add('Thumbprint well-formed', False, error=str(e))
+            return checks
 
         try:
             advertisement = self.fetch_advertisement(url)
