@@ -87,17 +87,22 @@ LIGHTEN_AMOUNT = 0.45
 # No baseline yet, or no fee at all.
 UNKNOWN_COLOR = (120, 120, 130)
 
-# A fee at or under this reads as the cheapest colour whatever the ratio says,
-# so a busy month cannot make 1 sat/vB look merely below average when it is as
-# good as the network ever gets.
+# A fee at or under the floor reads as the cheapest colour whatever the ratio
+# says, because there is nothing cheaper to wait for.
 #
-# Only while the baseline is above it, though. Blocks now clear at fractions of
-# a sat/vB, and applying this unconditionally meant that once the median itself
-# fell to 1 or below, every fee up to 1 took the cheapest colour - including the
-# median, which should read neutral, and including fees well above it. At a
-# median of 0.5 a fee of 1.0 is twice the going rate and was rendering as the
-# best moment in a month.
-ABSOLUTE_CHEAP_FLOOR = 1.0
+# The floor is not a constant. It is whatever the mempool is currently
+# accepting, so the caller passes minimumFee from the live fee recommendations.
+# Hardcoding 1 sat/vB was wrong in both directions: blocks clear at fractions of
+# a sat/vB, so everything from 0.1 to 1.0 collapsed onto one colour - a full
+# order of magnitude, and precisely the range a quiet market lives in.
+#
+# Only while the baseline is above it, either way. At a median of 0.5 a fee of
+# 1.0 is twice the going rate and must not render as the best moment in a month.
+#
+# 0.0 when the network does not say: no floor at all rather than a wrong one.
+# That is also the honest reading once the mempool has cleared entirely, where
+# minimumFee itself goes to zero and nothing is waiting to be undercut.
+FALLBACK_CHEAP_FLOOR = 0.0
 
 
 def _interpolate(stops, position, low_default=None, high_default=None):
@@ -129,13 +134,17 @@ def _deepen(rgb, factor=0.85):
 class FormattingMixin:
     """Presentation helpers with no layout dependency: fee-to-colour mapping, localised date strings and the font size that makes a date fit."""
 
-    def _fee_color_for(self, fee, baseline, mode, neutral_band):
+    def _fee_color_for(self, fee, baseline, mode, neutral_band,
+                       cheap_floor=FALLBACK_CHEAP_FLOOR):
         """One fee to one RGB triple, before any theme or panel treatment.
 
         Returns None when the fee carries no signal - inside the neutral band,
         where the whole point is that nothing stands out. The caller substitutes
         the configured base colour, which is what "nothing to see here" looks
         like for the theme in use.
+
+        `cheap_floor` is the network's current minimum, below which one fee is
+        not meaningfully cheaper than another. Zero disables the floor entirely.
         """
         if fee is None:
             return UNKNOWN_COLOR
@@ -145,7 +154,7 @@ class FormattingMixin:
         if mode == "absolute" or not baseline or baseline <= 0:
             return _interpolate(self._absolute_stops(), fee)
 
-        if fee <= ABSOLUTE_CHEAP_FLOOR < baseline:
+        if cheap_floor and fee <= cheap_floor < baseline:
             cheapest = (RELATIVE_RAINBOW_STOPS if mode == "relative_rainbow"
                         else RELATIVE_NEUTRAL_COOL)[0][1]
             return cheapest
@@ -268,6 +277,16 @@ class FormattingMixin:
         dear = _fee(normal * 2.0)
         normal = _fee(normal)
 
+        # The floor the renderer will actually apply, so the picker shows what
+        # gets drawn rather than an unfloored idealisation of it.
+        cheap_floor = FALLBACK_CHEAP_FLOOR
+        try:
+            cheap_floor = self._get_fee_for_parameter(
+                self._block_fee_cache["current"]["height"],
+                "minimumFee") or FALLBACK_CHEAP_FLOOR
+        except Exception:
+            pass
+
         scenarios = [
             {"key": "steady", "prev": normal, "curr": normal},
             {"key": "cheap",  "prev": cheap,  "curr": cheap},
@@ -283,7 +302,8 @@ class FormattingMixin:
                 for sc in scenarios:
                     ends = {}
                     for end, fee in (("top", sc["prev"]), ("bottom", sc["curr"])):
-                        rgb = self._fee_color_for(fee, baseline, mode, neutral_band)
+                        rgb = self._fee_color_for(fee, baseline, mode,
+                                                  neutral_band, cheap_floor)
                         if rgb is None:
                             ends[end] = None          # reads as normal
                             continue
@@ -297,7 +317,8 @@ class FormattingMixin:
             modes[mode] = per_theme
         return {"lighten": LIGHTEN_AMOUNT, "scenarios": scenarios, "modes": modes}
 
-    def fee_to_colors(self, current_fee, recent_fee=None, web_quality=False):
+    def fee_to_colors(self, current_fee, recent_fee=None, web_quality=False,
+                      cheap_floor=None):
         """
         Returns (top_color, bottom_color) for the block-height text gradient.
 
@@ -330,6 +351,10 @@ class FormattingMixin:
 
         `recent_fee` defaults to the current fee, which renders flat - correct for
         any caller that has no previous block to compare against.
+
+        `cheap_floor` is the network's current minimum - minimumFee from the live
+        recommendations - below which nothing is meaningfully cheaper. Omitted
+        means no floor, which is what a cleared mempool deserves.
 
         e-ink gets the same treatment as the web image. It used to snap both ends
         to inks the panel could print outright, to keep the driver from dithering
@@ -364,6 +389,14 @@ class FormattingMixin:
             except Exception:
                 baseline = None
 
+        # The network's own minimum, passed in by the caller that has the live
+        # fee recommendations. Unusable or absent means no floor rather than a
+        # guessed one - see FALLBACK_CHEAP_FLOOR.
+        try:
+            cheap_floor = max(0.0, float(cheap_floor))
+        except (TypeError, ValueError):
+            cheap_floor = FALLBACK_CHEAP_FLOOR
+
         base = self._base_color(is_dark)
         if recent_fee is None:
             recent_fee = current_fee
@@ -372,8 +405,10 @@ class FormattingMixin:
         # configured colour speaks for that end. Tracked per end, because a
         # neutral end renders the configured colour at its own tone rather than
         # the fee treatment - otherwise the picker never shows what is drawn.
-        top_color = self._fee_color_for(recent_fee, baseline, mode, neutral_band)
-        bottom_color = self._fee_color_for(current_fee, baseline, mode, neutral_band)
+        top_color = self._fee_color_for(recent_fee, baseline, mode, neutral_band,
+                                        cheap_floor)
+        bottom_color = self._fee_color_for(current_fee, baseline, mode, neutral_band,
+                                           cheap_floor)
         top_is_base = top_color is None
         bottom_is_base = bottom_color is None
         if top_is_base:

@@ -313,8 +313,8 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
         },
         "fee_parameter": {
             "type": "select",
-            "label": t.get("fee_parameter", "Fee Parameter for Block Height Color"),
-            "description": t.get("fee_parameter_desc", "Which fee level to use for determining block height color"),
+            "label": t.get("fee_parameter", "Fee Shown Below the Block Height"),
+            "description": t.get("fee_parameter_desc", "Which fee level to print under the block height. The colour follows each block's own median fee, not this setting."),
             "default": "minimumFee",
             "options": [
                 {"value": "fastestFee",  "label": t.get("fastest",   "Fastest (~1 block)"),      "_lk": "fastest"},

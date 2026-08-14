@@ -467,6 +467,10 @@ class ImageRenderer(ColorMixin, MemeMixin, HashFrameMixin, TextMixin,
         self.block_fee_cache = {}  # {block_height: {'fee_data': ..., 'fee_color': ...}}
         self.last_block_height = None
         self.fee_param = config.get('fee_param', 'fastestFee')  # Default fee param
+        # Heights whose median fee the window could not name and that have
+        # already cost one API call. Without this a block the endpoint will not
+        # report re-asks on every render.
+        self._median_probe_heights = set()
 
         # Rolling median of recent block fees, used by the relative colour
         # scales to decide whether the current fee is cheap or dear. Shared
@@ -798,6 +802,44 @@ class ImageRenderer(ColorMixin, MemeMixin, HashFrameMixin, TextMixin,
             fee_data = {}
             
         return fee_data.get(fee_param, None)
+
+    def _block_median_fee(self, block_height, mempool_api=None):
+        """The median fee of one block, for the colour scale.
+
+        Read out of the rolling window, which already holds exactly this - one
+        median per block - and is topped up by the precache cycle. A height it
+        cannot name means the block landed between two samples; /v1/blocks
+        returns ~15 blocks at once, so a single call covers the current block
+        and the previous one together and feeds the baseline while it is there.
+
+        None when the fee is genuinely unknown, which renders the same grey as
+        a failed recommendation fetch always did.
+        """
+        store = getattr(self, "fee_baseline", None)
+        if store is None or block_height is None:
+            return None
+        try:
+            height = int(block_height)
+        except (TypeError, ValueError):
+            return None
+
+        fee = store.fee_for(height)
+        if fee is not None:
+            return fee
+
+        if mempool_api is None or height in self._median_probe_heights:
+            return None
+        self._median_probe_heights.add(height)
+        if len(self._median_probe_heights) > 32:
+            # Only the live heights matter; the rest are old failures.
+            self._median_probe_heights = set(
+                sorted(self._median_probe_heights)[-8:])
+        try:
+            store.record_many(mempool_api.get_recent_block_fees())
+        except Exception as e:
+            print(f"⚠️ Could not read recent block medians: {e}")
+            return None
+        return store.fee_for(height)
 
     def _update_block_fee_cache(self, block_height, fee_data, fee_color):
         """

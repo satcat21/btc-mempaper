@@ -232,10 +232,22 @@ class HashFrameMixin:
             # Compute fee_color or use a default
             fee_color = self.get_color("fee", web_quality) if hasattr(self, 'get_color') else "gray"
             self._update_block_fee_cache(display_block_height, fee_data, fee_color)
-        fee_parameter = self.config.get("fee_parameter", "minimumFee")
-        prev_fee = self._get_fee_for_parameter(self._block_fee_cache["previous"]["height"], fee_parameter)
-        curr_fee = self._get_fee_for_parameter(self._block_fee_cache["current"]["height"], fee_parameter)
-        block_height_start_color, block_height_end_color = self.fee_to_colors(curr_fee, prev_fee, web_quality)
+        # Colour reads each block's own median fee, not the configured fee
+        # recommendation. The baseline is a median of block medians, so anything
+        # else puts a different kind of number over it: fastestFee sits above
+        # that median by construction and hourFee below it, which tilted every
+        # ratio by the chosen tier rather than by the market. fee_parameter now
+        # selects only the fee printed under the height.
+        _fee_cache = self._block_fee_cache
+        prev_fee = self._block_median_fee(_fee_cache["previous"]["height"], mempool_api)
+        curr_fee = self._block_median_fee(_fee_cache["current"]["height"], mempool_api)
+        # The network's own minimum, from the same recommendations the label
+        # uses. Below it there is nothing cheaper to wait for; it goes to zero
+        # on a cleared mempool, where no floor is the right answer.
+        cheap_floor = self._get_fee_for_parameter(_fee_cache["current"]["height"],
+                                                  "minimumFee")
+        block_height_start_color, block_height_end_color = self.fee_to_colors(
+            curr_fee, prev_fee, web_quality, cheap_floor)
         # Position block info (same as existing _render_block_info)
         if y_override is not None:
             y = y_override
