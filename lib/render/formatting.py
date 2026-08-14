@@ -271,11 +271,11 @@ class FormattingMixin:
         # every scenario in the preview to the same figure - a median near 1
         # rendered as 1 -> 1, 1 -> 1, 1 -> 2, which shows nothing.
         def _fee(v):
+            # Never zero: a fee of 0 has no ratio and would preview as the grey
+            # "unknown" colour, which looks like a broken swatch rather than a
+            # cheap one.
+            v = max(0.01, v)
             return round(v, 2) if v < 1 else round(v, 1)
-
-        cheap = _fee(max(0.1, normal * 0.4))
-        dear = _fee(normal * 2.0)
-        normal = _fee(normal)
 
         # The floor the renderer will actually apply, so the picker shows what
         # gets drawn rather than an unfloored idealisation of it.
@@ -287,11 +287,24 @@ class FormattingMixin:
         except Exception:
             pass
 
+        # Multiples of the baseline, so the figures shown are always plausible
+        # fees for the market the device is actually in: at a median of 1 the
+        # cheap case reads 0.1 -> 0.7, at a median of 20 it reads 2 -> 14.
+        #
+        # Each pair is a *move* rather than two equal ends. Flat pairs made three
+        # of the four swatches a single colour, which is the one thing the
+        # gradient is not - and left the scale's middle unvisited, so a user
+        # could not see what "somewhat above normal" looked like before choosing
+        # a base colour to sit beside it.
+        SCENARIO_MULTIPLES = (
+            ("steady", 1.0, 1.0),   # within the neutral band: base colour, flat
+            ("cheap",  0.1, 0.7),   # floor-cheap easing back toward normal
+            ("spike",  1.1, 2.0),   # normal into clearly dear
+            ("dear",   3.0, 1.8),   # dear, but coming back down
+        )
         scenarios = [
-            {"key": "steady", "prev": normal, "curr": normal},
-            {"key": "cheap",  "prev": cheap,  "curr": cheap},
-            {"key": "spike",  "prev": cheap,  "curr": dear},
-            {"key": "dear",   "prev": dear,   "curr": dear},
+            {"key": key, "prev": _fee(normal * lo), "curr": _fee(normal * hi)}
+            for key, lo, hi in SCENARIO_MULTIPLES
         ]
 
         modes = {}

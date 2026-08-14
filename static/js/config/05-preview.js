@@ -772,8 +772,11 @@ function createBlockHeightColorGroup() {
             caption.textContent = SCENARIO_LABELS[sc.key] || sc.key;
             const fees = document.createElement('span');
             fees.style.cssText = cap + 'opacity:.6;';
-            // prev → curr, the move the gradient is showing.
-            fees.textContent = `${sc.prev} → ${sc.curr}`;
+            // prev → curr, the move the gradient is showing. The unit is spelled
+            // out because the figures scale with the median: without it, "2 → 14"
+            // on a busy day and "0.1 → 0.7" on a quiet one read as different
+            // kinds of number rather than the same one at two market levels.
+            fees.textContent = `${sc.prev} → ${sc.curr} sat/vB`;
             cell.appendChild(digits);
             cell.appendChild(caption);
             cell.appendChild(fees);
