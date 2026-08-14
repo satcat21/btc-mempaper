@@ -1,243 +1,157 @@
-# Unified Secure Cache System
+# Unified Cache System
 
 ## Overview
 
-The mempaper application uses a unified secure cache system that encrypts all sensitive cache data — Bitcoin addresses, balances, and transaction data — into a single `cache.sensitive.json` file, so nothing sensitive is ever written to disk in plain text.
+mempaper keeps all sensitive cache data — monitored Bitcoin addresses, balances,
+XPUB-derived address sets — in a single file, `cache/cache.sensitive.json`,
+managed by [`managers/unified_secure_cache.py`](../managers/unified_secure_cache.py).
+
+> **This file is written in clear text by default.** It is `0600`, so other
+> users on the device cannot read it, but anyone holding the hardware can.
+> Encryption at rest happens only when **Tang is enabled**, and the section
+> below explains why that is a deliberate choice rather than a gap.
+
+The `.sensitive.json` suffix marks *what the file contains*, not that it is
+encrypted. It is what keeps the file out of Git and out of backups by default.
 
 ---
 
-## Security features
+## What protects this file
 
-### Encryption
+### By default: filesystem permissions only
 
-- Uses the same encryption system as `config.sensitive.json`
-- AES-256 encryption via Fernet (cryptography library)
-- Device-specific key derivation for Raspberry Pi hardware
-- All sensitive cache data is encrypted at rest
+Earlier versions encrypted this file under a key derived from the device —
+CPU serial, MAC address, hostname. That was removed, because the key was
+reconstructible by anyone who had the device the file was on. It cost an
+Argon2id derivation at every process start and defended against nothing that
+actually happens: an attacker with a copied SD image has the serial numbers too.
 
-### Unified storage
+Encrypting under a key stored next to the ciphertext is not encryption. Writing
+in the clear is the honest description of the same security.
 
-- Single encrypted file: `cache/cache.sensitive.json`
-- Contains all cache types: block reward, wallet balance, and optimized balance
-- Atomic operations to prevent corruption
-- Thread-safe access with proper locking
+### With Tang enabled: sealed to a key that is not on the device
 
-### Automatic migration
+When `tang_enabled` is set, both this file and `config.sensitive.json` are
+sealed via `SecureConfigManager._write_possibly_sealed()` against a
+[Tang](https://github.com/latchset/tang) server on your LAN. The key never
+touches the SD card, so a device carried off your network cannot decrypt either
+file at all.
 
-- Seamless migration from individual cache files
-- Preserves all existing cache data during transition
-- Creates backups of original files
-- Graceful fallback if encryption fails
+Two behaviours worth knowing:
+
+- **A sealed file is never silently downgraded.** If Tang is enabled but the
+  sealed store cannot be reached, the write raises rather than falling back to
+  clear text. Overwriting sealed content with plaintext would be silent,
+  permanent, and would remove the protection with nothing to say so.
+- **Reads raise `TangLocked`** while the Tang host is unreachable. The app still
+  starts; the wallet and donation blocks stay disabled until it returns, then
+  restore themselves.
+
+Setup and limits: [Self-Hosting Guide → Tang](SELF_HOSTING_GUIDE.md#part-8--tang-network-bound-encryption-for-wallet-data-optional).
+
+---
+
+## On-disk format
+
+```json
+{
+  "data":    { "block_reward_cache": {...}, "wallet_balance_cache": {...}, ... },
+  "version": "3.0",
+  "created": 1765432100.0
+}
+```
+
+| Envelope `version` | Meaning |
+|---|---|
+| `3.0` | Current. Payload under `data`, in the clear — or the whole envelope sealed to Tang |
+| `2.x` | Legacy. Payload under `encrypted_data`, wrapped with the old device key |
+
+A version-2 file is decrypted once on read using the legacy device key, then
+rewritten in the clear (`🔄 Rewriting the cache without device encryption`).
+The derivation is lazy — it only ever runs if such a file is actually found —
+so a device that has already migrated never pays for it again.
+
+Note that the envelope `version` and the `cache_version` field *inside* `data`
+are different things and do not track each other; `cache_version` describes the
+shape of the cache payload and is currently `2.0`.
 
 ---
 
 ## Cache types
 
-The unified cache stores three types of sensitive data:
-
-### 1. Block reward cache (`block_reward_cache`)
-
-- Bitcoin addresses being monitored for mining rewards
-- Coinbase transaction counts per address
-- Block sync heights and scan progress
-
-### 2. Wallet balance cache (`wallet_balance_cache`)
-
-- Wallet addresses with current balances
-- XPUB balance summaries
-- Address comments and metadata
-
-### 3. Optimized balance cache (`optimized_balance_cache`)
-
-- XPUB-derived address caches
-- Performance optimization data for balance monitoring
-- Gap limit detection results
+| Key | Holds |
+|---|---|
+| `block_reward_cache` | Addresses monitored for mining rewards, coinbase counts per address, block sync heights and scan progress |
+| `wallet_balance_cache` | Wallet addresses with current balances, XPUB balance summaries, address comments and metadata |
+| `optimized_balance_cache` | XPUB-derived address caches, gap-limit detection results, balance-monitoring performance data |
 
 ---
 
-## File structure
-
-### New structure (secure)
+## Files
 
 ```
 cache/
-  cache.sensitive.json          All sensitive cache data (encrypted)
-  cache_metadata.json        Non-sensitive metadata
-  *.migrated_backup          Backup of original files
+  cache.sensitive.json                       All three caches (clear text, or Tang-sealed)
+  async_wallet_address_cache.sensitive.json  Derived-address cache
+  cache_metadata.json                        Non-sensitive: block height, image paths
 ```
 
-### Old structure (deprecated)
-
-```
-cache/
-  block_reward_cache.json        Plain text (migrated)
-  optimized_balance_cache.json   Plain text (migrated)
-  wallet_balance_cache.json      Plain text (migrated)
-  cache_metadata.json            Still used (non-sensitive)
-```
+All are excluded from version control by `.gitignore` (`*.sensitive.json`,
+`*.secure.json`, plus the deprecated per-type filenames and `*.migrated_backup`).
 
 ---
 
-## Implementation details
+## Write cadence
 
-### Components
-
-#### 1. SecureCacheManager (`secure_cache_manager.py`)
-
-- **Purpose** -- Central manager for all secure cache operations
-- **Key Methods:**
-  - `get_cache(cache_type)` -- Retrieve cache data for specific type
-  - `set_cache(cache_type, data)` -- Update cache data for specific type
-  - `get_cache_info()` -- Get cache statistics and status
-- **Thread Safety** -- Uses RLock for concurrent access protection
-
-#### 2. BlockRewardCache (`block_reward_cache.py`)
-
-- **Storage** -- Uses `SecureCacheManager` when available
-- **Fallback** -- Individual file cache if secure cache unavailable
-- **Detection** -- Automatically detects and uses secure storage when present
-
-#### 3. WalletBalanceAPI (`wallet_balance_api.py`)
-
-- **Storage** -- Integrates with the unified cache for wallet data
-- **Compatibility** -- Works with async cache for address derivation
-- **Dual Mode** -- Uses both unified cache (wallet data) and async cache (addresses)
-
-### Security configuration
-
-The unified cache uses the same encryption key as the secure configuration system:
-
-```python
-# Encryption key derived from:
-# - Raspberry Pi CPU serial number
-# - Network interface MAC address
-# - System hostname and platform info
-# - Additional entropy sources
-```
+Disk writes are debounced by `SAVE_DEBOUNCE_SECONDS` (30 minutes). RAM is always
+authoritative, so a crash before a pending write flushes costs one cheap
+transaction-history catch-up scan on restart, not data loss. Callers that must
+not lose state — `clear_cache`, shutdown — pass `force=True` to write
+immediately.
 
 ---
 
-## API usage
-
-### Basic cache operations
+## API
 
 ```python
-from secure_cache_manager import get_unified_cache
+from managers.unified_secure_cache import get_unified_cache
 
-# Get cache instance
-cache = get_unified_cache()
+cache = get_unified_cache()          # process-wide singleton
 
-# Read cache data
-block_data = cache.get_cache("block_reward_cache")
+block_data  = cache.get_cache("block_reward_cache")
 wallet_data = cache.get_cache("wallet_balance_cache")
 
-# Update cache data
 cache.set_cache("block_reward_cache", updated_data)
 
-# Get cache information
 info = cache.get_cache_info()
-print(f"Cache version: {info['cache_version']}")
+print(cache.is_available(), info.get("file_size"), info.get("last_updated"))
 ```
 
-### Component integration
+Access is guarded by an `RLock`, and writes go through `atomic_write_json` (or
+the Tang store), so a crash mid-write cannot leave a truncated file.
 
-```python
-from block_reward_cache import BlockRewardCache
-from wallet_balance_api import WalletBalanceAPI
+### Consumers
 
-# These automatically use secure cache when available
-block_cache = BlockRewardCache()  # Uses unified secure cache
-wallet_api = WalletBalanceAPI()   # Uses unified secure cache + async cache
-```
+| Component | Behaviour |
+|---|---|
+| [`lib/block_reward_cache.py`](../lib/block_reward_cache.py) | Uses the unified cache when importable, else per-file fallback. Check `block_cache.use_secure_cache` |
+| [`lib/wallet_balance_api.py`](../lib/wallet_balance_api.py) | Unified cache for wallet data, async cache for derived addresses. Check `wallet_api.use_unified_cache` |
 
 ---
 
+## Log messages
 
-### Performance
-
-- **Atomic Operations** -- Single file reduces I/O operations
-- **Caching** -- In-memory cache with periodic encryption saves
-- **Thread Safety** -- Proper locking prevents corruption
-
-### Reliability
-
-- **Backup System** -- Automatic backup creation during migration
-- **Fallback Mode** -- Graceful degradation if encryption fails
-- **Validation** -- Cache structure validation prevents corruption
+| Message | Meaning |
+|---|---|
+| `🔄 Rewriting the cache without device encryption` | A legacy version-2 file was found and migrated. Happens once |
+| `❌ Failed to save unified cache` | Write failed — disk full, read-only root, or Tang enabled and unreachable |
+| `Tang is enabled but the sealed store is unavailable` | Refused to write clear text over a sealed file. Fix the Tang host; nothing was overwritten |
 
 ---
 
-## Monitoring and troubleshooting
-
-### Cache status
-
-```python
-from secure_cache_manager import get_unified_cache
-
-cache = get_unified_cache()
-print("Cache available:", cache.is_available())
-
-info = cache.get_cache_info()
-print(f"File size: {info.get('file_size', 0)} bytes")
-print(f"Last updated: {info.get('last_updated', 0)}")
-```
-
-### Component status
-
-```python
-from block_reward_cache import BlockRewardCache
-from wallet_balance_api import WalletBalanceAPI
-
-# Check if components are using secure cache
-block_cache = BlockRewardCache()
-print("Block cache secure:", block_cache.use_secure_cache)
-
-wallet_api = WalletBalanceAPI()
-print("Wallet API unified:", wallet_api.use_unified_cache)
-```
-
-### Log messages
-
-- `Using unified secure cache` -- Component successfully using secure storage
-- `Failed to initialize unified cache` -- Fallback to individual files
-- `Migration complete! Migrated X cache files` -- Successful migration
-- `Failed to save unified cache` -- Encryption or file write error
-
----
-
-## File exclusions
-
-The following files are excluded from version control (`.gitignore`):
-
-```gitignore
-# Secure cache files
-cache/cache.sensitive.json
-cache/async_wallet_address_cache.sensitive.json
-*.sensitive.json
-*.secure.json
-
-# Individual cache files (deprecated but excluded for safety)
-cache/block_reward_cache.json
-cache/optimized_balance_cache.json
-cache/wallet_balance_cache.json
-
-# Backup files
-*.migrated_backup
-*.pre_secure_backup
-```
-
----
-
-## Compatibility
-
-### Requirements
+## Requirements
 
 - Python 3.7+
-- `cryptography` library (already required for secure config)
-- Existing secure configuration system
-
-### Platform support
-
-- **Raspberry Pi** -- Full encryption with hardware-specific keys
-- **Development Systems** -- Compatible encryption with fallback entropy
-- **Docker/Containers** -- Works with available system information
+- `cryptography` — still required for the Tang seal path and for reading legacy
+  version-2 files
+- `clevis` — only when `tang_enabled`; see [`apt-requirements.txt`](../apt-requirements.txt)
