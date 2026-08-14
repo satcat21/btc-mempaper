@@ -161,6 +161,10 @@ def validate_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
         "network_outage_tolerance_minutes": (5, 10080),  # 5 min to 1 week
         "display_width": (100, 2000),
         "display_height": (100, 2000),
+        # Under ~3 days the median tracks the noise it is meant to smooth out;
+        # past 90 it is describing a fee regime that no longer exists.
+        "fee_baseline_days": (3, 90),
+        "fee_neutral_band_pct": (0, 50),
     }
     for setting, (min_val, max_val) in int_settings.items():
         if setting in config:
@@ -289,7 +293,7 @@ def validate_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
 
     # Single value settings that should be passed through directly
     passthrough_settings = [
-        "language", "fee_parameter",
+        "language", "fee_parameter", "fee_color_mode",
         "moscow_time_unit", "bitaxe_display_mode",
         "color_date_start_light", "color_date_end_light",
         "color_date_start_dark", "color_date_end_dark",

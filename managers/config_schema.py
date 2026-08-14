@@ -325,6 +325,48 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
             ],
             "category": "mempool"
         },
+        "fee_color_mode": {
+            "type": "select",
+            "label": t.get("fee_color_mode", "Block Height Color Scale"),
+            "description": t.get("fee_color_mode_desc",
+                                 "How the fee is turned into a color. The relative scales compare "
+                                 "the current fee against a rolling median, so a cheap moment still "
+                                 "looks cheap in a low-fee year."),
+            "default": "relative_neutral",
+            "options": [
+                {"value": "relative_neutral", "label": t.get("fee_mode_neutral", "Relative — neutral at normal"), "_lk": "fee_mode_neutral"},
+                {"value": "relative_rainbow", "label": t.get("fee_mode_rainbow", "Relative — blue to red"),       "_lk": "fee_mode_rainbow"},
+                {"value": "absolute",         "label": t.get("fee_mode_absolute", "Fixed sat/vB thresholds"),     "_lk": "fee_mode_absolute"}
+            ],
+            "category": "mempool",
+            "order": 3
+        },
+        "fee_baseline_days": {
+            "type": "number",
+            "label": t.get("fee_baseline_days", "Fee Baseline Window (days)"),
+            "min": 3,
+            "max": 90,
+            "default": 30,
+            "description": t.get("fee_baseline_days_desc",
+                                 "How far back to look when deciding what a normal fee is. "
+                                 "Ignored by the fixed-threshold scale."),
+            "category": "mempool",
+            "advanced": True,
+            "order": 4
+        },
+        "fee_neutral_band_pct": {
+            "type": "number",
+            "label": t.get("fee_neutral_band_pct", "Neutral Band (%)"),
+            "min": 0,
+            "max": 50,
+            "default": 5,
+            "description": t.get("fee_neutral_band_pct_desc",
+                                 "How close to the median still counts as normal, and so renders "
+                                 "in the neutral color. Only used by the neutral relative scale."),
+            "category": "mempool",
+            "advanced": True,
+            "order": 5
+        },
         "mempool_host": {
             "type": "text",
             "label": t.get("mempool_host", "Mempool Server Host"),

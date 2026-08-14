@@ -467,6 +467,21 @@ class ImageRenderer(ColorMixin, MemeMixin, HashFrameMixin, TextMixin,
         self.block_fee_cache = {}  # {block_height: {'fee_data': ..., 'fee_color': ...}}
         self.last_block_height = None
         self.fee_param = config.get('fee_param', 'fastestFee')  # Default fee param
+
+        # Rolling median of recent block fees, used by the relative colour
+        # scales to decide whether the current fee is cheap or dear. Shared
+        # process-wide: this renderer is rebuilt on every config change, and the
+        # window it needs is measured in weeks. None until the app has wired an
+        # API client in, and fee_to_colors falls back to the absolute scale then.
+        try:
+            from managers.fee_baseline import get_shared_baseline
+            self.fee_baseline = get_shared_baseline(
+                cache_path=os.path.join("cache", "fee_history.json"),
+                window_days=config.get("fee_baseline_days", 30),
+            )
+        except Exception as e:
+            print(f"⚠️ Fee baseline unavailable: {e}")
+            self.fee_baseline = None
         self.lang = config.get("language", "en")
         
         # Determine display dimensions from device config

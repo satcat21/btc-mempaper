@@ -479,6 +479,44 @@ sealing later cannot reach addresses already written to the card in clear text.
 Setup, `docker-compose.yml`, LXC sizing and the limits of this approach:
 [Self-Hosting Guide → Tang](docs/SELF_HOSTING_GUIDE.md#part-8--tang-network-bound-encryption-for-wallet-data-optional).
 
+### Block Height Color — Is Now a Good Moment?
+
+The block height number is colored by the current fee. Colored against a **fixed**
+table, that stops telling you anything: through 2024–2025 fees sat between 0 and
+4 sat/vB almost permanently, which is one shade of green from one end of the year
+to the other.
+
+So the color is anchored to the **median fee of the last 30 days** instead. The
+question it answers is not "what is the fee" — the number below already says that
+— but *"is this cheap for right now?"*, which is the one that decides whether you
+consolidate UTXOs today or wait.
+
+![Fee color scale](docs/diagrams/fee-color-scale.svg)
+
+Both bars above are the same scale. Only the sat/vB underneath them changes, and
+that is the whole idea: **3 sat/vB is a bad deal when normal is 2, and a bargain
+when normal is 20.** The same number, opposite advice.
+
+| You see | It means |
+|---|---|
+| **Blue** | Far below normal — as cheap as this network gets. Move coins |
+| **Green** | Comfortably below normal |
+| **Neutral** (black on light, white on dark) | Within 5% of the median. Ordinary |
+| **Yellow → amber** | Somewhat above normal |
+| **Orange** | Expensive for the times |
+| **Red** | Several times the going rate. Wait unless it is urgent |
+
+The digits also carry a vertical gradient: **the previous block's fee at the top,
+the current fee at the bottom**, so a glance shows not just where the fee is but
+which way it is moving.
+
+Three scales are available via **Block Height Color Scale** in settings —
+neutral-centred (default), a continuous blue-to-red rainbow, or the original
+fixed thresholds with your own editable limits. On e-ink the color snaps to an
+ink the panel actually has, since a color it cannot make gets dithered into a
+checkerboard and thin digits turn to speckle. Details and tuning:
+[Config Reference → Block height color scale](docs/CONFIG_REFERENCE.md#block-height-color-scale).
+
 ### Info Blocks
 
 The dashboard image is composed of a meme and a set of optional info blocks displayed alongside it. Each block can be independently enabled or disabled in Settings. If more blocks are enabled than fit the available space, a random subset is shown each refresh.

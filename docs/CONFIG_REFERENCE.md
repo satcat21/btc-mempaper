@@ -51,6 +51,59 @@ These settings can be modified via the Web Dashboard (recommended) or by editing
 | **Username** | `mempool_username` | String | Optional Basic auth username | Leave empty if not required |
 | **Password** | `mempool_password` | String | Optional Basic auth password | Leave empty if not required |
 | **Fee Preference** | `fee_parameter` | Select | Which fee to display | `fastestFee` (High Priority), `halfHourFee` (Standard), `hourFee` (Low Priority), `economyFee` (Economy), `minimumFee` (No Priority) |
+| **Block Height Color Scale** | `fee_color_mode` | Select | How that fee becomes a color | `relative_neutral` (default), `relative_rainbow`, `absolute` |
+| **Fee Baseline Window** | `fee_baseline_days` | Number | Days of history behind "normal" (Advanced) | `3`–`90`, default `30` |
+| **Neutral Band** | `fee_neutral_band_pct` | Number | How close to the median still reads as normal (Advanced) | `0`–`50`, default `5` |
+
+### Block height color scale
+
+The block height number is colored by the current fee. The **relative** scales
+compare that fee against the median of the last `fee_baseline_days` days rather
+than against fixed thresholds, so "cheap" keeps meaning cheap when the whole fee
+market moves.
+
+![Fee color scale](diagrams/fee-color-scale.svg)
+
+| Mode | Behaviour |
+|---|---|
+| `relative_neutral` *(default)* | Neutral at the median, cool below it, warm above. Blue → green → **neutral** → yellow → amber → orange → red |
+| `relative_rainbow` | One continuous ramp with no neutral point: blue → green → yellow → amber → orange → red |
+| `absolute` | The original fixed sat/vB thresholds. Ignores the baseline entirely |
+
+Notes that matter in practice:
+
+- **The neutral color follows the theme** — black on a light theme, near-white on
+  a dark one. "Normal" has to disappear into the background, and black digits on
+  a dark panel would disappear the wrong way.
+- **The scale is logarithmic.** Each whole step is a doubling, so 1→2 sat/vB
+  occupies as much of the range as 20→40. A linear ratio axis would squash the
+  entire cheap half into a sliver.
+- **1 sat/vB is always the cheapest color**, whatever the baseline says. It is
+  the relay minimum — there is nothing cheaper to wait for, so a quiet week that
+  drags the median down to 1 must not make 1 read as merely "normal".
+- **The median is used, not the mean.** One inscription weekend at 300 sat/vB
+  would drag a mean upward for a month and make genuinely expensive blocks look
+  ordinary; the median barely moves.
+- **No baseline yet, no guessing.** Under 12 samples in the window, the relative
+  modes fall back to the absolute table rather than inventing a ratio.
+
+Baseline history lives in `cache/fee_history.json`. It fills itself from the
+blocks mempaper already polls, and is backfilled from
+`/v1/mining/blocks/fee-rates` where the mempool instance has block indexing
+enabled — a self-hosted instance without the mining module simply accumulates
+locally instead, warmed on first run from the last ~15 blocks.
+
+#### Custom thresholds for `absolute`
+
+`fee_color_stops` (file-only) replaces the built-in table:
+
+```json
+"fee_color_stops": [[0, "#00d250"], [10, "#82d20a"], [30, "#ffa000"], [120, "#e61414"]]
+```
+
+Pairs of `[sat/vB, "#rrggbb"]`, interpolated in between. A malformed list falls
+back to the built-in table whole rather than partially, so a typo cannot leave
+you with a half-custom scale.
 
 ### Ports are remembered per transport
 

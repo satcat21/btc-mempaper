@@ -1,0 +1,160 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" role="img" aria-label="How the block-height colour adapts to the rolling median fee. Two identical colour bars run from blue through green, a neutral band at the median, then yellow, orange and red. The first bar is labelled for a quiet network with a 30-day median of 2 sat per vByte, the second for a busy network with a median of 20. Because the scale is anchored to the median, the same 3 sat per vByte reads red and expensive on the quiet network but blue and cheap on the busy one. The neutral band is black on a light theme and white on a dark one, and the digits carry a vertical gradient from the previous block's fee at the top to the current fee at the bottom.">
+<style>
+  svg { font-family: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, "Liberation Mono", monospace; }
+
+  .f-t{fill:#1A1A1F} .f-t2{fill:#5C5C66} .f-t3{fill:#8A8A94}
+  .f-btc{fill:#B7791F} .f-lan{fill:#1D6B2C} .f-auth{fill:#2C5AA8}
+  .f-exp{fill:#C62828} .f-tor{fill:#6B3FA0}
+
+  .bx-2{fill:#F2F0EC;stroke:#DAD6CE;stroke-width:1.4}
+  .bx-bar{stroke:#1A1A1F;stroke-width:1.4}
+
+  .ln-thin{stroke:#DAD6CE;stroke-width:1;fill:none}
+  .ln-tick{stroke:#8A8A94;stroke-width:1.2;fill:none}
+  .ln-sep{stroke:#DAD6CE;stroke-width:1;fill:none}
+
+  .t-lg{font-size:25px;font-weight:700} .t-md{font-size:20px;font-weight:600}
+  .t-sm{font-size:17px;font-weight:600} .t-xs{font-size:15px} .t-xxs{font-size:14px}
+  .t-eyebrow{font-size:15px;font-weight:700;letter-spacing:1.4px}
+  .mid{text-anchor:middle}
+</style>
+<rect x="0" y="0" width="100%" height="100%" fill="#FAF9F6"/>
+<svg x="40" y="20" width="44" height="44" viewBox="0 0 64 64"><g transform="translate(0.00630876,-0.00301984)"><path fill="#1a1a1f" d="m63.033,39.744c-4.274,17.143-21.637,27.576-38.782,23.301-17.138-4.274-27.571-21.638-23.295-38.78,4.272-17.145,21.635-27.579,38.775-23.305,17.144,4.274,27.576,21.64,23.302,38.784z"/><path fill="#F7931A" d="m46.103,27.444c0.637-4.258-2.605-6.547-7.038-8.074l1.438-5.768-3.511-0.875-1.4,5.616c-0.923-0.23-1.871-0.447-2.813-0.662l1.41-5.653-3.509-0.875-1.439,5.766c-0.764-0.174-1.514-0.346-2.242-0.527l0.004-0.018-4.842-1.209-0.934,3.75s2.605,0.597,2.55,0.634c1.422,0.355,1.679,1.296,1.636,2.042l-1.638,6.571c0.098,0.025,0.225,0.061,0.365,0.117-0.117-0.029-0.242-0.061-0.371-0.092l-2.296,9.205c-0.174,0.432-0.615,1.08-1.609,0.834,0.035,0.051-2.552-0.637-2.552-0.637l-1.743,4.019,4.569,1.139c0.85,0.213,1.683,0.436,2.503,0.646l-1.453,5.834,3.507,0.875,1.439-5.772c0.958,0.26,1.888,0.5,2.798,0.726l-1.434,5.745,3.511,0.875,1.453-5.823c5.987,1.133,10.489,0.676,12.384-4.739,1.527-4.36-0.076-6.875-3.226-8.515,2.294-0.529,4.022-2.038,4.483-5.155zm-8.022,11.249c-1.085,4.36-8.426,2.003-10.806,1.412l1.928-7.729c2.38,0.594,10.012,1.77,8.878,6.317zm1.086-11.312c-0.99,3.966-7.1,1.951-9.082,1.457l1.748-7.01c1.982,0.494,8.365,1.416,7.334,5.553z"/></g></svg>
+<text x="96" y="42" font-size="21" font-weight="700"><tspan fill="#1A1A1F">mem</tspan><tspan fill="#B7791F">paper</tspan></text>
+<text x="96" y="64" font-size="15" fill="#5C5C66">Block height colour &#8212; relative to the rolling median fee</text>
+<text x="1240" y="42" font-size="13" fill="#8A8A94" text-anchor="end">github.com/satcat21/btc-mempaper</text>
+<text x="1240" y="63" font-size="13" fill="#8A8A94" text-anchor="end">2026</text>
+<line x1="40" y1="80" x2="1240" y2="80" stroke="#DAD6CE" stroke-width="1"/>
+
+  <defs>
+    <!-- One scale, used by both bars. Position is log2(fee / median), so each
+         whole step is a doubling and the cheap half of the range gets as much
+         room as the dear half. The two stops sharing an offset are what make
+         the neutral band a flat plateau instead of a colour the ramp crosses. -->
+    <linearGradient id="feeScale" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%"     stop-color="rgb(0,90,255)"/>
+      <stop offset="25%"    stop-color="rgb(0,160,210)"/>
+      <stop offset="37.5%"  stop-color="rgb(0,200,70)"/>
+      <stop offset="48.15%" stop-color="rgb(0,200,70)"/>
+      <stop offset="48.15%" stop-color="rgb(20,20,25)"/>
+      <stop offset="51.76%" stop-color="rgb(20,20,25)"/>
+      <stop offset="51.76%" stop-color="rgb(235,215,0)"/>
+      <stop offset="59.5%"  stop-color="rgb(255,180,0)"/>
+      <stop offset="68%"    stop-color="rgb(255,130,0)"/>
+      <stop offset="77.5%"  stop-color="rgb(245,75,10)"/>
+      <stop offset="88.75%" stop-color="rgb(215,25,25)"/>
+      <stop offset="100%"   stop-color="rgb(150,10,30)"/>
+    </linearGradient>
+
+    <!-- Real output of fee_to_colors() on a light theme, for the two most
+         extreme swings against a 2 sat/vB median: the previous block's fee
+         lightened at the top, the current fee saturated at the bottom. The top
+         is washed only half-way to white, which is what keeps blue telling
+         itself apart from red - wash it further and every hue arrives as the
+         same near-white and the direction is lost. -->
+    <linearGradient id="gRise" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="rgb(127,172,255)"/>
+      <stop offset="100%" stop-color="rgb(127,8,25)"/>
+    </linearGradient>
+    <linearGradient id="gFall" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="rgb(202,132,142)"/>
+      <stop offset="100%" stop-color="rgb(0,76,216)"/>
+    </linearGradient>
+  </defs>
+
+  <text x="40" y="112" class="t-xs f-t">The colour does not track the fee. It tracks the fee <tspan font-weight="700">against what fees have been doing lately</tspan> &#8212; the median</text>
+  <text x="40" y="134" class="t-xs f-t">of the last 30 days. Both bars below are the same scale. Only the numbers underneath them change.</text>
+
+  <!-- ── Quiet network ──────────────────────────────────────────────── -->
+  <text x="140" y="176" class="t-eyebrow f-t2">QUIET NETWORK &#183; 30-DAY MEDIAN 2 sat/vB</text>
+  <text x="650" y="190" class="t-xxs mid f-t2">median</text>
+  <rect x="140" y="198" width="1020" height="46" rx="4" class="bx-bar" fill="url(#feeScale)"/>
+
+  <line x1="140"  y1="244" x2="140"  y2="252" class="ln-tick"/>
+  <line x1="395"  y1="244" x2="395"  y2="252" class="ln-tick"/>
+  <line x1="523"  y1="244" x2="523"  y2="252" class="ln-tick"/>
+  <line x1="650"  y1="244" x2="650"  y2="252" class="ln-tick"/>
+  <line x1="732"  y1="244" x2="732"  y2="252" class="ln-tick"/>
+  <line x1="799"  y1="244" x2="799"  y2="252" class="ln-tick"/>
+  <line x1="905"  y1="244" x2="905"  y2="252" class="ln-tick"/>
+  <line x1="1054" y1="244" x2="1054" y2="252" class="ln-tick"/>
+  <line x1="1160" y1="244" x2="1160" y2="252" class="ln-tick"/>
+
+  <text x="140"  y="272" class="t-xs f-t">0.5</text>
+  <text x="395"  y="272" class="t-xs mid f-t">1</text>
+  <text x="523"  y="272" class="t-xs mid f-t">1.4</text>
+  <text x="650"  y="272" class="t-xs mid f-t" font-weight="700">2</text>
+  <text x="732"  y="272" class="t-xs mid f-t">2.5</text>
+  <text x="799"  y="272" class="t-xs mid f-t">3</text>
+  <text x="905"  y="272" class="t-xs mid f-t">4</text>
+  <text x="1054" y="272" class="t-xs mid f-t">6</text>
+  <text x="1160" y="272" class="t-xs f-t" text-anchor="end">8</text>
+  <text x="140"  y="294" class="t-xxs f-t3">sat/vB</text>
+
+  <!-- ── Busy network ───────────────────────────────────────────────── -->
+  <text x="140" y="336" class="t-eyebrow f-t2">BUSY NETWORK &#183; 30-DAY MEDIAN 20 sat/vB</text>
+  <text x="650" y="350" class="t-xxs mid f-t2">median</text>
+  <rect x="140" y="358" width="1020" height="46" rx="4" class="bx-bar" fill="url(#feeScale)"/>
+
+  <line x1="140"  y1="404" x2="140"  y2="412" class="ln-tick"/>
+  <line x1="395"  y1="404" x2="395"  y2="412" class="ln-tick"/>
+  <line x1="523"  y1="404" x2="523"  y2="412" class="ln-tick"/>
+  <line x1="650"  y1="404" x2="650"  y2="412" class="ln-tick"/>
+  <line x1="732"  y1="404" x2="732"  y2="412" class="ln-tick"/>
+  <line x1="799"  y1="404" x2="799"  y2="412" class="ln-tick"/>
+  <line x1="905"  y1="404" x2="905"  y2="412" class="ln-tick"/>
+  <line x1="1054" y1="404" x2="1054" y2="412" class="ln-tick"/>
+  <line x1="1160" y1="404" x2="1160" y2="412" class="ln-tick"/>
+
+  <text x="140"  y="432" class="t-xs f-t">5</text>
+  <text x="395"  y="432" class="t-xs mid f-t">10</text>
+  <text x="523"  y="432" class="t-xs mid f-t">14</text>
+  <text x="650"  y="432" class="t-xs mid f-t" font-weight="700">20</text>
+  <text x="732"  y="432" class="t-xs mid f-t">25</text>
+  <text x="799"  y="432" class="t-xs mid f-t">30</text>
+  <text x="905"  y="432" class="t-xs mid f-t">40</text>
+  <text x="1054" y="432" class="t-xs mid f-t">60</text>
+  <text x="1160" y="432" class="t-xs f-t" text-anchor="end">80</text>
+  <text x="140"  y="454" class="t-xxs f-t3">sat/vB</text>
+
+  <text x="395"  y="454" class="t-xxs mid f-t3">0.5&#215;</text>
+  <text x="523"  y="454" class="t-xxs mid f-t3">0.71&#215;</text>
+  <text x="650"  y="454" class="t-xxs mid f-t3">1&#215; median</text>
+  <text x="732"  y="454" class="t-xxs mid f-t3">1.25&#215;</text>
+  <text x="799"  y="454" class="t-xxs mid f-t3">1.5&#215;</text>
+  <text x="905"  y="454" class="t-xxs mid f-t3">2&#215;</text>
+  <text x="1054" y="454" class="t-xxs mid f-t3">3&#215;</text>
+  <text x="1160" y="454" class="t-xxs f-t3" text-anchor="end">4&#215;</text>
+
+  <!-- ── Three things the bars do not show ──────────────────────────── -->
+  <rect x="140" y="482" width="1020" height="158" rx="8" class="bx-2"/>
+  <line x1="536" y1="502" x2="536" y2="620" class="ln-sep"/>
+  <line x1="852" y1="502" x2="852" y2="620" class="ln-sep"/>
+
+  <text x="166" y="512" class="t-eyebrow f-t">PAYING 3 sat/vB</text>
+  <rect x="166" y="526" width="24" height="24" rx="3" fill="rgb(215,25,25)" stroke="#1A1A1F" stroke-width="1.2"/>
+  <text x="202" y="543" class="t-xxs f-t">&#8230;when normal is 2</text>
+  <text x="202" y="561" class="t-xxs f-t2">1.5&#215; the going rate &#8212; wait</text>
+  <rect x="166" y="574" width="24" height="24" rx="3" fill="rgb(0,90,255)" stroke="#1A1A1F" stroke-width="1.2"/>
+  <text x="202" y="591" class="t-xxs f-t">&#8230;when normal is 20</text>
+  <text x="202" y="609" class="t-xxs f-t2">0.15&#215; the going rate &#8212; act</text>
+
+  <text x="566" y="512" class="t-eyebrow f-t">NEUTRAL FOLLOWS THE THEME</text>
+  <rect x="566" y="526" width="46" height="26" rx="3" fill="#FFFFFF" stroke="#DAD6CE" stroke-width="1.2"/>
+  <rect x="574" y="532" width="30" height="14" rx="2" fill="rgb(17,17,21)"/>
+  <text x="624" y="544" class="t-xxs f-t">light theme &#8594; black</text>
+  <rect x="566" y="562" width="46" height="26" rx="3" fill="#1A1A1F" stroke="#1A1A1F" stroke-width="1.2"/>
+  <rect x="574" y="568" width="30" height="14" rx="2" fill="rgb(252,252,252)"/>
+  <text x="624" y="580" class="t-xxs f-t">dark theme &#8594; white</text>
+  <text x="566" y="606" class="t-xxs f-t2">&#8220;Normal&#8221; has to vanish into the</text>
+  <text x="566" y="624" class="t-xxs f-t2">background, whichever one it is.</text>
+
+  <text x="882" y="512" class="t-eyebrow f-t">DIGITS SHOW DIRECTION</text>
+  <text x="882" y="556" font-size="30" font-weight="700" fill="url(#gRise)">914726</text>
+  <text x="1002" y="550" class="t-xxs f-t">spike</text>
+  <text x="1002" y="567" class="t-xxs f-t2">1 &#8594; 40 sat/vB</text>
+  <text x="882" y="600" font-size="30" font-weight="700" fill="url(#gFall)">914727</text>
+  <text x="1002" y="594" class="t-xxs f-t">crash</text>
+  <text x="1002" y="611" class="t-xxs f-t2">40 &#8594; 1 sat/vB</text>
+  <text x="882" y="630" class="t-xxs f-t2">top: last block &#183; bottom: now</text>
+</svg>

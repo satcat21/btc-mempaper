@@ -439,7 +439,9 @@ class CachingMixin:
 
             # Update fee data if stale
             fee_update_interval = update_interval
+            sampled_fees = False
             if now - self._precache['fee_last_update'] > fee_update_interval:
+                sampled_fees = True
                 try:
                     fee_param = self.config.get("fee_parameter", "minimumFee")
                     fee_data = self.mempool_api.get_fee_recommendations()
@@ -451,7 +453,7 @@ class CachingMixin:
                         self._precache['fee_data'] = fee_data
                         self._precache['block_height'] = block_height
                         self._precache['fee_last_update'] = now
-                        
+
                         # Only log if fee actually changed
                         fee_value = fee_data.get(fee_param, 1)
                         if fee_value != self._precache['last_fee_value']:
@@ -460,6 +462,25 @@ class CachingMixin:
                             data_changed = True
                 except Exception as e:
                     print(f"⚠️ Failed to pre-cache fees: {e}")
+
+        # Feed the rolling baseline that the relative colour scales compare
+        # against. Outside the lock: this is an HTTP call and nothing else in
+        # the precache dict depends on it.
+        #
+        # Block medians rather than the fee recommendation, deliberately - it is
+        # the same metric the API backfill returns, so a device that backfilled
+        # and a device that only ever accumulated locally converge on comparable
+        # baselines instead of two different notions of "normal". /v1/blocks
+        # hands back ~15 blocks at once, so this also fills gaps left by downtime
+        # without any catch-up bookkeeping, and record_many ignores repeats.
+        if sampled_fees:
+            baseline = getattr(self.image_renderer, 'fee_baseline', None)
+            if baseline is not None:
+                try:
+                    baseline.record_many(self.mempool_api.get_recent_block_fees())
+                    baseline.backfill()      # rate-limited internally to 6h
+                except Exception as e:
+                    print(f"⚠️ Failed to sample fee baseline: {e}")
 
         # Invalidate pre-rendered image so it gets regenerated with fresh data
         if data_changed:
