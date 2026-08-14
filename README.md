@@ -551,9 +551,9 @@ at full strength rather than fading out into the descender space.
 
 Three scales are available from the same panel —
 neutral-centred (default), a continuous blue-to-red rainbow, or the original
-fixed thresholds with your own editable limits. On e-ink the color snaps to an
-ink the panel actually has, since a color it cannot make gets dithered into a
-checkerboard and thin digits turn to speckle. Details and tuning:
+fixed thresholds with your own editable limits. On e-ink the same colors are used, and the
+panel dithers them onto the six or seven inks it has — that blend is what gives
+the gradient its intermediate and lighter tones. Details and tuning:
 [Config Reference → Block height color scale](docs/CONFIG_REFERENCE.md#block-height-color-scale).
 
 ### Info Blocks

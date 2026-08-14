@@ -93,20 +93,6 @@ UNKNOWN_COLOR = (120, 120, 130)
 # which is exactly backwards - it is as good as it ever gets.
 ABSOLUTE_CHEAP_FLOOR = 1.0
 
-# Text colours the panel can actually produce. The background ink is excluded
-# per theme rather than always dropping white: snapping to the background erases
-# the digits, and on a dark panel the background is black, not white. Dropping
-# white unconditionally is what used to send a near-white base colour to yellow,
-# since yellow is the brightest ink left once white is gone.
-EINK_INKS_6 = [(0, 0, 0), (255, 255, 255), (255, 0, 0), (255, 255, 0),
-               (0, 255, 0), (0, 0, 255)]
-EINK_INKS_7 = EINK_INKS_6 + [(255, 128, 0)]
-
-# Panels with an orange ink. Everything else gets the six-colour set, which is
-# the safe assumption: emitting orange to a panel without it dithers into a
-# red/yellow checkerboard across the glyphs.
-ORANGE_CAPABLE_PANELS = {"epd7in3f"}
-
 
 def _interpolate(stops, position, low_default=None, high_default=None):
     """Linear interpolation across a sorted (position, rgb) table."""
@@ -132,36 +118,6 @@ def _lighten(rgb, amount=LIGHTEN_AMOUNT):
 def _deepen(rgb, factor=0.85):
     """Move a colour toward black, keeping its hue."""
     return tuple(max(0, min(255, int(v * factor))) for v in rgb)
-
-
-def _eink_palette(panel, is_dark):
-    """Inks the panel can print, minus the one the background is painted in.
-
-    Panels with an orange ink get the seven-colour set; everything else gets
-    six, which is the safe assumption - emitting orange to a panel without it
-    dithers into a red/yellow checkerboard across the glyphs.
-    """
-    inks = EINK_INKS_7 if panel in ORANGE_CAPABLE_PANELS else EINK_INKS_6
-    background = (0, 0, 0) if is_dark else (255, 255, 255)
-    return [ink for ink in inks if ink != background]
-
-
-def _snap_to_palette(rgb, palette):
-    """Nearest ink the panel actually has.
-
-    Weighted to approximate perceived brightness rather than raw RGB distance,
-    so a mid-yellow does not land on green just because the green channel is
-    numerically closer.
-    """
-    best = None
-    best_d = None
-    for cand in palette:
-        d = (2.0 * (rgb[0] - cand[0]) ** 2
-             + 4.0 * (rgb[1] - cand[1]) ** 2
-             + 3.0 * (rgb[2] - cand[2]) ** 2)
-        if best_d is None or d < best_d:
-            best, best_d = cand, d
-    return best
 
 
 class FormattingMixin:
@@ -361,9 +317,15 @@ class FormattingMixin:
         `recent_fee` defaults to the current fee, which renders flat - correct for
         any caller that has no previous block to compare against.
 
-        On e-ink the result snaps to an ink the panel actually has, because a
-        colour it cannot make is dithered into a checkerboard and thin digits
-        turn to speckle.
+        e-ink gets the same treatment as the web image. It used to snap both ends
+        to inks the panel could print outright, to keep the driver from dithering
+        thin digits into speckle. That cost more than it saved: with five or six
+        inks two fees an hour apart land on the same one, so the gradient printed
+        flat and said nothing, and a cheap fee could take the panel's blue, which
+        is 2.4:1 against a black background - the fee sitting under the number was
+        barely readable. Letting the driver dither an intermediate tone gives back
+        the gradient and the lighter end, at the cost of some texture in the
+        glyphs, which at this size reads as shading rather than noise.
         """
         if web_quality:
             is_dark = self.config.get("color_mode_dark", True)
@@ -404,16 +366,6 @@ class FormattingMixin:
             top_color = base
         if bottom_is_base:
             bottom_color = base
-
-        if not web_quality:
-            # Snap first, then skip the tone treatment entirely: it produces
-            # intermediate shades that are exactly what the panel cannot render,
-            # so applying it after snapping would undo the snapping. Both ends
-            # can therefore land on the same ink, which is correct - the panel
-            # has no tone between them to show.
-            palette = _eink_palette(self.config.get("omni_device_name", ""), is_dark)
-            return (_snap_to_palette(top_color, palette),
-                    _snap_to_palette(bottom_color, palette))
 
         if is_dark:
             # Dark background: the top carries the previous fee at full value and

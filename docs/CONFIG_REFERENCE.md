@@ -144,10 +144,21 @@ Mapping it onto the text layout box instead would waste the ends of the ramp on 
 descender space digits never occupy, leaving the top 17% pre-blended and the bottom
 26% short.
 
-On e-ink the two ends snap to inks the panel actually has, and the background ink
-is excluded from the choice — white on a light panel, black on a dark one — since
-snapping to the background would erase the digits. Both ends can land on the same
-ink, which is correct: the panel has no tone in between to show.
+e-ink gets the same colors as the web image. The panel's own driver dithers them
+onto the six or seven inks it has, which is what produces the intermediate and
+lighter tones the gradient needs — a steady dear fee prints as roughly half red,
+a quarter yellow and a fifth white, reading as a warm gradient rather than a slab
+of one ink.
+
+Both ends used to snap to a printable ink outright, to keep thin digits from
+speckling. That cost more than it saved: two fees an hour apart landed on the same
+ink, so the gradient printed flat, and a cheap fee took the panel's blue at 2.4:1
+against a black background, leaving the fee under the number barely readable. The
+worst case is now 6.4:1 on a dark panel.
+
+One weak spot remains on a light panel: a fee around 1.3x the median deepens to an
+amber that measures 2.5:1 on white. Yellow is simply hard to read on white — the
+same is true of the web image on a light theme.
 
 #### Custom thresholds for `absolute`
 
