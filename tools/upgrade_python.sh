@@ -100,8 +100,12 @@ ok "Packages unheld"
 # ── Step 2: Upgrade Python ────────────────────────────────────────────────────
 step "Upgrading Python ${CURRENT_MAJOR}.${REQUIRED_MINOR} via apt"
 apt-get update -qq
+# stderr is deliberately not discarded here. It used to be, and that hid the
+# one failure that matters: when this install does not fully succeed, the
+# fallback below cannot repair it, because 'apt-get upgrade <pkg>' only touches
+# packages that are already installed and will never install a missing one.
 apt-get install -y "python3.${REQUIRED_MINOR}" "python3.${REQUIRED_MINOR}-dev" \
-    "python3.${REQUIRED_MINOR}-venv" python3 python3-dev python3-venv 2>/dev/null \
+    "python3.${REQUIRED_MINOR}-venv" python3 python3-dev python3-venv \
     || apt-get upgrade -y python3 python3-dev python3-venv
 NEW_MINOR=$(python3 -c "import sys; print(sys.version_info.minor)" 2>/dev/null || echo "?")
 ok "System Python is now ${CURRENT_MAJOR}.${NEW_MINOR}"
@@ -185,9 +189,24 @@ if [ "$ARCH" = "armv6l" ]; then
 fi
 
 # ── Step 5: Re-hold Python metapackages ───────────────────────────────────────
+# Only hold what is actually installed. apt-mark hold pins a package in its
+# current state, and for a package that is absent that state is "not installed"
+# - which apt then refuses to change, silently, reporting 0 newly installed and
+# no error. Holding all three unconditionally is how python3-dev ended up
+# permanently uninstallable on devices where step 2 had not fully succeeded.
 step "Re-locking Python ${CURRENT_MAJOR}.${NEW_MINOR}"
-apt-mark hold python3 python3-dev python3-venv >/dev/null 2>&1 \
-    && ok "Python ${CURRENT_MAJOR}.${NEW_MINOR} locked (apt-mark hold)"
+HOLD_PKGS=()
+for _pkg in python3 python3-dev python3-venv; do
+    if dpkg-query -W -f='${Status}' "$_pkg" 2>/dev/null | grep -q '^install ok installed$'; then
+        HOLD_PKGS+=("$_pkg")
+    else
+        warn "$_pkg is not installed — leaving it unheld so apt can still install it later"
+    fi
+done
+if [ ${#HOLD_PKGS[@]} -gt 0 ]; then
+    apt-mark hold "${HOLD_PKGS[@]}" >/dev/null 2>&1 \
+        && ok "Python ${CURRENT_MAJOR}.${NEW_MINOR} locked (apt-mark hold: ${HOLD_PKGS[*]})"
+fi
 
 # ── Step 6: Restart service ───────────────────────────────────────────────────
 if $NO_RESTART; then

@@ -85,6 +85,39 @@ if [ ${#MISSING[@]} -eq 0 ]; then
 fi
 echo "Missing: ${MISSING[*]}"
 
+# A package on hold cannot be installed. apt-mark hold pins a package in its
+# current state, and when that state is "not installed" apt refuses to change it
+# - silently, reporting 0 newly installed with no error at all.
+# tools/upgrade_python.sh holds python3/python3-dev/python3-venv to pin the
+# Python minor version, so this is reachable in normal operation. Separate those
+# out rather than attempting them: the attempt cannot succeed, and retrying it
+# on every startup costs a package-index refresh on a Pi Zero for nothing.
+HELD=$(apt-mark showhold 2>/dev/null || true)
+BLOCKED=()
+INSTALLABLE=()
+for p in "${MISSING[@]}"; do
+    if printf '%s\n' "$HELD" | grep -qxF "$p"; then
+        BLOCKED+=("$p")
+    else
+        INSTALLABLE+=("$p")
+    fi
+done
+
+if [ ${#BLOCKED[@]} -gt 0 ]; then
+    echo "⚠️  On hold and not installed, so apt cannot install: ${BLOCKED[*]}" >&2
+    echo "    Release and install with:" >&2
+    echo "      sudo apt-mark unhold ${BLOCKED[*]}" >&2
+    echo "      sudo apt-get install -y ${BLOCKED[*]}" >&2
+    echo "    Re-hold afterwards only if the package is a Python metapackage" >&2
+    echo "    whose minor version you are pinning." >&2
+fi
+
+if [ ${#INSTALLABLE[@]} -eq 0 ]; then
+    echo "Nothing installable — every missing package is on hold." >&2
+    exit 1
+fi
+MISSING=("${INSTALLABLE[@]}")
+
 # Refresh the index before installing. A package that is new in this release does
 # not exist in an index that predates it, and 'Unable to locate package' would
 # otherwise abort the entire batch below - which is exactly how a device ends up
@@ -106,8 +139,11 @@ fi
 # app and the web updater use this status to decide whether to warn the user, so
 # it must not report success for a package that is still missing.
 mapfile -t STILL_MISSING < <(_missing "${MISSING[@]}")
-if [ ${#STILL_MISSING[@]} -gt 0 ]; then
-    echo "❌ Still missing after install: ${STILL_MISSING[*]}" >&2
+if [ ${#STILL_MISSING[@]} -gt 0 ] || [ ${#BLOCKED[@]} -gt 0 ]; then
+    [ ${#STILL_MISSING[@]} -gt 0 ] \
+        && echo "❌ Still missing after install: ${STILL_MISSING[*]}" >&2
+    [ ${#BLOCKED[@]} -gt 0 ] \
+        && echo "❌ Not attempted (on hold): ${BLOCKED[*]}" >&2
     exit 1
 fi
 echo "✅ Installed: ${MISSING[*]}"
