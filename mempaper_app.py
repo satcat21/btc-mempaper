@@ -1229,13 +1229,10 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
         try:
             from PIL import Image, ImageDraw, ImageFont
 
-            # Use configured display dimensions, respecting orientation
+            # Portrait canvas: the shorter side of the panel is the width.
             display_w = self.config.get("display_width", 800)
             display_h = self.config.get("display_height", 480)
-            if self.config.get("web_orientation", "vertical") == "vertical":
-                width, height = min(display_w, display_h), max(display_w, display_h)
-            else:
-                width, height = max(display_w, display_h), min(display_w, display_h)
+            width, height = min(display_w, display_h), max(display_w, display_h)
             # Use background color that respects dark mode setting
             is_dark_mode = self.config.get("color_mode_dark", False)
             bg_color = (46, 50, 78) if is_dark_mode else (255, 255, 255)  # Dark: #2e324e, Light: white
@@ -1663,12 +1660,12 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
         self._init_api_clients()
         
         # Only invalidate cached image if the config actually affects image generation
-        # Language changes, orientation changes, etc. need image regeneration
+        # Language changes, layout changes, etc. need image regeneration
         # But other changes like API settings don't require image invalidation
         image_affecting_changes = False
         if old_config and self.config:
             image_affecting_settings = [
-                'language', 'web_orientation', 'eink_orientation', 'prioritize_large_scaled_meme',
+                'language', 'prioritize_large_scaled_meme',
                 'display_width', 'display_height', 'show_btc_price_block',
                 'btc_price_currency', 'show_bitaxe_block', 'show_wallet_balances_block',
                 'wallet_balance_unit', 'wallet_balance_currency', 'color_mode_dark',
@@ -1780,11 +1777,7 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
         """Generate a simple placeholder image quickly."""
         from PIL import Image, ImageDraw, ImageFont
         
-        # Use current orientation settings
-        if self.config.get("web_orientation", "vertical") == "horizontal":
-            width, height = 800, 480
-        else:
-            width, height = 480, 800
+        width, height = 480, 800
             
         # Create simple placeholder
         img = Image.new('RGB', (width, height), color='#667eea')
@@ -1819,7 +1812,7 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
         # Define settings that affect image rendering and require full regeneration
         image_affecting_settings = {
             # Hardware settings
-            'web_orientation', 'eink_orientation', 'display_width', 'display_height', 'e-ink-display-connected',
+            'display_width', 'display_height', 'e-ink-display-connected',
             'omni_device_name', 'block_height_area',
 
             # Meme layout settings
@@ -2703,7 +2696,7 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
         # Patch hash frame onto pre-rendered images (fast ~10ms per image)
         web_img_patched = pr['web_img'].copy() if pr['web_img'] is not None else None
         if web_img_patched is not None:
-            self.image_renderer._apply_orientation_settings(self.image_renderer.web_orientation)
+            self.image_renderer._apply_layout_settings()
             self.image_renderer.patch_hash_frame_on_image(web_img_patched, block_hash, web_quality=True)
 
         eink_img_patched = None
@@ -2713,9 +2706,8 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
                 eink_img_patched = self.image_renderer.render_opsec_eink_image()
             elif pr['eink_img'] is not None:
                 eink_img_patched = pr['eink_img'].copy()
-                self.image_renderer._apply_orientation_settings(self.image_renderer.eink_orientation)
+                self.image_renderer._apply_layout_settings()
                 self.image_renderer.patch_hash_frame_on_image(eink_img_patched, block_hash, web_quality=False)
-                self.image_renderer._apply_orientation_settings(self.image_renderer.web_orientation)
 
         # Promote to current (with patched hash frame)
         if web_img_patched is not None:

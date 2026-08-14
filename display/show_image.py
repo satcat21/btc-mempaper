@@ -203,36 +203,17 @@ def try_display_with_exponential_backoff(device_name, image_path, message=None, 
             epd.prepare()
             print("show_image.py: Prepared display.")
             
-            # Prepare the image with special handling for vertical orientation
-            # Load config to check display orientation
+            # The dashboard canvas is always portrait, so the image needs the
+            # rotation-aware scaling that avoids cropping it to the panel's
+            # landscape-native dimensions.
             try:
-                import json
-                config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config.json')
-                with open(config_path, 'r') as f:
-                    config = json.load(f)
-                eink_orientation = config.get("eink_orientation", "vertical").lower()
-                
-                # For vertical orientation, we need special processing to avoid cropping
-                if eink_orientation == "vertical":
-                    # Process image with rotation-aware scaling
-                    processed_img = process_vertical_image(image_path, epd.width, epd.height, message)
-                    # Create a dummy processor object to maintain compatibility
-                    proc = type('DummyProcessor', (), {'img': processed_img})()
-                else:
-                    # Standard processing for horizontal orientation
-                    proc = Processor(img_path=image_path,
-                                   display_width=epd.width,
-                                   display_height=epd.height,
-                                   textmsg=message)
-                    proc.process()
-                
+                processed_img = process_vertical_image(image_path, epd.width, epd.height, message)
+                # Create a dummy processor object to maintain compatibility
+                proc = type('DummyProcessor', (), {'img': processed_img})()
                 print(f"show_image.py: Physical display dimensions: {epd.width}x{epd.height}")
-                print(f"show_image.py: Display orientation setting: {eink_orientation}")
-                
+
             except Exception as e:
-                print(f"show_image.py: Could not load config, assuming vertical: {e}")
-                eink_orientation = "vertical"
-                # Fallback to standard processing
+                print(f"show_image.py: Portrait processing failed, falling back: {e}")
                 proc = Processor(img_path=image_path,
                                display_width=epd.width,
                                display_height=epd.height,

@@ -426,8 +426,8 @@ class MemeMixin:
 
         The image is scaled to *cover* the full display area (maintaining the
         original aspect ratio) and center-cropped so no empty borders remain.
-        self.width / self.height already reflect the active e-ink orientation
-        (set by _apply_orientation_settings before this method is called), so
+        self.width / self.height already reflect the e-ink canvas
+        (set by _apply_layout_settings before this method is called), so
         portrait vs. landscape is handled automatically.
 
         Falls back to a plain white image when no OPSec images are available.

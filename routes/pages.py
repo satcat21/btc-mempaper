@@ -111,10 +111,8 @@ def register(self):
         display_status = "enabled" if self.e_ink_enabled else "disabled"
         display_icon = "🖥️" if self.e_ink_enabled else "🚫"
 
-        # Get current language and orientation
+        # Get current language
         lang = self.config.get("language", "en")
-        # Use web_orientation for the dashboard view
-        orientation = self.config.get("web_orientation", "vertical")
         current_translations = translations.get(lang, translations["en"])
 
         # Get current block height for cache-busting
@@ -125,20 +123,16 @@ def register(self):
 
         # Compute actual web-image pixel dimensions for the img width/height hint.
         # display_width/height are the physical display resolution (e.g. 960×680 for
-        # 13.3E, 800×480 for 7.3F). In vertical orientation the shorter side becomes
-        # the width; in horizontal the longer side is the width.
+        # 13.3E, 800×480 for 7.3F); the dashboard is always portrait, so the shorter
+        # side is the width.
         _dw = self.config.get("display_width", 800)
         _dh = self.config.get("display_height", 480)
-        if orientation == "vertical":
-            img_w, img_h = min(_dw, _dh), max(_dw, _dh)
-        else:
-            img_w, img_h = max(_dw, _dh), min(_dw, _dh)
+        img_w, img_h = min(_dw, _dh), max(_dw, _dh)
 
         return render_template('dashboard.html',
                              translations=current_translations,
                              display_icon=display_icon,
                              e_ink_enabled=self.e_ink_enabled,
-                             orientation=orientation,
                              block_height=block_height,
                              is_authenticated=is_authenticated,
                              lang=lang,

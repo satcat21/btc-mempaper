@@ -43,13 +43,21 @@ class HashFrameMixin:
 
         # Resolution-aware spacing between 2-char groups in the hash frame.
         # Keep 480x800 baseline unchanged while opening spacing on larger canvases.
-        def _pair_gap_px(vertical_mode: bool) -> int:
-            base_gap = 6 if vertical_mode else 3
-            min_gap = 2 if vertical_mode else 1
-            gap_px = self._scale_px(base_gap, min_value=min_gap)
+        def _pair_gap_px() -> int:
+            gap_px = self._scale_px(6, min_value=2)
             if self.ui_scale > 1.0:
                 gap_px += int(round((self.ui_scale - 1.0) * 2))
-            if is_wide_screen and not vertical_mode:
+            return gap_px
+
+        # The width estimate below deliberately assumes the tighter 3 px gap
+        # rather than the 6 px the frame actually draws with. It only feeds the
+        # decision of whether to shrink the font to fit max_width, and the
+        # smaller number is what the current layout was tuned against.
+        def _estimated_pair_gap_px() -> int:
+            gap_px = self._scale_px(3, min_value=1)
+            if self.ui_scale > 1.0:
+                gap_px += int(round((self.ui_scale - 1.0) * 2))
+            if is_wide_screen:
                 gap_px += self._scale_px(5, min_value=1)
             return gap_px
 
@@ -73,7 +81,7 @@ class HashFrameMixin:
             _est_horizontal_pairs = 24 if is_wide_screen else 23
             _est_horizontal_chars = _est_horizontal_pairs * 2
             _est_gaps = max(0, _est_horizontal_pairs - 1)
-            estimated_full_width = (_est_horizontal_chars * cw) + (_est_gaps * _pair_gap_px(vertical_mode=False)) + self._scale_px(20, min_value=8)
+            estimated_full_width = (_est_horizontal_chars * cw) + (_est_gaps * _estimated_pair_gap_px()) + self._scale_px(20, min_value=8)
             
             if estimated_full_width > max_width:
                  scale_factor = max_width / estimated_full_width
@@ -130,8 +138,7 @@ class HashFrameMixin:
         bottom_pairs_colors = pair_colors[bottom_start:bottom_start + horizontal_pairs]
 
         # Use the same effective gap value as the draw loop below.
-        # Vertical mode uses 6 px, horizontal uses 3 px.
-        gap = _pair_gap_px(vertical_mode=(self.orientation == "vertical"))
+        gap = _pair_gap_px()
 
         # Optional deterministic centering based on the actual frame geometry.
         top_pair_count = len(top_pairs_chars)
@@ -229,16 +236,13 @@ class HashFrameMixin:
         prev_fee = self._get_fee_for_parameter(self._block_fee_cache["previous"]["height"], fee_parameter)
         curr_fee = self._get_fee_for_parameter(self._block_fee_cache["current"]["height"], fee_parameter)
         block_height_start_color, block_height_end_color = self.fee_to_colors(curr_fee, prev_fee, web_quality)
-        # Position block info based on orientation (same as existing _render_block_info)
-        
+        # Position block info (same as existing _render_block_info)
         if y_override is not None:
             y = y_override
-        elif self.orientation == "vertical":
+        else:
             # Use the full block_height_area so the hash frame bottom row stays within the image.
             y = self.height - self.block_height_area
-        else:
-            y = self.height - (self.block_height_area - self._scale_px(70, min_value=20))
-        
+
         # Calculate Max Width for Responsive Layout
         max_available_width = self.width - self._scale_px(24, min_value=8)
 
@@ -253,11 +257,9 @@ class HashFrameMixin:
         try:
             _mono_font = self._get_font(self.font_mono, self._scale_font_size(11, min_value=8))
             _cw = _mono_font.getbbox("0")[2] - _mono_font.getbbox("0")[0]
-            _gap_frame = self._scale_px(6, min_value=2) if self.orientation == "vertical" else self._scale_px(3, min_value=1)
+            _gap_frame = self._scale_px(6, min_value=2)
             if self.ui_scale > 1.0:
                 _gap_frame += int(round((self.ui_scale - 1.0) * 2))
-            if self.width >= 1000 and self.orientation != "vertical":
-                _gap_frame += self._scale_px(2, min_value=1)
             _horizontal_pairs = 24 if self.width >= 1000 else 23
             _horizontal_chars = _horizontal_pairs * 2
             _horizontal_gaps = max(0, _horizontal_pairs - 1)
@@ -298,87 +300,38 @@ class HashFrameMixin:
         # Draw "Block Height" label
         # None
         
-        if self.orientation == "vertical":
-            # --- VERTICAL MODE (fixed geometry, not auto-scaled like landscape below) ---
-            # Draw hash frame centered using measured geometry
-            if not skip_hash_frame:
-                self.draw_hash_frame(draw, 12, y+3, block_hash, web_quality=web_quality, center=True)
-            y = y + self._scale_px(24, min_value=8)
-
-            # When the font is scaled down (7-digit number), shift the text down by
-            # half the height reduction so it stays vertically centred in the frame.
-            base_ascent = font_block_value.getmetrics()[0]
-            used_ascent = used_font_block_value.getmetrics()[0]
-            vertical_centering_offset = max(0, (base_ascent - used_ascent) // 2)
-
-            # Draw block height with color based on current fees (move up by 10px)
-            value_y = y - self._scale_px(25, min_value=8) + vertical_centering_offset
-            x = (self.width - text_width) // 2  # text_width already squeezed+scaled above
-            self.draw_vertical_gradient_text(img, draw, formatted_height, x, value_y + self._scale_px(10, min_value=3),
-                                             used_font_block_value,
-                                             block_height_start_color, block_height_end_color,
-                                             dot_fraction=_DOT_FRACTION)
-            
-            # Add fee information as small text if available
-            if configured_fee is not None:
-                # Fee parameter translation logic replicated locally or reused if possible?
-                # The surrounding code already sets up fee variables but let's reuse the structure at the end of the function if possible?
-                # The current structure has fee logic embedded at the end.
-                # I will define `fee_y` here and let the common block handle text generation if possible, but the positioning is specific.
-                
-                # Get fee text (duplicate logic for safety or refactor later)
-                fee_parameter = self.config.get("fee_parameter", "minimumFee")
-                fee_type_keys = {
-                    "fastestFee": "fastest", "halfHourFee": "half_hour", "hourFee": "hour", "economyFee": "economy", "minimumFee": "minimum"
-                }
-                fee_key = fee_type_keys.get(fee_parameter, "minimum")
-                fee_type_display = self.t.get(fee_key, "Unknown")
-                fee_text = f"{fee_type_display}: {configured_fee} sat/vB"
-                
-                try:
-                    font_small = self._get_font(self.font_regular, self._scale_font_size(12, min_value=8))
-                except:
-                    font_small = font_block_label
-                    
-                bbox = used_font_block_value.getbbox(formatted_height)
-                fee_y = value_y + bbox[3] - bbox[1] + self._scale_px(42, min_value=14)
-                
-                # Fee label always uses bottom color of gradient
-                fee_color = block_height_end_color
-                self.draw_centered(draw, fee_text, fee_y, font_small, fee_color)
-
-            return # Exit early for vertical
-
-        # --- LANDSCAPE/RESPONSIVE MODE ---
-        # Draw hash frame centered using measured geometry.
-        # width auto-scaled by draw_hash_frame if max_width passed
+        # Fixed geometry: the canvas is always portrait.
+        # Draw hash frame centered using measured geometry
         if not skip_hash_frame:
-            self.draw_hash_frame(draw, 32, y, block_hash, web_quality=web_quality, max_width=max_available_width, center=True)
-        
-        # Center Block Height Text inside the frame (approx y+15)
-        value_y = y + self._scale_px(15, min_value=5)
-        
+            self.draw_hash_frame(draw, 12, y+3, block_hash, web_quality=web_quality, center=True)
+        y = y + self._scale_px(24, min_value=8)
+
+        # When the font is scaled down (7-digit number), shift the text down by
+        # half the height reduction so it stays vertically centred in the frame.
+        base_ascent = font_block_value.getmetrics()[0]
+        used_ascent = used_font_block_value.getmetrics()[0]
+        vertical_centering_offset = max(0, (base_ascent - used_ascent) // 2)
+
+        # Draw block height with color based on current fees (move up by 10px)
+        value_y = y - self._scale_px(25, min_value=8) + vertical_centering_offset
         x = (self.width - text_width) // 2  # text_width already squeezed+scaled above
-        self.draw_vertical_gradient_text(img, draw, formatted_height, x, value_y,
+        self.draw_vertical_gradient_text(img, draw, formatted_height, x, value_y + self._scale_px(10, min_value=3),
                                          used_font_block_value,
                                          block_height_start_color, block_height_end_color,
                                          dot_fraction=_DOT_FRACTION)
         
         # Add fee information as small text if available
         if configured_fee is not None:
-            # Get the configured fee parameter to display the fee type
+            # Fee parameter translation logic replicated locally or reused if possible?
+            # The surrounding code already sets up fee variables but let's reuse the structure at the end of the function if possible?
+            # The current structure has fee logic embedded at the end.
+            # I will define `fee_y` here and let the common block handle text generation if possible, but the positioning is specific.
+            
+            # Get fee text (duplicate logic for safety or refactor later)
             fee_parameter = self.config.get("fee_parameter", "minimumFee")
-            
-            # Map technical fee parameter names to translation keys
             fee_type_keys = {
-                "fastestFee": "fastest",
-                "halfHourFee": "half_hour", 
-                "hourFee": "hour",
-                "economyFee": "economy",
-                "minimumFee": "minimum"
+                "fastestFee": "fastest", "halfHourFee": "half_hour", "hourFee": "hour", "economyFee": "economy", "minimumFee": "minimum"
             }
-            
-            # Get the translated fee type name
             fee_key = fee_type_keys.get(fee_parameter, "minimum")
             fee_type_display = self.t.get(fee_key, "Unknown")
             fee_text = f"{fee_type_display}: {configured_fee} sat/vB"
@@ -387,22 +340,14 @@ class HashFrameMixin:
                 font_small = self._get_font(self.font_regular, self._scale_font_size(12, min_value=8))
             except:
                 font_small = font_block_label
-            
-            # Draw fee info in smaller text below block height
+                
             bbox = used_font_block_value.getbbox(formatted_height)
-            text_height = bbox[3] - bbox[1]
-            # Extra gap avoids overlapping the block height text above
-            fee_y = value_y + text_height + self._scale_px(25, min_value=8)
-
+            fee_y = value_y + bbox[3] - bbox[1] + self._scale_px(42, min_value=14)
+            
             # Fee label always uses bottom color of gradient
             fee_color = block_height_end_color
             self.draw_centered(draw, fee_text, fee_y, font_small, fee_color)
 
-        # Draw shortened hash
-        # (covered by frame)
-        
-        y += self._scale_px(105, min_value=35)
-        # self.draw_centered(draw, short_hash, y, font_block_label)
     
     def patch_hash_frame_on_image(self, img, block_hash, web_quality, y_override=None):
         """
@@ -423,15 +368,7 @@ class HashFrameMixin:
         # Replicate the y calculation from _render_block_info_with_data
         if y_override is not None:
             y = y_override
-        elif self.orientation == "vertical":
+        else:
             y = self.height - self.block_height_area
-        else:
-            y = self.height - (self.block_height_area - self._scale_px(70, min_value=20))
-        
-        max_available_width = self.width - self._scale_px(24, min_value=8)
-        
-        if self.orientation == "vertical":
-            self.draw_hash_frame(draw, 12, y + 3, block_hash, web_quality=web_quality, center=True)
-        else:
-            self.draw_hash_frame(draw, 32, y, block_hash, web_quality=web_quality,
-                                max_width=max_available_width, center=True)
+
+        self.draw_hash_frame(draw, 12, y + 3, block_hash, web_quality=web_quality, center=True)

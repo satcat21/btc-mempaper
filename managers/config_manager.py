@@ -338,8 +338,6 @@ class ConfigManager:
         """
         return {
             "language": "en",
-            "web_orientation": "vertical",
-            "eink_orientation": "vertical",
             "prioritize_large_scaled_meme": False,
             "mempool_is_private": False,
             "mempool_host": "mempool.space",

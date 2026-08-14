@@ -120,23 +120,15 @@ body.dark-mode #dashboard {
 
 /* ── Extreme mobile optimization ────────────────────────────── */
 @media (max-width: 414px) {
-    .orientation-vertical #dashboard {
+    #dashboard {
         width: min(99vw, calc(100vh - 80px) * 3/5);
-        max-height: calc(100vh - 80px);
-    }
-    .orientation-horizontal #dashboard {
-        width: min(99vw, calc(100vh - 80px) * 5/3);
         max-height: calc(100vh - 80px);
     }
 }
 
 @media (max-width: 375px) and (max-height: 667px) {
-    .orientation-vertical #dashboard {
+    #dashboard {
         width: min(99vw, calc(100vh - 75px) * 3/5);
-        max-height: calc(100vh - 75px);
-    }
-    .orientation-horizontal #dashboard {
-        width: min(99vw, calc(100vh - 75px) * 5/3);
         max-height: calc(100vh - 75px);
     }
 }

@@ -28,13 +28,6 @@ def validate_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
     if config.get("language", "").lower() in valid_languages:
         validated["language"] = config["language"].lower()
     
-    # Display orientation validation
-    valid_orientations = ["vertical", "horizontal"]
-    if config.get("web_orientation", "") in valid_orientations:
-        validated["web_orientation"] = config["web_orientation"]
-    if config.get("eink_orientation", "") in valid_orientations:
-        validated["eink_orientation"] = config["eink_orientation"]
-    
 
     # Boolean settings
     bool_settings = [
@@ -296,7 +289,7 @@ def validate_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
 
     # Single value settings that should be passed through directly
     passthrough_settings = [
-        "language", "web_orientation", "eink_orientation", "fee_parameter",
+        "language", "fee_parameter",
         "moscow_time_unit", "bitaxe_display_mode",
         "color_date_start_light", "color_date_end_light",
         "color_date_start_dark", "color_date_end_dark",

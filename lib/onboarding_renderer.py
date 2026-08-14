@@ -47,12 +47,14 @@ def _font(name, size):
 # ── Canvas helpers ─────────────────────────────────────────────────────────────
 
 def _display_wh(config):
-    """Return (width, height) for the e-ink canvas, applying orientation."""
+    """Return (width, height) for the e-ink canvas.
+
+    display_width/height hold the panel's landscape-native resolution and the
+    canvas is always portrait, so the two are swapped.
+    """
     w = int(config.get('display_width',  800))
     h = int(config.get('display_height', 480))
-    if config.get('eink_orientation', 'horizontal') == 'vertical':
-        return h, w
-    return w, h
+    return h, w
 
 
 def _qr_image(data, size, dark, error_correction=None):

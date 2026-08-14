@@ -311,19 +311,6 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
             "category": "general",
             "order": 1
         },
-        "web_orientation": {
-            "type": "hidden",
-            "default": "vertical",
-            "category": "general",
-            "order": 7,
-            "advanced": True
-        },
-        "eink_orientation": {
-            "type": "hidden",
-            "label": "",
-            "default": "vertical",
-            "category": "eink_display"
-        },
         "fee_parameter": {
             "type": "select",
             "label": t.get("fee_parameter", "Fee Parameter for Block Height Color"),

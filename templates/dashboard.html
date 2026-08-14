@@ -17,7 +17,7 @@
     <script defer src="static/js/toast.js"></script>
     <script defer src="static/js/session-manager.js"></script>
 </head>
-<body class="orientation-{{ orientation }}{% if dark_mode %} dark-mode{% endif %}">
+<body{% if dark_mode %} class="dark-mode"{% endif %}>
     <!-- Desktop Navigation - Left Side -->
     <div class="desktop-nav-buttons">
         <a href="/config" id="desktop-config-button" class="nav-button icon-only" data-tooltip="{{ translations.settings }}" aria-label="{{ translations.settings }}">
@@ -97,7 +97,6 @@
             session_error_title: "{{ translations.session_error_title }}",
             session_refresh_failed: "{{ translations.session_refresh_failed }}"
         };
-        window.orientation = "{{ orientation }}";
         window.isAuthenticated = {{ 'true' if is_authenticated else 'false' }};
         window.featureFlags = {
             wallet: {{ 'true' if show_wallet else 'false' }},

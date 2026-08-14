@@ -36,8 +36,6 @@
   "omni_device_name": "epd7in3f",
   "display_width": 800,
   "display_height": 480,
-  "web_orientation": "vertical",
-  "eink_orientation": "vertical",
   "eink_dark_mode": false,
   "color_mode_dark": true,
   "prioritize_large_scaled_meme": true,

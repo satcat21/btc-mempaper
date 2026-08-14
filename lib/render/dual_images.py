@@ -204,8 +204,7 @@ class DualImageMixin:
         }
 
         # === GENERATE WEB IMAGE ===
-        # Apply web orientation settings
-        self._apply_orientation_settings(self.web_orientation)
+        self._apply_layout_settings()
         web_img = self._render_image_with_shared_data(
             block_height, block_hash, mempool_api,
             shared_data, web_quality=True, startup_mode=startup_mode,
@@ -215,8 +214,7 @@ class DualImageMixin:
         # === GENERATE E-INK IMAGE ===
         eink_img = None
         if self.e_ink_enabled:
-            # Apply e-ink orientation settings
-            self._apply_orientation_settings(self.eink_orientation)
+            self._apply_layout_settings()
             if self.config.get("opsec_mode_enabled", False):
                 # OPSec mode: show a random family/cover photo instead of BTC data
                 eink_img = self.render_opsec_eink_image()
@@ -227,8 +225,7 @@ class DualImageMixin:
                     skip_hash_frame=skip_hash_frame
                 )
 
-        # Restore default/web orientation state (optional, but good practice)
-        self._apply_orientation_settings(self.web_orientation)
+        self._apply_layout_settings()
 
         print(f"✅ Image generated for block {block_height}")
         return web_img, eink_img, content_path, displayed_blocks  # Return images, content path, and displayed block types
@@ -366,15 +363,14 @@ class DualImageMixin:
         }
 
         # === GENERATE WEB IMAGE ===
-        # Apply web orientation settings
-        self._apply_orientation_settings(self.web_orientation)
+        self._apply_layout_settings()
         web_img = self._render_image_with_shared_data(
             block_height, block_hash, mempool_api,
             shared_data, web_quality=True
         )
         
         # === GENERATE E-INK IMAGE ===
-        self._apply_orientation_settings(self.eink_orientation)
+        self._apply_layout_settings()
         if self.config.get("opsec_mode_enabled", False):
             # OPSec mode: show a random family/cover photo instead of BTC data
             eink_img = self.render_opsec_eink_image()
@@ -385,6 +381,6 @@ class DualImageMixin:
             )
 
         # Restore default
-        self._apply_orientation_settings(self.web_orientation)
+        self._apply_layout_settings()
 
         return web_img, eink_img, meme_path

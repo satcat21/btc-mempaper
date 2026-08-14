@@ -89,8 +89,8 @@ refused by a hidden service listening on 80.
 | :--- | :--- | :--- | :--- | :--- |
 | **E-Ink Display Connected** | `e-ink-display-connected` | Switch | Enable hardware driver | `true` (Enable), `false` (Disable) |
 | **Display Driver** | `omni_device_name` | String | Driver name (Native or Omni-EPD) | `epd13in3E` (Recommended -- Waveshare 13.3"), `epd7in3f` (Default -- Waveshare 7.3"), `inky.impression`, `inky.auto` |
-| **Display Width** | `display_width` | Number | Resolution Width (pixels) -- Auto-set by device selection | Automatically determined from selected device or orientation |
-| **Display Height** | `display_height` | Number | Resolution Height (pixels) -- Auto-set by device selection | Automatically determined from selected device or orientation |
+| **Display Width** | `display_width` | Number | Resolution Width (pixels) -- Auto-set by device selection | Automatically determined from the selected device. Held landscape-native; the canvas is always rendered portrait |
+| **Display Height** | `display_height` | Number | Resolution Height (pixels) -- Auto-set by device selection | Automatically determined from the selected device. Held landscape-native; the canvas is always rendered portrait |
 > **Changing the display model is not possible from this page.** The selector shows the configured model read-only; it can download missing drivers for that model, but not switch to another. Re-run `install.sh`, or `sudo -u mempaper .venv/bin/python tools/configure_display.py`.
 
 ### Automatic disable and recovery
@@ -290,23 +290,33 @@ openly; the other two are secrets, and that trade is deliberate.
 
 These settings are typically managed by the system or only available in `config.json` directly.
 
-| Config Key | Default | Description |
-| :--- | :--- | :--- |
-| `precache_update_interval_seconds` | `300` | How often the background loop refreshes price, Bitaxe, network and fee data. Lower = fresher data but more CPU and API calls. 300s is tuned for a Pi Zero |
-| `precache_render_max_age_seconds` | `120` | How stale cached price, Bitaxe or network data may be when an image is rendered before it is fetched again. Below the update interval on purpose: a current image is worth more than a saved request |
-| `precache_fee_max_age_seconds` | `90` | Same, for fees. Shorter because fees move fastest |
-| `bitaxe_offline_retry_seconds` | `30` | When every configured miner reports offline, retry after this instead of the full interval — that reading is often just the LAN not being up yet after a reboot |
-| `cache_metadata_write_interval_seconds` | `300` | Debounce for cache-metadata writes, limiting SD card wear |
-| `disable_config_file_watching` | `false` | Disable automatic config reload on file change. Set to `true` for faster startup on development machines |
-| `network_outage_tolerance_minutes` | `45` | Minutes to retry WebSocket reconnection during outages |
-| `xpub_enable_gap_limit` | `true` | Stop scanning XPUB after N unused addresses |
-| `xpub_gap_limit_last_n` | `20` | Number of consecutive empty addresses before stopping scan |
-| `xpub_gap_limit_increment` | `10` | How many addresses to scan per increment step |
-| `xpub_enable_bootstrap_search` | `false` | Perform a wider initial address scan to find all used addresses (slower but more thorough) |
-| `xpub_bootstrap_max_addresses` | `100` | Maximum addresses to scan during bootstrap search |
-| `xpub_bootstrap_increment` | `10` | Addresses per step during bootstrap search |
-| `font_regular` | `static/fonts/Roboto-Regular.ttf` | Path to regular font file |
-| `font_bold` | `static/fonts/Roboto-Bold.ttf` | Path to bold font file |
-| `eink_auto_disabled` | `false` | Set when three consecutive refresh failures switch the display off, so startup knows the shutdown was automatic rather than the operator's choice. See [Display hardware](#display-hardware) |
-| `web_orientation` | `vertical` | Layout used for the browser dashboard. Hidden in the web UI — the renderer reads it to decide whether to swap width and height |
-| `eink_orientation` | `vertical` | Layout rendered to the panel, also used by the display worker to decide rotation. Hidden in the web UI; config stores landscape dimensions and `vertical` swaps them at render time |
+Editing them by hand is the normal way to use them: **stop the service first**
+(`sudo systemctl stop mempaper`), edit `config/config.json`, start it again.
+Saving anything in the web UI rewrites the whole file from memory, so an edit
+made while the service is running can be overwritten without warning.
+
+| Config Key | Type | Default | Accepted values | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `precache_update_interval_seconds` | Number | `300` | Any number of seconds above `0` | How often the background loop refreshes price, Bitaxe, network and fee data. Lower = fresher data but more CPU and API calls. 300s is tuned for a Pi Zero |
+| `precache_render_max_age_seconds` | Number | `120` | Any number of seconds above `0`; keep below the update interval | How stale cached price, Bitaxe or network data may be when an image is rendered before it is fetched again. Below the update interval on purpose: a current image is worth more than a saved request |
+| `precache_fee_max_age_seconds` | Number | `90` | Any number of seconds above `0` | Same, for fees. Shorter because fees move fastest |
+| `bitaxe_offline_retry_seconds` | Number | `30` | Any number of seconds above `0` | When every configured miner reports offline, retry after this instead of the full interval — that reading is often just the LAN not being up yet after a reboot |
+| `cache_metadata_write_interval_seconds` | Number | `300` | Any number of seconds above `0` — `0` does **not** mean "always", it falls back to the default | Debounce for cache-metadata writes, limiting SD card wear |
+| `disable_config_file_watching` | Boolean | `false` | `true`, `false` | Disable automatic config reload on file change. Set to `true` for faster startup on development machines |
+| `network_outage_tolerance_minutes` | Number | `45` | `5`–`10080` minutes | Minutes to retry WebSocket reconnection during outages. Read by the backup tool's WebSocket client, not by the block monitor, which retries with its own backoff for as long as it runs |
+| `tor_auto_restart` | Boolean | `false` | `true`, `false` | Last rung of the Tor recovery ladder: after ~35 minutes in which nothing has reached the mempool host over Tor, let mempaper restart the tor service. Needs a sudoers rule that `install.sh` does not write — mempaper logs the exact line when the rung is first reached. The two cheaper rungs (rotating the SOCKS circuit, then `SIGNAL NEWNYM`) need no configuration and run regardless |
+| `xpub_enable_gap_limit` | Boolean | `true` | `true`, `false` | Stop scanning XPUB after N unused addresses |
+| `xpub_gap_limit_last_n` | Number | `20` | `5`–`100` addresses | Number of consecutive empty addresses before stopping scan |
+| `xpub_gap_limit_increment` | Number | `10` | `1`–`50` addresses | How many addresses to scan per increment step |
+| `xpub_enable_bootstrap_search` | Boolean | `false` | `true`, `false` | Perform a wider initial address scan to find all used addresses (slower but more thorough) |
+| `xpub_bootstrap_max_addresses` | Number | `100` | `20`–`1000` addresses | Maximum addresses to scan during bootstrap search |
+| `xpub_bootstrap_increment` | Number | `10` | `1`–`50` addresses | Addresses per step during bootstrap search |
+| `font_regular` | String | `static/fonts/Roboto-Regular.ttf` | Path to a `.ttf`, relative to the app directory or absolute | Path to regular font file |
+| `font_bold` | String | `static/fonts/Roboto-Bold.ttf` | Path to a `.ttf`, relative to the app directory or absolute | Path to bold font file |
+| `eink_auto_disabled` | Boolean | `false` | `true`, `false` — written by the app, not normally set by hand | Set when three consecutive refresh failures switch the display off, so startup knows the shutdown was automatic rather than the operator's choice. See [Display hardware](#display-hardware) |
+| `meme_sync_schedule_randomised` | Boolean | *(set by `install.sh`)* | `true`, `false` | Marks that the installer has already picked a random day and hour for this device, so a later install run leaves your schedule alone. See [Meme sync](#meme-sync) |
+
+A value outside its accepted range is **discarded, not clamped**: the range-checked
+keys are dropped by validation and the timing keys fall back inside the pre-cache
+loop. Either way the shipped default applies and nothing warns you, so confirm a
+hand-edited setting took effect rather than assuming it did.
