@@ -825,26 +825,6 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
             proxies=mempool_proxies
         )
 
-        # Hand the fee baseline a client so it can backfill its window. Done
-        # here rather than in the renderer because the renderer is rebuilt on
-        # every config change and has no business owning an API client, and
-        # because this also re-points the store after a mempool host change.
-        try:
-            from managers.fee_baseline import get_shared_baseline
-            baseline = get_shared_baseline(
-                cache_path=os.path.join("cache", "fee_history.json"),
-                window_days=self.config.get("fee_baseline_days", 30),
-                api=self.mempool_api,
-            )
-            if baseline is not None:
-                # Off the startup path: a cold cache asks for a full window of
-                # history, which is a slow call over Tor and must not delay the
-                # first render.
-                threading.Thread(target=baseline.backfill, daemon=True,
-                                 name="fee-baseline-backfill").start()
-        except Exception as e:
-            print(f"⚠️ Fee baseline backfill not started: {e}")
-
     def _generate_initial_image(self):
         """Generate initial dashboard image on startup - optimized for fast start."""
         

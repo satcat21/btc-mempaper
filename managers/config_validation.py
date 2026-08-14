@@ -166,6 +166,19 @@ def validate_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
         "fee_baseline_days": (3, 90),
         "fee_neutral_band_pct": (0, 50),
     }
+    # The manual scale's thresholds are fees, so they are floats - blocks clear
+    # at fractions of a sat/vB and 0.5 must survive the round trip. Out-of-range
+    # or unparseable values are dropped here and fall back per-field in
+    # manual_thresholds(), so one bad box cannot take the other four with it.
+    for setting in ("fee_manual_blue", "fee_manual_green", "fee_manual_yellow",
+                    "fee_manual_orange", "fee_manual_red"):
+        if setting in config:
+            try:
+                value = float(config[setting])
+            except (TypeError, ValueError):
+                continue
+            if 0 <= value <= 10000:
+                validated[setting] = value
     for setting, (min_val, max_val) in int_settings.items():
         if setting in config:
             try:

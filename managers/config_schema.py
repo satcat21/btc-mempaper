@@ -329,16 +329,46 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
             "type": "select",
             "label": t.get("fee_color_mode", "Block Height Color Scale"),
             "description": t.get("fee_color_mode_desc",
-                                 "How the fee is turned into a color. The relative scales compare "
-                                 "the current fee against a rolling median, so a cheap moment still "
-                                 "looks cheap in a low-fee year."),
-            "default": "relative_neutral",
+                                 "How the fee decides the color of the block height."),
+            "default": "relative",
             "options": [
-                {"value": "relative_neutral", "label": t.get("fee_mode_neutral", "Relative — neutral at normal"), "_lk": "fee_mode_neutral"},
-                {"value": "relative_rainbow", "label": t.get("fee_mode_rainbow", "Relative — blue to red"),       "_lk": "fee_mode_rainbow"},
-                {"value": "absolute",         "label": t.get("fee_mode_absolute", "Fixed sat/vB thresholds"),     "_lk": "fee_mode_absolute"}
+                {"value": "constant", "label": t.get("fee_mode_constant", "Constant — always your color"), "_lk": "fee_mode_constant"},
+                {"value": "relative", "label": t.get("fee_mode_relative", "Relative — cheap or dear for the times"), "_lk": "fee_mode_relative"},
+                {"value": "manual",   "label": t.get("fee_mode_manual",   "Manual — your own sat/vB thresholds"), "_lk": "fee_mode_manual"}
             ],
             "category": "_block_height_color"
+        },
+        # Mode C's five thresholds. Hidden by the config page unless the manual
+        # scale is selected - they mean nothing to the other two.
+        "fee_manual_blue": {
+            "type": "number", "default": 0.5, "min": 0, "max": 10000, "step": 0.1,
+            "label": t.get("fee_manual_blue", "Blue up to"),
+            "description": t.get("fee_manual_blue_desc", "At or below this fee, nothing cheaper is worth waiting for."),
+            "category": "_block_height_color",
+        },
+        "fee_manual_green": {
+            "type": "number", "default": 0.8, "min": 0, "max": 10000, "step": 0.1,
+            "label": t.get("fee_manual_green", "Green up to"),
+            "description": t.get("fee_manual_green_desc", "A comfortable fee — send without thinking about it."),
+            "category": "_block_height_color",
+        },
+        "fee_manual_yellow": {
+            "type": "number", "default": 1.5, "min": 0, "max": 10000, "step": 0.1,
+            "label": t.get("fee_manual_yellow", "Yellow up to"),
+            "description": t.get("fee_manual_yellow_desc", "Starting to cost something."),
+            "category": "_block_height_color",
+        },
+        "fee_manual_orange": {
+            "type": "number", "default": 3.0, "min": 0, "max": 10000, "step": 0.1,
+            "label": t.get("fee_manual_orange", "Orange up to"),
+            "description": t.get("fee_manual_orange_desc", "Expensive — worth delaying anything that can wait."),
+            "category": "_block_height_color",
+        },
+        "fee_manual_red": {
+            "type": "number", "default": 5.0, "min": 0, "max": 10000, "step": 0.1,
+            "label": t.get("fee_manual_red", "Red from"),
+            "description": t.get("fee_manual_red_desc", "At or above this fee, wait unless it is urgent."),
+            "category": "_block_height_color",
         },
         "color_block_height_light": {
             "type": "color",

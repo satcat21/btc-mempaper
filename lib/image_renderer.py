@@ -468,15 +468,16 @@ class ImageRenderer(ColorMixin, MemeMixin, HashFrameMixin, TextMixin,
         self.last_block_height = None
         self.fee_param = config.get('fee_param', 'fastestFee')  # Default fee param
 
-        # Rolling median of recent block fees, used by the relative colour
-        # scales to decide whether the current fee is cheap or dear. Shared
-        # process-wide: this renderer is rebuilt on every config change, and the
-        # window it needs is measured in weeks. None until the app has wired an
-        # API client in, and fee_to_colors falls back to the absolute scale then.
+        # What each fee tier has normally cost lately, used by the relative
+        # colour scales to decide whether the current fee is cheap or dear.
+        # Shared process-wide: this renderer is rebuilt on every config change,
+        # and the window it needs is measured in weeks. None leaves
+        # fee_to_colors on the absolute scale.
         try:
-            from managers.fee_baseline import get_shared_baseline
-            self.fee_baseline = get_shared_baseline(
-                cache_path=os.path.join("cache", "fee_history.json"),
+            from managers.fee_tier_baseline import get_shared_tier_baseline
+            self.fee_baseline = get_shared_tier_baseline(
+                cache_path=os.path.join("cache", "fee_tier_history.json"),
+                day_path=os.path.join("cache", "fee_tier_today.json"),
                 window_days=config.get("fee_baseline_days", 30),
             )
         except Exception as e:

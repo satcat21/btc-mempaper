@@ -7,52 +7,50 @@ from babel.dates import format_date
 from datetime import datetime
 
 
-# ── Absolute scale (mode A) ───────────────────────────────────────────────
-# The original fixed table, kept as the default for anyone who wants the old
-# behaviour and as the fallback whenever no baseline is available yet. Its
-# weakness is the reason the relative modes exist: the first three stops cover
-# 0-5 sat/vB in a single green, so a year of low fees renders as one colour.
-# fmt: off
-ABSOLUTE_STOPS = [
-    (0,    (  0, 210,  80)),   # green
-    (1,    (  0, 210,  80)),   # green
-    (5,    ( 20, 205,  50)),   # green (still clearly green)
-    (10,   (130, 210,  10)),   # yellow-green
-    (18,   (225, 205,   0)),   # yellow
-    (30,   (255, 160,   0)),   # amber
-    (50,   (255, 110,   0)),   # orange
-    (80,   (255,  55,   0)),   # orange-red
-    (120,  (230,  20,  20)),   # red
-    (250,  (195,  15,  90)),   # crimson
-    (500,  (140,  30, 200)),   # purple
-    (900,  ( 50,  90, 225)),   # blue
-    (1600, ( 25,  50, 150)),   # dark blue
-    (2500, ( 70,  70,  80)),   # dark grey
-]
+# ── The three scales ──────────────────────────────────────────────────────
+# constant  the configured colour, always. The fee is not consulted.
+# relative  cheap or dear against what this same fee tier has cost lately.
+# manual    fixed sat/vB thresholds the user sets by hand.
+MODES = ("constant", "relative", "manual")
 
-# ── Relative scales (modes B and C) ───────────────────────────────────────
+def normalise_mode(raw):
+    """The stored scale name, or the default if it is not one we know."""
+    raw = str(raw or "").strip()
+    return raw if raw in MODES else "relative"
+
+
+# ── Manual scale (mode C) ─────────────────────────────────────────────────
+# Five fixed colours whose thresholds the user sets, in real sat/vB. No
+# baseline is involved, so this mode says something on a fresh install and
+# never changes its mind about a given fee. The trade is the opposite of the
+# relative scale's: a threshold chosen in a quiet month reads the same in a
+# busy one, whether or not that is still the advice the user wanted.
+# fmt: off
+MANUAL_COLORS = (
+    ("blue",   (  0,  90, 255)),   # nothing cheaper worth waiting for
+    ("green",  (  0, 200,  70)),   # comfortable
+    ("yellow", (235, 215,   0)),   # starting to cost
+    ("orange", (255, 130,   0)),   # expensive
+    ("red",    (215,  25,  25)),   # wait unless it is urgent
+)
+
+# Defaults for a market where blocks clear under 1 sat/vB most of the time and
+# 5 is already worth sitting out. Every one is editable.
+MANUAL_DEFAULTS = {
+    "blue": 0.5, "green": 0.8, "yellow": 1.5, "orange": 3.0, "red": 5.0,
+}
+
+# ── Relative scale (mode B) ───────────────────────────────────────────────
 # Positions are log2 of (fee / baseline), so each whole step is a doubling.
 # Fees move multiplicatively - the gap between 1 and 2 sat/vB matters as much
 # as the gap between 20 and 40 - and a linear ratio axis would squash the
 # entire cheap half of the range into the first tenth of the scale.
 #
 #   -2.0 = a quarter of normal      0.0 = exactly normal      +2.0 = 4x normal
-
-RELATIVE_RAINBOW_STOPS = [
-    (-2.0, (  0,  90, 255)),   # blue       - exceptionally cheap
-    (-1.0, (  0, 170, 200)),   # teal
-    (-0.4, (  0, 200,  70)),   # green      - comfortably below normal
-    ( 0.0, (235, 215,   0)),   # yellow     - normal
-    ( 0.38,(255, 180,   0)),   # amber      - ~1.3x normal
-    ( 0.72,(255, 130,   0)),   # orange     - ~1.65x
-    ( 1.10,(245,  75,  10)),   # orange-red - ~2.1x
-    ( 1.55,(215,  25,  25)),   # red        - ~2.9x
-    ( 2.00,(150,  10,  30)),   # deep red   - 4x and beyond
-]
-
-# Mode C splits the scale around a neutral centre instead of running one ramp
-# through it: cool colours mean cheaper than usual, warm colours mean dearer,
-# and the neutral band in the middle is handled separately (see NEUTRAL_*).
+#
+# Split around a neutral centre rather than running one ramp through it: cool
+# means cheaper than usual, warm means dearer, and the band in the middle is
+# handled separately so "ordinary" gets the user's own colour.
 RELATIVE_NEUTRAL_COOL = [
     (-2.0, (  0,  90, 255)),   # blue    - exceptionally cheap
     (-1.0, (  0, 160, 210)),   # teal
@@ -131,6 +129,22 @@ def _deepen(rgb, factor=0.85):
     return tuple(max(0, min(255, int(v * factor))) for v in rgb)
 
 
+def _preview_fee(v):
+    """A preview figure at a sensible precision, and never zero.
+
+    Two decimals under 1 sat/vB, one above. Blocks clear at fractions of a
+    sat/vB in a quiet month, and rounding those to whole numbers collapsed
+    every scenario onto the same figure. Never zero, because a fee of 0 has no
+    ratio and would preview as the grey "unknown" swatch - which reads as a
+    broken preview rather than a cheap one.
+    """
+    try:
+        v = max(0.01, float(v))
+    except (TypeError, ValueError):
+        return None
+    return round(v, 2) if v < 1 else round(v, 1)
+
+
 class FormattingMixin:
     """Presentation helpers with no layout dependency: fee-to-colour mapping, localised date strings and the font size that makes a date fit."""
 
@@ -146,28 +160,31 @@ class FormattingMixin:
         `cheap_floor` is the network's current minimum, below which one fee is
         not meaningfully cheaper than another. Zero disables the floor entirely.
         """
+        # Constant: the fee has no say. None *is* the answer here - it means
+        # "the configured colour", which is the whole of this mode.
+        if mode == "constant":
+            return None
+
         if fee is None:
             return UNKNOWN_COLOR
 
-        # No baseline means no opinion about what normal is. Falling back to the
-        # absolute table is better than inventing a ratio from three samples.
-        if mode == "absolute" or not baseline or baseline <= 0:
-            return _interpolate(self._absolute_stops(), fee)
+        if mode == "manual":
+            return _interpolate(self._manual_stops(), fee)
+
+        # Relative, but nothing to be relative to yet. The manual table is a
+        # better answer than a ratio invented from a handful of minutes.
+        if not baseline or baseline <= 0:
+            return _interpolate(self._manual_stops(), fee)
 
         if cheap_floor and fee <= cheap_floor < baseline:
-            cheapest = (RELATIVE_RAINBOW_STOPS if mode == "relative_rainbow"
-                        else RELATIVE_NEUTRAL_COOL)[0][1]
-            return cheapest
+            return RELATIVE_NEUTRAL_COOL[0][1]
 
         ratio = fee / float(baseline)
         if ratio <= 0:
             return UNKNOWN_COLOR
         position = math.log2(ratio)
 
-        if mode == "relative_rainbow":
-            return _interpolate(RELATIVE_RAINBOW_STOPS, position)
-
-        # relative_neutral: a flat neutral plateau, then colour outwards.
+        # A flat neutral plateau, then colour outwards.
         # The band is a plateau rather than a single point so "normal" reads as
         # a deliberate state instead of a colour the gradient happens to cross.
         if abs(ratio - 1.0) <= neutral_band:
@@ -196,30 +213,31 @@ class FormattingMixin:
         except ValueError:
             return fallback
 
-    def _absolute_stops(self):
-        """Mode A's table: the user's own thresholds, else the built-in ones.
+    def manual_thresholds(self):
+        """The sat/vB level each of the five colours starts at.
 
-        Config format is [[fee, "#rrggbb"], ...]. Anything malformed falls back
-        whole rather than partially, so a typo cannot produce a table that is
-        half custom and half default.
+        One number per colour, read individually: a typo in one field falls
+        back to that colour's default rather than discarding the other four,
+        which is what the user would expect from five separate inputs.
+
+        Sorted on the way out. Thresholds that cross over - red below orange,
+        say - would otherwise invert a section of the ramp, and refusing the
+        whole table for it would be a harsh answer to a transposed digit.
         """
-        raw = self.config.get("fee_color_stops")
-        if not raw:
-            return ABSOLUTE_STOPS
-        try:
-            parsed = []
-            for fee, hex_color in raw:
-                h = str(hex_color).lstrip('#')
-                if len(h) != 6:
-                    return ABSOLUTE_STOPS
-                parsed.append((float(fee), (int(h[0:2], 16),
-                                            int(h[2:4], 16),
-                                            int(h[4:6], 16))))
-            if len(parsed) < 2:
-                return ABSOLUTE_STOPS
-            return sorted(parsed, key=lambda s: s[0])
-        except (TypeError, ValueError):
-            return ABSOLUTE_STOPS
+        out = {}
+        for name, _rgb in MANUAL_COLORS:
+            try:
+                value = float(self.config.get(f"fee_manual_{name}"))
+            except (TypeError, ValueError):
+                value = MANUAL_DEFAULTS[name]
+            out[name] = max(0.0, value)
+        return out
+
+    def _manual_stops(self):
+        """The manual thresholds as an interpolation table."""
+        levels = self.manual_thresholds()
+        stops = [(levels[name], rgb) for name, rgb in MANUAL_COLORS]
+        return sorted(stops, key=lambda s: s[0])
 
     def block_height_preview_samples(self):
         """Both gradient ends for a few representative block-to-block moves.
@@ -239,10 +257,16 @@ class FormattingMixin:
         same rule as here: on dark the top is raw and the bottom lightened, on
         light the top is lightened and the bottom raw.
 
+        Each mode brings its own scenarios, because a useful example depends on
+        the scale: the relative one wants multiples of the median, the manual
+        one wants figures either side of the thresholds the user just typed,
+        and the constant one wants a single swatch, the fee having no say.
+
         Shape: {"lighten": 0.45,
-                "scenarios": [{"key":..., "prev":..., "curr":...}, ...],
-                "modes": {mode: {"light"|"dark": {key: {"top": hex|None,
-                                                        "bottom": hex|None}}}}}
+                "modes": {mode: {
+                    "scenarios": [{"key":..., "prev":..., "curr":...}, ...],
+                    "light"|"dark": {key: {"top": hex|None,
+                                           "bottom": hex|None}}}}}
 
         `lighten` travels with it because the page needs the same figure to
         derive a substituted end, and a second copy of the constant in
@@ -258,24 +282,10 @@ class FormattingMixin:
         store = getattr(self, "fee_baseline", None)
         if store is not None:
             try:
-                baseline = store.baseline()
+                baseline = store.baseline(
+                    self.config.get("fee_parameter", "minimumFee"))
             except Exception:
                 baseline = None
-
-        # Without a baseline there is no "normal" to sit either side of, so fall
-        # back to figures that read the same way against the absolute table.
-        normal = float(baseline) if baseline and baseline > 0 else 20.0
-
-        # Two decimals under 1 sat/vB, one above. Blocks clear at fractions of a
-        # sat/vB in a quiet month, and rounding those to a whole number collapsed
-        # every scenario in the preview to the same figure - a median near 1
-        # rendered as 1 -> 1, 1 -> 1, 1 -> 2, which shows nothing.
-        def _fee(v):
-            # Never zero: a fee of 0 has no ratio and would preview as the grey
-            # "unknown" colour, which looks like a broken swatch rather than a
-            # cheap one.
-            v = max(0.01, v)
-            return round(v, 2) if v < 1 else round(v, 1)
 
         # The floor the renderer will actually apply, so the picker shows what
         # gets drawn rather than an unfloored idealisation of it.
@@ -287,48 +297,72 @@ class FormattingMixin:
         except Exception:
             pass
 
-        # Multiples of the baseline, so the figures shown are always plausible
-        # fees for the market the device is actually in: at a median of 1 the
-        # cheap case reads 0.1 -> 0.7, at a median of 20 it reads 2 -> 14.
-        #
-        # Each pair is a *move* rather than two equal ends. Flat pairs made three
-        # of the four swatches a single colour, which is the one thing the
-        # gradient is not - and left the scale's middle unvisited, so a user
-        # could not see what "somewhat above normal" looked like before choosing
-        # a base colour to sit beside it.
-        SCENARIO_MULTIPLES = (
-            ("steady", 1.0, 1.0),   # within the neutral band: base colour, flat
-            ("cheap",  0.1, 0.7),   # floor-cheap easing back toward normal
-            ("spike",  1.1, 2.0),   # normal into clearly dear
-            ("dear",   3.0, 1.8),   # dear, but coming back down
-        )
-        scenarios = [
-            {"key": key, "prev": _fee(normal * lo), "curr": _fee(normal * hi)}
-            for key, lo, hi in SCENARIO_MULTIPLES
-        ]
-
         modes = {}
-        for mode in ("relative_neutral", "relative_rainbow", "absolute"):
-            per_theme = {}
+        for mode in MODES:
+            scenarios = self._preview_scenarios(mode, baseline)
+            entry = {"scenarios": scenarios}
             for theme, is_dark in (("light", False), ("dark", True)):
-                entry = {}
+                per_key = {}
                 for sc in scenarios:
                     ends = {}
                     for end, fee in (("top", sc["prev"]), ("bottom", sc["curr"])):
                         rgb = self._fee_color_for(fee, baseline, mode,
                                                   neutral_band, cheap_floor)
                         if rgb is None:
-                            ends[end] = None          # reads as normal
+                            ends[end] = None          # the configured colour
                             continue
                         if is_dark:
                             toned = rgb if end == "top" else _lighten(rgb)
                         else:
                             toned = _lighten(rgb) if end == "top" else _deepen(rgb)
                         ends[end] = "#%02X%02X%02X" % tuple(toned)
-                    entry[sc["key"]] = ends
-                per_theme[theme] = entry
-            modes[mode] = per_theme
-        return {"lighten": LIGHTEN_AMOUNT, "scenarios": scenarios, "modes": modes}
+                    per_key[sc["key"]] = ends
+                entry[theme] = per_key
+            modes[mode] = entry
+        return {"lighten": LIGHTEN_AMOUNT, "modes": modes}
+
+    def _preview_scenarios(self, mode, baseline):
+        """Four representative block-to-block moves, chosen to suit the scale.
+
+        Pairs rather than single fees, and genuine moves rather than two equal
+        ends: flat pairs make a swatch one colour, which is the one thing the
+        gradient is not, and they leave the middle of the scale unvisited.
+        """
+        if mode == "constant":
+            # The fee is never consulted, so a second swatch would only repeat
+            # the first. One sample is the honest preview of this mode.
+            return [{"key": "steady", "prev": None, "curr": None}]
+
+        if mode == "manual":
+            # Anchored on the thresholds the user just typed, so the examples
+            # move with them: set orange 3 and red 5 and the dear case shows
+            # 3 -> 4.8, which is exactly the band those two numbers describe.
+            t = self.manual_thresholds()
+            return [
+                {"key": "cheap",  "prev": _preview_fee(t["blue"] * 0.6),
+                                  "curr": _preview_fee(t["green"])},
+                {"key": "steady", "prev": _preview_fee(t["yellow"]),
+                                  "curr": _preview_fee(t["yellow"])},
+                {"key": "spike",  "prev": _preview_fee(t["green"]),
+                                  "curr": _preview_fee(t["orange"])},
+                {"key": "dear",   "prev": _preview_fee(t["orange"]),
+                                  "curr": _preview_fee(t["red"] * 0.96)},
+            ]
+
+        # Relative: multiples of the baseline, so the figures shown are always
+        # plausible fees for the market the device is actually in. At a median
+        # of 1 the cheap case reads 0.1 -> 0.7, at a median of 20, 2 -> 14.
+        normal = float(baseline) if baseline and baseline > 0 else 20.0
+        return [
+            {"key": key, "prev": _preview_fee(normal * lo),
+                         "curr": _preview_fee(normal * hi)}
+            for key, lo, hi in (
+                ("steady", 1.0, 1.0),   # inside the neutral band: base colour
+                ("cheap",  0.1, 0.7),   # floor-cheap, easing back to normal
+                ("spike",  1.1, 2.0),   # ordinary into clearly dear
+                ("dear",   3.0, 1.8),   # dear, but coming back down
+            )
+        ]
 
     def fee_to_colors(self, current_fee, recent_fee=None, web_quality=False,
                       cheap_floor=None):
@@ -358,9 +392,9 @@ class FormattingMixin:
         so the bottom - where the fee label sits - is always the readable end.
 
         Colour meaning depends on `fee_color_mode`:
-          absolute         - fixed sat/vB thresholds (the original behaviour)
-          relative_rainbow - blue/green/yellow/orange/red against the baseline
-          relative_neutral - neutral at the baseline, cool below, warm above
+          constant - the configured colour, whatever the fee is doing
+          relative - cool below the rolling median, warm above it
+          manual   - five fixed colours at thresholds the user sets, in sat/vB
 
         `recent_fee` defaults to the current fee, which renders flat - correct for
         any caller that has no previous block to compare against.
@@ -384,9 +418,7 @@ class FormattingMixin:
         else:
             is_dark = self.config.get("eink_dark_mode", False)
 
-        mode = self.config.get("fee_color_mode", "relative_neutral")
-        if mode not in ("absolute", "relative_rainbow", "relative_neutral"):
-            mode = "relative_neutral"
+        mode = normalise_mode(self.config.get("fee_color_mode"))
 
         try:
             neutral_band = float(self.config.get("fee_neutral_band_pct", 5)) / 100.0
@@ -396,9 +428,12 @@ class FormattingMixin:
 
         baseline = None
         store = getattr(self, "fee_baseline", None)
-        if store is not None and mode != "absolute":
+        if store is not None and mode == "relative":
+            # Against the same tier's own history, so the ratio carries no
+            # constant offset from whichever priority level is configured.
             try:
-                baseline = store.baseline()
+                baseline = store.baseline(
+                    self.config.get("fee_parameter", "minimumFee"))
             except Exception:
                 baseline = None
 

@@ -202,6 +202,17 @@ class CachingMixin:
                     if current_date != last_date:
                         print(f"📅 Date changed ({last_date} → {current_date}) — refreshing displayed image")
                         last_date = current_date
+                        # Close yesterday's fee samples into one median per
+                        # tier. Done here rather than on the next sample so a
+                        # day ends on time even if the next reading is late,
+                        # and so the only disk write the window makes lands on
+                        # the tick that was already doing work.
+                        _baseline = getattr(self.image_renderer, 'fee_baseline', None)
+                        if _baseline is not None:
+                            try:
+                                _baseline.roll_over()
+                            except Exception as e:
+                                print(f"⚠️ Failed to close the fee day: {e}")
                         if hasattr(self, 'socketio') and self.socketio:
                             self.socketio.emit('date_changed', {
                                 'date': current_date.isoformat()
@@ -440,6 +451,9 @@ class CachingMixin:
             # Update fee data if stale
             fee_update_interval = update_interval
             sampled_fees = False
+            # Carried out of the lock so the baseline can be fed from the same
+            # reading, without a second request for the same five numbers.
+            sampled_fee_data = None
             if now - self._precache['fee_last_update'] > fee_update_interval:
                 sampled_fees = True
                 try:
@@ -450,6 +464,7 @@ class CachingMixin:
                     tip_height_seen = block_height
 
                     if fee_data:
+                        sampled_fee_data = fee_data
                         self._precache['fee_data'] = fee_data
                         self._precache['block_height'] = block_height
                         self._precache['fee_last_update'] = now
@@ -464,21 +479,15 @@ class CachingMixin:
                     print(f"⚠️ Failed to pre-cache fees: {e}")
 
         # Feed the rolling baseline that the relative colour scales compare
-        # against. Outside the lock: this is an HTTP call and nothing else in
-        # the precache dict depends on it.
-        #
-        # Block medians rather than the fee recommendation, deliberately - it is
-        # the same metric the API backfill returns, so a device that backfilled
-        # and a device that only ever accumulated locally converge on comparable
-        # baselines instead of two different notions of "normal". /v1/blocks
-        # hands back ~15 blocks at once, so this also fills gaps left by downtime
-        # without any catch-up bookkeeping, and record_many ignores repeats.
-        if sampled_fees:
+        # against. All five tiers from the reading we already have - no extra
+        # request, and no cold window when fee_parameter changes. Costs one
+        # append to a list in RAM; the day is reduced to five medians and
+        # written out once, at the rollover below.
+        if sampled_fees and sampled_fee_data:
             baseline = getattr(self.image_renderer, 'fee_baseline', None)
             if baseline is not None:
                 try:
-                    baseline.record_many(self.mempool_api.get_recent_block_fees())
-                    baseline.backfill()      # rate-limited internally to 6h
+                    baseline.sample(sampled_fee_data)
                 except Exception as e:
                     print(f"⚠️ Failed to sample fee baseline: {e}")
 

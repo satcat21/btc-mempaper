@@ -31,7 +31,7 @@ These settings can be modified via the Web Dashboard (recommended) or by editing
 | **Bitaxe Color** | `color_bitaxe_stats_light`<br>`color_bitaxe_stats_dark` | Color | Text color for mining stats | `#B89C1D` / `#FFE566` |
 | **Wallet Color** | `color_wallets_light`<br>`color_wallets_dark` | Color | Text color for wallet balances | `#1565C0` / `#09A3BA` |
 | **Donation Color** | `color_donation_light`<br>`color_donation_dark` | Color | Text color for donation block | `#F7931A` / `#F7931A` |
-| **Block Height Color & Scale** | `color_block_height_light`<br>`color_block_height_dark`<br>`fee_color_mode` | Group | The color an ordinary block reads as, per theme, plus the scale that turns a fee into a color. Edited together under **General → Advanced**, with a live preview of a steady, cheap, spiked and dear network. See [Block height color scale](#block-height-color-scale) | `#3C3C46` / `#C8C8D2`, scale `relative_neutral` |
+| **Block Height Color & Scale** | `color_block_height_light`<br>`color_block_height_dark`<br>`fee_color_mode` | Group | The color an ordinary block reads as, per theme, plus the scale that turns a fee into a color. Edited together under **General → Advanced**, with a live preview of a steady, cheap, spiked and dear network. See [Block height color scale](#block-height-color-scale) | `#3C3C46` / `#C8C8D2`, scale `relative` |
 
 ---
 
@@ -73,9 +73,9 @@ numbers below — `fee_baseline_days` and `fee_neutral_band_pct` — stay under
 
 | Mode | Behaviour |
 |---|---|
-| `relative_neutral` *(default)* | Neutral at the median, cool below it, warm above. Blue → green → **neutral** → yellow → amber → orange → red |
-| `relative_rainbow` | One continuous ramp with no neutral point: blue → green → yellow → amber → orange → red |
-| `absolute` | The original fixed sat/vB thresholds. Ignores the baseline entirely |
+| `relative` *(default)* | Your color at the median, cool below it, warm above. Blue → green → **your color** → yellow → amber → orange → red |
+| `constant` | Your color, whatever the fee is doing. No baseline involved |
+| `manual` | Five fixed colors at thresholds you set, in real sat/vB. Ignores the baseline entirely |
 
 Notes that matter in practice:
 

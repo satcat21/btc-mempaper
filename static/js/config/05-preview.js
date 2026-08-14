@@ -672,7 +672,11 @@ function createBlockHeightColorGroup() {
     const data = window.blockHeightPreview || {};
     const modes = data.modes || {};
     const LIGHTEN = typeof data.lighten === 'number' ? data.lighten : 0.45;
-    const scenarios = data.scenarios || [];
+    // Every scale brings its own examples: multiples of the median for the
+    // relative one, the user's own thresholds for the manual one, and a single
+    // swatch for constant, where the fee is never consulted at all.
+    const scenariosFor = (mode) => ((modes[mode] || {}).scenarios) || [];
+    const MAX_CELLS = 4;
 
     const SCENARIO_LABELS = {
         steady: t.block_height_scenario_steady || 'Steady',
@@ -680,6 +684,25 @@ function createBlockHeightColorGroup() {
         spike:  t.block_height_scenario_spike  || 'Spiked',
         dear:   t.block_height_scenario_dear   || 'Still dear',
     };
+
+    const MODE_HINTS = {
+        constant: t.fee_mode_constant_desc ||
+            'The block height always uses your color, as a gradient from top to bottom. Fees never change it.',
+        relative: t.fee_mode_relative_desc ||
+            'Compares the fee against what the same fee level has cost over the last 30 days. Cool means cheaper than usual, warm means dearer, your color means ordinary — so a cheap moment still looks cheap in a low-fee year.',
+        manual: t.fee_mode_manual_desc ||
+            'Fixed sat/vB thresholds you set yourself. No history involved, so the same fee always reads the same color.',
+    };
+
+    // Mode C's five thresholds. Only shown for that scale; they mean nothing to
+    // the other two.
+    const MANUAL_FIELDS = [
+        ['fee_manual_blue',   t.fee_manual_blue   || 'Blue up to',   '#005AFF', 0.5],
+        ['fee_manual_green',  t.fee_manual_green  || 'Green up to',  '#00C846', 0.8],
+        ['fee_manual_yellow', t.fee_manual_yellow || 'Yellow up to', '#EBD700', 1.5],
+        ['fee_manual_orange', t.fee_manual_orange || 'Orange up to', '#FF8200', 3.0],
+        ['fee_manual_red',    t.fee_manual_red    || 'Red from',     '#D71919', 5.0],
+    ];
 
     const lighten = (hex) => {
         const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || '').trim());
@@ -712,22 +735,23 @@ function createBlockHeightColorGroup() {
     modeSelect.className = 'form-select';
     modeSelect.dataset.configKey = 'fee_color_mode';
     [
-        ['relative_neutral', t.fee_mode_neutral  || 'Relative — neutral at normal'],
-        ['relative_rainbow', t.fee_mode_rainbow  || 'Relative — blue to red'],
-        ['absolute',         t.fee_mode_absolute || 'Fixed sat/vB thresholds'],
+        ['constant', t.fee_mode_constant || 'Constant — always your color'],
+        ['relative', t.fee_mode_relative || 'Relative — cheap or dear for the times'],
+        ['manual',   t.fee_mode_manual   || 'Manual — your own sat/vB thresholds'],
     ].forEach(([val, label]) => {
         const o = document.createElement('option');
         o.value = val;
         o.textContent = label;
-        if ((cfg.fee_color_mode || 'relative_neutral') === val) o.selected = true;
+        if ((cfg.fee_color_mode || 'relative') === val) o.selected = true;
         modeSelect.appendChild(o);
     });
     modeWrap.appendChild(modeSelect);
 
     const modeHint = document.createElement('span');
     modeHint.style.cssText = 'font-size:0.78em; color:var(--text-secondary); opacity:.8;';
-    modeHint.textContent = t.fee_color_mode_desc || '';
-    if (modeHint.textContent) modeWrap.appendChild(modeHint);
+    // Text is set per scale by syncMode() below, so the guidance always
+    // describes the option actually selected rather than the feature at large.
+    modeWrap.appendChild(modeHint);
     wrapper.appendChild(modeWrap);
 
     const rowUpdaters = [];
@@ -758,7 +782,11 @@ function createBlockHeightColorGroup() {
         preview.style.cssText = `flex:1; min-width:220px; display:flex; gap:14px; align-items:flex-end; justify-content:space-around; padding:10px 14px; border-radius:6px; background:${previewBg};`;
         if (slotClass) preview.classList.add(slotClass);
 
-        const cells = scenarios.map(sc => {
+        // Built once and reused. The scale can change under them, and rebuilding
+        // the row on every dropdown change would take the colour input's focus
+        // with it. Cells past the current mode's scenario count are hidden.
+        const cap = `font-size:0.66em; line-height:1.25; text-align:center; color:${themeKey === 'dark' ? '#c8c8d0' : '#4a4a55'};`;
+        const cells = Array.from({ length: MAX_CELLS }, () => {
             const cell = document.createElement('div');
             cell.style.cssText = 'display:flex; flex-direction:column; align-items:center; gap:2px; min-width:0;';
             const digits = document.createElement('span');
@@ -767,39 +795,50 @@ function createBlockHeightColorGroup() {
             digits.style.cssText = "font-family:'RobotoCondensed','Roboto Condensed','Arial Narrow',sans-serif; font-weight:800; font-size:1.3em; line-height:1.05; -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; color:transparent;";
             digits.textContent = SAMPLE_HEIGHT;
             const caption = document.createElement('span');
-            const cap = `font-size:0.66em; line-height:1.25; text-align:center; color:${themeKey === 'dark' ? '#c8c8d0' : '#4a4a55'};`;
             caption.style.cssText = cap + 'opacity:.85; font-weight:600;';
-            caption.textContent = SCENARIO_LABELS[sc.key] || sc.key;
             const fees = document.createElement('span');
             fees.style.cssText = cap + 'opacity:.6;';
-            // prev → curr, the move the gradient is showing. The unit is spelled
-            // out because the figures scale with the median: without it, "2 → 14"
-            // on a busy day and "0.1 → 0.7" on a quiet one read as different
-            // kinds of number rather than the same one at two market levels.
-            fees.textContent = `${sc.prev} → ${sc.curr} sat/vB`;
             cell.appendChild(digits);
             cell.appendChild(caption);
             cell.appendChild(fees);
             preview.appendChild(cell);
-            return { key: sc.key, digits };
+            return { cell, digits, caption, fees };
         });
         row.appendChild(preview);
 
         function update() {
+            const mode = modeSelect.value;
             const base = (colorInput.getValue ? colorInput.getValue() : colorVal) || colorVal;
-            const set = (modes[modeSelect.value] || {})[themeKey] || {};
-            // A null end means that fee reads as normal, so the picked colour
-            // takes it — at the tone that end uses, exactly as the renderer does.
+            const set = (modes[mode] || {})[themeKey] || {};
+            const list = scenariosFor(mode);
+            // The base colour is the whole of the constant scale and the neutral
+            // reading of the relative one, but says nothing in manual mode -
+            // every band there has its own colour - so the picker goes away.
+            pickGroup.style.display = mode === 'manual' ? 'none' : 'flex';
+            // A null end means the fee reads as normal, or was never consulted,
+            // so the picked colour takes it — at the tone that end uses,
+            // exactly as the renderer does.
             const isDark = themeKey === 'dark';
             const baseTop = isDark ? base : lighten(base);
             const baseBottom = isDark ? lighten(base) : base;
-            cells.forEach(({ key, digits }) => {
-                const ends = set[key] || {};
+            cells.forEach((ref, i) => {
+                const sc = list[i];
+                if (!sc) { ref.cell.style.display = 'none'; return; }
+                ref.cell.style.display = 'flex';
+                const ends = set[sc.key] || {};
                 const top = ends.top || baseTop;
                 const bottom = ends.bottom || baseBottom;
-                digits.style.background = `linear-gradient(180deg,${top},${bottom})`;
-                digits.style.webkitBackgroundClip = 'text';
-                digits.style.backgroundClip = 'text';
+                ref.digits.style.background = `linear-gradient(180deg,${top},${bottom})`;
+                ref.digits.style.webkitBackgroundClip = 'text';
+                ref.digits.style.backgroundClip = 'text';
+                ref.caption.textContent = SCENARIO_LABELS[sc.key] || sc.key;
+                // prev → curr, the move the gradient is showing. The unit is
+                // spelled out because the figures move with the median: without
+                // it, "2 → 14" on a busy day and "0.1 → 0.7" on a quiet one read
+                // as different kinds of number rather than the same one at two
+                // market levels. Constant mode has no fees to show.
+                ref.fees.textContent = (sc.prev == null || sc.curr == null)
+                    ? '' : `${sc.prev} → ${sc.curr} sat/vB`;
             });
         }
         colorInput.addEventListener('input', update);
@@ -820,7 +859,87 @@ function createBlockHeightColorGroup() {
         'rgba(0,0,0,.04)', '#1a1a2e', 'preview-card-dark'
     ));
 
-    modeSelect.addEventListener('change', () => rowUpdaters.forEach(fn => fn()));
+    // ── Manual thresholds, shown only for that scale ─────────────────────────
+    const manualWrap = document.createElement('div');
+    manualWrap.style.cssText = 'display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:8px; margin-top:12px;';
+    const manualInputs = {};
+    MANUAL_FIELDS.forEach(([key, label, swatch, fallback]) => {
+        const box = document.createElement('div');
+        box.style.cssText = 'display:flex; flex-direction:column; gap:3px;';
+        const lab = document.createElement('span');
+        lab.style.cssText = 'font-size:0.78em; font-weight:600; color:var(--text-secondary); display:flex; align-items:center; gap:6px;';
+        const dot = document.createElement('span');
+        dot.style.cssText = `width:10px; height:10px; border-radius:2px; background:${swatch}; flex:none;`;
+        lab.appendChild(dot);
+        lab.appendChild(document.createTextNode(label));
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.className = 'form-input';
+        input.step = '0.1';
+        input.min = '0';
+        input.dataset.configKey = key;
+        input.value = (cfg[key] !== undefined && cfg[key] !== null) ? cfg[key] : fallback;
+        manualInputs[key] = input;
+        box.appendChild(lab);
+        box.appendChild(input);
+        manualWrap.appendChild(box);
+    });
+    const manualHint = document.createElement('span');
+    manualHint.style.cssText = 'grid-column:1/-1; font-size:0.78em; color:var(--text-secondary); opacity:.8;';
+    manualHint.textContent = t.fee_manual_hint ||
+        'Each value is the fee, in sat/vB, at which that color takes over. The examples above follow whatever you type here.';
+    manualWrap.appendChild(manualHint);
+    wrapper.appendChild(manualWrap);
+
+    // The swatch colours come from the server so this page never keeps a second
+    // copy of the scale tables. The example *fees* are plain arithmetic on these
+    // five numbers, though, so they are recomputed here and track what is being
+    // typed; the colours catch up on save.
+    const previewFee = (v) => {
+        v = Math.max(0.01, Number(v) || 0);
+        return v < 1 ? Math.round(v * 100) / 100 : Math.round(v * 10) / 10;
+    };
+    function recomputeManualScenarios() {
+        const entry = modes.manual;
+        if (!entry || !Array.isArray(entry.scenarios)) return;
+        const val = (k, d) => {
+            const raw = parseFloat(manualInputs[k] && manualInputs[k].value);
+            return Number.isFinite(raw) && raw >= 0 ? raw : d;
+        };
+        const blue = val('fee_manual_blue', 0.5);
+        const green = val('fee_manual_green', 0.8);
+        const yellow = val('fee_manual_yellow', 1.5);
+        const orange = val('fee_manual_orange', 3);
+        const red = val('fee_manual_red', 5);
+        // Same pairs the renderer previews: each example sits on the band the
+        // thresholds either side of it describe.
+        const pairs = {
+            cheap:  [blue * 0.6, green],
+            steady: [yellow, yellow],
+            spike:  [green, orange],
+            dear:   [orange, red * 0.96],
+        };
+        entry.scenarios.forEach(sc => {
+            const p = pairs[sc.key];
+            if (p) { sc.prev = previewFee(p[0]); sc.curr = previewFee(p[1]); }
+        });
+    }
+    Object.values(manualInputs).forEach(input => {
+        input.addEventListener('input', () => {
+            recomputeManualScenarios();
+            rowUpdaters.forEach(fn => fn());
+        });
+    });
+
+    function syncMode() {
+        const mode = modeSelect.value;
+        manualWrap.style.display = mode === 'manual' ? 'grid' : 'none';
+        modeHint.textContent = MODE_HINTS[mode] || '';
+        if (mode === 'manual') recomputeManualScenarios();
+        rowUpdaters.forEach(fn => fn());
+    }
+    modeSelect.addEventListener('change', syncMode);
+    syncMode();
 
     return wrapper;
 }
