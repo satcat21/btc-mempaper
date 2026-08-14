@@ -224,7 +224,7 @@ class TangStore:
         """
         with self._lock:
             if self.has_sealed_key():
-                raise TangError('a sealed key already exists; refusing to replace it')
+                raise TangError('key_exists')
 
             key = Fernet.generate_key()
             jwe = self.tang.seal(key)

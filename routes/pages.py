@@ -8,6 +8,7 @@ from flask import send_file
 from flask import url_for
 from managers.auth_manager import allow_public_or_auth
 from managers.auth_manager import require_web_auth
+from managers.tang_store import TangLocked
 from utils.translations import translations
 import io
 import os
@@ -17,6 +18,15 @@ import time
 
 def register(self):
     """Register the pages routes."""
+
+    def _placeholder_response():
+        """Something renderable, for when the real image cannot be served."""
+        placeholder_img = self._generate_placeholder_image()
+        buf = io.BytesIO()
+        placeholder_img.save(buf, format='PNG')
+        buf.seek(0)
+        return send_file(buf, mimetype='image/png')
+
     @self.app.route('/image')
     @allow_public_or_auth(self.auth_manager, self.config_manager)
     def image():
@@ -64,7 +74,16 @@ def register(self):
             # hand the browser a corrupt image. Open it and serve the bytes;
             # the decrypted copy exists only for the duration of the response.
             if self._sealing_active():
-                data = self.tang_store.read_file(served_path)
+                try:
+                    data = self.tang_store.read_file(served_path)
+                except TangLocked:
+                    # The file on the card is ciphertext and the key cannot be
+                    # opened. A known state, not a fault - but this route is
+                    # polled, so letting it raise put a 500 and a full traceback
+                    # in the journal several times a minute. Every other sealed
+                    # reader already handles this; this one was the gap.
+                    self._log_tang_locked_once('dashboard image not served')
+                    return _placeholder_response()
                 if data:
                     response = send_file(io.BytesIO(data), mimetype=served_mime)
                 else:
@@ -91,11 +110,7 @@ def register(self):
             ).start()
 
             # Generate and return placeholder quickly
-            placeholder_img = self._generate_placeholder_image()
-            buf = io.BytesIO()
-            placeholder_img.save(buf, format='PNG')
-            buf.seek(0)
-            return send_file(buf, mimetype='image/png')
+            return _placeholder_response()
 
         except Exception as e:
             print(f"❌ Failed to generate placeholder image: {e}")

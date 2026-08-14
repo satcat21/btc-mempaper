@@ -766,11 +766,32 @@ class SecureConfigManager:
             # print(f"   📄 Public fields: {len(public_config)}")
             # print(f"   🔐 Encrypted fields: {len(secure_config)}")
             
+            self._clear_load_error()
             return complete_config
-            
+
         except Exception as e:
-            print(f"❌ Error loading secure config: {e}")
+            self._log_load_error(e)
             return None
+
+    # Every reader reaches load_secure_config(), so while the sealed store is
+    # unavailable an unfiltered print here produces dozens of identical lines a
+    # minute - the journal for one 90-second window held more than thirty. The
+    # message is worth having once; repeating it buries everything else.
+    _last_load_error = None
+
+    def _log_load_error(self, exc):
+        """Report a load failure once per distinct cause."""
+        message = str(exc)
+        if message == self._last_load_error:
+            return
+        self._last_load_error = message
+        print(f"❌ Error loading secure config: {message}")
+
+    def _clear_load_error(self):
+        """Note recovery, so the next failure is reported again."""
+        if self._last_load_error is not None:
+            self._last_load_error = None
+            print("🔓 Secure configuration readable again")
     
     def migrate_from_plain_config(self) -> bool:
         """

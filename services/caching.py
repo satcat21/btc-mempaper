@@ -226,6 +226,8 @@ class CachingMixin:
                         else:
                             self._background_image_generation(force_eink=True, use_cached_block=True)
 
+                    self._check_tang_reachable()
+
                     # Refresh pre-rendered next-block image with latest data
                     self._prerender_next_block()
                 except Exception as e:
@@ -234,6 +236,59 @@ class CachingMixin:
         
         threading.Thread(target=update_precache, daemon=True, name="PreCacheUpdater").start()
     
+    # Last reachability answer, so only changes reach the log.
+    _tang_reachable = None
+
+    def _check_tang_reachable(self):
+        """Warn while the Tang server is away but the store is still open.
+
+        Only that case. A store that failed to open is already handled by
+        _start_tang_unlock_retry(), which retries and reports when it succeeds -
+        checking here too would duplicate both the request and the log line.
+
+        The gap is the opposite state. Once the key is open it lives in memory,
+        so the server can vanish and nothing notices: every read keeps working
+        and the device looks healthy, while a restart or a power cut would leave
+        it degraded. That is worth saying at the time rather than discovering it
+        at the next boot.
+
+        One HTTP GET to the advertisement endpoint - what clevis would contact
+        anyway - rather than a full unseal, so a reachable server costs
+        milliseconds on a LAN and an unreachable one is bounded by ADV_TIMEOUT.
+        """
+        store = getattr(self, 'tang_store', None)
+        if store is None or not store.is_enabled() or not store.is_ready():
+            return
+
+        try:
+            _, url, _ = store.tang.settings()
+            store.tang.fetch_advertisement(url)
+            reachable, detail = True, ''
+        except Exception as e:
+            reachable, detail = False, str(e)
+
+        if reachable == self._tang_reachable:
+            return
+        first_check, self._tang_reachable = self._tang_reachable is None, reachable
+
+        if reachable:
+            # Nothing to say the first time we look and all is well.
+            if not first_check:
+                print("🔓 Tang: server reachable again")
+        else:
+            print(f"⚠️ Tang: server unreachable — {detail}")
+            print("⚠️ Sealed data is still open in memory, but a restart would lock it")
+
+        if hasattr(self, 'socketio') and self.socketio:
+            try:
+                self.socketio.emit('tang_status', {
+                    'reachable': reachable,
+                    'state': store.state,
+                    'reason': '' if reachable else detail,
+                }, room='authenticated')
+            except Exception:
+                pass
+
     def _invalidate_prerender(self):
         """Invalidate the pre-rendered next-block image so it gets regenerated."""
         with self._prerendered['lock']:

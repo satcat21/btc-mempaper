@@ -40,17 +40,61 @@ _TANG_URL_RE = re.compile(
 )
 
 
-class TangError(Exception):
-    """A Tang operation failed. The message is safe to show to an operator.
+# Everything a Tang failure is allowed to say to a browser. Fixed strings, no
+# interpolation from anything a request or a subprocess produced.
+TANG_MESSAGES = {
+    'no_url': 'No Tang server URL is configured. Enter one above, then check again.',
+    'bad_url': ('Tang URL must look like http://host:port '
+                '(no spaces, credentials or query string)'),
+    'bad_thumbprint': ('Thumbprint must be at least 20 characters of '
+                       'base64url (A-Z a-z 0-9 - _)'),
+    'adv_timeout': f'No answer within {ADV_TIMEOUT} s',
+    'adv_http_client': 'The server refused the request - check the address and port',
+    'adv_http_server': 'The Tang server reported an internal error',
+    'adv_rejected': 'The server rejected the request',
+    'adv_unreachable': ('Could not connect - check the address and that '
+                        'tangd is running on it'),
+    'adv_unreadable': 'Could not read the advertisement',
+    'no_signing_key': 'Could not read a signing key from the advertisement',
+    'seal_failed': 'clevis could not seal the key',
+    'unseal_failed': 'clevis could not unseal the key',
+    'key_exists': 'a sealed key already exists; refusing to replace it',
+    'clevis_missing': 'clevis is not installed. Run: sudo apt-get install -y clevis',
+    'thumbprint_mismatch': 'The configured thumbprint does not match this server.',
+    'no_thumbprint_pinned': 'No thumbprint set, so the server is trusted on sight. Set it to the value shown.',
+    'unseal_mismatch': 'The recovered value did not match what was sealed.',
+}
+TANG_FALLBACK = 'The Tang operation failed - see the server log for details'
 
-    Safe means it says what went wrong without quoting the thing that said so.
-    The config page renders these verbatim in the browser, so a message built
-    from a requests exception or from clevis stderr puts filesystem paths,
+
+class TangError(Exception):
+    """A Tang operation failed, named by a code rather than by a message.
+
+    The config page renders these in the browser, so a message built from a
+    requests exception or from clevis stderr would put filesystem paths,
     internal hostnames and library internals on a page anyone holding a session
-    can read. Use _detail() to send that text to the journal instead, where it
-    is more useful anyway - the check dialog has an Open Log button for exactly
-    this.
+    can read. _detail() sends that text to the journal instead, where it is more
+    useful anyway - the check dialog has an Open Log button for exactly this.
+
+    The code is what travels, and check() answers by looking it up in
+    TANG_MESSAGES, so no string derived from an exception object reaches the
+    response. That is what py/stack-trace-exposure tracks, and it is right to:
+    "these messages are hand-written" was an invariant held up by a comment.
+    A fixed table holds it up structurally, and stops the next person writing
+    f'... {e}' here from quietly undoing it.
+
+    str() still yields the same operator-facing sentence, for the journal and
+    for callers like TangStore that fold it into their own reason string.
     """
+
+    def __init__(self, code):
+        self.code = code
+        super().__init__(TANG_MESSAGES.get(code, TANG_FALLBACK))
+
+
+def safe_message(exc):
+    """The operator-facing text for a failure, read from the fixed table."""
+    return TANG_MESSAGES.get(getattr(exc, 'code', None), TANG_FALLBACK)
 
 
 def _detail(context, text):
@@ -104,10 +148,9 @@ class TangManager:
         """
         url = (url or '').strip().rstrip('/')
         if not url:
-            raise TangError('no Tang URL configured')
+            raise TangError('no_url')
         if not _TANG_URL_RE.match(url):
-            raise TangError('Tang URL must look like http://host:port '
-                            '(no spaces, credentials or query string)')
+            raise TangError('bad_url')
         return url
 
     @staticmethod
@@ -115,8 +158,7 @@ class TangManager:
         """Return the thumbprint, empty for none, or raise TangError."""
         thumbprint = (thumbprint or '').strip()
         if thumbprint and not _THUMBPRINT_RE.match(thumbprint):
-            raise TangError('Thumbprint must be at least 20 characters of '
-                            'base64url (A-Z a-z 0-9 - _)')
+            raise TangError('bad_thumbprint')
         return thumbprint
 
     # ── configuration ────────────────────────────────────────────────────────
@@ -157,20 +199,21 @@ class TangManager:
             return resp.text
         except requests.exceptions.Timeout as e:
             _detail('Tang advertisement timed out', str(e))
-            raise TangError(f'No answer within {ADV_TIMEOUT} s')
+            raise TangError('adv_timeout')
         except requests.exceptions.HTTPError as e:
             # The status code is the useful half and carries nothing internal.
             _detail('Tang advertisement rejected', str(e))
-            code = getattr(e.response, 'status_code', None)
-            raise TangError(f'Server answered HTTP {code}' if code
-                            else 'Server rejected the request')
+            status = getattr(e.response, 'status_code', None)
+            if not status:
+                raise TangError('adv_rejected')
+            raise TangError('adv_http_server' if 500 <= status < 600
+                            else 'adv_http_client')
         except requests.exceptions.RequestException as e:
             _detail('Tang server unreachable', str(e))
-            raise TangError('Could not connect - check the address and that '
-                            'tangd is running on it')
+            raise TangError('adv_unreachable')
         except Exception as e:
             _detail('Tang advertisement failed', str(e))
-            raise TangError('Could not read the advertisement')
+            raise TangError('adv_unreadable')
 
     def signing_thumbprint(self, advertisement):
         """Thumbprint of the advertisement's signing key.
@@ -188,7 +231,7 @@ class TangManager:
         thumbprint = out.decode('utf-8', 'replace').strip()
         if not ok or not _THUMBPRINT_RE.match(thumbprint):
             _detail('jose could not read the signing key', err)
-            raise TangError('Could not read a signing key from the advertisement')
+            raise TangError('no_signing_key')
         return thumbprint
 
     # ── seal and unseal ──────────────────────────────────────────────────────
@@ -211,7 +254,7 @@ class TangManager:
         ok, out, err = self._run(cmd, stdin_bytes=data)
         if not ok or not out:
             _detail('clevis encrypt failed', err)
-            raise TangError('clevis could not seal the key')
+            raise TangError('seal_failed')
         return out
 
     def unseal(self, jwe: bytes) -> bytes:
@@ -220,7 +263,7 @@ class TangManager:
         ok, out, err = self._run(['clevis', 'decrypt'], stdin_bytes=jwe)
         if not ok:
             _detail('clevis decrypt failed', err)
-            raise TangError('clevis could not unseal the key')
+            raise TangError('unseal_failed')
         return out
 
     # ── discovery ────────────────────────────────────────────────────────────
@@ -259,7 +302,8 @@ class TangManager:
         """Walk the whole path and report each step.
 
         Shaped like the mempool validator so the config page can render both
-        with the same code: a list of {name, ok, detail, url, error}.
+        with the same code: a list of
+        {key, name, ok, detail, url, code, error}.
         """
         _, cfg_url, cfg_thp = self.settings()
         url = (url if url is not None else cfg_url).strip().rstrip('/')
@@ -267,84 +311,86 @@ class TangManager:
 
         checks = []
 
-        def add(name, ok, detail='', error='', target=''):
-            entry = {'name': name, 'ok': bool(ok)}
+        def add(key, name, ok, detail='', code='', target=''):
+            # key identifies the row for the page and for translation; name is
+            # the English fallback, used when a language has no entry for it.
+            entry = {'key': key, 'name': name, 'ok': bool(ok)}
             if detail:
                 entry['detail'] = detail
-            if error:
-                entry['error'] = error
+            if code:
+                entry['code'] = code
+                entry['error'] = TANG_MESSAGES.get(code, TANG_FALLBACK)
             if target:
                 entry['url'] = target
             checks.append(entry)
             return ok
 
         if not self.clevis_available():
-            add('clevis installed', False,
-                error='clevis is not installed. Run: sudo apt-get install -y clevis')
+            add('clevis_installed', 'clevis installed', False, code='clevis_missing')
             return checks
-        add('clevis installed', True, detail=shutil.which('clevis'))
+        add('clevis_installed', 'clevis installed', True, detail=shutil.which('clevis'))
 
         if not url:
-            add('Tang URL configured', False,
-                error='No Tang server URL set. Enter one above, then check again.')
+            add('url_configured', 'Tang URL configured', False, code='no_url')
             return checks
         try:
             url = self._checked_url(url)
         except TangError as e:
-            add('Tang URL configured', False, error=str(e))
+            add('url_configured', 'Tang URL configured', False, code=e.code)
             return checks
-        add('Tang URL configured', True, target=url)
+        add('url_configured', 'Tang URL configured', True, target=url)
 
         try:
             thumbprint = self._checked_thumbprint(thumbprint)
         except TangError as e:
-            add('Thumbprint well-formed', False, error=str(e))
+            add('thumbprint_format', 'Thumbprint well-formed', False, code=e.code)
             return checks
 
         try:
             advertisement = self.fetch_advertisement(url)
         except TangError as e:
-            add('Server reachable', False, target=f'{url}/adv', error=str(e))
+            add('server_reachable', 'Server reachable', False,
+                target=f'{url}/adv', code=e.code)
             return checks
-        add('Server reachable', True, target=f'{url}/adv',
+        add('server_reachable', 'Server reachable', True, target=f'{url}/adv',
             detail=f'{len(advertisement)} bytes')
 
         try:
             server_thumbprint = self.signing_thumbprint(advertisement)
         except TangError as e:
-            add('Advertisement valid', False, error=str(e))
+            add('advertisement_valid', 'Advertisement valid', False, code=e.code)
             return checks
-        add('Advertisement valid', True, detail=server_thumbprint)
+        add('advertisement_valid', 'Advertisement valid', True, detail=server_thumbprint)
 
         if thumbprint:
             matched = thumbprint == server_thumbprint
-            add('Thumbprint matches', matched,
-                detail='pinned' if matched else '',
-                error='' if matched else
-                      f'Configured thumbprint does not match this server.\n'
-                      f'configured: {thumbprint}\nserver:     {server_thumbprint}')
+            # The two thumbprints go in detail rather than into the message, so
+            # the message itself stays a fixed string the page can translate.
+            add('thumbprint_matches', 'Thumbprint matches', matched,
+                detail=('pinned' if matched else
+                        f'configured: {thumbprint}\nserver:     {server_thumbprint}'),
+                code='' if matched else 'thumbprint_mismatch')
             if not matched:
                 return checks
         else:
-            add('Thumbprint pinned', False,
-                error='No thumbprint set, so the server is trusted on sight. '
-                      f'Set it to:\n{server_thumbprint}')
+            add('thumbprint_pinned', 'Thumbprint pinned', False,
+                detail=server_thumbprint, code='no_thumbprint_pinned')
 
         probe = os.urandom(32)
         try:
             jwe = self.seal(probe, url=url, thumbprint=thumbprint or server_thumbprint)
         except TangError as e:
-            add('Seal test key', False, error=str(e))
+            add('seal_test', 'Seal test key', False, code=e.code)
             return checks
-        add('Seal test key', True, detail=f'{len(jwe)} bytes JWE')
+        add('seal_test', 'Seal test key', True, detail=f'{len(jwe)} bytes JWE')
 
         try:
             recovered = self.unseal(jwe)
         except TangError as e:
-            add('Unseal test key', False, error=str(e))
+            add('unseal_test', 'Unseal test key', False, code=e.code)
             return checks
-        add('Unseal test key', recovered == probe,
+        add('unseal_test', 'Unseal test key', recovered == probe,
             detail='byte-identical' if recovered == probe else '',
-            error='' if recovered == probe else 'Recovered value did not match')
+            code='' if recovered == probe else 'unseal_mismatch')
 
         return checks

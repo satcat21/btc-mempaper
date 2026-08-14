@@ -343,31 +343,31 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
         "fee_manual_blue": {
             "type": "number", "default": 0.5, "min": 0, "max": 10000, "step": 0.1,
             "label": t.get("fee_manual_blue", "Blue up to"),
-            "description": t.get("fee_manual_blue_desc", "At or below this fee, nothing cheaper is worth waiting for."),
+            "description": t.get("fee_manual_blue_desc", "Very cheap — a good moment for transactions and UTXO consolidation."),
             "category": "_block_height_color",
         },
         "fee_manual_green": {
             "type": "number", "default": 0.8, "min": 0, "max": 10000, "step": 0.1,
             "label": t.get("fee_manual_green", "Green up to"),
-            "description": t.get("fee_manual_green_desc", "A comfortable fee — send without thinking about it."),
+            "description": t.get("fee_manual_green_desc", "Cheap — comfortable for everyday transactions."),
             "category": "_block_height_color",
         },
         "fee_manual_yellow": {
             "type": "number", "default": 1.5, "min": 0, "max": 10000, "step": 0.1,
             "label": t.get("fee_manual_yellow", "Yellow up to"),
-            "description": t.get("fee_manual_yellow_desc", "Starting to cost something."),
+            "description": t.get("fee_manual_yellow_desc", "Moderate — routine transactions are fine, consolidation can wait."),
             "category": "_block_height_color",
         },
         "fee_manual_orange": {
             "type": "number", "default": 3.0, "min": 0, "max": 10000, "step": 0.1,
             "label": t.get("fee_manual_orange", "Orange up to"),
-            "description": t.get("fee_manual_orange_desc", "Expensive — worth delaying anything that can wait."),
+            "description": t.get("fee_manual_orange_desc", "Expensive — send only what cannot wait."),
             "category": "_block_height_color",
         },
         "fee_manual_red": {
             "type": "number", "default": 5.0, "min": 0, "max": 10000, "step": 0.1,
             "label": t.get("fee_manual_red", "Red from"),
-            "description": t.get("fee_manual_red_desc", "At or above this fee, wait unless it is urgent."),
+            "description": t.get("fee_manual_red_desc", "Very expensive — wait unless it is urgent."),
             "category": "_block_height_color",
         },
         "color_block_height_light": {

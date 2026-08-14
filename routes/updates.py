@@ -452,18 +452,39 @@ def register(self):
                 # shipped the release note to every device and the step to none of
                 # the updated ones. The script is idempotent, so running it on every
                 # update is cheap and converges a drifted device.
+                #
+                # Buffered rather than streamed, so a run that changed nothing
+                # can be collapsed to one line. On a converged device every
+                # check still reports itself, which put four lines of "already
+                # correct" into this log on every update forever - the same
+                # noise the pip step avoids just below. The script's own SSH
+                # output is untouched; only the browser view is condensed.
                 postinstall_wrapper = '/usr/local/bin/mempaper-postinstall'
                 if os.path.exists(postinstall_wrapper):
-                    _emit('update_output', {'line': 'Applying post-install system configuration...', 'phase': 'apt', 'header': True})
                     try:
                         proc = subprocess.Popen(
                             ['sudo', postinstall_wrapper],
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             text=True, bufsize=1
                         )
+                        buffered = []
+                        # Assume it did something: an older postinstall.sh emits
+                        # no marker at all, and showing its output is the safe
+                        # way to be wrong.
+                        changed = True
                         for line in proc.stdout:
-                            _emit('update_output', {'line': _clean_line(line), 'phase': 'apt'})
+                            text = _clean_line(line)
+                            if text.startswith('POSTINSTALL_RESULT='):
+                                changed = text.split('=', 1)[1].strip() != 'unchanged'
+                                continue
+                            buffered.append(text)
                         proc.wait()
+                        if changed or proc.returncode != 0:
+                            _emit('update_output', {'line': self.translations.get('applying_postinstall', 'Applying post-install system configuration...'), 'phase': 'apt', 'header': True})
+                            for text in buffered:
+                                _emit('update_output', {'line': text, 'phase': 'apt'})
+                        else:
+                            _emit('update_output', {'line': self.translations.get('postinstall_unchanged', 'System configuration already applied — nothing to do'), 'phase': 'apt', 'header': True})
                     except Exception as post_err:
                         _emit('update_output', {'line': f'Warning: {post_err}', 'phase': 'apt'})
                 else:

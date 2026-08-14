@@ -17,10 +17,20 @@
 
 set -u
 
+# Whether this run actually changed anything. The updater runs this script on
+# every update, which is the point - it is how a system-level step reaches a
+# device installed before that step existed. But every check reported itself
+# whether or not it did anything, so a device that was already correct printed
+# four lines of "nothing to do" into the update log on every single update. The
+# marker on the last line lets the updater collapse that to one line, while
+# anyone running this over SSH still sees the full account.
+CHANGED=0
+
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
-step() { echo -e "\n${BLUE}▶ $1${NC}"; }
-ok()   { echo -e "${GREEN}✅ $1${NC}"; }
-warn() { echo -e "${YELLOW}⚠️  $1${NC}"; }
+step()    { echo -e "\n${BLUE}▶ $1${NC}"; }
+ok()      { echo -e "${GREEN}✅ $1${NC}"; }
+warn()    { echo -e "${YELLOW}⚠️  $1${NC}"; CHANGED=1; }
+changed() { CHANGED=1; }
 
 if [ "$(id -u)" -ne 0 ]; then
     echo "This script must run as root: sudo bash $0" >&2
@@ -43,6 +53,7 @@ if fstrim / >/dev/null 2>&1; then
     if systemctl is-enabled fstrim.timer >/dev/null 2>&1; then
         ok "TRIM supported — fstrim.timer already enabled (weekly)"
     elif systemctl enable --now fstrim.timer >/dev/null 2>&1; then
+        changed
         ok "TRIM supported — fstrim.timer enabled (weekly)"
     else
         warn "TRIM works but fstrim.timer could not be enabled — run 'sudo fstrim /' periodically"
@@ -54,3 +65,10 @@ fi
 
 echo
 ok "Post-install system configuration complete"
+
+# Machine-readable, always last, stripped by the updater before display.
+if [ "${CHANGED}" -eq 0 ]; then
+    echo "POSTINSTALL_RESULT=unchanged"
+else
+    echo "POSTINSTALL_RESULT=changed"
+fi

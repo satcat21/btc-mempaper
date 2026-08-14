@@ -737,7 +737,9 @@ function _mpaSvgIcon(pathData, color, size, extraStyle) {
     return svg;
 }
 
-function _mpaShowLogModal(checks) {
+// `title` because both the mempool and the Tang check open this, and it used to
+// be captioned "Mempool Connection Log" either way.
+function _mpaShowLogModal(checks, heading) {
     const dark = document.body.classList.contains('dark-mode');
     const C = dark ? {
         bg:          'rgba(22, 22, 28, 0.97)',
@@ -773,7 +775,7 @@ function _mpaShowLogModal(checks) {
 
     const title = document.createElement('div');
     title.style.cssText = `font-weight:700;font-size:15px;margin-bottom:18px;color:${C.text};`;
-    title.textContent = 'Mempool Connection Log';
+    title.textContent = heading || (window.translations || {}).connection_log || 'Connection Log';
     box.appendChild(title);
 
     checks.forEach(c => {
@@ -1136,7 +1138,6 @@ function createFormField(key, field, value) {
             input = createDonationHistoryInterface();
             break;
 
-        case 'mempool_actions':
         case 'tang_check': {
             const row = document.createElement('div');
             row.className = 'mempool-action-row';
@@ -1184,11 +1185,11 @@ function createFormField(key, field, value) {
 
                         // Nothing pinned yet: offer the value instead of making
                         // the operator read it off the server by hand.
-                        const pinned = checks.some(c => c.name === 'Thumbprint pinned' && !c.ok);
+                        const pinned = checks.some(c => c.key === 'thumbprint_pinned' && !c.ok);
                         if (pinned && data.suggested_thumbprint && thpEl) {
                             const fillBtn = document.createElement('button');
                             fillBtn.type = 'button';
-                            fillBtn.textContent = 'Use this server’s thumbprint';
+                            fillBtn.textContent = (window.translations || {}).tang_use_thumbprint || 'Use this server’s thumbprint';
                             fillBtn.style.cssText = 'margin-top:8px;width:100%;padding:5px 10px;background:transparent;'
                                 + 'border:1px solid rgba(128,128,128,0.3);border-radius:6px;color:inherit;cursor:pointer;'
                                 + 'font-size:11px;font-family:inherit;';
@@ -1210,7 +1211,7 @@ function createFormField(key, field, value) {
                             + 'font-size:11px;font-family:inherit;';
                         logBtn.addEventListener('click', e => {
                             e.stopPropagation();
-                            _mpaShowLogModal(checks);
+                            _mpaShowLogModal(checks, (window.translations || {}).tang_connection_log || 'Tang Connection Log');
                         });
                         logBtn.addEventListener('mouseenter', () => {
                             logBtn.style.borderColor = accentColor;
@@ -1244,6 +1245,11 @@ function createFormField(key, field, value) {
             input = row;
             break;
         }
+        // _mempool_actions declares label_check and label_open, which is what
+        // this case builds. It used to fall through into 'tang_check' instead,
+        // so the mempool button queried /api/tang/validate and reported on
+        // clevis - on a device with Tang switched off entirely.
+        case 'mempool_actions':
         case 'connection_check':
         case 'open_url_button': {
             const row = document.createElement('div');
@@ -1289,7 +1295,7 @@ function createFormField(key, field, value) {
                         logBtn.addEventListener('click', e => {
                             // The toast closes on any click inside it - keep this one for the modal
                             e.stopPropagation();
-                            _mpaShowLogModal(data.checks);
+                            _mpaShowLogModal(data.checks, (window.translations || {}).mempool_connection_log || 'Mempool Connection Log');
                         });
                         logBtn.addEventListener('mouseenter', () => {
                             logBtn.style.borderColor = accentColor;

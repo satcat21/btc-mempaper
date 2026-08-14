@@ -43,11 +43,25 @@ def register(self):
             checks = [{'name': 'Tang check', 'ok': False,
                        'error': _safe_error(e, 'Tang check failed')}]
 
+        # Translate here rather than in TangManager, which has no business
+        # knowing what language a browser asked in. Row identity travels as
+        # 'key' and failure identity as 'code', so both can be looked up without
+        # matching on English text - and the English already in the entry is the
+        # fallback for a language that has no wording yet.
+        _t = translations.get(self.config.get('language', 'en'), translations['en'])
+        for check in checks:
+            key = check.get('key')
+            if key:
+                check['name'] = _t.get(f'tang_check_{key}', check['name'])
+            code = check.get('code')
+            if code:
+                check['error'] = _t.get(f'tang_err_{code}', check.get('error', ''))
+
         # Offer the value the operator needs when nothing is pinned yet, so the
         # page can fill it in rather than making them copy it off the server.
         suggested = ''
         for check in checks:
-            if check['name'] == 'Advertisement valid' and check.get('detail'):
+            if check.get('key') == 'advertisement_valid' and check.get('detail'):
                 suggested = check['detail']
         return jsonify({'checks': checks, 'suggested_thumbprint': suggested})
 
