@@ -101,7 +101,7 @@ networks:
 
 > Set `ZITADEL_MASTERKEY` to a random 32-character string (`openssl rand -base64 24`).
 > Expose Zitadel behind Traefik at `https://login.yourdomain.com` exactly like any other service.
-> Full self-hosting docs: https://zitadel.com/docs/self-hosting/deploy/docker
+> Full self-hosting docs: https://zitadel.com/docs/self-hosting/deploy/compose
 >
 > **First deploy only**: replace `start` with `start-from-init` to run database migrations.
 > On subsequent starts, use `start` — it skips the init phase and starts faster.
@@ -147,6 +147,12 @@ api:
 log:
   level: INFO
 
+accessLog:
+  filePath: "/var/log/traefik/access.log"
+  fields:
+    headers:
+      defaultMode: keep
+
 providers:
   file:
     directory: /config
@@ -165,9 +171,15 @@ entryPoints:
     address: ":443"
     transport:
       respondingTimeouts:
-        readTimeout: 300s
-        writeTimeout: 300s
+        readTimeout: 60s
+        writeTimeout: 60s
         idleTimeout: 180s
+      lifeCycle:
+        graceTimeOut: 10s
+    forwardedHeaders:
+      trustedIPs:
+        - "10.0.0.1/32"     # placeholder — the address your tunnel/VPS connects from
+      insecure: false        # NEVER trust X-Forwarded-For from arbitrary clients
 
 certificatesResolvers:
   letsencrypt:
@@ -184,9 +196,25 @@ experimental:
       version: "v0.21.0"
 ```
 
-> **Entrypoint timeouts** are set to sane defaults that protect against slowloris attacks.
-> WebSocket persistence is handled per-service via `serversTransport` (see Part 4), not
-> at the entrypoint level where it would affect all routes.
+> **Entrypoint timeouts** are set to tight defaults (60s) that protect against slowloris
+> attacks. WebSocket persistence is handled per-service via `serversTransport` (see Part 4),
+> not at the entrypoint level where it would affect all routes.
+>
+> **`forwardedHeaders.trustedIPs`** is required if a VPS, WireGuard tunnel, or CDN sits in
+> front of Traefik. Without it, `ClientIP()` rules (LAN bypass) see the tunnel IP instead
+> of the real client. Set `insecure: false` to reject spoofed `X-Forwarded-For` from
+> untrusted sources. Remove the `forwardedHeaders` block entirely if Traefik faces the
+> internet directly.
+>
+> The `10.0.0.1/32` above is a placeholder — substitute the address **your** proxy
+> connects from, which for a WireGuard tunnel is its address inside the tunnel (`wg show`
+> on either peer, or `ip -br addr` on the interface). List only that one host — widening it
+> to a whole subnet, and `0.0.0.0/0` above all, hands everyone inside that range the ability
+> to claim any client IP they like, which is exactly what the LAN bypass in Part 5 trusts.
+> Traefik's own docs: https://doc.traefik.io/traefik/routing/entrypoints/#forwarded-headers
+>
+> **`accessLog`** records every request — essential for incident response and debugging
+> auth failures. Mount a log volume or use Docker's logging driver to persist it.
 
 #### `docker-compose.yml`
 
@@ -348,28 +376,42 @@ http:
             Username: "preferred_username"
             Roles: "urn:zitadel:iam:org:project:roles"
 
+    # Global security headers (HSTS + nosniff — apply to every router)
     security-headers:
+      headers:
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+        stsPreload: true
+        contentTypeNosniff: true
+
+    # Privacy headers (selectively applied to services that should not be indexed)
+    privacy-headers:
       headers:
         customResponseHeaders:
           Referrer-Policy: "no-referrer"
           X-Robots-Tag: "noindex, noimageindex"
-          X-Content-Type-Options: "nosniff"
-          X-Frame-Options: "DENY"
-          Permissions-Policy: "camera=(), microphone=(), geolocation=()"
-        stsSeconds: 63072000
-        stsIncludeSubdomains: true
-        stsPreload: true
 
+    # Rate limit for auth-protected routes (brute-force protection)
     rate-limit:
       rateLimit:
-        average: 100
-        burst: 200
-        period: 1m
+        average: 5
+        burst: 10
 ```
 
 > **`${file:/path}` syntax** (new in traefik-oidc-auth v0.21.0) loads secrets from files
 > at runtime. Create the secret files in a directory mounted into the Traefik container
 > (e.g. `./secrets:/run/secrets:ro`) and keep them out of Git.
+>
+> **Alternative: envsubst template** — if you prefer a single `.env` file for all secrets
+> (including Basic Auth hashes that aren't part of the plugin), keep a `.template` file
+> with `${VAR}` placeholders and render it at deploy time:
+> ```
+> set -a; . ./.env; set +a
+> envsubst '$ZITADEL_CLIENT_ID $ZITADEL_CLIENT_SECRET $OIDC_SESSION_SECRET' \
+>   < config/dynamic.yml.template > config/dynamic.yml
+> ```
+> Pass an **explicit variable list** so `${1}` in any `redirectRegex` survives expansion.
+> Validate the output for leftover `${...}` before reloading Traefik.
 >
 > Generate `Secret` with: `openssl rand -hex 16`
 
@@ -575,7 +617,8 @@ before forwarding to the mempool backend.
 
 ### Part 7 — Event-hub: relay Lightning donations over the internet (optional)
 
-When mempaper runs outside the direct reach of your LNbits server (e.g. the Pi is at home
+When mempaper runs outside the direct reach of your [LNbits](https://github.com/lnbits/lnbits)
+server (e.g. the Pi is at home
 but LNbits is on a VPS, or both are on separate isolated LANs), LNbits cannot POST the payment webhook directly to
 mempaper. [event-hub](https://github.com/satcat21/event-hub) solves this: LNbits POSTs to
 event-hub, and mempaper connects to event-hub via WebSocket to receive donations in real time.
@@ -730,9 +773,10 @@ on the dashboard within seconds.
 
 Everything mempaper encrypts on the Pi is protected by a key derived from the device
 itself, so anyone holding the hardware can recompute it. That is fine against a copied
-SD image and useless against physical theft. Tang fixes the theft case by keeping the
-key off the device: mempaper seals a random 256-bit key to a Tang server on your LAN and
-can only unseal it while that server is reachable.
+SD image and useless against physical theft. [Tang](https://github.com/latchset/tang) (the
+server) and [Clevis](https://github.com/latchset/clevis) (the client that talks to it) fix
+the theft case by keeping the key off the device: mempaper seals a random 256-bit key to a
+Tang server on your LAN and can only unseal it while that server is reachable.
 
 Carried off your network, the wallet data cannot be decrypted at all — not by guessing,
 because there is nothing to guess. Recovery would require the Tang server's private key.
@@ -1050,8 +1094,36 @@ every device you have sealed.
 > files against their upstream release pages for known CVEs and available patches.
 > Deploy the latest **stable patch** of each component — not floating tags like `:latest`
 > or minor-only pins like `:v3.7` that give you no control over what actually runs.
-> Subscribe to release notifications for
+> Subscribe to release notifications for at least
 > [traefik/traefik](https://github.com/traefik/traefik/releases),
 > [traefik-oidc-auth](https://github.com/sevensolutions/traefik-oidc-auth/releases), and
 > [zitadel/zitadel](https://github.com/zitadel/zitadel/releases) so you hear about
-> security fixes before attackers do.
+> security fixes before attackers do. The full component list is below.
+
+---
+
+### Upstream projects
+
+Every version pinned in this guide was current when it was written and will not stay that
+way. Nothing here is authoritative about the components themselves — go to the source
+before you copy a config, and especially before you change one. Where this guide departs
+from an upstream default it does so deliberately, and the last column says why, so you can
+tell a hardening decision apart from a stale one when the upstream docs disagree.
+
+| Component | Upstream | Documentation | Where this guide differs from defaults |
+|---|---|---|---|
+| Traefik | [traefik/traefik](https://github.com/traefik/traefik) | [doc.traefik.io](https://doc.traefik.io/traefik/) | Exact patch pin; no Docker socket mount; 60s responding timeouts; `forwardedHeaders.insecure: false`; `cap_drop: ALL` + `mem_limit` |
+| traefik-oidc-auth (plugin) | [sevensolutions/traefik-oidc-auth](https://github.com/sevensolutions/traefik-oidc-auth) | [traefik-oidc-auth.sevensolutions.cc](https://traefik-oidc-auth.sevensolutions.cc/) | Secrets via `${file:…}` rather than inline; `CookieSecure`/`SameSite=lax`; 12h session timeout |
+| Zitadel | [zitadel/zitadel](https://github.com/zitadel/zitadel) | [zitadel.com/docs/self-hosting](https://zitadel.com/docs/self-hosting/deploy/overview) | Postgres on an `internal: true` network; `--tlsMode disabled` behind Traefik only; role assertion enabled |
+| PostgreSQL (image) | [docker-library/postgres](https://github.com/docker-library/postgres) | [hub.docker.com/_/postgres](https://hub.docker.com/_/postgres) | No published ports; healthcheck gate before Zitadel starts |
+| LEGO (ACME client) | [go-acme/lego](https://github.com/go-acme/lego) | [go-acme.github.io/lego](https://go-acme.github.io/lego/) | Only as the alternative to Traefik's built-in resolver |
+| docker-socket-proxy | [Tecnativa/docker-socket-proxy](https://github.com/Tecnativa/docker-socket-proxy) | repo README | Recommended *instead of* a raw socket mount if you switch to the Docker provider |
+| mempool | [mempool/mempool](https://github.com/mempool/mempool) | [mempool.space/docs](https://mempool.space/docs/api/rest) | `insecureSkipVerify` for the self-signed LAN cert; bcrypt Basic Auth with `removeHeader: true`; LAN bypass by `ClientIP()` |
+| LNbits | [lnbits/lnbits](https://github.com/lnbits/lnbits) | [docs.lnbits.org](https://docs.lnbits.org/) | LNURLp pay link with comments enabled, webhook pointed at event-hub |
+| LNURLp extension | [lnbits/lnurlp](https://github.com/lnbits/lnurlp) | in-app | — |
+| event-hub | [satcat21/event-hub](https://github.com/satcat21/event-hub) | repo README | `passHostHeader: true`; own OIDC, so no Traefik OIDC middleware |
+| Tang | [latchset/tang](https://github.com/latchset/tang) | [`tang(8)`](https://github.com/latchset/tang/blob/master/doc/tang.8.adoc) | Port 7500 instead of 80; LAN-bound socket; `read_only` container; keys generated explicitly (the Debian package ships none) |
+| Clevis | [latchset/clevis](https://github.com/latchset/clevis) | [`clevis-encrypt-tang(1)`](https://github.com/latchset/clevis/blob/master/src/pins/tang/clevis-encrypt-tang.1.adoc) | Thumbprint always pinned — never a bare `url` |
+| José (JWK tooling) | [latchset/jose](https://github.com/latchset/jose) | [`jose(1)`](https://github.com/latchset/jose/blob/master/doc/man/jose.1.adoc) | Used to filter for the *signing* key's thumbprint |
+| socat | [socat homepage](http://www.dest-unreach.org/socat/) | [`socat(1)`](http://www.dest-unreach.org/socat/doc/socat.html) | Replaces systemd socket activation inside the Tang container |
+| htpasswd (apache2-utils) | [apache/httpd](https://github.com/apache/httpd) | [`htpasswd`](https://httpd.apache.org/docs/current/programs/htpasswd.html) | `-B` (bcrypt), never the default `$apr1$` MD5-crypt |
