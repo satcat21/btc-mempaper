@@ -589,6 +589,35 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
         print("✅ mempaper application initialized successfully")
 
 
+    @staticmethod
+    def _missing_apt_packages(pkgs):
+        """Which of `pkgs` dpkg does not currently have installed.
+
+        Matching on '${Package}' alone was not enough: dpkg-query prints a name
+        for anything it knows about, including packages removed but not purged
+        ('deinstall ok config-files'), so a removed package read as present.
+        Only 'install ok installed' means the files are actually on disk.
+
+        Returns [] when the query itself fails, so an unreadable dpkg database
+        does not trigger an install run on a guess.
+        """
+        pkgs = list(pkgs)
+        try:
+            result = subprocess.run(
+                ['dpkg-query', '-W', '-f=${Package} ${Status}\\n'] + pkgs,
+                capture_output=True, text=True, timeout=15
+            )
+        except (subprocess.SubprocessError, OSError):
+            return []
+        # Non-zero exit just means some name was unknown; the known ones are
+        # still on stdout, so the return code is deliberately not checked here.
+        installed = {
+            line.split(' ', 1)[0]
+            for line in (result.stdout or '').splitlines()
+            if line.endswith(' install ok installed')
+        }
+        return [p for p in pkgs if p not in installed]
+
     def _run_dependency_health_check(self):
         """Verify that all required apt and pip packages are installed.
 
@@ -611,21 +640,37 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
                         if line.strip() and not line.strip().startswith('#')
                     ]
                 if apt_pkgs:
-                    result = subprocess.run(
-                        ['dpkg-query', '-W', '-f=${Package}\\n'] + apt_pkgs,
-                        capture_output=True, text=True, timeout=10
-                    )
-                    installed = set(result.stdout.strip().splitlines()) if result.stdout else set()
-                    missing_apt = [p for p in apt_pkgs if p not in installed]
+                    missing_apt = self._missing_apt_packages(apt_pkgs)
                     if missing_apt:
                         print(f'📦 Dependency check: missing apt packages: {", ".join(missing_apt)}')
                         subprocess.run(['sudo', 'mount', '-o', 'remount,rw', '/'], timeout=10, capture_output=True)
                         # Scoped wrapper (installs from apt-requirements.txt, no args accepted) —
                         # a raw 'apt-get install <pkgs>' isn't in sudoers and would hang on a
                         # password prompt, silently failing under capture_output.
-                        subprocess.run(['sudo', '/usr/local/bin/mempaper-apt-install'],
-                                        capture_output=True, timeout=300)
-                        print(f'📦 Dependency check: apt packages installed')
+                        wrapper = '/usr/local/bin/mempaper-apt-install'
+                        if not os.path.exists(wrapper):
+                            # Predates the wrapper, or the sudoers/wrapper set was never
+                            # refreshed after an update. Nothing here can install without it.
+                            print('⚠️ Dependency check: {} is missing — run '
+                                  '"sudo bash tools/install_wifi_permissions.sh {}" over SSH'
+                                  .format(wrapper, os.environ.get('USER', 'mempaper')))
+                        else:
+                            result = subprocess.run(['sudo', wrapper],
+                                                    capture_output=True, text=True, timeout=600)
+                            # Re-query rather than trusting the exit code: this used to print
+                            # success unconditionally, so a failed install (stale package index,
+                            # one unavailable package aborting the whole batch, no sudoers entry)
+                            # looked identical to a good one and the package stayed missing
+                            # through every subsequent update.
+                            still_missing = self._missing_apt_packages(missing_apt)
+                            if still_missing:
+                                print('❌ Dependency check: still missing after install: '
+                                      f'{", ".join(still_missing)}')
+                                tail = (result.stderr or result.stdout or '').strip().splitlines()
+                                for line in tail[-5:]:
+                                    print(f'   apt: {line}')
+                            else:
+                                print(f'📦 Dependency check: installed {", ".join(missing_apt)}')
                     else:
                         print('✅ Dependency check: all apt packages present')
             except Exception as e:

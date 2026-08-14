@@ -110,6 +110,25 @@ Tor covers the mempool traffic, and meme downloads can be routed over it too
 (`sync_memes.py --tor`). LAN destinations such as Bitaxe miners are not
 proxied.
 
+#### E — Self-hosted, with storage sealed to a Tang server
+
+A through D all concern what leaves the device over the network. None of them
+help once the device itself leaves your house: wallet addresses sit on the SD
+card in the clear, and anything the Pi could derive a key from, an attacker
+holding the Pi can derive it from too.
+
+Topology E adds the one key that is genuinely not on the card. mempaper seals
+its wallet data with `clevis` against a [Tang](https://github.com/latchset/tang)
+server elsewhere on the LAN, and can unseal only while that server answers.
+
+![Topology E: self-hosted mempool with Tang-sealed storage](diagrams/topology-tang-sealed.svg)
+
+This is orthogonal to A–D — Tang works just as well pointed at mempool.space —
+but it composes with C into the strongest configuration available: no query
+leaves the network, and the device is worthless off it. Setup, sizing and the
+failure modes are in the
+[Self-Hosting Guide → Tang](SELF_HOSTING_GUIDE.md#part-8--tang-network-bound-encryption-for-wallet-data-optional).
+
 #### What your ISP sees
 
 Everything above concerns what the *mempool operator* learns. Your ISP is a

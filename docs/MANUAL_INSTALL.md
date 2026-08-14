@@ -703,8 +703,16 @@ sudo apt-get install -y clevis     # already covered by apt-requirements.txt
 ```
 
 Adding it to an existing mempaper that was installed earlier is the same one command —
-no reinstall. The web updater also picks it up from `apt-requirements.txt` on the next
-update, so a device updated through the UI gets it without SSH.
+no reinstall. The web updater and the startup dependency check both reconcile against
+`apt-requirements.txt`, so a device updated through the UI normally gets it without SSH.
+
+> **If `clevis` is missing on a device that has been updated through the UI**, that is
+> the bug fixed in this release: the updater skipped apt whenever `apt-requirements.txt`
+> had not changed since the last tag, so a package that failed to install once stayed
+> missing through every later update, and the wrapper reported success either way. Run
+> the command above to install it now, then
+> `sudo bash ~/btc-mempaper/tools/install_wifi_permissions.sh` once to pick up the
+> repaired helper scripts. Verify with `dpkg-query -W -f='${Status}\n' clevis`.
 
 Everything below is optional and needs a Tang server on your LAN
 ([setup guide](SELF_HOSTING_GUIDE.md#part-8--tang-network-bound-encryption-for-wallet-data-optional)).

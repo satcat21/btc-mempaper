@@ -771,12 +771,18 @@ on the dashboard within seconds.
 
 ### Part 8 — Tang: network-bound encryption for wallet data (optional)
 
-Everything mempaper encrypts on the Pi is protected by a key derived from the device
-itself, so anyone holding the hardware can recompute it. That is fine against a copied
-SD image and useless against physical theft. [Tang](https://github.com/latchset/tang) (the
-server) and [Clevis](https://github.com/latchset/clevis) (the client that talks to it) fix
-the theft case by keeping the key off the device: mempaper seals a random 256-bit key to a
-Tang server on your LAN and can only unseal it while that server is reachable.
+By default mempaper does not encrypt anything on the Pi. Wallet addresses and xpubs sit in
+a `600` file in the clear, and that is a decision rather than an oversight: any key the
+device can derive on its own can be re-derived by whoever is holding the device, so
+encrypting under one would cost an Argon2id pass at every start and buy nothing against
+the only attack it claimed to stop. There is no middle option here — either the key is on
+the card, in which case it is not protection, or it is somewhere else.
+
+[Tang](https://github.com/latchset/tang) (the server) and
+[Clevis](https://github.com/latchset/clevis) (the client that talks to it) are the
+somewhere else. mempaper seals a random 256-bit key to a Tang server on your LAN and can
+only unseal it while that server is reachable — the key itself is never written to the SD
+card and never travels to the Pi.
 
 Carried off your network, the wallet data cannot be decrypted at all — not by guessing,
 because there is nothing to guess. Recovery would require the Tang server's private key.
@@ -784,6 +790,25 @@ because there is nothing to guess. Recovery would require the Tang server's priv
 > **This protects a stolen device, not a compromised one.** Anyone with SSH or admin
 > access on a running mempaper can simply ask it to unseal, exactly as the app does.
 > Tang also cannot help while the thief is still on your LAN.
+
+#### Where this sits in a full self-hosted stack
+
+Tang is the last of four layers, and it is worth seeing what each one actually removes.
+With your own node and your own mempool instance, the setup below makes exactly one
+outbound connection — bitcoind talking to the Bitcoin P2P network:
+
+![Self-hosted mempool with Tang-sealed storage](diagrams/topology-tang-sealed.svg)
+
+| Layer | What it removes |
+|---|---|
+| Your own full node | Trusting someone else's view of the chain |
+| Self-hosted mempool | Your addresses being queried against a third party's API |
+| Tor to mempool | Linking the Pi's IP to those queries |
+| Tang + Clevis | The decryption key being present on a device that can be carried away |
+
+The layers are independent — Tang works fine against `mempool.space`, and a full node
+helps whether or not you seal anything. They just close different holes, and only the
+last one survives losing physical control of the Pi.
 
 #### Do this before entering wallet data
 
@@ -812,24 +837,34 @@ when it does not.
 
 #### What you need
 
-An always-on host on the same LAN — a node, a NAS, or a small Proxmox LXC. Tang is
-tiny: measured at **3.7 MiB RAM idle**, a 12 KB key store, and one short HTTP request
-per unseal.
+An always-on host on the same LAN — a node, a NAS, or a small Proxmox LXC. Tang itself is
+tiny: measured at **3.7 MiB RAM idle**, a 12 KB key store, and one short HTTP request per
+unseal.
 
-**Proxmox LXC sizing** (Debian 13, unprivileged, running Tang in Docker):
+Size the container, though, not the daemon. What you are provisioning is a Debian system
+that happens to run Tang, and the numbers are set almost entirely by what you put around
+it — which is why the figures below look nothing like 3.7 MiB:
 
-| Resource | Recommended | Minimum |
+**Proxmox LXC sizing** (Debian 13, unprivileged):
+
+| Resource | Tang natively | Tang in Docker |
 |---|---|---|
 | CPU cores | 1 | 1 |
-| RAM | 512 MB | 256 MB |
-| Swap | 512 MB | 256 MB |
-| Disk | 8 GB | 4 GB |
+| RAM | 256 MB | 512 MB |
+| Swap | 256 MB | 512 MB |
+| Disk | 2 GB | 8 GB |
 
-Almost all of that is the Docker daemon and the 87 MB image, not Tang. Running Tang
-natively instead (`apt install tang && systemctl enable --now tangd.socket`) is simpler
-in an LXC and fits comfortably in **256 MB RAM and 2 GB disk** — use that if you do not
-already run containers on the host. The compose route below is worth it mainly if you
-manage everything else on that host with compose.
+The native column is essentially the size of a minimal Debian rootfs plus apt's working
+space. The Docker column adds the daemon — roughly 100 MB resident on its own — the 87 MB
+image, its build layers, and room for logs and apt caches to accumulate without wedging
+the container. Docker will start in 256 MB RAM and 4 GB disk, but you will be pruning
+images by hand to keep it there, so treat that as the floor rather than a target.
+
+**Run Tang natively unless you already manage that host with compose.** In an LXC it is
+two commands (`apt install tang && systemctl enable --now tangd.socket`), it drops the
+entire Docker layer from the sizing above, and there is nothing about Tang that benefits
+from containerisation. The compose route below earns its overhead only when everything
+else on that host is already deployed the same way.
 
 #### `docker-compose.yml`
 
@@ -1070,12 +1105,36 @@ under a key that no longer exists on the SD card.
 | Device stolen while still on your LAN | Not protected — Tang answers as normal |
 | Attacker has SSH or admin access | Not protected — they can unseal exactly as mempaper does |
 
-**Back up `tang-keys`.** It is 12 KB and it is the only copy of the key that unlocks
-every device you have sealed.
+**Back up `tang-keys`.** `tangd-keygen` writes two JWKs — an ES512 key that signs the
+advertisement and an ECMR key for the exchange itself — both on NIST P-521, so roughly
+256 bits of security. That is the whole of it: 12 KB on disk, and the only copy of the
+key that unlocks every device you have sealed.
 
 > **The e-ink panel is bistable.** A stolen device is still physically displaying the
 > last image, including any balance that was on it, with no power applied. No encryption
-> changes that — if that matters to you, turn off the wallet block or enable OPSec mode.
+> changes that — if that matters to you, turn off the wallet block or leave OPSec mode on.
+
+#### Powering down for a seizure or a trip
+
+Sealing only helps if the seal is actually closed when the hardware leaves your hands, and
+a running mempaper holds its data unsealed. If you expect the device to be taken — a
+raid, a border crossing, a house you are leaving empty — the order matters:
+
+1. **Enable OPSec mode**, and wait for the panel to redraw. Because e-ink is bistable,
+   whatever is on the screen when power is cut stays on the screen indefinitely. Doing
+   this after shutdown does nothing; the last balance is still sitting there in the glass.
+2. **Power off mempaper.** With the process gone, the unsealed key is gone with it, and
+   the card holds only sealed ciphertext.
+3. **Power off the Tang server too** — and give it an encrypted root filesystem (LUKS with
+   a passphrase you type at boot, *not* a keyfile stored on the same disk). Tang's key
+   store is 12 KB of plaintext JWK on disk. A Tang host seized alongside mempaper hands
+   over both halves of the scheme; a Tang host powered off behind LUKS hands over a brick.
+
+What that leaves on the table: a display showing a family photo, an SD card that decrypts
+to nothing, and a key that exists only behind a passphrase in your head. Step 3 is the one
+people skip, and it is the one that makes the other two meaningful.
+
+*Bademantel approved.*
 
 ---
 

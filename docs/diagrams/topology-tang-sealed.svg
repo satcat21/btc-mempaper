@@ -1,0 +1,134 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" role="img" aria-label="Self-hosted mempool with Tang-sealed storage: mempaper queries a mempool instance on the same LAN backed by Electrum and bitcoind, and seals its wallet data with clevis against a Tang server elsewhere on the network. Tang holds a P-521 keypair worth roughly 256 bits of security and never sends it to the Pi, so a device carried off the network decrypts to nothing. Only bitcoind's peer-to-peer traffic crosses to the internet.">
+<style>
+  svg { font-family: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, "Liberation Mono", monospace; }
+
+  .f-t{fill:#1A1A1F} .f-t2{fill:#5C5C66} .f-t3{fill:#8A8A94}
+  .f-btc{fill:#B7791F} .f-lan{fill:#1D6B2C} .f-auth{fill:#2C5AA8}
+  .f-exp{fill:#C62828} .f-tor{fill:#6B3FA0}
+
+  .zone{fill:none;stroke-width:1.5;stroke-dasharray:7 5}
+  .zone-lan{fill:rgba(29,107,44,0.09);stroke:#1D6B2C}
+  .zone-exp{fill:rgba(198,40,40,0.08);stroke:#C62828}
+  .zone-net{fill:#F2F0EC;stroke:#DAD6CE}
+  .zone-tor{fill:rgba(107,63,160,0.10);stroke:#6B3FA0}
+  .zone-auth{fill:rgba(44,90,168,0.09);stroke:#2C5AA8}
+
+  .bx{fill:#FFFFFF;stroke:#1A1A1F;stroke-width:1.6}
+  .bx-soft{fill:#FFFFFF;stroke:#DAD6CE;stroke-width:1.6}
+  .bx-2{fill:#F2F0EC;stroke:#DAD6CE;stroke-width:1.4}
+  .bx-in{fill:#FFFFFF;stroke:#DAD6CE;stroke-width:1.2}
+  .bx-btc{fill:rgba(183,121,31,0.10);stroke:#B7791F;stroke-width:2.4}
+  .bx-lan{fill:rgba(29,107,44,0.09);stroke:#1D6B2C;stroke-width:1.9}
+  .bx-auth{fill:rgba(44,90,168,0.09);stroke:#2C5AA8;stroke-width:2}
+  .bx-exp{fill:rgba(198,40,40,0.08);stroke:#C62828;stroke-width:1.6}
+  .bx-tor{fill:rgba(107,63,160,0.10);stroke:#6B3FA0;stroke-width:2.2}
+  .bx-o{fill:#FFFFFF;stroke:#C62828;stroke-width:2}
+  .bx-g{fill:#FFFFFF;stroke:#1D6B2C;stroke-width:2}
+
+  .ln{stroke:#1A1A1F;stroke-width:2;fill:none}
+  .ln-thin{stroke:#DAD6CE;stroke-width:1;fill:none}
+  /* fill:none matters on every one of these: the bracket paths are open
+     outlines, and without it a browser fills them solid black. */
+  .ln-btc{stroke:#B7791F;stroke-width:2;fill:none}
+  .ln-tor{stroke:#6B3FA0;stroke-width:2.4;fill:none}
+  .ln-exp{stroke:#C62828;stroke-width:2.4;fill:none}
+  .ln-auth{stroke:#2C5AA8;stroke-width:2.3;fill:none}
+  .ln-lan{stroke:#1D6B2C;stroke-width:2.2;fill:none}
+  .ln-mut{stroke:#5C5C66;stroke-width:2;fill:none}
+  .ln-dash{stroke:#8A8A94;stroke-width:1.6;fill:none;stroke-dasharray:5 4}
+  .ln-sep{stroke:#E8E5DF;stroke-width:1;fill:none}
+
+  .t-lg{font-size:25px;font-weight:700} .t-md{font-size:20px;font-weight:600}
+  .t-sm{font-size:17px;font-weight:600} .t-xs{font-size:15px} .t-xxs{font-size:14px}
+  .t-zone{font-size:18px;font-weight:600;letter-spacing:1.5px}
+  .t-eyebrow{font-size:15px;font-weight:700;letter-spacing:1.4px}
+  .mid{text-anchor:middle}
+</style>
+<rect x="0" y="0" width="100%" height="100%" fill="#FAF9F6"/>
+<svg x="40" y="20" width="44" height="44" viewBox="0 0 64 64"><g transform="translate(0.00630876,-0.00301984)"><path fill="#1a1a1f" d="m63.033,39.744c-4.274,17.143-21.637,27.576-38.782,23.301-17.138-4.274-27.571-21.638-23.295-38.78,4.272-17.145,21.635-27.579,38.775-23.305,17.144,4.274,27.576,21.64,23.302,38.784z"/><path fill="#F7931A" d="m46.103,27.444c0.637-4.258-2.605-6.547-7.038-8.074l1.438-5.768-3.511-0.875-1.4,5.616c-0.923-0.23-1.871-0.447-2.813-0.662l1.41-5.653-3.509-0.875-1.439,5.766c-0.764-0.174-1.514-0.346-2.242-0.527l0.004-0.018-4.842-1.209-0.934,3.75s2.605,0.597,2.55,0.634c1.422,0.355,1.679,1.296,1.636,2.042l-1.638,6.571c0.098,0.025,0.225,0.061,0.365,0.117-0.117-0.029-0.242-0.061-0.371-0.092l-2.296,9.205c-0.174,0.432-0.615,1.08-1.609,0.834,0.035,0.051-2.552-0.637-2.552-0.637l-1.743,4.019,4.569,1.139c0.85,0.213,1.683,0.436,2.503,0.646l-1.453,5.834,3.507,0.875,1.439-5.772c0.958,0.26,1.888,0.5,2.798,0.726l-1.434,5.745,3.511,0.875,1.453-5.823c5.987,1.133,10.489,0.676,12.384-4.739,1.527-4.36-0.076-6.875-3.226-8.515,2.294-0.529,4.022-2.038,4.483-5.155zm-8.022,11.249c-1.085,4.36-8.426,2.003-10.806,1.412l1.928-7.729c2.38,0.594,10.012,1.77,8.878,6.317zm1.086-11.312c-0.99,3.966-7.1,1.951-9.082,1.457l1.748-7.01c1.982,0.494,8.365,1.416,7.334,5.553z"/></g></svg>
+<text x="96" y="42" font-size="21" font-weight="700"><tspan fill="#1A1A1F">mem</tspan><tspan fill="#B7791F">paper</tspan></text>
+<text x="96" y="64" font-size="15" fill="#5C5C66">Topology E &#8212; Self-hosted mempool + Tang-sealed at rest</text>
+<text x="1240" y="42" font-size="13" fill="#8A8A94" text-anchor="end">github.com/satcat21/btc-mempaper</text>
+<text x="1240" y="63" font-size="13" fill="#8A8A94" text-anchor="end">2026</text>
+<line x1="40" y1="80" x2="1240" y2="80" stroke="#DAD6CE" stroke-width="1"/>
+
+          <defs>
+            <marker id="s5t" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-t"/></marker>
+            <marker id="s5g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-lan"/></marker>
+            <marker id="s5m" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-t2"/></marker>
+            <marker id="s5a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-auth"/></marker>
+          </defs>
+
+          <rect x="40" y="96" width="880" height="540" rx="12" class="zone zone-lan"/>
+          <text x="62" y="128" class="t-zone f-lan">YOUR HOME NETWORK &#8212; QUERIES AND KEYS BOTH STAY HERE</text>
+          <rect x="988" y="96" width="252" height="540" rx="12" class="zone zone-net"/>
+          <text x="1010" y="128" class="t-zone f-t2">INTERNET</text>
+
+          <rect x="72" y="156" width="248" height="150" rx="9" class="bx-btc"/>
+          <text x="196" y="200" class="t-lg mid f-btc">mempaper</text>
+          <text x="196" y="226" class="t-xs mid f-t2">Pi Zero &#183; :5000</text>
+          <line x1="98" y1="244" x2="294" y2="244" class="ln-thin"/>
+          <text x="196" y="270" class="t-sm mid f-auth">clevis</text>
+          <text x="196" y="292" class="t-xxs mid f-t2">seals &#183; unseals</text>
+
+          <rect x="72" y="340" width="248" height="170" rx="8" class="bx-2"/>
+          <text x="94" y="368" class="t-eyebrow f-t2">SEALED AT REST</text>
+          <text x="94" y="398" class="t-xs f-t">wallet addresses</text>
+          <text x="94" y="424" class="t-xs f-t">balance cache</text>
+          <text x="94" y="450" class="t-xs f-t">rendered images</text>
+          <line x1="94" y1="468" x2="298" y2="468" class="ln-thin"/>
+          <text x="94" y="492" class="t-xxs f-lan">key is not on the card</text>
+
+          <rect x="72" y="536" width="248" height="84" rx="8" class="bx-lan"/>
+          <text x="94" y="564" class="t-xxs f-lan" font-weight="700">GAIN</text>
+          <text x="94" y="590" class="t-xxs f-t">Off your LAN the card</text>
+          <text x="94" y="612" class="t-xxs f-t">decrypts to nothing.</text>
+
+          <rect x="368" y="412" width="240" height="188" rx="8" class="bx-auth"/>
+          <text x="488" y="456" class="t-lg mid f-auth">Tang</text>
+          <text x="488" y="482" class="t-xs mid f-t2">LXC &#183; NAS &#183; node</text>
+          <line x1="392" y1="500" x2="584" y2="500" class="ln-thin"/>
+          <text x="488" y="524" class="t-xxs mid f-t">P-521 keypair</text>
+          <text x="488" y="546" class="t-xxs mid f-t2">&#8776;256-bit strength</text>
+          <text x="488" y="572" class="t-xxs mid f-lan">never sent to the Pi</text>
+
+          <rect x="648" y="156" width="248" height="104" rx="8" class="bx-g"/>
+          <text x="772" y="194" class="t-md mid f-t">mempool</text>
+          <text x="772" y="220" class="t-xs mid f-t2">self-hosted instance</text>
+          <text x="772" y="244" class="t-xs mid f-t2">REST + WSS</text>
+
+          <rect x="648" y="296" width="248" height="88" rx="8" class="bx"/>
+          <text x="772" y="334" class="t-md mid f-t">Electrum server</text>
+          <text x="772" y="360" class="t-xs mid f-t2">address indexing</text>
+
+          <rect x="648" y="420" width="248" height="110" rx="8" class="bx"/>
+          <text x="772" y="458" class="t-md mid f-t">bitcoind</text>
+          <text x="772" y="484" class="t-xs mid f-t2">full node</text>
+          <text x="772" y="508" class="t-xs mid f-t2">validates the chain</text>
+
+          <rect x="648" y="548" width="248" height="84" rx="8" class="bx-exp"/>
+          <text x="670" y="576" class="t-xxs f-exp" font-weight="700">LIMIT</text>
+          <text x="670" y="602" class="t-xxs f-t">No help against SSH</text>
+          <text x="670" y="624" class="t-xxs f-t">access, or theft on-LAN.</text>
+
+          <line x1="328" y1="200" x2="640" y2="200" class="ln-lan" marker-end="url(#s5g)"/>
+          <text x="484" y="184" class="t-xxs mid f-lan">REST + WSS</text>
+          <text x="484" y="224" class="t-xxs mid f-t2">Tor or plain LAN</text>
+
+          <line x1="196" y1="306" x2="196" y2="332" class="ln" marker-end="url(#s5t)"/>
+
+          <path d="M328 272 H488 V404" class="ln-auth" marker-end="url(#s5a)"/>
+          <text x="404" y="258" class="t-xxs mid f-auth">seal &#183; unseal</text>
+          <text x="500" y="348" class="t-xxs f-auth">HTTP :7500</text>
+
+          <line x1="772" y1="260" x2="772" y2="288" class="ln" marker-end="url(#s5t)"/>
+          <line x1="772" y1="384" x2="772" y2="412" class="ln" marker-end="url(#s5t)"/>
+
+          <line x1="896" y1="476" x2="1002" y2="476" class="ln-mut" marker-end="url(#s5m)"/>
+          <text x="949" y="460" class="t-xxs mid f-t2">P2P :8333</text>
+
+          <rect x="1010" y="420" width="208" height="112" rx="8" class="bx-soft"/>
+          <text x="1114" y="462" class="t-sm mid f-t2">Bitcoin peers</text>
+          <text x="1114" y="490" class="t-xxs mid f-t3">blocks + txs only</text>
+          <text x="1114" y="512" class="t-xxs mid f-t3">no query metadata</text>
+        </svg>

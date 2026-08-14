@@ -52,20 +52,67 @@ RM_BIN="$(which rm         2>/dev/null || echo /bin/rm)"
 
 # Install apt wrapper script — installs only packages from apt-requirements.txt,
 # accepts no arguments so the sudoers rule cannot be exploited to install arbitrary packages.
-cat > "${APT_INSTALL_WRAPPER}" <<WRAPPER
-#!/bin/bash
-APT_REQ="${PROJECT_DIR}/apt-requirements.txt"
-if [ ! -f "\$APT_REQ" ]; then
-    echo "❌ apt-requirements.txt not found: \$APT_REQ" >&2
+#
+# Only the APT_REQ path is interpolated from here; the body goes through a quoted
+# heredoc so its own $variables survive into the generated script unescaped.
+{
+    echo '#!/bin/bash'
+    echo "APT_REQ=\"${PROJECT_DIR}/apt-requirements.txt\""
+    cat <<'WRAPPER'
+if [ ! -f "$APT_REQ" ]; then
+    echo "❌ apt-requirements.txt not found: $APT_REQ" >&2
     exit 1
 fi
-PKGS=\$(grep -v '^\s*#' "\$APT_REQ" | grep -v '^\s*\$' | tr '\n' ' ')
-if [ -z "\$PKGS" ]; then
+
+mapfile -t PKGS < <(grep -v '^\s*#' "$APT_REQ" | grep -v '^\s*$' | tr -d '\r')
+if [ ${#PKGS[@]} -eq 0 ]; then
     echo "No packages listed in apt-requirements.txt — nothing to install."
     exit 0
 fi
-exec apt-get install -y --no-upgrade \$PKGS
+
+_missing() {
+    local p
+    for p in "$@"; do
+        dpkg-query -W -f='${Status}' "$p" 2>/dev/null \
+            | grep -q '^install ok installed$' || echo "$p"
+    done
+}
+
+mapfile -t MISSING < <(_missing "${PKGS[@]}")
+if [ ${#MISSING[@]} -eq 0 ]; then
+    echo "All ${#PKGS[@]} declared packages already installed — nothing to do."
+    exit 0
+fi
+echo "Missing: ${MISSING[*]}"
+
+# Refresh the index before installing. A package that is new in this release does
+# not exist in an index that predates it, and 'Unable to locate package' would
+# otherwise abort the entire batch below - which is exactly how a device ends up
+# running a release whose declared dependencies were never installed.
+apt-get update || echo "⚠️  apt-get update failed — continuing with the cached index" >&2
+
+# Batch first: it resolves shared dependencies in one pass and is far faster on a
+# Pi Zero. But apt-get install is all-or-nothing, so a single unavailable package
+# silently takes every other package down with it. On failure, retry one at a time
+# so the damage is limited to the package that actually cannot be installed.
+if ! apt-get install -y --no-upgrade "${MISSING[@]}"; then
+    echo "⚠️  Batch install failed — retrying each package individually" >&2
+    for p in "${MISSING[@]}"; do
+        apt-get install -y --no-upgrade "$p" || echo "❌ failed: $p" >&2
+    done
+fi
+
+# Exit on what is actually on the device now, not on what apt-get returned. The
+# app and the web updater use this status to decide whether to warn the user, so
+# it must not report success for a package that is still missing.
+mapfile -t STILL_MISSING < <(_missing "${MISSING[@]}")
+if [ ${#STILL_MISSING[@]} -gt 0 ]; then
+    echo "❌ Still missing after install: ${STILL_MISSING[*]}" >&2
+    exit 1
+fi
+echo "✅ Installed: ${MISSING[*]}"
 WRAPPER
+} > "${APT_INSTALL_WRAPPER}"
 chown root:root "${APT_INSTALL_WRAPPER}"
 chmod 755 "${APT_INSTALL_WRAPPER}"
 echo "✅  apt install wrapper installed: ${APT_INSTALL_WRAPPER}"
@@ -80,6 +127,19 @@ WRAPPER
 chown root:root "${UPGRADE_PYTHON_WRAPPER}"
 chmod 755 "${UPGRADE_PYTHON_WRAPPER}"
 echo "✅  Python upgrade wrapper installed: ${UPGRADE_PYTHON_WRAPPER}"
+
+# Install post-install wrapper — applies system configuration (periodic TRIM and
+# anything else added later) that the web updater cannot apply on its own.
+# Scoped the same way: no arguments, one fixed script path inside the repo, so
+# its contents travel with the release while the grant stays narrow.
+POSTINSTALL_WRAPPER="/usr/local/bin/mempaper-postinstall"
+cat > "${POSTINSTALL_WRAPPER}" <<WRAPPER
+#!/bin/bash
+exec bash "${PROJECT_DIR}/tools/postinstall.sh"
+WRAPPER
+chown root:root "${POSTINSTALL_WRAPPER}"
+chmod 755 "${POSTINSTALL_WRAPPER}"
+echo "✅  Post-install wrapper installed: ${POSTINSTALL_WRAPPER}"
 
 # Install WiFi clear wrapper — removes ALL saved client WiFi profiles including
 # netplan-managed ones (Pi Imager creates these as netplan-wlan0-SSID).
@@ -292,6 +352,11 @@ ${SERVICE_USER} ALL=(root) NOPASSWD: ${APT_INSTALL_WRAPPER}
 # Python minor-version upgrade wrapper — unholds, upgrades, rebuilds venv.
 # Scoped to a single fixed script path; cannot install arbitrary packages.
 ${SERVICE_USER} ALL=(root) NOPASSWD: ${UPGRADE_PYTHON_WRAPPER}
+
+# Post-install system configuration (periodic TRIM, and whatever a later release
+# adds). Lets the web updater apply system state it otherwise could not touch.
+# Scoped to a single fixed script path; takes no arguments.
+${SERVICE_USER} ALL=(root) NOPASSWD: ${POSTINSTALL_WRAPPER}
 
 # WiFi profile clear wrapper — deletes all saved client WiFi profiles including
 # Pi Imager netplan-managed connections that nmcli refuses to remove directly.

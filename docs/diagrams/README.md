@@ -13,6 +13,7 @@ clone, and in a Markdown preview.
 | [`topology-vpn.svg`](topology-vpn.svg) | Topology B | VPN as a partial mitigation: the IP changes, the queries do not |
 | [`topology-self-hosted.svg`](topology-self-hosted.svg) | Topology C | Self-hosted mempool on your own node — nothing leaves the LAN |
 | [`topology-tor.svg`](topology-tor.svg) | Topology D | mempool.space reached over Tor via its onion service |
+| [`topology-tang-sealed.svg`](topology-tang-sealed.svg) | Topology E, and [Self-Hosting Guide](../SELF_HOSTING_GUIDE.md) Part 8 | Self-hosted mempool plus storage sealed to a Tang server — the key is off the device |
 | [`privacy-options-ranked.svg`](privacy-options-ranked.svg) | Summary | The four topologies ordered by privacy strength |
 | [`latency-and-reliability.svg`](latency-and-reliability.svg) | Pros and cons | What Tor costs in round-trip time, and why it rarely matters here |
 | [`mempool-host-dominance.svg`](mempool-host-dominance.svg) | What leaves the device | Why `mempool_host` is the single setting that decides exposure |
@@ -20,9 +21,10 @@ clone, and in a Markdown preview.
 | [`block-to-image-dataflow.svg`](block-to-image-dataflow.svg) | From new block to new image | Speculative pre-render, and the fan-out that never blocks the browser |
 | [`topology-remote-access-oidc.svg`](topology-remote-access-oidc.svg) | Remote access | Traefik + Zitadel OIDC in front of the dashboard |
 
-Every SVG in this directory is embedded somewhere in ARCHITECTURE.md. If you add
-one, add its row here; if you remove one, remove the embed too — an unreferenced
-diagram is the kind of thing that silently rots.
+Every SVG in this directory is embedded in ARCHITECTURE.md, and some are reused
+in other docs — the "Used in" column above is the full list of embed sites. If
+you add one, add its row here; if you remove one, remove every embed too — an
+unreferenced diagram is the kind of thing that silently rots.
 
 ## Editing
 

@@ -465,7 +465,10 @@ If a stolen device must not give up your addresses and balances, run a
 [Tang](https://github.com/latchset/tang) server on your LAN — a node, a NAS, or a small
 Proxmox LXC. mempaper then seals its wallet data with a random 256-bit key held off the
 device, so carried off your network it cannot be decrypted at all. Tang needs very
-little: **3.7 MiB RAM idle** and a 12 KB key store.
+little: **3.7 MiB RAM idle**. Its keypair is P-521 — roughly 256 bits of security,
+held on that host and never sent to the Pi.
+
+![Self-hosted mempool with Tang-sealed storage](docs/diagrams/topology-tang-sealed.svg)
 
 If the Tang host is unreachable, mempaper still starts and runs — the wallet and donation
 blocks are disabled until it returns, then restore themselves automatically.

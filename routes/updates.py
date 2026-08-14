@@ -379,35 +379,86 @@ def register(self):
                     except (ValueError, OSError):
                         pass  # malformed file — ignore and proceed
 
-                # Install apt dependencies if changed
+                # Install apt dependencies when the declared set changed, or when
+                # anything it declares is not actually on the device.
                 apt_req_file = os.path.join(project_dir, 'apt-requirements.txt')
-                if not apt_deps_changed:
+                apt_pkgs = []
+                if os.path.exists(apt_req_file):
+                    with open(apt_req_file) as f:
+                        apt_pkgs = [
+                            line.strip() for line in f
+                            if line.strip() and not line.strip().startswith('#')
+                        ]
+
+                # The diff above only sees what changed between these two tags. A
+                # package that was declared but never landed — a batch install that
+                # one unavailable package aborted, a device with a stale index, an
+                # install predating the wrapper — stayed missing forever, because
+                # every later update found the file unchanged and skipped apt
+                # entirely. Reconcile against dpkg rather than against the diff.
+                missing_apt = self._missing_apt_packages(apt_pkgs) if apt_pkgs else []
+                if missing_apt:
+                    _emit('update_output', {'line': 'Declared but not installed: ' + ', '.join(missing_apt), 'phase': 'apt', 'header': True})
+
+                if not apt_pkgs:
+                    pass
+                elif not apt_deps_changed and not missing_apt:
                     _emit('update_output', {'line': self.translations.get('system_deps_unchanged', 'System dependencies unchanged — skipping apt install'), 'phase': 'apt', 'header': True})
-                elif os.path.exists(apt_req_file):
+                else:
                     _emit('update_output', {'line': self.translations.get('installing_system_deps', 'Installing system dependencies...'), 'phase': 'apt', 'header': True})
                     try:
                         # Ensure root filesystem is writable (may be read-only after unclean shutdown)
                         subprocess.run(['sudo', 'mount', '-o', 'remount,rw', '/'], timeout=10, capture_output=True)
-                        with open(apt_req_file) as f:
-                            apt_pkgs = [
-                                line.strip() for line in f
-                                if line.strip() and not line.strip().startswith('#')
-                            ]
-                        if apt_pkgs:
+                        wrapper = '/usr/local/bin/mempaper-apt-install'
+                        if not os.path.exists(wrapper):
+                            _emit('update_output', {'line': f'{wrapper} not found — run "sudo bash tools/install_wifi_permissions.sh" over SSH to reinstall the helper scripts', 'phase': 'apt', 'header': True})
+                        else:
                             proc = subprocess.Popen(
-                                ['sudo', '/usr/local/bin/mempaper-apt-install'],
+                                ['sudo', wrapper],
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                 text=True, bufsize=1
                             )
                             for line in proc.stdout:
                                 _emit('update_output', {'line': line.rstrip('\n'), 'phase': 'apt'})
                             proc.wait()
-                            if proc.returncode != 0:
-                                _emit('update_output', {'line': self.translations.get('system_deps_warning', 'Warning: some system dependencies failed to install'), 'phase': 'apt', 'header': True})
+                            # Report on what dpkg holds now, not on the exit code — the
+                            # user needs to know which package is still missing, not
+                            # that "some" dependency failed.
+                            still_missing = self._missing_apt_packages(apt_pkgs)
+                            if still_missing:
+                                _emit('update_output', {'line': 'Warning: still missing after install: ' + ', '.join(still_missing), 'phase': 'apt', 'header': True})
                             else:
                                 _emit('update_output', {'line': self.translations.get('system_deps_installed', 'System dependencies installed'), 'phase': 'apt', 'header': True})
                     except Exception as apt_err:
                         _emit('update_output', {'line': f'Warning: {apt_err}', 'phase': 'apt'})
+
+                # Re-apply post-install system configuration (periodic TRIM, and
+                # whatever a later release adds to tools/postinstall.sh).
+                #
+                # This used to live inline in install.sh, which means it only ever
+                # ran on a fresh install: a release that added a system-level step
+                # shipped the release note to every device and the step to none of
+                # the updated ones. The script is idempotent, so running it on every
+                # update is cheap and converges a drifted device.
+                postinstall_wrapper = '/usr/local/bin/mempaper-postinstall'
+                if os.path.exists(postinstall_wrapper):
+                    _emit('update_output', {'line': 'Applying post-install system configuration...', 'phase': 'apt', 'header': True})
+                    try:
+                        proc = subprocess.Popen(
+                            ['sudo', postinstall_wrapper],
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            text=True, bufsize=1
+                        )
+                        for line in proc.stdout:
+                            _emit('update_output', {'line': line.rstrip('\n'), 'phase': 'apt'})
+                        proc.wait()
+                    except Exception as post_err:
+                        _emit('update_output', {'line': f'Warning: {post_err}', 'phase': 'apt'})
+                else:
+                    # Device installed before this wrapper existed. It cannot be
+                    # created from here — that needs root — so name the one command
+                    # that fixes it rather than failing quietly.
+                    _emit('update_output', {'line': 'Skipping post-install configuration — run "sudo bash tools/install_wifi_permissions.sh" over SSH once to enable it', 'phase': 'apt', 'header': True})
 
                 # Install pip dependencies (only when requirements.txt changed)
                 venv_pip = os.path.join(project_dir, '.venv', 'bin', 'pip')

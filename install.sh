@@ -1097,28 +1097,12 @@ else
     ok "Skipping fail2ban"
 fi
 
-# ── Periodic TRIM ─────────────────────────────────────────────────────────
-# Deleting a file on flash does not erase it. The controller marks the old
-# cells free and writes the update elsewhere, so the previous contents stay
-# physically present until those cells happen to be reused - recoverable from
-# the raw NAND long after the file is gone. That matters here because wallet
-# addresses are written in clear text unless Tang is enabled, so switching Tang
-# on later does not remove what was already committed to the card.
-#
-# TRIM is the only lever that asks the controller to actually erase freed
-# blocks. Best effort by design: plenty of SD cards do not implement discard,
-# and that is not a reason to fail an install.
-step "Periodic TRIM"
-if sudo fstrim / >/dev/null 2>&1; then
-    if sudo systemctl enable --now fstrim.timer >/dev/null 2>&1; then
-        ok "TRIM supported — fstrim.timer enabled (weekly)"
-    else
-        warn "TRIM works but fstrim.timer could not be enabled — run 'sudo fstrim /' periodically"
-    fi
-else
-    warn "This card does not support TRIM — freed blocks keep their old contents"
-    warn "If it ever held wallet data in clear text, only re-flashing erases it"
-fi
+# ── Post-install system configuration ─────────────────────────────────────
+# Periodic TRIM and anything else that is system state rather than repository
+# content. Kept in its own idempotent script so the web updater can re-apply it
+# on an existing device — inline here, these steps only ever ran on a fresh
+# install, and a release that added one silently skipped every updated device.
+sudo bash tools/postinstall.sh
 
 # ── Optional: unattended-upgrades ─────────────────────────────────────────
 if [[ "$UU_CHOICE" =~ ^[Yy]$ ]]; then
