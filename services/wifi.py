@@ -867,12 +867,28 @@ class WifiHotspotMixin:
             except Exception as e:
                 print(f'⚠️ nft accept rule error: {e}')
 
+    def _teardown_interface(self):
+        """The interface to build rule-deletion specs against.
+
+        Normally the one the hotspot was raised on, but that attribute is lost
+        if the process restarts while the hotspot is up - and the rules outlive
+        the process. Fall back to detecting the interface from the filesystem,
+        which needs neither nmcli nor sudo and so is safe on a teardown path.
+        """
+        return self._active_hotspot_interface or self._detect_wifi_interface_fs_only()
+
     def _remove_captive_portal_redirect(self):
         """Remove all mempaper captive-portal iptables rules (PREROUTING + INPUT)."""
         port = self._get_web_port()
-        interface = self._active_hotspot_interface
-        # Remove INPUT accept rules added for DHCP, DNS, and Flask port
+        interface = self._teardown_interface()
+        # 'iptables -D' matches on the complete rule spec, so every deletion has
+        # to repeat the '-i <interface>' its rule was added with. The PREROUTING
+        # deletion below used to omit it: nothing matched, the loop broke on the
+        # first failure, and each hotspot cycle appended another redirect pair
+        # that outlived the hotspot. The INPUT deletion always passed it, which
+        # is why only these accumulated.
         if interface:
+            # Remove INPUT accept rules added for DHCP, DNS, and Flask port
             for proto, dport in [('udp', 67), ('udp', 53), ('tcp', port)]:
                 for _ in range(5):
                     try:
@@ -886,20 +902,22 @@ class WifiHotspotMixin:
                             break
                     except Exception:
                         break
-        for src_port in (80, 443):
-            # Delete until no matching rule remains (handles duplicates)
-            for _ in range(5):
-                try:
-                    result = subprocess.run(
-                        ['sudo', 'iptables', '-t', 'nat', '-D', 'PREROUTING',
-                         '-p', 'tcp', '--dport', str(src_port),
-                         '-j', 'REDIRECT', '--to-port', str(port)],
-                        capture_output=True, timeout=10,
-                    )
-                    if result.returncode != 0:
+            for src_port in (80, 443):
+                # Delete until no matching rule remains (handles duplicates)
+                for _ in range(5):
+                    try:
+                        result = subprocess.run(
+                            ['sudo', 'iptables', '-t', 'nat', '-D', 'PREROUTING',
+                             '-i', interface, '-p', 'tcp', '--dport', str(src_port),
+                             '-j', 'REDIRECT', '--to-port', str(port)],
+                            capture_output=True, timeout=10,
+                        )
+                        if result.returncode != 0:
+                            break
+                    except Exception:
                         break
-                except Exception:
-                    break
+        else:
+            print('⚠️ Captive-portal redirect cleanup skipped — no WiFi interface found')
 
         # Remove the nft inet filter input rule if we inserted one.
         handle = getattr(self, '_nft_hotspot_handle', None)
@@ -1115,18 +1133,23 @@ class WifiHotspotMixin:
 
     def _stop_captive_dns(self):
         """Stop the captive-portal dnsmasq and remove all iptables rules it added."""
-        # Remove DNS-over-TLS FORWARD block
-        for _ in range(5):
-            try:
-                result = subprocess.run(
-                    ['sudo', 'iptables', '-t', 'filter', '-D', 'FORWARD',
-                     '-p', 'tcp', '--dport', '853', '-j', 'REJECT'],
-                    capture_output=True, timeout=10,
-                )
-                if result.returncode != 0:
+        # Remove DNS-over-TLS FORWARD block. Same exact-spec rule as the
+        # PREROUTING deletions: '-i <interface>' has to repeat what _start_captive_dns
+        # added, or the delete matches nothing and the REJECT rule accumulates.
+        interface = self._teardown_interface()
+        if interface:
+            for _ in range(5):
+                try:
+                    result = subprocess.run(
+                        ['sudo', 'iptables', '-t', 'filter', '-D', 'FORWARD',
+                         '-i', interface, '-p', 'tcp', '--dport', '853',
+                         '-j', 'REJECT'],
+                        capture_output=True, timeout=10,
+                    )
+                    if result.returncode != 0:
+                        break
+                except Exception:
                     break
-            except Exception:
-                break
 
         subprocess.run(['sudo', 'systemctl', 'stop', 'mempaper-dnsmasq.service'],
                        capture_output=True, timeout=15)
