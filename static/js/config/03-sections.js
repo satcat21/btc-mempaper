@@ -1044,11 +1044,45 @@ async function _performUpdate(tag, updateBtn) {
         'Re-minifying JavaScript and CSS...':          () => window.translations?.reminifying_js_css,
         'JavaScript and CSS minified successfully':    () => window.translations?.js_css_minified_success,
         'Minification failed — app will use source files': () => window.translations?.minification_failed,
+        // Emitted by the updater around the post-install step…
+        'Applying post-install system configuration...': () => window.translations?.applying_postinstall,
+        'Skipping post-install configuration — run "sudo bash tools/install_wifi_permissions.sh" over SSH once to enable it':
+            () => window.translations?.skipping_postinstall,
+        // …and by tools/postinstall.sh itself, whose output is streamed through
+        // verbatim. Keyed without the ▶ / ✅ / ⚠️ marker, which _translateUpdateLine
+        // splits off and puts back, so the marker keeps carrying the severity.
+        'Periodic TRIM':                               () => window.translations?.postinstall_trim_step,
+        'TRIM supported — fstrim.timer already enabled (weekly)': () => window.translations?.postinstall_trim_already_on,
+        'TRIM supported — fstrim.timer enabled (weekly)':         () => window.translations?.postinstall_trim_enabled,
+        "TRIM works but fstrim.timer could not be enabled — run 'sudo fstrim /' periodically":
+            () => window.translations?.postinstall_trim_timer_failed,
+        'This card does not support TRIM — freed blocks keep their old contents':
+            () => window.translations?.postinstall_trim_unsupported,
+        'If it ever held wallet data in clear text, only re-flashing erases it':
+            () => window.translations?.postinstall_trim_unsupported_note,
+        'Post-install system configuration complete':  () => window.translations?.postinstall_complete,
     };
+
+    // Leading status marker, kept as-is while the text after it is translated.
+    const _UPDATE_LINE_MARKER = /^([▶✅⚠️⚠️]+\s*)(.+)$/;
+
+    function _translateUpdateLine(line) {
+        const direct = _updateLineI18n[line];
+        if (direct) return direct() || line;
+        const m = _UPDATE_LINE_MARKER.exec(line);
+        if (m) {
+            const inner = _updateLineI18n[m[2]];
+            if (inner) {
+                const translated = inner();
+                if (translated) return m[1] + translated;
+            }
+        }
+        return line;
+    }
 
     function onUpdateOutput(data) {
         const t = window.translations || {};
-        const displayLine = (_updateLineI18n[data.line] && _updateLineI18n[data.line]()) || data.line;
+        const displayLine = _translateUpdateLine(data.line);
         if (data.header) {
             const b = document.createElement('strong');
             b.textContent = displayLine;

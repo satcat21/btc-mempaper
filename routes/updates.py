@@ -6,12 +6,24 @@ from flask import jsonify
 from flask import request
 from managers.auth_manager import require_auth
 import os
+import re
 import requests
 import subprocess
 import sys
 import threading
 import time
 import traceback
+
+# The update log is a browser element, not a terminal. Helper scripts colour
+# their output for the SSH case - postinstall.sh sets a blue step marker and a
+# green tick - and those escapes arrived in the log as literal [0;34m noise
+# wrapped around every line.
+_ANSI_RE = re.compile(r'\x1B\[[0-9;]*[A-Za-z]')
+
+
+def _clean_line(line):
+    """One line of subprocess output, ready to show in the browser."""
+    return _ANSI_RE.sub('', line).rstrip('\n').rstrip()
 
 # Defined in mempaper_app; imported lazily inside register() to avoid
 # a circular import at module load time.
@@ -350,7 +362,7 @@ def register(self):
                                     text=True, bufsize=1
                                 )
                                 for line in proc.stdout:
-                                    _emit('update_output', {'line': line.rstrip('\n'), 'phase': 'pip'})
+                                    _emit('update_output', {'line': _clean_line(line), 'phase': 'pip'})
                                 proc.wait()
                                 if proc.returncode != 0:
                                     subprocess.check_call(
@@ -419,7 +431,7 @@ def register(self):
                                 text=True, bufsize=1
                             )
                             for line in proc.stdout:
-                                _emit('update_output', {'line': line.rstrip('\n'), 'phase': 'apt'})
+                                _emit('update_output', {'line': _clean_line(line), 'phase': 'apt'})
                             proc.wait()
                             # Report on what dpkg holds now, not on the exit code — the
                             # user needs to know which package is still missing, not
@@ -450,7 +462,7 @@ def register(self):
                             text=True, bufsize=1
                         )
                         for line in proc.stdout:
-                            _emit('update_output', {'line': line.rstrip('\n'), 'phase': 'apt'})
+                            _emit('update_output', {'line': _clean_line(line), 'phase': 'apt'})
                         proc.wait()
                     except Exception as post_err:
                         _emit('update_output', {'line': f'Warning: {post_err}', 'phase': 'apt'})
@@ -475,7 +487,7 @@ def register(self):
                             text=True, bufsize=1
                         )
                         for line in proc.stdout:
-                            _emit('update_output', {'line': line.rstrip('\n'), 'phase': 'pip'})
+                            _emit('update_output', {'line': _clean_line(line), 'phase': 'pip'})
                         proc.wait()
                         if proc.returncode != 0:
                             # Rollback on pip failure
@@ -528,7 +540,7 @@ def register(self):
                             text=True, bufsize=1
                         )
                         for line in proc.stdout:
-                            _emit('update_output', {'line': line.rstrip('\n'), 'phase': 'pip'})
+                            _emit('update_output', {'line': _clean_line(line), 'phase': 'pip'})
                         proc.wait()
                         if proc.returncode == 0:
                             _emit('update_output', {'line': 'JavaScript and CSS minified successfully', 'phase': 'pip', 'header': True})
@@ -760,7 +772,7 @@ def register(self):
                         bufsize=1
                     )
                     for line in proc.stdout:
-                        _emit('apt_output', {'line': line.rstrip('\n'), 'phase': phase})
+                        _emit('apt_output', {'line': _clean_line(line), 'phase': phase})
 
                     proc.wait()
                     if proc.returncode != 0:
@@ -793,7 +805,7 @@ def register(self):
                             bufsize=1
                         )
                         for line in proc.stdout:
-                            _emit('apt_output', {'line': line.rstrip('\n'), 'phase': 'deps'})
+                            _emit('apt_output', {'line': _clean_line(line), 'phase': 'deps'})
                         proc.wait()
                         if proc.returncode != 0:
                             _emit('apt_output', {'line': self.translations.get('mempaper_deps_warning', 'Warning: some mempaper dependencies failed to install'), 'phase': 'deps', 'header': True})
