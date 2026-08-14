@@ -661,6 +661,168 @@ function createHolidayColorGroup() {
 }
 
 
+function createBlockHeightColorGroup() {
+    const t = window.translations || {};
+    const cfg = window.currentConfig || {};
+
+    // Fee-side colours come from the server, which computes them with the same
+    // code that renders the image - the page only derives the *other* end from
+    // the picked colour. Keeps the preview honest without a second copy of the
+    // scale tables living in JavaScript.
+    const data = window.blockHeightPreview || {};
+    const modes = data.modes || {};
+    const LIGHTEN = typeof data.lighten === 'number' ? data.lighten : 0.45;
+    const scenarios = data.scenarios || [];
+
+    const SCENARIO_LABELS = {
+        steady: t.block_height_scenario_steady || 'Steady',
+        cheap:  t.block_height_scenario_cheap  || 'Still cheap',
+        spike:  t.block_height_scenario_spike  || 'Spiked',
+        dear:   t.block_height_scenario_dear   || 'Still dear',
+    };
+
+    const lighten = (hex) => {
+        const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || '').trim());
+        if (!m) return hex;
+        const n = parseInt(m[1], 16);
+        const ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+            .map(v => Math.round(v + LIGHTEN * (255 - v)));
+        return '#' + ch.map(v => v.toString(16).padStart(2, '0')).join('');
+    };
+
+    // Same separator the renderer uses (format_block_height turns 914427 into
+    // 914.427), so the preview reads exactly like the panel.
+    const SAMPLE_HEIGHT = (() => {
+        const h = window._previewData?.blockHeight || cfg.__block_height || 914427;
+        return String(h).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    })();
+
+    const wrapper = document.createElement('div');
+    wrapper.style.width = '100%';
+
+    // ── Scale selector, above both theme rows ────────────────────────────────
+    const modeWrap = document.createElement('div');
+    modeWrap.style.cssText = 'display:flex; flex-direction:column; gap:4px; margin-bottom:12px;';
+    const modeLabel = document.createElement('span');
+    modeLabel.style.cssText = 'font-size:0.85em; font-weight:600; color:var(--text-secondary)';
+    modeLabel.textContent = t.fee_color_mode || 'Block Height Color Scale';
+    modeWrap.appendChild(modeLabel);
+
+    const modeSelect = document.createElement('select');
+    modeSelect.className = 'form-select';
+    modeSelect.dataset.configKey = 'fee_color_mode';
+    [
+        ['relative_neutral', t.fee_mode_neutral  || 'Relative — neutral at normal'],
+        ['relative_rainbow', t.fee_mode_rainbow  || 'Relative — blue to red'],
+        ['absolute',         t.fee_mode_absolute || 'Fixed sat/vB thresholds'],
+    ].forEach(([val, label]) => {
+        const o = document.createElement('option');
+        o.value = val;
+        o.textContent = label;
+        if ((cfg.fee_color_mode || 'relative_neutral') === val) o.selected = true;
+        modeSelect.appendChild(o);
+    });
+    modeWrap.appendChild(modeSelect);
+
+    const modeHint = document.createElement('span');
+    modeHint.style.cssText = 'font-size:0.78em; color:var(--text-secondary); opacity:.8;';
+    modeHint.textContent = t.fee_color_mode_desc || '';
+    if (modeHint.textContent) modeWrap.appendChild(modeHint);
+    wrapper.appendChild(modeWrap);
+
+    const rowUpdaters = [];
+
+    function buildRow(themeLabel, themeKey, colorKey, colorVal, rowBg, previewBg, slotClass) {
+        const row = document.createElement('div');
+        row.className = 'date-color-row';
+        row.style.background = rowBg;
+
+        const label = document.createElement('div');
+        label.style.cssText = 'width:100%; font-weight:600; font-size:0.95em; margin-bottom:4px; color:var(--text-primary)';
+        label.textContent = themeLabel;
+        row.appendChild(label);
+
+        const pickGroup = document.createElement('div');
+        pickGroup.style.cssText = 'display:flex; flex-direction:column; gap:4px;';
+        const pickLabel = document.createElement('span');
+        pickLabel.style.cssText = 'font-size:0.8em; color:var(--text-secondary)';
+        pickLabel.textContent = t.block_height_base_color || 'Base Color';
+        pickGroup.appendChild(pickLabel);
+        const colorInput = createColorInput(colorVal);
+        colorInput.dataset.configKey = colorKey;
+        pickGroup.appendChild(colorInput);
+        row.appendChild(pickGroup);
+
+        const preview = document.createElement('div');
+        preview.className = 'date-color-preview';
+        preview.style.cssText = `flex:1; min-width:220px; display:flex; gap:14px; align-items:flex-end; justify-content:space-around; padding:10px 14px; border-radius:6px; background:${previewBg};`;
+        if (slotClass) preview.classList.add(slotClass);
+
+        const cells = scenarios.map(sc => {
+            const cell = document.createElement('div');
+            cell.style.cssText = 'display:flex; flex-direction:column; align-items:center; gap:2px; min-width:0;';
+            const digits = document.createElement('span');
+            // background-clip:text over a vertical gradient is the browser's
+            // equivalent of draw_vertical_gradient_text.
+            digits.style.cssText = "font-family:'RobotoCondensed','Roboto Condensed','Arial Narrow',sans-serif; font-weight:800; font-size:1.3em; line-height:1.05; -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; color:transparent;";
+            digits.textContent = SAMPLE_HEIGHT;
+            const caption = document.createElement('span');
+            const cap = `font-size:0.66em; line-height:1.25; text-align:center; color:${themeKey === 'dark' ? '#c8c8d0' : '#4a4a55'};`;
+            caption.style.cssText = cap + 'opacity:.85; font-weight:600;';
+            caption.textContent = SCENARIO_LABELS[sc.key] || sc.key;
+            const fees = document.createElement('span');
+            fees.style.cssText = cap + 'opacity:.6;';
+            // prev → curr, the move the gradient is showing.
+            fees.textContent = `${sc.prev} → ${sc.curr}`;
+            cell.appendChild(digits);
+            cell.appendChild(caption);
+            cell.appendChild(fees);
+            preview.appendChild(cell);
+            return { key: sc.key, digits };
+        });
+        row.appendChild(preview);
+
+        function update() {
+            const base = (colorInput.getValue ? colorInput.getValue() : colorVal) || colorVal;
+            const set = (modes[modeSelect.value] || {})[themeKey] || {};
+            // A null end means that fee reads as normal, so the picked colour
+            // takes it — at the tone that end uses, exactly as the renderer does.
+            const isDark = themeKey === 'dark';
+            const baseTop = isDark ? base : lighten(base);
+            const baseBottom = isDark ? lighten(base) : base;
+            cells.forEach(({ key, digits }) => {
+                const ends = set[key] || {};
+                const top = ends.top || baseTop;
+                const bottom = ends.bottom || baseBottom;
+                digits.style.background = `linear-gradient(180deg,${top},${bottom})`;
+                digits.style.webkitBackgroundClip = 'text';
+                digits.style.backgroundClip = 'text';
+            });
+        }
+        colorInput.addEventListener('input', update);
+        rowUpdaters.push(update);
+        update();
+
+        return row;
+    }
+
+    wrapper.appendChild(buildRow(
+        t.holiday_color_light_theme || 'Light Theme', 'light',
+        'color_block_height_light', cfg.color_block_height_light || '#c040a8',
+        'rgba(255,255,255,.04)', '#ffffff', 'preview-card-light'
+    ));
+    wrapper.appendChild(buildRow(
+        t.holiday_color_dark_theme || 'Dark Theme', 'dark',
+        'color_block_height_dark', cfg.color_block_height_dark || '#BA68C8',
+        'rgba(0,0,0,.04)', '#1a1a2e', 'preview-card-dark'
+    ));
+
+    modeSelect.addEventListener('change', () => rowUpdaters.forEach(fn => fn()));
+
+    return wrapper;
+}
+
+
 function createColorSelect(value) {
     const container = document.createElement('div');
     container.className = 'color-select-container';

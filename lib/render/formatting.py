@@ -69,11 +69,20 @@ RELATIVE_NEUTRAL_WARM = [
 ]
 # fmt: on
 
-# What "normal" looks like. Black on a light background, near-white on a dark
-# one - the neutral reading has to be the colour that says "nothing to see
-# here" for the theme in use, and black text on a dark panel says nothing at all.
-NEUTRAL_LIGHT = (20, 20, 25)
-NEUTRAL_DARK = (235, 235, 240)
+# The base colour of the block height: what the digits read as when the fee has
+# nothing to say, and the anchor end of the gradient in every other case.
+# A neutral grey by default, in the two tones the themes need - dark enough to
+# hold up against white, light enough against black. Neutral on purpose: this is
+# the "nothing to report" reading, so it must not compete with the fee hues that
+# surround it. Both are user-configurable via color_block_height_light /
+# color_block_height_dark; these are the defaults.
+BASE_LIGHT = (60, 60, 70)      # #3C3C46
+BASE_DARK = (200, 200, 210)    # #C8C8D2
+
+# How far a derived tone travels toward white. The gradient needs both ends
+# visibly different without the lighter one washing out to the background, and
+# this is the same half-way figure the fee ends already use.
+LIGHTEN_AMOUNT = 0.45
 
 # No baseline yet, or no fee at all.
 UNKNOWN_COLOR = (120, 120, 130)
@@ -84,10 +93,14 @@ UNKNOWN_COLOR = (120, 120, 130)
 # which is exactly backwards - it is as good as it ever gets.
 ABSOLUTE_CHEAP_FLOOR = 1.0
 
-# Text colours the panel can actually produce. White is deliberately absent:
-# it is the background, and snapping a fee colour to it erases the digits.
-EINK_SNAP_6 = [(0, 0, 0), (255, 0, 0), (255, 255, 0), (0, 255, 0), (0, 0, 255)]
-EINK_SNAP_7 = EINK_SNAP_6 + [(255, 128, 0)]
+# Text colours the panel can actually produce. The background ink is excluded
+# per theme rather than always dropping white: snapping to the background erases
+# the digits, and on a dark panel the background is black, not white. Dropping
+# white unconditionally is what used to send a near-white base colour to yellow,
+# since yellow is the brightest ink left once white is gone.
+EINK_INKS_6 = [(0, 0, 0), (255, 255, 255), (255, 0, 0), (255, 255, 0),
+               (0, 255, 0), (0, 0, 255)]
+EINK_INKS_7 = EINK_INKS_6 + [(255, 128, 0)]
 
 # Panels with an orange ink. Everything else gets the six-colour set, which is
 # the safe assumption: emitting orange to a panel without it dithers into a
@@ -111,6 +124,28 @@ def _interpolate(stops, position, low_default=None, high_default=None):
     return stops[-1][1]
 
 
+def _lighten(rgb, amount=LIGHTEN_AMOUNT):
+    """Move a colour toward white, keeping its hue."""
+    return tuple(int(v + amount * (255 - v)) for v in rgb)
+
+
+def _deepen(rgb, factor=0.85):
+    """Move a colour toward black, keeping its hue."""
+    return tuple(max(0, min(255, int(v * factor))) for v in rgb)
+
+
+def _eink_palette(panel, is_dark):
+    """Inks the panel can print, minus the one the background is painted in.
+
+    Panels with an orange ink get the seven-colour set; everything else gets
+    six, which is the safe assumption - emitting orange to a panel without it
+    dithers into a red/yellow checkerboard across the glyphs.
+    """
+    inks = EINK_INKS_7 if panel in ORANGE_CAPABLE_PANELS else EINK_INKS_6
+    background = (0, 0, 0) if is_dark else (255, 255, 255)
+    return [ink for ink in inks if ink != background]
+
+
 def _snap_to_palette(rgb, palette):
     """Nearest ink the panel actually has.
 
@@ -132,8 +167,14 @@ def _snap_to_palette(rgb, palette):
 class FormattingMixin:
     """Presentation helpers with no layout dependency: fee-to-colour mapping, localised date strings and the font size that makes a date fit."""
 
-    def _fee_color_for(self, fee, baseline, mode, is_dark, neutral_band):
-        """One fee to one RGB triple, before any theme or panel treatment."""
+    def _fee_color_for(self, fee, baseline, mode, neutral_band):
+        """One fee to one RGB triple, before any theme or panel treatment.
+
+        Returns None when the fee carries no signal - inside the neutral band,
+        where the whole point is that nothing stands out. The caller substitutes
+        the configured base colour, which is what "nothing to see here" looks
+        like for the theme in use.
+        """
         if fee is None:
             return UNKNOWN_COLOR
 
@@ -159,10 +200,30 @@ class FormattingMixin:
         # The band is a plateau rather than a single point so "normal" reads as
         # a deliberate state instead of a colour the gradient happens to cross.
         if abs(ratio - 1.0) <= neutral_band:
-            return NEUTRAL_DARK if is_dark else NEUTRAL_LIGHT
+            return None
         if position < 0:
             return _interpolate(RELATIVE_NEUTRAL_COOL, position)
         return _interpolate(RELATIVE_NEUTRAL_WARM, position)
+
+    def _base_color(self, is_dark):
+        """The configured block-height colour for the theme in use.
+
+        Format is "#rrggbb", the same as every other colour setting. Anything
+        unparseable falls back to the built-in default rather than raising:
+        a bad colour must not take the whole render down with it.
+        """
+        key = "color_block_height_dark" if is_dark else "color_block_height_light"
+        fallback = BASE_DARK if is_dark else BASE_LIGHT
+        raw = self.config.get(key)
+        if not raw:
+            return fallback
+        h = str(raw).lstrip('#')
+        if len(h) != 6:
+            return fallback
+        try:
+            return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
+        except ValueError:
+            return fallback
 
     def _absolute_stops(self):
         """Mode A's table: the user's own thresholds, else the built-in ones.
@@ -189,19 +250,116 @@ class FormattingMixin:
         except (TypeError, ValueError):
             return ABSOLUTE_STOPS
 
-    def fee_to_colors(self, current_fee, recent_fee, web_quality=False):
+    def block_height_preview_samples(self):
+        """Both gradient ends for a few representative block-to-block moves.
+
+        The config page draws its block-height preview from this rather than
+        reimplementing the scale in JavaScript, so the swatches cannot drift from
+        what the renderer actually produces. All three modes are returned at once
+        so switching the dropdown updates instantly instead of costing a request.
+
+        Scenarios rather than single fees, because the gradient now reads as a
+        move: the previous block at the top, the current one at the bottom. A
+        steady cheap network is blue over blue, a spike is blue over red.
+
+        A null end means that fee reads as normal, so the page substitutes the
+        colour currently in the picker - which the browser knows and the server
+        does not. Tone for that substitution is the caller's job and follows the
+        same rule as here: on dark the top is raw and the bottom lightened, on
+        light the top is lightened and the bottom raw.
+
+        Shape: {"lighten": 0.45,
+                "scenarios": [{"key":..., "prev":..., "curr":...}, ...],
+                "modes": {mode: {"light"|"dark": {key: {"top": hex|None,
+                                                        "bottom": hex|None}}}}}
+
+        `lighten` travels with it because the page needs the same figure to
+        derive a substituted end, and a second copy of the constant in
+        JavaScript is a second thing to keep in step.
+        """
+        try:
+            neutral_band = float(self.config.get("fee_neutral_band_pct", 5)) / 100.0
+        except (TypeError, ValueError):
+            neutral_band = 0.05
+        neutral_band = max(0.0, min(0.5, neutral_band))
+
+        baseline = None
+        store = getattr(self, "fee_baseline", None)
+        if store is not None:
+            try:
+                baseline = store.baseline()
+            except Exception:
+                baseline = None
+
+        # Without a baseline there is no "normal" to sit either side of, so fall
+        # back to figures that read the same way against the absolute table.
+        normal = float(baseline) if baseline and baseline > 0 else 20.0
+        cheap = max(1.0, round(normal * 0.4, 1))
+        dear = round(normal * 2.0, 1)
+        normal = round(normal, 1)
+
+        scenarios = [
+            {"key": "steady", "prev": normal, "curr": normal},
+            {"key": "cheap",  "prev": cheap,  "curr": cheap},
+            {"key": "spike",  "prev": cheap,  "curr": dear},
+            {"key": "dear",   "prev": dear,   "curr": dear},
+        ]
+
+        modes = {}
+        for mode in ("relative_neutral", "relative_rainbow", "absolute"):
+            per_theme = {}
+            for theme, is_dark in (("light", False), ("dark", True)):
+                entry = {}
+                for sc in scenarios:
+                    ends = {}
+                    for end, fee in (("top", sc["prev"]), ("bottom", sc["curr"])):
+                        rgb = self._fee_color_for(fee, baseline, mode, neutral_band)
+                        if rgb is None:
+                            ends[end] = None          # reads as normal
+                            continue
+                        if is_dark:
+                            toned = rgb if end == "top" else _lighten(rgb)
+                        else:
+                            toned = _lighten(rgb) if end == "top" else _deepen(rgb)
+                        ends[end] = "#%02X%02X%02X" % tuple(toned)
+                    entry[sc["key"]] = ends
+                per_theme[theme] = entry
+            modes[mode] = per_theme
+        return {"lighten": LIGHTEN_AMOUNT, "scenarios": scenarios, "modes": modes}
+
+    def fee_to_colors(self, current_fee, recent_fee=None, web_quality=False):
         """
         Returns (top_color, bottom_color) for the block-height text gradient.
 
-        The gradient runs from the previous block's fee at the top to the
-        current fee at the bottom, so the digits show both where the fee is and
-        which way it is moving. When the fee has not changed the two ends agree
-        and it renders flat, exactly as before.
+        Both ends are fee readings, taken independently: the previous block's fee
+        at the top, the current one at the bottom. That makes the direction of
+        travel legible at a glance rather than only the level -
+
+          both ends cool    it was cheap and it still is
+          both ends warm    it spiked and has stayed there
+          cool over warm    the fee has just jumped
+          warm over cool    the fee has just crashed
+
+        An end whose fee reads as normal - inside the neutral band, or with no
+        baseline yet - carries the configured block-height colour instead, so
+        "nothing to report" looks like a deliberate state rather than a hue that
+        happens to mean nothing. Two normal blocks therefore render the digits as
+        two tones of the configured colour, exactly as a flat gradient should.
+
+        Tone follows the theme, because the end that has to recede differs:
+
+          dark theme   top at full value,      bottom lightened
+          light theme  top lightened,          bottom deepened
+
+        so the bottom - where the fee label sits - is always the readable end.
 
         Colour meaning depends on `fee_color_mode`:
           absolute         - fixed sat/vB thresholds (the original behaviour)
           relative_rainbow - blue/green/yellow/orange/red against the baseline
           relative_neutral - neutral at the baseline, cool below, warm above
+
+        `recent_fee` defaults to the current fee, which renders flat - correct for
+        any caller that has no previous block to compare against.
 
         On e-ink the result snaps to an ink the panel actually has, because a
         colour it cannot make is dithered into a checkerboard and thin digits
@@ -230,47 +388,45 @@ class FormattingMixin:
             except Exception:
                 baseline = None
 
-        current_color = self._fee_color_for(current_fee, baseline, mode, is_dark, neutral_band)
-        recent_color = self._fee_color_for(recent_fee, baseline, mode, is_dark, neutral_band)
+        base = self._base_color(is_dark)
+        if recent_fee is None:
+            recent_fee = current_fee
+
+        # None from _fee_color_for means the fee reads as normal, so the
+        # configured colour speaks for that end. Tracked per end, because a
+        # neutral end renders the configured colour at its own tone rather than
+        # the fee treatment - otherwise the picker never shows what is drawn.
+        top_color = self._fee_color_for(recent_fee, baseline, mode, neutral_band)
+        bottom_color = self._fee_color_for(current_fee, baseline, mode, neutral_band)
+        top_is_base = top_color is None
+        bottom_is_base = bottom_color is None
+        if top_is_base:
+            top_color = base
+        if bottom_is_base:
+            bottom_color = base
 
         if not web_quality:
-            # Snap first, then skip the wash/saturate treatment entirely: those
-            # produce intermediate tones that are exactly what the panel cannot
-            # render, so applying them after snapping would undo the snapping.
-            panel = self.config.get("omni_device_name", "")
-            palette = (EINK_SNAP_7 if panel in ORANGE_CAPABLE_PANELS
-                       else EINK_SNAP_6)
-            top = _snap_to_palette(recent_color, palette)
-            bottom = _snap_to_palette(current_color, palette)
-            return top, bottom
+            # Snap first, then skip the tone treatment entirely: it produces
+            # intermediate shades that are exactly what the panel cannot render,
+            # so applying it after snapping would undo the snapping. Both ends
+            # can therefore land on the same ink, which is correct - the panel
+            # has no tone between them to show.
+            palette = _eink_palette(self.config.get("omni_device_name", ""), is_dark)
+            return (_snap_to_palette(top_color, palette),
+                    _snap_to_palette(bottom_color, palette))
 
-        def boost_saturation(c, factor=0.85):
-            """Boost color saturation"""
-            return tuple(min(255, int(v * factor)) for v in c)
-
-        def wash_out(c, amount=0.5):
-            """Wash color towards white, keeping its hue readable.
-
-            This used to wash 85% of the way to white, which was fine when both
-            ends of the gradient came from the same fee - it was decoration. Now
-            the top end carries the previous block's fee, and at 85% every hue
-            arrives as the same near-white: a fee that fell from 200 to 1 looked
-            identical to one that rose from 1 to 200. Half-way keeps the top
-            clearly lighter than the bottom, so the fee label stays the readable
-            end, while leaving enough saturation to tell blue from red.
-            """
-            return tuple(int(v + amount * (255 - v)) for v in c)
-
-        # The fee label sits at the bottom, so the current fee takes the end of
-        # the treatment that stays readable against the background, and the
-        # previous fee takes the other one. Unchanged fees give two shades of a
-        # single hue, which is what this looked like before the direction of
-        # travel was encoded at all.
         if is_dark:
-            # Dark background: bottom must be the light end.
-            return boost_saturation(recent_color), wash_out(current_color)
-        # Light background: bottom must be the dark end.
-        return wash_out(recent_color), boost_saturation(current_color)
+            # Dark background: the top carries the previous fee at full value and
+            # the bottom the current one lightened, so the readable end is the
+            # one the fee label sits against.
+            return top_color, _lighten(bottom_color)
+        # Light background: the bottom is the dark, readable end and the top is
+        # lightened - including when it is the configured colour, or two normal
+        # blocks would collapse the gradient to a single flat fill. The bottom is
+        # the anchor end here, so a neutral one renders the configured colour
+        # exactly rather than a deepened approximation of it.
+        return (_lighten(top_color),
+                bottom_color if bottom_is_base else _deepen(bottom_color))
 
 
 

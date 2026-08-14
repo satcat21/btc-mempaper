@@ -307,6 +307,7 @@ def validate_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
         "color_countdown_light", "color_countdown_dark",
         "color_halving_light", "color_halving_dark",
         "color_network_light", "color_network_dark",
+        "color_block_height_light", "color_block_height_dark",
     ]
     for setting in passthrough_settings:
         if setting in config:

@@ -27,6 +27,16 @@
     font-display: optional;
 }
 
+/* The face the image generator draws the block height in. Loaded so the
+   config-page preview of that number matches what lands on the panel. */
+@font-face {
+    font-family: 'RobotoCondensed';
+    src: url('../fonts/RobotoCondensed-ExtraBold.ttf') format('truetype');
+    font-weight: 800;
+    font-style: normal;
+    font-display: optional;
+}
+
 /* ── Light Mode (default) ──────────────────────────────────── */
 :root {
     --bg-primary: #f5f5f7;

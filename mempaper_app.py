@@ -1958,6 +1958,8 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
             'color_bitaxe_stats_light':'bitaxe',  'color_bitaxe_stats_dark':'bitaxe',
             'color_wallets_light':    'wallet',   'color_wallets_dark':     'wallet',
             'color_donation_light':   'donation', 'color_donation_dark':    'donation',
+            # The block height is part of the hash frame, drawn on every render.
+            'color_block_height_light': 'always', 'color_block_height_dark': 'always',
         }
         displayed_blocks = getattr(self, 'displayed_info_blocks', []) or []
         today_is_holiday = bool(

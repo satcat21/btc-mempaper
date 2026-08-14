@@ -338,8 +338,27 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
                 {"value": "relative_rainbow", "label": t.get("fee_mode_rainbow", "Relative — blue to red"),       "_lk": "fee_mode_rainbow"},
                 {"value": "absolute",         "label": t.get("fee_mode_absolute", "Fixed sat/vB thresholds"),     "_lk": "fee_mode_absolute"}
             ],
-            "category": "mempool",
-            "order": 3
+            "category": "_block_height_color"
+        },
+        "color_block_height_light": {
+            "type": "color",
+            "label": t.get("color_block_height_light", "Block Height (Light Mode)"),
+            "description": t.get("color_block_height_light_desc",
+                                 "Base color for the block height digits in light mode. The fee "
+                                 "reading sits at the bottom of the number and a lighter tone of "
+                                 "this color at the top."),
+            "default": "#3C3C46",
+            "category": "_block_height_color"
+        },
+        "color_block_height_dark": {
+            "type": "color",
+            "label": t.get("color_block_height_dark", "Block Height (Dark Mode)"),
+            "description": t.get("color_block_height_dark_desc",
+                                 "Base color for the block height digits in dark mode. This color "
+                                 "sits at the top of the number and the fee reading, lightened, "
+                                 "at the bottom."),
+            "default": "#C8C8D2",
+            "category": "_block_height_color"
         },
         "fee_baseline_days": {
             "type": "number",
@@ -352,7 +371,7 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
                                  "Ignored by the fixed-threshold scale."),
             "category": "mempool",
             "advanced": True,
-            "order": 4
+            "order": 6
         },
         "fee_neutral_band_pct": {
             "type": "number",
@@ -365,7 +384,7 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
                                  "in the neutral color. Only used by the neutral relative scale."),
             "category": "mempool",
             "advanced": True,
-            "order": 5
+            "order": 7
         },
         "mempool_host": {
             "type": "text",
@@ -524,7 +543,7 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
         "color_date_end_light": {
             "type": "color",
             "label": t.get("color_date_end_light", "End Color"),
-            "default": "#c040a8",
+            "default": "#3C3C46",
             "category": "_date_color"
         },
         "color_date_start_dark": {
@@ -536,7 +555,7 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
         "color_date_end_dark": {
             "type": "color",
             "label": t.get("color_date_end_dark", "End Color"),
-            "default": "#BA68C8",
+            "default": "#C8C8D2",
             "category": "_date_color"
         },
         "holiday_color_group": {
@@ -570,6 +589,17 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
             "label": t.get("color_holiday_end_dark", "End Color"),
             "default": "#FF6F6F",
             "category": "_holiday_color"
+        },
+        "block_height_color_group": {
+            "type": "block_height_color_group",
+            "label": t.get("block_height_color_group_label", "Block Height Color & Scale"),
+            "_lk": "block_height_color_group_label",
+            "description": t.get("block_height_color_group_desc",
+                                 "The base color of the block height digits and how the current "
+                                 "fee is turned into the other end of the gradient."),
+            "category": "general",
+            "order": 7,
+            "advanced": True
         },
         "omni_device_name": {
             "type": "select",

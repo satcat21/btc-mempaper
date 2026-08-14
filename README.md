@@ -501,16 +501,55 @@ when normal is 20.** The same number, opposite advice.
 |---|---|
 | **Blue** | Far below normal — as cheap as this network gets. Move coins |
 | **Green** | Comfortably below normal |
-| **Neutral** (black on light, white on dark) | Within 5% of the median. Ordinary |
+| **Your base color** | Within 5% of the median. Ordinary |
 | **Yellow → amber** | Somewhat above normal |
 | **Orange** | Expensive for the times |
 | **Red** | Several times the going rate. Wait unless it is urgent |
 
-The digits also carry a vertical gradient: **the previous block's fee at the top,
-the current fee at the bottom**, so a glance shows not just where the fee is but
-which way it is moving.
+The digits carry a vertical gradient, and **both ends are fee readings**: the
+**previous** block at the top, the **current** one at the bottom. So the number
+shows not just where fees are but which way they just moved.
 
-Three scales are available via **Block Height Color Scale** in settings —
+| What you see | What just happened |
+|---|---|
+| Both ends cool | It was cheap and it still is |
+| Both ends warm | It spiked and has stayed there |
+| Cool over warm | Fees have just jumped |
+| Warm over cool | Fees have just crashed |
+| Two tones of your color | Both blocks were ordinary. Nothing to report |
+
+Against a 30-day median of 20 sat/vB, on a dark theme:
+
+| Move | Top (last block) | Bottom (this block) |
+|---|---|---|
+| 8 → 8 — still cheap | `#0089E0` blue | `#72BEED` light blue |
+| 8 → 40 — spiked | `#0089E0` blue | `#FAA376` light orange |
+| 40 → 8 — crashed | `#F75907` orange | `#72BEED` light blue |
+| 40 → 40 — still dear | `#F75907` orange | `#FAA376` light orange |
+| 20 → 20 — ordinary | `#C8C8D2` your color | `#E0E0E6` lighter tone of it |
+
+An end whose block sat within 5% of the median has nothing to say, so it carries
+**your color** instead of a hue that would mean nothing. Two ordinary blocks in a
+row therefore render the digits as two tones of your color — which is why the
+default is a neutral grey (`#3C3C46` on light, `#C8C8D2` on dark) rather than
+something that competes with the fee hues around it.
+
+Pick it per theme under **General → Advanced → Block Height Color & Scale**. That
+panel previews all four cases above in both themes, and its fee colors are
+computed by the renderer itself, so the preview cannot drift from the panel.
+
+Tone follows the theme, so the bottom — where the fee label sits — is always the
+readable end:
+
+| Theme | Top (last block) | Bottom (this block) |
+|---|---|---|
+| **Dark** | full value | lightened |
+| **Light** | lightened | deepened |
+
+The ramp spans the digits themselves, cap top to baseline, so both ends are drawn
+at full strength rather than fading out into the descender space.
+
+Three scales are available from the same panel —
 neutral-centred (default), a continuous blue-to-red rainbow, or the original
 fixed thresholds with your own editable limits. On e-ink the color snaps to an
 ink the panel actually has, since a color it cannot make gets dithered into a

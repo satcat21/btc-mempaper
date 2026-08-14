@@ -31,6 +31,7 @@ These settings can be modified via the Web Dashboard (recommended) or by editing
 | **Bitaxe Color** | `color_bitaxe_stats_light`<br>`color_bitaxe_stats_dark` | Color | Text color for mining stats | `#B89C1D` / `#FFE566` |
 | **Wallet Color** | `color_wallets_light`<br>`color_wallets_dark` | Color | Text color for wallet balances | `#1565C0` / `#09A3BA` |
 | **Donation Color** | `color_donation_light`<br>`color_donation_dark` | Color | Text color for donation block | `#F7931A` / `#F7931A` |
+| **Block Height Color & Scale** | `color_block_height_light`<br>`color_block_height_dark`<br>`fee_color_mode` | Group | The color an ordinary block reads as, per theme, plus the scale that turns a fee into a color. Edited together under **General → Advanced**, with a live preview of a steady, cheap, spiked and dear network. See [Block height color scale](#block-height-color-scale) | `#3C3C46` / `#C8C8D2`, scale `relative_neutral` |
 
 ---
 
@@ -51,7 +52,6 @@ These settings can be modified via the Web Dashboard (recommended) or by editing
 | **Username** | `mempool_username` | String | Optional Basic auth username | Leave empty if not required |
 | **Password** | `mempool_password` | String | Optional Basic auth password | Leave empty if not required |
 | **Fee Preference** | `fee_parameter` | Select | Which fee to display | `fastestFee` (High Priority), `halfHourFee` (Standard), `hourFee` (Low Priority), `economyFee` (Economy), `minimumFee` (No Priority) |
-| **Block Height Color Scale** | `fee_color_mode` | Select | How that fee becomes a color | `relative_neutral` (default), `relative_rainbow`, `absolute` |
 | **Fee Baseline Window** | `fee_baseline_days` | Number | Days of history behind "normal" (Advanced) | `3`–`90`, default `30` |
 | **Neutral Band** | `fee_neutral_band_pct` | Number | How close to the median still reads as normal (Advanced) | `0`–`50`, default `5` |
 
@@ -61,6 +61,13 @@ The block height number is colored by the current fee. The **relative** scales
 compare that fee against the median of the last `fee_baseline_days` days rather
 than against fixed thresholds, so "cheap" keeps meaning cheap when the whole fee
 market moves.
+
+Set the base color and pick the scale together under **General → Advanced →
+Block Height Color & Scale**. That panel previews a steady, a still-cheap, a
+spiked and a still-dear network in both themes, and its fee colors are computed by
+the renderer itself, so what you see is what the panel draws. The two tuning
+numbers below — `fee_baseline_days` and `fee_neutral_band_pct` — stay under
+**Mempool → Advanced**.
 
 ![Fee color scale](diagrams/fee-color-scale.svg)
 
@@ -72,9 +79,11 @@ market moves.
 
 Notes that matter in practice:
 
-- **The neutral color follows the theme** — black on a light theme, near-white on
-  a dark one. "Normal" has to disappear into the background, and black digits on
-  a dark panel would disappear the wrong way.
+- **Both ends of the gradient are fee readings** — the previous block at the top,
+  the current one at the bottom — so the digits show the move, not just the level.
+- **The base color is yours, one per theme.** See below. It is what an *ordinary*
+  block reads as, and defaults to a neutral grey so it does not compete with the
+  fee hues on either side of it.
 - **The scale is logarithmic.** Each whole step is a doubling, so 1→2 sat/vB
   occupies as much of the range as 20→40. A linear ratio axis would squash the
   entire cheap half into a sliver.
@@ -92,6 +101,53 @@ blocks mempaper already polls, and is backfilled from
 `/v1/mining/blocks/fee-rates` where the mempool instance has block indexing
 enabled — a self-hosted instance without the mining module simply accumulates
 locally instead, warmed on first run from the last ~15 blocks.
+
+#### The base color
+
+`color_block_height_light` and `color_block_height_dark` set the color an
+**ordinary** block reads as — one within `fee_neutral_band_pct` of the median,
+which has nothing to report. Each end of the gradient falls back to it
+independently, so it can appear at the top, the bottom, or both.
+
+Both ends are fee readings: the previous block at the top, the current one at the
+bottom. Tone follows the theme, so the bottom — where the fee label sits — is
+always the readable end:
+
+| Theme | Top (last block) | Bottom (this block) |
+|---|---|---|
+| Dark | full value | 45% toward white |
+| Light | 45% toward white | 15% toward black |
+
+A substituted end takes the tone of the end it lands on, except where that end is
+the theme's anchor — the top on dark, the bottom on light — where the picked color
+is drawn exactly, so the color picker always shows something that appears on screen.
+
+Worked example against a 20 sat/vB median. These are the values the renderer
+actually emits for a web image:
+
+| Move | Reads as | Light theme (`#3C3C46`) | Dark theme (`#C8C8D2`) |
+|---|---|---|---|
+| 20 → 20 | ordinary, both blocks | `#939399` → `#3C3C46` | `#C8C8D2` → `#E0E0E6` |
+| 8 → 8 | cheap, and staying cheap | `#72BEED` → `#0074BE` | `#0089E0` → `#72BEED` |
+| 8 → 40 | just spiked | `#72BEED` → `#D14B05` | `#0089E0` → `#FAA376` |
+| 40 → 8 | just crashed | `#FAA376` → `#0074BE` | `#F75907` → `#72BEED` |
+| 40 → 40 | dear, and staying dear | `#FAA376` → `#D14B05` | `#F75907` → `#FAA376` |
+
+The fee ends are deliberately softened from the raw scale — deepened on a light
+theme, lightened on a dark one — so a dashboard full of color stays legible
+instead of shouting. Any hex works for the base color; a neutral grey is only the
+default because "nothing to report" should not draw the eye.
+
+The ramp spans the digits themselves — the cap top to the baseline — so half the
+glyph height is an even blend of the two, and both ends are drawn at full strength.
+Mapping it onto the text layout box instead would waste the ends of the ramp on the
+descender space digits never occupy, leaving the top 17% pre-blended and the bottom
+26% short.
+
+On e-ink the two ends snap to inks the panel actually has, and the background ink
+is excluded from the choice — white on a light panel, black on a dark one — since
+snapping to the background would erase the digits. Both ends can land on the same
+ink, which is correct: the panel has no tone in between to show.
 
 #### Custom thresholds for `absolute`
 

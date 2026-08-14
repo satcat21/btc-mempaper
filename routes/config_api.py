@@ -400,9 +400,19 @@ def register(self):
                 }
             except Exception:
                 btc_h_compact = {}
+            # Fee-side colours the block-height preview draws, computed by the
+            # renderer itself so the config page cannot disagree with the image.
+            # All three scales at once, so the dropdown updates without a fetch.
+            try:
+                block_height_samples = self.image_renderer.block_height_preview_samples()
+            except Exception as e:
+                print(f"⚠️ Block height preview samples unavailable: {e}")
+                block_height_samples = {}
+
             _rbt = _read_reboot_time()
             return jsonify({
                 'config': config_data,
+                'block_height_preview': block_height_samples,
                 'schema': self.config_manager.get_config_schema(schema_translations),
                 'categories': self.config_manager.get_categories(schema_translations),
                 'color_options': self.config_manager.get_color_options(),

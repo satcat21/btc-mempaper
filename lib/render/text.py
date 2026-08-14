@@ -201,10 +201,23 @@ class TextMixin:
 
         size = (text_width, text_height)
 
-        # Vertical gradient mask
+        # Vertical gradient mask, spanning the glyphs rather than the layout box.
+        #
+        # text_height is ascent + descent + 8, but digits ink only from the cap
+        # top down to the baseline - about 58% of it. Interpolating across the
+        # box therefore started the visible text 17% into the ramp and stopped it
+        # at 74%, so neither end colour was ever actually drawn: a violet-to-
+        # light-orange gradient arrived as violet over muddy salmon, and the
+        # configured base colour was never the colour anyone saw. Mapping the
+        # ramp onto the ink box makes both ends exact and puts the 50/50 blend
+        # at the middle of the digits, where it looks like it should be.
+        ink = text_img.getbbox()
+        ink_top, ink_bottom = (ink[1], ink[3] - 1) if ink else (0, size[1] - 1)
+        ink_span = max(ink_bottom - ink_top, 1)
+
         gradient = Image.new("RGBA", size)
         for yy in range(size[1]):
-            t = yy / max(size[1] - 1, 1)
+            t = min(1.0, max(0.0, (yy - ink_top) / ink_span))
             color = tuple(int(start_color[i] + ((end_color[i] - start_color[i]) * t)) for i in range(3)) + (255,)
             ImageDraw.Draw(gradient).line([(0, yy), (size[0], yy)], fill=color)
 

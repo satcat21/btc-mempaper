@@ -1075,6 +1075,10 @@ function createFormField(key, field, value) {
         case 'holiday_color_group':
             input = createHolidayColorGroup();
             break;
+
+        case 'block_height_color_group':
+            input = createBlockHeightColorGroup();
+            break;
             
         case 'boolean':
             input = createBooleanSwitch(value);
@@ -1409,7 +1413,7 @@ function createFormField(key, field, value) {
     if (input) {
         // Ensure the input has the data-config-key attribute for form collection
         // (skip for composite widgets and hidden_boolean fields managed inline by another field)
-        if (field.type !== 'date_color_group' && field.type !== 'holiday_color_group' && field.type !== 'hidden_boolean' && field.type !== 'open_url_button' && field.type !== 'info_text' && field.type !== 'connection_check' && field.type !== 'mempool_actions' && field.type !== 'tang_check') {
+        if (field.type !== 'date_color_group' && field.type !== 'holiday_color_group' && field.type !== 'block_height_color_group' && field.type !== 'hidden_boolean' && field.type !== 'open_url_button' && field.type !== 'info_text' && field.type !== 'connection_check' && field.type !== 'mempool_actions' && field.type !== 'tang_check') {
             if (input.dataset) {
                 input.dataset.configKey = key;
             } else {
