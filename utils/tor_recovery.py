@@ -87,12 +87,6 @@ def rotate_identity(reason=""):
     return generation
 
 
-def set_auto_restart(enabled):
-    """Allow or forbid the third rung. Off unless the operator opted in."""
-    global _auto_restart
-    _auto_restart = bool(enabled)
-
-
 def _read_control_cookie():
     """Cookie bytes for control-port authentication, or None."""
     for path in _CONTROL_COOKIES:
@@ -197,6 +191,20 @@ class TorRecovery:
         self._unavailable = set()   # rungs this device cannot use at all
         self._last_restart = None
         self._pass_started = None   # when the current pass through the ladder began
+
+    def set_auto_restart(self, enabled):
+        """Allow or forbid the third rung. Off unless the operator opted in.
+
+        A method rather than a module-level function because every consumer
+        reaches this module through the `tor_recovery` singleton, the same way
+        they call record_success and record_failure. It was module-level once,
+        which made the single caller - configuring it at startup - an
+        AttributeError that crash-looped the service before it could serve a
+        page. The flag itself stays a module global because _escalate reads it
+        from there.
+        """
+        global _auto_restart
+        _auto_restart = bool(enabled)
 
     def record_success(self):
         """Called whenever any mempool request or the block socket succeeds."""
