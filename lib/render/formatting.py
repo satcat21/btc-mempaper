@@ -148,6 +148,26 @@ def _preview_fee(v):
 class FormattingMixin:
     """Presentation helpers with no layout dependency: fee-to-colour mapping, localised date strings and the font size that makes a date fit."""
 
+    def _format_fee(self, fee):
+        """A fee as the label shows it, with decimals only where they say something.
+
+        Below 10 sat/vB the tenth is the reading: 0,8 and 1,4 are a different
+        market, and both used to print as "1". Above 10 a tenth is noise, and a
+        whole number stays whole rather than gaining a hollow "2,0". The
+        separator follows the display language, as every other number does.
+        """
+        try:
+            v = float(fee)
+        except (TypeError, ValueError):
+            return str(fee)
+        if v >= 10 or v.is_integer():
+            return self._format_number(int(round(v)), 0)
+        if v >= 0.1:
+            return self._format_number(v, 1)
+        # A relay minimum below a tenth: show it rather than round it away, but
+        # drop the zeros three decimals leave behind on 0,05 and friends.
+        return self._format_number(v, 3).rstrip("0")
+
     def _fee_color_for(self, fee, baseline, mode, neutral_band,
                        cheap_floor=FALLBACK_CHEAP_FLOOR):
         """One fee to one RGB triple, before any theme or panel treatment.

@@ -7,11 +7,47 @@ This module handles all interactions with the Bitcoin mempool API including:
 - Error handling and fallbacks
 """
 
+import time
+
 import requests
 from requests.auth import HTTPBasicAuth
 from utils.technical_config import (build_mempool_api_url, apply_tor_identity,
                                     mempool_request_timeout)
 from utils.tor_recovery import tor_recovery
+
+
+# /v1/fees/recommended is the rounded view: it floors every tier at 1 sat/vB and
+# reports whole numbers, so a mempool clearing at 0.4 and one clearing at 1.4
+# both read "1". /v1/fees/precise is the same computation without that floor and
+# rounding - three decimals, down to 0.001 - which is the difference between a
+# quiet week and a busy one whenever blocks clear below 1 sat/vB.
+#
+# The endpoint arrived in mempool v2.5, so an older self-hosted backend answers
+# 404 and we fall back to the rounded numbers. That verdict is remembered rather
+# than re-tested on every poll, but only for an hour, so upgrading the backend
+# starts showing decimals without restarting the device.
+PRECISE_FEE_REPROBE = 3600
+
+
+def quantize_fee(value):
+    """Round one fee to the precision that is actually acted on.
+
+    Three decimals move on nearly every poll, and every change invalidates the
+    pre-rendered image and costs an e-ink refresh - so precision nobody can read
+    would be paid for in screen refreshes. A tenth is as fine as the label gets
+    below 10 sat/vB, and above that a tenth is noise. Rates under 0.1 keep all
+    three decimals, since rounding those to a tenth would flatten a relay
+    minimum to either 0.1 or nothing.
+    """
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return value
+    if v >= 10:
+        return int(round(v))
+    if v >= 0.1:
+        return round(v, 1)
+    return round(v, 3)
 
 
 class MempoolAPI:
@@ -29,6 +65,11 @@ class MempoolAPI:
         # None when Tor routing is off — requests treats that as "no proxy".
         self.proxies = proxies
         self.base_url = build_mempool_api_url(host, port, use_https)
+
+        # None until the first fee call learns whether this backend serves
+        # /v1/fees/precise; False is re-probed after PRECISE_FEE_REPROBE.
+        self._precise_fees = None
+        self._precise_probed_at = 0.0
 
         # Fallback values for when API is unavailable
         self.fallback_data = {
@@ -183,22 +224,51 @@ class MempoolAPI:
         except (ValueError, TypeError):
             return str(raw_height)
     
+    def _fetch_fees(self, path):
+        """One fee endpoint, decoded. Raises like any other call in here."""
+        response = self._get(f"{self.base_url}{path}", 10)
+        response.raise_for_status()
+        return response.json()
+
+    def _try_precise_fees(self):
+        """Sub-1 sat/vB tiers, or None if this backend does not serve them."""
+        if self._precise_fees is False and (
+                time.time() - self._precise_probed_at) < PRECISE_FEE_REPROBE:
+            return None
+        try:
+            fees = self._fetch_fees("/v1/fees/precise")
+        except requests.HTTPError:
+            # Backend predates the endpoint. Transport failures deliberately
+            # do not land here - they say nothing about what it supports, and
+            # are left to fail the fallback call the same way they always have.
+            if self._precise_fees is not False:
+                print("ℹ️ Mempool backend has no /v1/fees/precise — fees stay whole numbers")
+            self._precise_fees = False
+            self._precise_probed_at = time.time()
+            return None
+        self._precise_fees = True
+        return fees
+
     def get_fee_recommendations(self):
         """
         Get current fee recommendations from mempool API.
-        
+
+        Prefers the unrounded tiers so a mempool clearing below 1 sat/vB reads
+        as what it is, and quantizes them to display precision - see
+        quantize_fee() for why the extra decimals are not carried further.
+
         Returns:
             dict: Fee recommendations or None if failed
         """
         try:
-            url = f"{self.base_url}/v1/fees/recommended"
-            response = self._get(url, 10)
-            response.raise_for_status()
-            return response.json()
+            fees = self._try_precise_fees()
+            if fees is None:
+                fees = self._fetch_fees("/v1/fees/recommended")
         except requests.RequestException as e:
             print(f"Error fetching fee recommendations: {e}")
             return None
-    
+        return {tier: quantize_fee(value) for tier, value in fees.items()}
+
     def get_configured_fee(self, fee_parameter="minimumFee"):
         """
         Get the fee value for the specified parameter.
@@ -207,7 +277,8 @@ class MempoolAPI:
             fee_parameter (str): Which fee parameter to use (fastestFee, halfHourFee, hourFee, economyFee, minimumFee)
 
         Returns:
-            int: Fee in sat/vB or None if failed
+            float: Fee in sat/vB, a fraction when the mempool is clearing below
+                   1 sat/vB, or None if failed
         """
         fees = self.get_fee_recommendations()
         if fees:

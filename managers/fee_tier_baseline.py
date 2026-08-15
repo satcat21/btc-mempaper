@@ -9,8 +9,8 @@ set by the chosen tier rather than by the market. A minimumFee device read blue
 more or less permanently.
 
 There is no way to fetch that history. mempool exposes past block medians, but
-/v1/fees/recommended is point-in-time only - no endpoint returns what fastestFee
-was last Tuesday. So the window is accumulated locally instead, and all five
+the fee tiers are point-in-time only - no endpoint returns what fastestFee was
+last Tuesday. So the window is accumulated locally instead, and all five
 tiers are recorded on every sample: get_fee_recommendations() returns them
 together in one call already, so keeping all five costs nothing and means
 changing fee_parameter does not start a new cold window.

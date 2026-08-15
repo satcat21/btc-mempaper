@@ -264,7 +264,7 @@ points at.
 | `WSS /api/v1/ws` | `{mempool}` | `{"action":"want","data":["blocks"]}` | persistent |
 | `GET /blocks/tip/height`, `/blocks/tip/hash` | `{mempool}` | nothing | on block |
 | `GET /block/{hash}/txids` | `{mempool}` | block hash | on block |
-| `GET /v1/fees/recommended` | `{mempool}` | nothing | 5 min |
+| `GET /v1/fees/precise`, `/v1/fees/recommended` | `{mempool}` | nothing | 5 min |
 | `GET /v1/prices` | `{mempool}` | nothing | 5 min |
 | `GET /v1/mining/hashrate/1m`, `/v1/difficulty-adjustment` | `{mempool}` | nothing | 5 min |
 | `GET /address/{addr}` | `{mempool}` | **each derived address** | on block |

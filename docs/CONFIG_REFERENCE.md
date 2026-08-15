@@ -87,6 +87,11 @@ Notes that matter in practice:
   That is the intent, not a side effect: *"is next-block inclusion expensive
   right now"* and *"is a minimum-fee transaction worth broadcasting"* are
   different questions, and the color should answer the one you asked.
+- **Fractions of a sat/vB are read and printed.** The tiers come from mempool's
+  `/v1/fees/precise`, which does not floor them at 1 sat/vB, so a quiet mempool
+  shows `0.8` rather than being rounded up to `1`. Below 10 sat/vB the label
+  keeps one decimal; above it, whole numbers. A mempool backend older than v2.5
+  has no such endpoint and falls back to whole numbers everywhere.
 - **The base color is yours, one per theme.** See below. It is what an *ordinary*
   block reads as, and defaults to a neutral grey so it does not compete with the
   fee hues on either side of it.

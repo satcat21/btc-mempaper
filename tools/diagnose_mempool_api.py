@@ -47,6 +47,7 @@ def test_mempool_endpoints():
         ("Block hash",          "/blocks/tip/hash",                 True),
         ("Price data",          "/v1/prices",                       True),
         ("Fee recommendations", "/v1/fees/recommended",             True),
+        ("Precise fees (sub-1 sat/vB)", "/v1/fees/precise",         False),
         ("Network hashrate",    "/v1/mining/hashrate/1m",           True),
         ("Difficulty adjust",   "/v1/difficulty-adjustment",        False),
         ("Mempool info",        "/mempool",                         False),

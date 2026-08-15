@@ -348,7 +348,7 @@ class HashFrameMixin:
             }
             fee_key = fee_type_keys.get(fee_parameter, "minimum")
             fee_type_display = self.t.get(fee_key, "Unknown")
-            fee_text = f"{fee_type_display}: {configured_fee} sat/vB"
+            fee_text = f"{fee_type_display}: {self._format_fee(configured_fee)} sat/vB"
             
             try:
                 font_small = self._get_font(self.font_regular, self._scale_font_size(12, min_value=8))
