@@ -1536,7 +1536,7 @@ async function loadMemes(search = '') {
 
         // Update count label
         const memeCountLabel = document.getElementById('meme-image-count');
-        if (memeCountLabel) memeCountLabel.textContent = `(${data.total || 0})`;
+        if (memeCountLabel) memeCountLabel.textContent = `(${_fmtNum(data.total || 0)})`;
 
         // Rebuild filename set from loaded page
         window.memeFilenameSet = new Set();

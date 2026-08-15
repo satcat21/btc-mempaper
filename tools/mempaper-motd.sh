@@ -21,6 +21,18 @@ PROJECT_DIR="/home/mempaper/btc-mempaper"
 CONFIG_FILE="${PROJECT_DIR}/config/config.json"
 MEMES_DIR="${PROJECT_DIR}/static/memes"
 
+# Group a whole number the way the app's number_format setting groups it, so the
+# banner and the display do not punctuate the same block height differently.
+# Falls back to the raw digits if anything about the input is not a number.
+_group() {
+    case "$1" in
+        ''|*[!0-9]*) printf '%s' "$1"; return ;;
+    esac
+    _g=$(printf '%s' "$1" | sed -E ':a;s/([0-9])([0-9]{3})($|[^0-9])/\1,\2\3/;ta')
+    [ "${NUMBER_FORMAT:-eu}" = "us" ] || _g=$(printf '%s' "$_g" | tr ',' '.')
+    printf '%s' "$_g"
+}
+
 # ── Colour codes ──────────────────────────────────────────────────────────────
 _B='\033[1m'   _R='\033[0m'   _D='\033[2m'
 _O='\033[38;5;214m'   _G='\033[32m'   _RE='\033[31m'   _Y='\033[33m'
@@ -35,6 +47,7 @@ DEVICE_NAME="none"
 MEMPOOL_TOR="false"
 TOR_SOCKS_HOST="127.0.0.1"
 TOR_SOCKS_PORT="9050"
+NUMBER_FORMAT="eu"
 
 if [ -f "$CONFIG_FILE" ] && command -v python3 >/dev/null 2>&1; then
     _raw=$(python3 - <<PYEOF 2>/dev/null
@@ -50,9 +63,10 @@ try:
     print(str(c.get('mempool_use_tor', False)).lower())
     print(c.get('tor_socks_host', '127.0.0.1') or '127.0.0.1')
     print(c.get('tor_socks_port', 9050) or 9050)
+    print(c.get('number_format', 'eu') or 'eu')
 except Exception:
     print('mempool.space'); print('443'); print('false'); print('none'); print('true')
-    print('false'); print('127.0.0.1'); print('9050')
+    print('false'); print('127.0.0.1'); print('9050'); print('eu')
 PYEOF
 )
     MEMPOOL_HOST=$(printf '%s' "$_raw"  | sed -n '1p')
@@ -63,6 +77,8 @@ PYEOF
     MEMPOOL_TOR=$(printf '%s' "$_raw"   | sed -n '6p')
     TOR_SOCKS_HOST=$(printf '%s' "$_raw" | sed -n '7p')
     TOR_SOCKS_PORT=$(printf '%s' "$_raw" | sed -n '8p')
+    NUMBER_FORMAT=$(printf '%s' "$_raw"  | sed -n '9p')
+    [ "$NUMBER_FORMAT" = "us" ] || NUMBER_FORMAT="eu"
     : "${TOR_SOCKS_HOST:=127.0.0.1}" "${TOR_SOCKS_PORT:=9050}"
 fi
 
@@ -217,7 +233,7 @@ _LD=$(uptime 2>/dev/null | awk -F'load average:' '{print $2}' | xargs)
 printf "  %-9s ${_TC}%-23s${_R} %-13s %s\n" \
     "temp"   "${_T}°C"                         "uptime"  "${_UP}"
 printf "  %-9s ${_DC}%-22s${_R} %-13s %s\n" \
-    "disk"   "${_DU:-?}/${_DT:-?} (${_DP:-?}%)" "memory"  "${_MU}/${_MT} MB (${_MP}%)"
+    "disk"   "${_DU:-?}/${_DT:-?} (${_DP:-?}%)" "memory"  "$(_group "${_MU}")/$(_group "${_MT}") MB (${_MP}%)"
 printf "  %-9s %s\n" \
     "load"   "${_LD}"
 
@@ -238,7 +254,7 @@ if [ -d "$MEMES_DIR" ]; then
     _MC=$(find "$MEMES_DIR" -maxdepth 1 -type f \
         \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' \
            -o -iname '*.gif' -o -iname '*.webp' \) 2>/dev/null | wc -l | tr -d ' ')
-    _MC=$(python3 -c "print(f'{int(${_MC}):,}')" 2>/dev/null || echo "${_MC}")
+    _MC=$(_group "${_MC}")
 fi
 
 # Mempool URL
@@ -281,7 +297,7 @@ _MD="${_RE}"
 _TIP=$(curl -sf "${_CURL_PROXY[@]}" --max-time "${_CURL_TIME}" \
         "${_MURL}/api/blocks/tip/height" 2>/dev/null || true)
 if printf '%s' "${_TIP}" | grep -qE '^[0-9]+$' 2>/dev/null; then
-    _BH=$(python3 -c "print(f'{int(${_TIP}):,}')" 2>/dev/null || echo "${_TIP}")
+    _BH=$(_group "${_TIP}")
     _MD="${_G}"
     _ML="$(_shorten_host "${MEMPOOL_HOST}")"
 else

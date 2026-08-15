@@ -497,6 +497,12 @@ function _renderCategorySection(category, section) {
                 if (entry && entry[0] && entry[1]) entry[1](entry[0]);
             };
 
+            // Published so a setting in *another* section can refresh this one.
+            // number_format lives under General but repunctuates every figure in
+            // every preview card, and _reorganize is otherwise a closure that
+            // nothing outside this section can reach.
+            (window._previewRefreshers ||= {})[category.id] = _reorganize;
+
             _reorganize();
 
             let _previewDebounce = null;
@@ -572,8 +578,37 @@ function _renderCategorySection(category, section) {
         }
 }
 
+// Settings whose effect is not confined to their own section. number_format
+// repunctuates every figure in every preview card, but lives under General,
+// whose section has no preview and therefore no change listener of its own —
+// so the edit would sit invisible until a save and a page reload.
+const _GLOBAL_PREVIEW_KEYS = ['number_format'];
+
+function _installGlobalPreviewListener() {
+    if (window._globalPreviewListenerInstalled) return;
+    window._globalPreviewListenerInstalled = true;
+    document.addEventListener('change', (e) => {
+        const el = e.target?.dataset?.configKey
+            ? e.target
+            : e.target?.closest?.('[data-config-key]');
+        const key = el?.dataset?.configKey;
+        if (!key || !_GLOBAL_PREVIEW_KEYS.includes(key)) return;
+        // Record it first: every preview reads the pending overrides, so the
+        // refresh below has to see the new value rather than the saved one.
+        window._pendingConfigOverrides = window._pendingConfigOverrides || {};
+        window._pendingConfigOverrides[key] = el.getValue ? el.getValue() : el.value;
+        Object.values(window._previewRefreshers || {}).forEach(fn => {
+            try { fn(); } catch (err) { /* one bad card must not stop the rest */ }
+        });
+        if (typeof window._refreshBlockHeightPreview === 'function') {
+            try { window._refreshBlockHeightPreview(); } catch (err) { /* as above */ }
+        }
+    }, true);
+}
+
 function renderConfigurationForm() {
     window._pendingConfigOverrides = {}; // reset on every re-render
+    _installGlobalPreviewListener();
     const container = document.getElementById('config-container');
     container.innerHTML = ''; // Clear any existing content
     const grid = document.createElement('div');

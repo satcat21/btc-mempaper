@@ -1888,8 +1888,10 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
             # E-ink display settings
             'eink_dark_mode',
 
-            # General settings that affect display
-            'language',
+            # General settings that affect display. number_format repunctuates
+            # every figure drawn — block height, fee, hashrate, balances — so it
+            # is unconditional, like the language.
+            'language', 'number_format',
 
             # Mempool fee settings
             'fee_parameter',

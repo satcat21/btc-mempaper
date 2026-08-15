@@ -358,13 +358,14 @@ class HashFrameMixin:
             except:
                 font_small = font_block_label
                 
-            # Measured on the digits alone, not the punctuated string. A comma
+            # Measured on the string as drawn, separators included. A comma
             # descends ~23px below the baseline at 124px where a dot descends 2,
-            # so measuring the whole string would drop the fee label by that
-            # much the moment number_format grouped with commas - the label
-            # would sit at a different height purely because of a separator.
-            digits_only = ''.join(c for c in formatted_height if c.isdigit()) or formatted_height
-            bbox = used_font_block_value.getbbox(digits_only)
+            # so the label has to be placed below the ink that is actually there
+            # rather than below the digits: measuring the digits alone puts the
+            # label 15px *inside* the comma's tail. The label therefore sits a
+            # little lower under a comma-grouped height than a dot-grouped one,
+            # which is the separator being given the room it occupies, not drift.
+            bbox = used_font_block_value.getbbox(formatted_height)
             fee_y = value_y + bbox[3] - bbox[1] + self._scale_px(42, min_value=14)
             
             # Fee label always uses bottom color of gradient

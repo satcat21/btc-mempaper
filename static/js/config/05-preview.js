@@ -43,33 +43,6 @@ function _buildSingleThemeCard(leftLabel, leftVal, rightLabel, rightVal, dataCol
     return card;
 }
 
-// Mirrors utils/number_format.py. The preview claims to show what the renderer
-// draws, so it has to punctuate by the number_format setting rather than by the
-// browser's locale — otherwise the same device previewed 62,923 and displayed
-// 62.923 purely because of where the browser thought it was.
-function _numStyle() {
-    const cfg = { ...(window.currentConfig || {}), ...(window._pendingConfigOverrides || {}) };
-    return cfg.number_format === 'us' ? 'us' : 'eu';
-}
-
-function _decMark() { return _numStyle() === 'us' ? '.' : ','; }
-
-function _fmtNum(n, decimals = 0) {
-    if (n == null || isNaN(n)) return '—';
-    // en-US gives the grouped form; EU is that with the two marks swapped.
-    const s = Number(n).toLocaleString('en-US', {
-        minimumFractionDigits: decimals, maximumFractionDigits: decimals,
-    });
-    return _numStyle() === 'us' ? s : s.replace(/[.,]/g, (c) => (c === ',' ? '.' : ','));
-}
-
-// Repoint an already-fixed decimal such as toFixed(8), where there is no grouping.
-function _fmtFixed(n, decimals) {
-    if (n == null || isNaN(n)) return '—';
-    const s = Number(n).toFixed(decimals);
-    return _numStyle() === 'us' ? s : s.replace('.', ',');
-}
-
 function _buildSectionPreview(categoryId, sectionEl) {
     const cfg = { ...(window.currentConfig || {}), ...(window._pendingConfigOverrides || {}) };
     const t = window.translations || {};
@@ -742,12 +715,11 @@ function createBlockHeightColorGroup() {
         return '#' + ch.map(v => v.toString(16).padStart(2, '0')).join('');
     };
 
-    // Same separator the renderer uses (format_block_height turns 914427 into
-    // 914.427), so the preview reads exactly like the panel.
-    const SAMPLE_HEIGHT = (() => {
-        const h = window._previewData?.blockHeight || cfg.__block_height || 914427;
-        return String(h).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-    })();
+    // Grouped by the number_format setting, exactly as the renderer groups it.
+    // Read at paint time rather than captured once, so switching the setting
+    // repunctuates the sample instead of leaving it on the old separator.
+    const sampleHeight = () =>
+        _fmtNum(window._previewData?.blockHeight || cfg.__block_height || 914427);
 
     const wrapper = document.createElement('div');
     wrapper.style.width = '100%';
@@ -824,7 +796,7 @@ function createBlockHeightColorGroup() {
             // background-clip:text over a vertical gradient is the browser's
             // equivalent of draw_vertical_gradient_text.
             digits.style.cssText = "font-family:'RobotoCondensed','Roboto Condensed','Arial Narrow',sans-serif; font-weight:800; font-size:1.3em; line-height:1.05; -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; color:transparent;";
-            digits.textContent = SAMPLE_HEIGHT;
+            digits.textContent = sampleHeight();
             const caption = document.createElement('span');
             caption.style.cssText = cap + 'opacity:.85; font-weight:600;';
             const fees = document.createElement('span');
@@ -859,6 +831,7 @@ function createBlockHeightColorGroup() {
                 const ends = set[sc.key] || {};
                 const top = ends.top || baseTop;
                 const bottom = ends.bottom || baseBottom;
+                ref.digits.textContent = sampleHeight();
                 ref.digits.style.background = `linear-gradient(180deg,${top},${bottom})`;
                 ref.digits.style.webkitBackgroundClip = 'text';
                 ref.digits.style.backgroundClip = 'text';
@@ -869,7 +842,7 @@ function createBlockHeightColorGroup() {
                 // as different kinds of number rather than the same one at two
                 // market levels. Constant mode has no fees to show.
                 ref.fees.textContent = (sc.prev == null || sc.curr == null)
-                    ? '' : `${sc.prev} → ${sc.curr} sat/vB`;
+                    ? '' : `${_fmtFee(sc.prev)} → ${_fmtFee(sc.curr)} sat/vB`;
             });
         }
         colorInput.addEventListener('input', update);
@@ -975,6 +948,11 @@ function createBlockHeightColorGroup() {
     }
     modeSelect.addEventListener('change', syncMode);
     syncMode();
+
+    // Lets a number_format change repunctuate the sample height and the fee
+    // figures without rebuilding the panel, which would discard colour edits
+    // the user has made but not yet saved.
+    window._refreshBlockHeightPreview = () => rowUpdaters.forEach(fn => fn());
 
     return wrapper;
 }

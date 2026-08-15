@@ -310,8 +310,8 @@ function createDonationHistoryInterface() {
             }
             tbody.innerHTML = donations.map(d => {
                 const ts = _formatDonationTime(d.timestamp);
-                const bh = d.block_height != null ? d.block_height.toLocaleString() : '—';
-                const sats = (d.amount_sats || 0).toLocaleString();
+                const bh = d.block_height != null ? _fmtNum(d.block_height) : '—';
+                const sats = _fmtNum(d.amount_sats || 0);
                 const msg = d.message ? escapeHtml(d.message) : '<em style="color: var(--text-muted);">—</em>';
                 return `<tr style="border-bottom:1px solid var(--border-color);">
                     <td style="padding:5px 8px; white-space:nowrap;">${ts}</td>
@@ -324,7 +324,7 @@ function createDonationHistoryInterface() {
             const totalEl = container.querySelector('#donation-total-sats');
             if (totalEl) {
                 totalEl.dataset.total = total;
-                totalEl.textContent = total.toLocaleString() + ' sats';
+                totalEl.textContent = _fmtNum(total) + ' sats';
             }
         })
         .catch(() => {

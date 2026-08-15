@@ -14,7 +14,7 @@ function _getLiveToastColor(keyBase) {
 // _getLiveToastContainer and _buildLiveToast are provided by toast.js
 
 function showDonationToast(donation) {
-    const sats     = (donation.amount_sats || 0).toLocaleString();
+    const sats     = _fmtNum(donation.amount_sats || 0);
     const satLabel = donation.amount_sats === 1 ? 'sat' : 'sats';
 
     const amountEl = document.createElement('strong');

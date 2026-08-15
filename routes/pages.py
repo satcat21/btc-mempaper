@@ -155,6 +155,9 @@ def register(self):
                              show_bitaxe=self.config.get('show_bitaxe_block', False),
                              show_donations=self.config.get('show_donation_block', False),
                              dark_mode=self.config.get('color_mode_dark', True),
+                             # The dashboard has no config object of its own, so
+                             # the one setting its toasts need is handed over.
+                             number_format=self.config.get('number_format', 'eu'),
                              img_width=img_w,
                              img_height=img_h)
 

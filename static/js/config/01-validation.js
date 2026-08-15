@@ -738,8 +738,8 @@ function closeMemeModal() {
                         tbody.innerHTML = '';
                     }
                     const ts = _formatDonationTime(donation.timestamp);
-                    const bh = donation.block_height != null ? donation.block_height.toLocaleString() : '—';
-                    const sats = (donation.amount_sats || 0).toLocaleString();
+                    const bh = donation.block_height != null ? _fmtNum(donation.block_height) : '—';
+                    const sats = _fmtNum(donation.amount_sats || 0);
                     const msg = donation.message
                         ? escapeHtml(donation.message) : '<em style="color:#888">—</em>';
                     const tr = document.createElement('tr');
@@ -756,7 +756,7 @@ function closeMemeModal() {
                         const prev = parseInt(totalEl.dataset.total || '0', 10);
                         const next = prev + (donation.amount_sats || 0);
                         totalEl.dataset.total = next;
-                        totalEl.textContent = next.toLocaleString() + ' sats';
+                        totalEl.textContent = _fmtNum(next) + ' sats';
                     }
                 }
                 // Toast notification

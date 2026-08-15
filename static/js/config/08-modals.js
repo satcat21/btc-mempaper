@@ -598,7 +598,7 @@ function setupConfigSocketHandlers() {
             const t2 = window.translations || {};
             const modeLabel = mode === 'highest' ? (t2.donation_mode_highest || 'Largest donation') : (t2.donation_mode_latest || 'Latest donation');
             const sats = data.amount_sats || 0;
-            const amtFmt = sats.toLocaleString();
+            const amtFmt = _fmtNum(sats);
             const satLabel = sats === 1 ? 'Sat' : 'Sats';
             let ts = '';
             try { ts = data.timestamp ? new Date(data.timestamp).toLocaleString() : ''; } catch (e) {}
@@ -1066,10 +1066,10 @@ function showBlockToast(blockData) {
     // Format data (works for both new and enriched)
     const timestamp = new Date(blockData.timestamp * 1000);
     const timeString = timestamp.toLocaleTimeString();
-    const heightFormatted = blockData.block_height.toLocaleString().replace(/,/g, '.');
-    const rewardFormatted = blockData.total_reward_btc.toFixed(8);
-    const feesFormatted = blockData.total_fees_btc.toFixed(4);
-    const medianFeeFormatted = blockData.median_fee_sat_vb.toFixed(1);
+    const heightFormatted = _fmtNum(blockData.block_height);
+    const rewardFormatted = _fmtFixed(blockData.total_reward_btc, 8);
+    const feesFormatted = _fmtFixed(blockData.total_fees_btc, 4);
+    const medianFeeFormatted = _fmtFixed(blockData.median_fee_sat_vb, 1);
     
     // Find the content div or create toast content
     let contentDiv = toast.querySelector('.toast-content');

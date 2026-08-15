@@ -133,7 +133,7 @@ function setupSocketHandlers() {
 
     // Lightning donation received (authenticated + feature enabled only)
     socket.on('donation_received', (data) => {
-        const sats = data.amount_sats ? data.amount_sats.toLocaleString() : '?';
+        const sats = data.amount_sats ? _fmtNum(data.amount_sats) : '?';
         const satLabel = data.amount_sats === 1 ? 'sat' : 'sats';
         const msg = data.message ? ` — "${data.message}"` : '';
 
@@ -162,7 +162,7 @@ function setupSocketHandlers() {
             if (prevBal < 0 || isStartup) {
                 // Skip toast on startup/config-save — only toast for genuinely new wallets
             } else if (bal !== prevBal) {
-                showDashboardToast('💰', `Wallet '${label}' balance: ${prevBal.toFixed(8)} → ${bal.toFixed(8)} BTC`);
+                showDashboardToast('💰', `Wallet '${label}' balance: ${_fmtFixed(prevBal, 8)} → ${_fmtFixed(bal, 8)} BTC`);
             }
         });
 
@@ -493,10 +493,10 @@ function showBlockToast(blockData) {
     // Format data (works for both new and enriched)
     const timestamp = new Date(blockData.timestamp * 1000);
     const timeString = timestamp.toLocaleTimeString();
-    const heightFormatted = blockData.block_height.toLocaleString().replace(/,/g, '.');
-    const rewardFormatted = blockData.total_reward_btc.toFixed(8);
-    const feesFormatted = blockData.total_fees_btc.toFixed(4);
-    const medianFeeFormatted = blockData.median_fee_sat_vb.toFixed(1);
+    const heightFormatted = _fmtNum(blockData.block_height);
+    const rewardFormatted = _fmtFixed(blockData.total_reward_btc, 8);
+    const feesFormatted = _fmtFixed(blockData.total_fees_btc, 4);
+    const medianFeeFormatted = _fmtFixed(blockData.median_fee_sat_vb, 1);
     
     // Find the content div or create toast content
     let contentDiv = toast.querySelector('.toast-content');
@@ -772,10 +772,10 @@ window.disableBlockNotifications = function() {
 // Format difficulty value for display
 function _formatDiff(value) {
     if (!value || value === 0) return '-';
-    if (value >= 1e12) return `${(value / 1e12).toFixed(2)}T`;
-    if (value >= 1e9) return `${(value / 1e9).toFixed(2)}G`;
-    if (value >= 1e6) return `${(value / 1e6).toFixed(2)}M`;
-    if (value >= 1e3) return `${(value / 1e3).toFixed(2)}k`;
+    if (value >= 1e12) return `${_fmtFixed(value / 1e12, 2)}T`;
+    if (value >= 1e9) return `${_fmtFixed(value / 1e9, 2)}G`;
+    if (value >= 1e6) return `${_fmtFixed(value / 1e6, 2)}M`;
+    if (value >= 1e3) return `${_fmtFixed(value / 1e3, 2)}k`;
     return `${Math.round(value)}`;
 }
 
