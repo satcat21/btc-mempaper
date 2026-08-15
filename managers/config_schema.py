@@ -333,9 +333,7 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
             "default": "relative",
             "options": [
                 {"value": "constant", "label": t.get("fee_mode_constant", "Constant — always your color"), "_lk": "fee_mode_constant"},
-                # _lk_suffix so a language switch re-appends the marker: _lk
-                # re-translation replaces the whole label, which would drop it.
-                {"value": "relative", "label": t.get("fee_mode_relative", "Relative — cheap or dear (right now)") + " " + t.get("recommended", "(recommended)"), "_lk": "fee_mode_relative", "_lk_suffix": "recommended"},
+                {"value": "relative", "label": t.get("fee_mode_relative", "Relative — cheap or dear (right now)") + " " + t.get("recommended", "(recommended)"), "_lk": "fee_mode_relative"},
                 {"value": "manual",   "label": t.get("fee_mode_manual",   "Manual — your own sat/vB thresholds"), "_lk": "fee_mode_manual"}
             ],
             "category": "_block_height_color"
