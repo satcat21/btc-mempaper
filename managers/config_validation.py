@@ -306,7 +306,7 @@ def validate_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
 
     # Single value settings that should be passed through directly
     passthrough_settings = [
-        "language", "fee_parameter", "fee_color_mode",
+        "language", "fee_parameter", "fee_color_mode", "number_format",
         "moscow_time_unit", "bitaxe_display_mode",
         "color_date_start_light", "color_date_end_light",
         "color_date_start_dark", "color_date_end_dark",
@@ -322,9 +322,19 @@ def validate_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
         "color_network_light", "color_network_dark",
         "color_block_height_light", "color_block_height_dark",
     ]
+    # A field the form did not post means "unchanged", never "delete it".
+    # validated starts from get_default_config(), which carries only 9 of the
+    # 25 colour keys the app actually reads, so an omitted colour was not
+    # falling back to its default - it vanished from config.json altogether,
+    # and the config page and renderer then each showed their own hardcoded
+    # default. One save that missed a field made the loss permanent, since the
+    # next save had nothing left to post. Falling back to the stored value is
+    # the same treatment donation_webhook_token already gets below.
     for setting in passthrough_settings:
         if setting in config:
             validated[setting] = config[setting]
+        elif current_config and setting in current_config:
+            validated[setting] = current_config[setting]
 
     # Preserve runtime-generated tokens that are never sent by the web UI.
     # Falls back to the current in-memory value so a web save never erases them.

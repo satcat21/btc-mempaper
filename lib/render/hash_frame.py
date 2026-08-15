@@ -4,6 +4,8 @@
 from PIL import Image
 from PIL import ImageDraw
 
+from utils.number_format import EU, group_mark
+
 
 class HashFrameMixin:
     """The block-hash frame around the meme and the block info drawn inside it."""
@@ -282,24 +284,24 @@ class HashFrameMixin:
         except Exception:
             frame_target_width = max_available_width - self._scale_px(20, min_value=8)
 
-        # Format block height string
-        if mempool_api:
-            formatted_height = mempool_api.format_block_height(display_block_height)
-        else:
-            try:
-                height_int = int(display_block_height)
-                formatted_height = f"{height_int:,}".replace(",", ".")
-            except (ValueError, TypeError):
-                formatted_height = str(display_block_height)
+        # Grouped by the same setting as every other figure on the screen, so
+        # the block height and the hashrate under it never disagree.
+        try:
+            formatted_height = self._format_number(int(display_block_height), 0)
+        except (ValueError, TypeError):
+            formatted_height = str(display_block_height)
 
         # Dot-advance compression: tighter dots narrow the number so it fits
         # comfortably inside the hash frame with the desired margin.
-        # 0.35 means each '.' uses 35 % of its natural advance width.
+        # 0.35 means each separator uses 35 % of its natural advance width.
         _DOT_FRACTION = 0.35
+        # Whichever mark number_format actually grouped with, so the compression
+        # still applies when that mark is a comma.
+        _GROUP = group_mark(getattr(self, 'number_format', EU))
 
         # Scale block-height font so the squeezed text fits inside frame_target_width
         used_font_block_value = font_block_value
-        text_width = self._squeezed_text_width(formatted_height, used_font_block_value, _DOT_FRACTION)
+        text_width = self._squeezed_text_width(formatted_height, used_font_block_value, _DOT_FRACTION, _GROUP)
 
         if text_width > frame_target_width:
             ratio = frame_target_width / text_width
@@ -307,7 +309,7 @@ class HashFrameMixin:
             try:
                 used_font_block_value = self._get_font(self.font_block_height, new_size)
                 # Re-measure after font size change
-                text_width = self._squeezed_text_width(formatted_height, used_font_block_value, _DOT_FRACTION)
+                text_width = self._squeezed_text_width(formatted_height, used_font_block_value, _DOT_FRACTION, _GROUP)
             except Exception as e:
                 print(f"Error scaling font: {e}")
 
@@ -332,7 +334,8 @@ class HashFrameMixin:
         self.draw_vertical_gradient_text(img, draw, formatted_height, x, value_y + self._scale_px(10, min_value=3),
                                          used_font_block_value,
                                          block_height_start_color, block_height_end_color,
-                                         dot_fraction=_DOT_FRACTION)
+                                         dot_fraction=_DOT_FRACTION,
+                                         squeeze_char=_GROUP)
         
         # Add fee information as small text if available
         if configured_fee is not None:
@@ -355,7 +358,13 @@ class HashFrameMixin:
             except:
                 font_small = font_block_label
                 
-            bbox = used_font_block_value.getbbox(formatted_height)
+            # Measured on the digits alone, not the punctuated string. A comma
+            # descends ~23px below the baseline at 124px where a dot descends 2,
+            # so measuring the whole string would drop the fee label by that
+            # much the moment number_format grouped with commas - the label
+            # would sit at a different height purely because of a separator.
+            digits_only = ''.join(c for c in formatted_height if c.isdigit()) or formatted_height
+            bbox = used_font_block_value.getbbox(digits_only)
             fee_y = value_y + bbox[3] - bbox[1] + self._scale_px(42, min_value=14)
             
             # Fee label always uses bottom color of gradient

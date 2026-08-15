@@ -137,19 +137,25 @@ class TextMixin:
         return lines or ["…"]
 
     @staticmethod
-    def _squeezed_text_width(text: str, font, dot_fraction: float = 1.0) -> int:
+    def _squeezed_text_width(text: str, font, dot_fraction: float = 1.0,
+                             squeeze_char: str = '.') -> int:
         """Measure rendered pixel width of *text* with optional dot-advance compression.
 
-        When dot_fraction < 1.0 each '.' is rendered with a symmetric fixed gap on
-        each side scaled from the font's natural side bearing.  This matches the
-        rendering done by draw_vertical_gradient_text exactly.
+        When dot_fraction < 1.0 each separator is rendered with a symmetric fixed
+        gap on each side scaled from the font's natural side bearing.  This
+        matches the rendering done by draw_vertical_gradient_text exactly.
+
+        squeeze_char is the thousands separator actually in use, which follows
+        the number_format setting - compressing a literal '.' would quietly stop
+        working the moment the setting made it a comma, and the block height
+        would grow wide enough to burst the hash frame it is measured against.
         """
         if dot_fraction >= 1.0:
             bbox = font.getbbox(text)
             return bbox[2] - bbox[0]
         cx = 0.0
         for ch in text:
-            if ch == '.' :
+            if ch == squeeze_char:
                 bb = font.getbbox(ch)
                 glyph_w = bb[2] - bb[0]
                 natural_gap = max(0.5, (font.getlength(ch) - glyph_w) / 2)
@@ -160,13 +166,15 @@ class TextMixin:
         return int(cx)
 
     def draw_vertical_gradient_text(self, img, draw, text, x, y, font, start_color, end_color,
-                                    dot_fraction: float = 1.0):
+                                    dot_fraction: float = 1.0,
+                                    squeeze_char: str = '.'):
         """Draw *text* at (x, y) with a top-to-bottom colour gradient.
 
-        dot_fraction — when < 1.0 each '.' is rendered with that fraction of its
-        natural advance width, tightening the gap around thousand-separator dots.
-        Pass the same value to _squeezed_text_width() when calculating the x
-        position so centering stays accurate.
+        dot_fraction — when < 1.0 each separator is rendered with that fraction
+        of its natural advance width, tightening the gap around thousand
+        separators. Pass the same value and squeeze_char to
+        _squeezed_text_width() when calculating the x position so centering
+        stays accurate.
         """
         ascent, descent = font.getmetrics()
         text_height = ascent + descent + 8  # extra pixels for safety

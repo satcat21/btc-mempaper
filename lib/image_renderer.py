@@ -51,6 +51,8 @@ from lib.btc_price_api import BitcoinPriceAPI
 from lib.bitaxe_api import BitaxeAPI
 from lib.wallet_balance_api import WalletBalanceAPI
 from utils.technical_config import DEVICE_DIMENSIONS
+from utils.number_format import (EU, format_number, format_decimal_string,
+                                 normalize_style)
 from lib.render.colors import ColorMixin
 from lib.render.memes import MemeMixin
 from lib.render.hash_frame import HashFrameMixin
@@ -484,6 +486,9 @@ class ImageRenderer(ColorMixin, MemeMixin, HashFrameMixin, TextMixin,
             print(f"⚠️ Fee baseline unavailable: {e}")
             self.fee_baseline = None
         self.lang = config.get("language", "en")
+        # Punctuation for every figure drawn. Deliberately its own setting and
+        # not a consequence of self.lang - see utils/number_format.
+        self.number_format = normalize_style(config.get("number_format", EU))
         
         # Determine display dimensions from device config
         # Priority: config-provided values > device lookup > smart defaults
@@ -963,15 +968,15 @@ class ImageRenderer(ColorMixin, MemeMixin, HashFrameMixin, TextMixin,
             header_right_text = self.t.get("best_difficulty", "Best Difficulty")
             # Format difficulty
             if best_difficulty >= 1e12:
-                blocks_value_text = f"{best_difficulty / 1e12:.2f}T"
+                blocks_value_text = f"{self._format_number(best_difficulty / 1e12, 2)}T"
             elif best_difficulty >= 1e9:
-                blocks_value_text = f"{best_difficulty / 1e9:.2f}G"
+                blocks_value_text = f"{self._format_number(best_difficulty / 1e9, 2)}G"
             elif best_difficulty >= 1e6:
-                blocks_value_text = f"{best_difficulty / 1e6:.2f}M"
+                blocks_value_text = f"{self._format_number(best_difficulty / 1e6, 2)}M"
             elif best_difficulty >= 1e3:
-                blocks_value_text = f"{best_difficulty / 1e3:.2f}k"
+                blocks_value_text = f"{self._format_number(best_difficulty / 1e3, 2)}k"
             else:
-                blocks_value_text = f"{best_difficulty:.0f}"
+                blocks_value_text = self._format_number(best_difficulty, 0)
         else:
             header_right_text = self.t.get("valid_blocks", "Valid blocks found")
             blocks_value_text = str(valid_blocks)
@@ -1008,7 +1013,7 @@ class ImageRenderer(ColorMixin, MemeMixin, HashFrameMixin, TextMixin,
         draw.text((right_x, text_y), header_right_text, font=font_small_label, fill=self.get_color("info_header", web_quality))
 
         # Render values — compute strings first so font can be sized to fit
-        hashrate_value_text = f"{total_ths:.2f} TH/s"
+        hashrate_value_text = f"{self._format_number(total_ths, 2)} TH/s"
 
         max_col_w = self.layout.get_column_max_text_width(2)
         font_large_value = self._shrink_font_to_fit(
@@ -1127,28 +1132,22 @@ class ImageRenderer(ColorMixin, MemeMixin, HashFrameMixin, TextMixin,
         }
 
     def _format_number(self, value, decimals=0):
-        """Format a number with locale-aware thousand separators and decimal point."""
-        formatted = f"{value:,.{decimals}f}"
-        if self.lang == "de":
-            # German: 1.234.567,89
-            formatted = formatted.replace(",", "X").replace(".", ",").replace("X", ".")
-        elif self.lang in ("es", "fr", "it"):
-            # ES/FR/IT: 1.234.567,89
-            formatted = formatted.replace(",", "X").replace(".", ",").replace("X", ".")
-        return formatted
+        """Format a number the way number_format asks - see utils/number_format.
+
+        Not derived from the display language: the two are independent, and
+        deriving one from the other is what had an English device drawing
+        62.923 above 0.51 TH/s.
+        """
+        return format_number(value, decimals, self.number_format)
 
     def _format_pct_mined(self, pct):
         """Format percentage mined with enough decimals to never show 100% prematurely."""
         for decimals in range(2, 11):
             formatted = f"{pct:.{decimals}f}"
             if formatted != f"{100.0:.{decimals}f}":
-                if self.lang in ("de", "es", "fr", "it"):
-                    formatted = formatted.replace(".", ",")
-                return f"{formatted}%"
+                return f"{format_decimal_string(formatted, self.number_format)}%"
         formatted = f"{pct:.10f}"
-        if self.lang in ("de", "es", "fr", "it"):
-            formatted = formatted.replace(".", ",")
-        return f"{formatted}%"
+        return f"{format_decimal_string(formatted, self.number_format)}%"
 
     # Largest first. Mainnet passed 900 EH/s in 2026, so ZH/s is the next tier the
     # network block will actually need; a Bitaxe reports at the bottom of the table.
@@ -1306,9 +1305,9 @@ class ImageRenderer(ColorMixin, MemeMixin, HashFrameMixin, TextMixin,
             date_text = "—"
 
         if hours_remaining < 24:
-            countdown_text = f"{hours_remaining:.1f}h"
+            countdown_text = f"{self._format_number(hours_remaining, 1)}h"
         else:
-            countdown_text = f"{days_remaining:.0f}d"
+            countdown_text = f"{self._format_number(days_remaining, 0)}d"
 
         max_col_w = self.layout.get_column_max_text_width(2)
         font_large_value = self._shrink_font_to_fit(
@@ -1761,9 +1760,8 @@ class ImageRenderer(ColorMixin, MemeMixin, HashFrameMixin, TextMixin,
             total_balance_sats = int(total_balance_btc * 1e8)
             balance_value_text = self._format_number(total_balance_sats, 0)
         else:
-            balance_value_text = f"{total_balance_btc:.8f}"
-            if self.lang in ("de", "es", "fr", "it"):
-                balance_value_text = balance_value_text.replace(".", ",")
+            balance_value_text = format_decimal_string(
+                f"{total_balance_btc:.8f}", self.number_format)
 
         texts_to_fit = [balance_value_text]
         fiat_value_text = None

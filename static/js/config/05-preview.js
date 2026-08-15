@@ -43,9 +43,31 @@ function _buildSingleThemeCard(leftLabel, leftVal, rightLabel, rightVal, dataCol
     return card;
 }
 
-function _fmtNum(n) {
+// Mirrors utils/number_format.py. The preview claims to show what the renderer
+// draws, so it has to punctuate by the number_format setting rather than by the
+// browser's locale — otherwise the same device previewed 62,923 and displayed
+// 62.923 purely because of where the browser thought it was.
+function _numStyle() {
+    const cfg = { ...(window.currentConfig || {}), ...(window._pendingConfigOverrides || {}) };
+    return cfg.number_format === 'us' ? 'us' : 'eu';
+}
+
+function _decMark() { return _numStyle() === 'us' ? '.' : ','; }
+
+function _fmtNum(n, decimals = 0) {
     if (n == null || isNaN(n)) return '—';
-    return Math.round(n).toLocaleString();
+    // en-US gives the grouped form; EU is that with the two marks swapped.
+    const s = Number(n).toLocaleString('en-US', {
+        minimumFractionDigits: decimals, maximumFractionDigits: decimals,
+    });
+    return _numStyle() === 'us' ? s : s.replace(/[.,]/g, (c) => (c === ',' ? '.' : ','));
+}
+
+// Repoint an already-fixed decimal such as toFixed(8), where there is no grouping.
+function _fmtFixed(n, decimals) {
+    if (n == null || isNaN(n)) return '—';
+    const s = Number(n).toFixed(decimals);
+    return _numStyle() === 'us' ? s : s.replace('.', ',');
 }
 
 function _buildSectionPreview(categoryId, sectionEl) {
@@ -73,8 +95,8 @@ function _buildSectionPreview(categoryId, sectionEl) {
         const symbols = {'USD':'$','EUR':'€','GBP':'£','CAD':'C$','CHF':'CHF','AUD':'A$','JPY':'¥'};
         const sym = symbols[currency] || currency;
         const rl = moscowUnit === 'hour' ? (t.moscow_time || 'Moscow time') : `1 ${currency} =`;
-        const clLight = cfg['color_btc_price_light'] || '#17805B';
-        const clDark  = cfg['color_btc_price_dark']  || '#00c896';
+        const clLight = cfg['color_btc_price_light'] || '#147A38';
+        const clDark  = cfg['color_btc_price_dark']  || '#22C55E';
         const ll = t.btc_price || 'BTC price';
 
         function fmtPrice(p) { return p == null ? '…' : `${sym} ${_fmtNum(p)}`; }
@@ -105,17 +127,17 @@ function _buildSectionPreview(categoryId, sectionEl) {
     // ── Bitaxe Stats ──────────────────────────────────────────────────────
     if (categoryId === 'bitaxe_stats') {
         const mode    = cfg['bitaxe_display_mode'] || 'blocks';
-        const clLight = cfg['color_bitaxe_stats_light'] || '#F7931A';
-        const clDark  = cfg['color_bitaxe_stats_dark']  || '#F7931A';
+        const clLight = cfg['color_bitaxe_stats_light'] || '#8C6D0F';
+        const clDark  = cfg['color_bitaxe_stats_dark']  || '#FFC400';
         const rl = mode === 'difficulty' ? (t.best_difficulty || 'Best diff') : (t.valid_blocks || 'Found blocks');
 
         const hasBitaxe = (cfg['bitaxe_miner_table'] || []).some(a => a.address?.trim());
 
         function fmtHashrate(ths) {
-            if (ths == null) return hasBitaxe ? '…' : '0.0 kH/s';
-            if (ths >= 1000) return `${(ths/1000).toFixed(2)} PH/s`;
-            if (ths >= 1)    return `${ths.toFixed(2)} TH/s`;
-            return `${(ths*1000).toFixed(1)} GH/s`;
+            if (ths == null) return hasBitaxe ? '…' : `0${_decMark()}0 kH/s`;
+            if (ths >= 1000) return `${_fmtFixed(ths/1000, 2)} PH/s`;
+            if (ths >= 1)    return `${_fmtFixed(ths, 2)} TH/s`;
+            return `${_fmtFixed(ths*1000, 1)} GH/s`;
         }
         function fmtRight(val) {
             if (val == null) return hasBitaxe ? '…' : (mode === 'difficulty' ? '0.0K' : '0');
@@ -153,23 +175,23 @@ function _buildSectionPreview(categoryId, sectionEl) {
         const symbols = {'USD':'$','EUR':'€','GBP':'£','CAD':'C$','CHF':'CHF','AUD':'A$','JPY':'¥'};
         const sym = symbols[walletCurrency] || walletCurrency;
         const hasWallets = (cfg['wallet_balance_addresses_with_comments'] || []).some(a => a.address?.trim());
-        const clLight = cfg['color_wallets_light'] || '#1565C0';
-        const clDark  = cfg['color_wallets_dark']  || '#09a3ba';
+        const clLight = cfg['color_wallets_light'] || '#00838F';
+        const clDark  = cfg['color_wallets_dark']  || '#00BCD4';
         const ll = unit === 'sats' ? (t.wallet_balance_sats || 'Total (Sats)') : (t.total_balance || 'Total Balance');
         const rl = t.fiat_value || 'Fiat value';
 
         function fmtBtc(v) {
-            if (v == null) return hasWallets ? '…' : (unit === 'sats' ? '0' : '0.00000000');
-            return unit === 'sats' ? Math.round(v * 1e8).toLocaleString() : v.toFixed(8);
+            if (v == null) return hasWallets ? '…' : (unit === 'sats' ? '0' : _fmtFixed(0, 8));
+            return unit === 'sats' ? _fmtNum(v * 1e8) : _fmtFixed(v, 8);
         }
         function fmtFiat(fv, btcAmt) {
-            if (fv != null) return `${Math.round(fv).toLocaleString()} ${sym}`;
+            if (fv != null) return `${_fmtNum(fv)} ${sym}`;
             // Fallback: compute from BTC price when backend fiat_value is null (currency mismatch)
             const btcPrice = window._previewData.price?.price;
             if (btcPrice && btcAmt != null) {
-                return `${Math.round(btcAmt * btcPrice).toLocaleString()} ${sym}`;
+                return `${_fmtNum(btcAmt * btcPrice)} ${sym}`;
             }
-            return hasWallets ? '…' : `0.00 ${sym}`;
+            return hasWallets ? '…' : `${_fmtFixed(0, 2)} ${sym}`;
         }
 
         const wd = window._previewData.wallet;
@@ -192,7 +214,7 @@ function _buildSectionPreview(categoryId, sectionEl) {
 
     // ── Donation ──────────────────────────────────────────────────────────
     if (categoryId === 'donation') {
-        const clLight = cfg['color_donation_light'] || '#F7931A';
+        const clLight = cfg['color_donation_light'] || '#B35C00';
         const clDark  = cfg['color_donation_dark']  || '#F7931A';
         const mode    = cfg['donation_display_mode'] || 'latest';
 
@@ -239,22 +261,22 @@ function _buildSectionPreview(categoryId, sectionEl) {
 
     // ── Countdown (BTC Supply) ────────────────────────────────────────────
     if (categoryId === 'countdown') {
-        const clLight = cfg['color_countdown_light'] || '#C55A00';
-        const clDark  = cfg['color_countdown_dark']  || '#FF9E40';
+        const clLight = cfg['color_countdown_light'] || '#C62828';
+        const clDark  = cfg['color_countdown_dark']  || '#F02D2D';
         const ll = t.btc_remaining || 'BTC Remaining';
         const rl = t.pct_mined || '% Mined';
 
         function fmtRemaining(r) {
             if (r == null) return '…';
-            return `${r.toLocaleString(undefined, {minimumFractionDigits:2,maximumFractionDigits:2})} BTC`;
+            return `${_fmtNum(r, 2)} BTC`;
         }
         function fmtPct(p) {
             if (p == null) return '…';
             for (let d = 2; d < 11; d++) {
                 const s = p.toFixed(d);
-                if (s !== (100).toFixed(d)) return `${s}%`;
+                if (s !== (100).toFixed(d)) return `${_fmtFixed(p, d)}%`;
             }
-            return `${p.toFixed(10)}%`;
+            return `${_fmtFixed(p, 10)}%`;
         }
 
         const cd = window._previewData.countdown;
@@ -275,7 +297,7 @@ function _buildSectionPreview(categoryId, sectionEl) {
     // ── Halving ───────────────────────────────────────────────────────────
     if (categoryId === 'halving') {
         const clLight = cfg['color_halving_light'] || '#1565C0';
-        const clDark  = cfg['color_halving_dark']  || '#4FC3F7';
+        const clDark  = cfg['color_halving_dark']  || '#2979FF';
         const lang = window._pendingLanguage || cfg['language'] || 'en';
         const ll = t.halving_date || 'Next Halving';
 
@@ -286,7 +308,7 @@ function _buildSectionPreview(categoryId, sectionEl) {
         function fmtCountdown(hd) {
             if (!hd) return '…';
             return (hd.hours_remaining ?? 0) < 24
-                ? `${(hd.hours_remaining || 0).toFixed(1)}h`
+                ? `${_fmtFixed(hd.hours_remaining || 0, 1)}h`
                 : `${Math.round(hd.days_remaining || 0)}d`;
         }
 
@@ -312,24 +334,24 @@ function _buildSectionPreview(categoryId, sectionEl) {
     // ── Network Stats ─────────────────────────────────────────────────────
     if (categoryId === 'network_stats') {
         const clLight = cfg['color_network_light'] || '#6A1B9A';
-        const clDark  = cfg['color_network_dark']  || '#CE93D8';
+        const clDark  = cfg['color_network_dark']  || '#B23CE8';
         const ll = t.network_hashrate || 'Network Hashrate';
         const rl = t.network_difficulty || 'Difficulty';
 
         function fmtHashrate(hs) {
             if (hs == null) return '…';
-            if (hs >= 1e18) return `${(hs/1e18).toFixed(2)} EH/s`;
-            if (hs >= 1e15) return `${(hs/1e15).toFixed(2)} PH/s`;
-            if (hs >= 1e12) return `${(hs/1e12).toFixed(2)} TH/s`;
-            if (hs >= 1e9)  return `${(hs/1e9).toFixed(2)} GH/s`;
-            return `${Math.round(hs)} H/s`;
+            if (hs >= 1e18) return `${_fmtFixed(hs/1e18, 2)} EH/s`;
+            if (hs >= 1e15) return `${_fmtFixed(hs/1e15, 2)} PH/s`;
+            if (hs >= 1e12) return `${_fmtFixed(hs/1e12, 2)} TH/s`;
+            if (hs >= 1e9)  return `${_fmtFixed(hs/1e9, 2)} GH/s`;
+            return `${_fmtNum(hs)} H/s`;
         }
         function fmtDifficulty(d) {
             if (d == null) return '…';
-            if (d >= 1e12) return `${(d/1e12).toFixed(2)} T`;
-            if (d >= 1e9)  return `${(d/1e9).toFixed(2)} G`;
-            if (d >= 1e6)  return `${(d/1e6).toFixed(2)} M`;
-            return `${Math.round(d)}`;
+            if (d >= 1e12) return `${_fmtFixed(d/1e12, 2)} T`;
+            if (d >= 1e9)  return `${_fmtFixed(d/1e9, 2)} G`;
+            if (d >= 1e6)  return `${_fmtFixed(d/1e6, 2)} M`;
+            return `${_fmtNum(d)}`;
         }
 
         const nd = window._previewData.network;
@@ -530,7 +552,7 @@ function createHolidayColorGroup() {
 
     // Read current values from the already-loaded config
     const cfg = window.currentConfig || {};
-    const lightStart = cfg['color_holiday_start_light'] || '#F7931A';
+    const lightStart = cfg['color_holiday_start_light'] || '#D17300';
     const lightEnd   = cfg['color_holiday_end_light'] || '#C62828';
     const darkStart  = cfg['color_holiday_start_dark'] || '#F7931A';
     const darkEnd    = cfg['color_holiday_end_dark'] || '#FF6F6F';
@@ -859,12 +881,12 @@ function createBlockHeightColorGroup() {
 
     wrapper.appendChild(buildRow(
         t.holiday_color_light_theme || 'Light Theme', 'light',
-        'color_block_height_light', cfg.color_block_height_light || '#c040a8',
+        'color_block_height_light', cfg.color_block_height_light || '#545454',
         'rgba(255,255,255,.04)', '#ffffff', 'preview-card-light'
     ));
     wrapper.appendChild(buildRow(
         t.holiday_color_dark_theme || 'Dark Theme', 'dark',
-        'color_block_height_dark', cfg.color_block_height_dark || '#BA68C8',
+        'color_block_height_dark', cfg.color_block_height_dark || '#919191',
         'rgba(0,0,0,.04)', '#1a1a2e', 'preview-card-dark'
     ));
 

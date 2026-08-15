@@ -105,7 +105,7 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
             "type": "color",
             "label": t.get("color_btc_price_light", "BTC Price (Light Mode)"),
             "description": t.get("color_btc_price_light_desc", "Color for BTC price text in light mode"),
-            "default": "#17805B",
+            "default": "#147A38",
             "category": "price_stats",
             "order": 1000
         },
@@ -113,7 +113,7 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
             "type": "color",
             "label": t.get("color_btc_price_dark", "BTC Price (Dark Mode)"),
             "description": t.get("color_btc_price_dark_desc", "Color for BTC price text in dark mode"),
-            "default": "#00c896",
+            "default": "#22C55E",
             "category": "price_stats",
             "order": 1001
         },
@@ -129,7 +129,7 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
             "type": "color",
             "label": t.get("color_countdown_light", "Countdown (Light Mode)"),
             "description": t.get("color_countdown_light_desc", "Color for countdown values in light mode"),
-            "default": "#C55A00",
+            "default": "#C62828",
             "category": "countdown",
             "order": 1000
         },
@@ -137,7 +137,7 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
             "type": "color",
             "label": t.get("color_countdown_dark", "Countdown (Dark Mode)"),
             "description": t.get("color_countdown_dark_desc", "Color for countdown values in dark mode"),
-            "default": "#FF9E40",
+            "default": "#F02D2D",
             "category": "countdown",
             "order": 1001
         },
@@ -161,7 +161,7 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
             "type": "color",
             "label": t.get("color_halving_dark", "Halving (Dark Mode)"),
             "description": t.get("color_halving_dark_desc", "Color for halving countdown values in dark mode"),
-            "default": "#4FC3F7",
+            "default": "#2979FF",
             "category": "halving",
             "order": 1001
         },
@@ -185,7 +185,7 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
             "type": "color",
             "label": t.get("color_network_dark", "Network Stats (Dark Mode)"),
             "description": t.get("color_network_dark_desc", "Color for network stats values in dark mode"),
-            "default": "#CE93D8",
+            "default": "#B23CE8",
             "category": "network_stats",
             "order": 1001
         },
@@ -225,7 +225,7 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
             "type": "color",
             "label": t.get("color_bitaxe_stats_light", "Bitaxe Stats (Light Mode)"),
             "description": t.get("color_bitaxe_stats_light_desc", "Color for Bitaxe stats text in light mode"),
-            "default": "#B89C1D",
+            "default": "#8C6D0F",
             "category": "bitaxe_stats",
             "order": 1000
         },
@@ -233,7 +233,7 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
             "type": "color",
             "label": t.get("color_bitaxe_stats_dark", "Bitaxe Stats (Dark Mode)"),
             "description": t.get("color_bitaxe_stats_dark_desc", "Color for Bitaxe stats text in dark mode"),
-            "default": "#ffe566",
+            "default": "#FFC400",
             "category": "bitaxe_stats",
             "order": 1001
         },
@@ -286,7 +286,7 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
             "type": "color",
             "label": t.get("color_wallets_light", "Wallet Stats (Light Mode)"),
             "description": t.get("color_wallets_light_desc", "Color for wallet balances text in light mode"),
-            "default": "#1565C0",
+            "default": "#00838F",
             "category": "wallet_monitoring",
             "order": 1000
         },
@@ -294,7 +294,7 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
             "type": "color",
             "label": t.get("color_wallets_dark", "Wallet Stats (Dark Mode)"),
             "description": t.get("color_wallets_dark_desc", "Color for wallet balances text in dark mode"),
-            "default": "#09a3ba",
+            "default": "#00BCD4",
             "category": "wallet_monitoring",
             "order": 1001
         },
@@ -377,7 +377,7 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
                                  "Base color for the block height digits in light mode. The fee "
                                  "reading sits at the bottom of the number and a lighter tone of "
                                  "this color at the top."),
-            "default": "#3C3C46",
+            "default": "#545454",
             "category": "_block_height_color"
         },
         "color_block_height_dark": {
@@ -387,7 +387,7 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
                                  "Base color for the block height digits in dark mode. This color "
                                  "sits at the top of the number and the fee reading, lightened, "
                                  "at the bottom."),
-            "default": "#C8C8D2",
+            "default": "#919191",
             "category": "_block_height_color"
         },
         "fee_baseline_days": {
@@ -556,6 +556,22 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
             "category": "general",
             "order": 4
         },
+        "number_format": {
+            "type": "select",
+            "label": t.get("number_format", "Number Format"),
+            "_lk": "number_format",
+            "description": t.get("number_format_desc",
+                                 "How every figure on the display is punctuated — the block "
+                                 "height, the fee, the hashrate and the balances all follow this."),
+            "default": "eu",
+            "options": [
+                {"value": "eu", "label": t.get("number_format_eu", "62.923  ·  0,51  (dot groups, comma decimals)"), "_lk": "number_format_eu"},
+                {"value": "us", "label": t.get("number_format_us", "62,923  ·  0.51  (comma groups, dot decimals)"), "_lk": "number_format_us"},
+            ],
+            "category": "general",
+            "order": 8,
+            "advanced": True
+        },
         "date_color_group": {
             "type": "date_color_group",
             "label": t.get("date_color_group_label", "Date Gradient Colors"),
@@ -573,7 +589,7 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
         "color_date_end_light": {
             "type": "color",
             "label": t.get("color_date_end_light", "End Color"),
-            "default": "#3C3C46",
+            "default": "#c040a8",
             "category": "_date_color"
         },
         "color_date_start_dark": {
@@ -585,7 +601,7 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
         "color_date_end_dark": {
             "type": "color",
             "label": t.get("color_date_end_dark", "End Color"),
-            "default": "#C8C8D2",
+            "default": "#BA68C8",
             "category": "_date_color"
         },
         "holiday_color_group": {
@@ -599,7 +615,7 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
         "color_holiday_start_light": {
             "type": "color",
             "label": t.get("color_holiday_start_light", "Start Color"),
-            "default": "#F7931A",
+            "default": "#D17300",
             "category": "_holiday_color"
         },
         "color_holiday_end_light": {
@@ -818,7 +834,7 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
             "type": "color",
             "label": t.get("color_donation_light", "Donation (Light Mode)"),
             "description": t.get("color_donation_light_desc", "Color for donation amount and message text in light mode"),
-            "default": "#F7931A",
+            "default": "#B35C00",
             "category": "donation",
             "order": 1000
         },
