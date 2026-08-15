@@ -161,32 +161,51 @@ def validate_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
         "network_outage_tolerance_minutes": (5, 10080),  # 5 min to 1 week
         "display_width": (100, 2000),
         "display_height": (100, 2000),
-        # Under ~3 days the median tracks the noise it is meant to smooth out;
-        # past 90 it is describing a fee regime that no longer exists.
-        "fee_baseline_days": (3, 90),
-        "fee_neutral_band_pct": (0, 50),
     }
     # The manual scale's thresholds are fees, so they are floats - blocks clear
     # at fractions of a sat/vB and 0.5 must survive the round trip. Out-of-range
     # or unparseable values are dropped here and fall back per-field in
     # manual_thresholds(), so one bad box cannot take the other four with it.
+    # Read once, up here: several blocks below fall back to what is already
+    # stored, and the first of them runs well before the password handling that
+    # used to be the first reader.
+    current_config = self.get_current_config()
+
+    # A number the form did not post means "unchanged", the same as it does for
+    # the passthrough settings below. Without the fallback a save that omitted a
+    # numeric field deleted it, and validated starts from get_default_config(),
+    # which carries only some of them - so the value did not revert to a default,
+    # it disappeared and the code fallback silently took over.
+    def _keep_stored(setting):
+        if current_config and setting in current_config:
+            validated[setting] = current_config[setting]
+
     for setting in ("fee_manual_blue", "fee_manual_green", "fee_manual_yellow",
                     "fee_manual_orange", "fee_manual_red"):
-        if setting in config:
-            try:
-                value = float(config[setting])
-            except (TypeError, ValueError):
-                continue
-            if 0 <= value <= 10000:
-                validated[setting] = value
+        if setting not in config:
+            _keep_stored(setting)
+            continue
+        try:
+            value = float(config[setting])
+        except (TypeError, ValueError):
+            _keep_stored(setting)
+            continue
+        if 0 <= value <= 10000:
+            validated[setting] = value
+        else:
+            _keep_stored(setting)
     for setting, (min_val, max_val) in int_settings.items():
-        if setting in config:
-            try:
-                value = int(config[setting])
-                if min_val <= value <= max_val:
-                    validated[setting] = value
-            except (ValueError, TypeError):
-                pass
+        if setting not in config:
+            _keep_stored(setting)
+            continue
+        try:
+            value = int(config[setting])
+            if min_val <= value <= max_val:
+                validated[setting] = value
+            else:
+                _keep_stored(setting)
+        except (ValueError, TypeError):
+            _keep_stored(setting)
 
     # Auto-populate display dimensions from device when a known device is selected.
     # This runs AFTER manual int_settings so device dimensions always take precedence.
@@ -247,7 +266,6 @@ def validate_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
     
     # Special handling for secure password system
     # Check if we currently have a hashed password (from stored config)
-    current_config = self.get_current_config()
     has_password_hash = current_config and "admin_password_hash" in current_config
     
     # If admin_password_hash exists in incoming config, preserve it

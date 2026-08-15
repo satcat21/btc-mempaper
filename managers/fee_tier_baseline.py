@@ -48,6 +48,14 @@ from utils.atomic_io import atomic_write_json
 # fee_parameter reads an already-warm window instead of starting from nothing.
 TIERS = ('fastestFee', 'halfHourFee', 'hourFee', 'economyFee', 'minimumFee')
 
+# How many days of history "normal" is measured over.
+#
+# Not a setting. Under about three days the median tracks the noise it exists to
+# smooth out, and past ninety it describes a fee regime that no longer exists -
+# so the useful range is narrow, and nothing in the rendered image tells you
+# where inside it to sit. A month covers a difficulty epoch and change.
+WINDOW_DAYS = 30
+
 # A day needs at least this many samples before it is allowed into the window,
 # or a device booted at 23:50 would contribute a two-sample "day" carrying the
 # same weight as a full one.
@@ -318,7 +326,7 @@ _shared = None
 _shared_lock = threading.Lock()
 
 
-def get_shared_tier_baseline(cache_path=None, day_path=None, window_days=30):
+def get_shared_tier_baseline(cache_path=None, day_path=None, window_days=WINDOW_DAYS):
     """The process-wide FeeTierBaseline, created on first use.
 
     Later calls update the window rather than replacing the instance, so a

@@ -480,7 +480,6 @@ class ImageRenderer(ColorMixin, MemeMixin, HashFrameMixin, TextMixin,
             self.fee_baseline = get_shared_tier_baseline(
                 cache_path=os.path.join("cache", "fee_tier_history.json"),
                 day_path=os.path.join("cache", "fee_tier_today.json"),
-                window_days=config.get("fee_baseline_days", 30),
             )
         except Exception as e:
             print(f"⚠️ Fee baseline unavailable: {e}")

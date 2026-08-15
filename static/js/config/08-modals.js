@@ -784,7 +784,8 @@ function setupNavigationButtons() {
                         } else if (element.type === 'checkbox') {
                             formConfig[key] = element.checked;
                         } else if (element.type === 'number') {
-                            formConfig[key] = parseFloat(element.value) || 0;
+                            const n = _numFieldValue(element);
+                            if (n !== undefined) formConfig[key] = n;
                         } else {
                             formConfig[key] = element.value;
                         }

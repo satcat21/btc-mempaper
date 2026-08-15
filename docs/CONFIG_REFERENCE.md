@@ -10,9 +10,24 @@ These settings can be modified via the Web Dashboard (recommended) or by editing
 | Web Label | Config Key | Type | Description | Allowed Values / Examples |
 | :--- | :--- | :--- | :--- | :--- |
 | **Language** | `language` | Select | Interface language | `en` (English), `de` (German), `es` (Spanish), `fr` (French), `it` (Italian) |
-| **Color Mode** | `color_mode_dark` | Switch | Dark theme for dashboard | `true` (Dark), `false` (Light) |
-| **E-Ink Dark Mode** | `eink_dark_mode` | Switch | Invert colors for E-ink | `true` (Inverted/Night), `false` (Standard) |
+| **Number Format** | `number_format` | Select | How every figure is punctuated — block height, fee, hashrate, balances and the SSH banner all follow it. Independent of the interface language | `eu` (62.923 · 0,51, default), `us` (62,923 · 0.51) |
 | **Prioritize Large Memes** | `prioritize_large_scaled_meme` | Switch | Maximize meme size vs info blocks | `true` (Large Memes), `false` (Balanced) |
+| **Fee Used for the Block Height** | `fee_parameter` | Select | Which fee is printed under the block height **and** compared against the rolling median to color it. Pick the priority you actually transact at — see [Block height color scale](#block-height-color-scale) | `fastestFee` (High Priority), `halfHourFee` (Standard), `hourFee` (Low Priority), `economyFee` (Economy), `minimumFee` (No Priority) |
+
+---
+
+## Theming
+
+Everything that decides how the display and the dashboard look, in one place.
+Colors that belong to a single info block stay with that block instead.
+
+| Web Label | Config Key | Type | Description | Allowed Values / Examples |
+| :--- | :--- | :--- | :--- | :--- |
+| **Web Theme** | `color_mode_dark` | Switch | Dark theme for dashboard | `true` (Dark), `false` (Light) |
+| **E-Ink Theme** | `eink_dark_mode` | Switch | Invert colors for E-ink | `true` (Inverted/Night), `false` (Standard) |
+| **Date & Block Hash Gradient** | `color_date_start_*`<br>`color_date_end_*` | Group | Gradient across the date line and the hash frame, per theme | `#1c82c0` → `#c040a8` (light) |
+| **Holiday & Block Hash Gradient** | `color_holiday_start_*`<br>`color_holiday_end_*` | Group | Gradient used on Bitcoin holidays, per theme | `#D17300` → `#C62828` (light) |
+| **Block Height Color & Scale** | `color_block_height_*`<br>`fee_color_mode` | Group | The color an ordinary block reads as, plus the scale turning a fee into a color. See [Block height color scale](#block-height-color-scale) | `#545454` / `#919191`, scale `relative` |
 
 ---
 
@@ -22,16 +37,15 @@ These settings can be modified via the Web Dashboard (recommended) or by editing
 | :--- | :--- | :--- | :--- | :--- |
 | **Date Gradient Start** | `color_date_start_light`<br>`color_date_start_dark` | Color | Gradient start color for the date display | `#1c82c0` / `#4FC3F7` |
 | **Date Gradient End** | `color_date_end_light`<br>`color_date_end_dark` | Color | Gradient end color for the date display | `#c040a8` / `#BA68C8` |
-| **Holiday Start Color** | `color_holiday_start_light`<br>`color_holiday_start_dark` | Color | Gradient start color for holiday events | `#F7931A` / `#F7931A` |
+| **Holiday Start Color** | `color_holiday_start_light`<br>`color_holiday_start_dark` | Color | Gradient start color for holiday events | `#D17300` / `#F7931A` |
 | **Holiday End Color** | `color_holiday_end_light`<br>`color_holiday_end_dark` | Color | Gradient end color for holiday events | `#C62828` / `#FF6F6F` |
-| **BTC Price Color** | `color_btc_price_light`<br>`color_btc_price_dark` | Color | Text color for Bitcoin price | `#17805B` / `#00C896` |
-| **Countdown Color** | `color_countdown_light`<br>`color_countdown_dark` | Color | Text color for supply countdown | `#C55A00` / `#FF9E40` |
-| **Halving Color** | `color_halving_light`<br>`color_halving_dark` | Color | Text color for halving countdown | `#1565C0` / `#4FC3F7` |
-| **Network Color** | `color_network_light`<br>`color_network_dark` | Color | Text color for network stats | `#6A1B9A` / `#CE93D8` |
-| **Bitaxe Color** | `color_bitaxe_stats_light`<br>`color_bitaxe_stats_dark` | Color | Text color for mining stats | `#B89C1D` / `#FFE566` |
-| **Wallet Color** | `color_wallets_light`<br>`color_wallets_dark` | Color | Text color for wallet balances | `#1565C0` / `#09A3BA` |
-| **Donation Color** | `color_donation_light`<br>`color_donation_dark` | Color | Text color for donation block | `#F7931A` / `#F7931A` |
-| **Block Height Color & Scale** | `color_block_height_light`<br>`color_block_height_dark`<br>`fee_color_mode` | Group | The color an ordinary block reads as, per theme, plus the scale that turns a fee into a color. Edited together under **General → Advanced**, with a live preview of a steady, cheap, spiked and dear network. See [Block height color scale](#block-height-color-scale) | `#3C3C46` / `#C8C8D2`, scale `relative` |
+| **BTC Price Color** | `color_btc_price_light`<br>`color_btc_price_dark` | Color | Text color for Bitcoin price | `#147A38` / `#22C55E` |
+| **Countdown Color** | `color_countdown_light`<br>`color_countdown_dark` | Color | Text color for supply countdown | `#C62828` / `#F02D2D` |
+| **Halving Color** | `color_halving_light`<br>`color_halving_dark` | Color | Text color for halving countdown | `#1565C0` / `#2979FF` |
+| **Network Color** | `color_network_light`<br>`color_network_dark` | Color | Text color for network stats | `#6A1B9A` / `#B23CE8` |
+| **Bitaxe Color** | `color_bitaxe_stats_light`<br>`color_bitaxe_stats_dark` | Color | Text color for mining stats | `#8C6D0F` / `#FFC400` |
+| **Wallet Color** | `color_wallets_light`<br>`color_wallets_dark` | Color | Text color for wallet balances | `#00838F` / `#00BCD4` |
+| **Donation Color** | `color_donation_light`<br>`color_donation_dark` | Color | Text color for donation block | `#B35C00` / `#F7931A` |
 
 ---
 
@@ -51,23 +65,20 @@ These settings can be modified via the Web Dashboard (recommended) or by editing
 | **WebSocket Path** | `mempool_ws_path` | String | Websocket endpoint path | `/api/v1/ws` (default) |
 | **Username** | `mempool_username` | String | Optional Basic auth username | Leave empty if not required |
 | **Password** | `mempool_password` | String | Optional Basic auth password | Leave empty if not required |
-| **Fee Preference** | `fee_parameter` | Select | Which fee is printed under the block height **and** compared against the rolling median to color it. Pick the priority you actually transact at — see [Block height color scale](#block-height-color-scale) | `fastestFee` (High Priority), `halfHourFee` (Standard), `hourFee` (Low Priority), `economyFee` (Economy), `minimumFee` (No Priority) |
-| **Fee Baseline Window** | `fee_baseline_days` | Number | Days of history behind "normal" (Advanced) | `3`–`90`, default `30` |
-| **Neutral Band** | `fee_neutral_band_pct` | Number | How close to the median still reads as normal (Advanced) | `0`–`50`, default `5` |
 
 ### Block height color scale
 
 The block height number is colored by the current fee. The **relative** scales
-compare that fee against the median of the last `fee_baseline_days` days rather
+compare that fee against the median of the last 30 days rather
 than against fixed thresholds, so "cheap" keeps meaning cheap when the whole fee
 market moves.
 
-Set the base color and pick the scale together under **General → Advanced →
-Block Height Color & Scale**. That panel previews a steady, a still-cheap, a
-spiked and a still-dear network in both themes, and its fee colors are computed by
-the renderer itself, so what you see is what the panel draws. The two tuning
-numbers below — `fee_baseline_days` and `fee_neutral_band_pct` — stay under
-**Mempool → Advanced**.
+Set the base color and pick the scale together under **Theming → Block Height
+Color & Scale**. That panel previews a steady, a still-cheap, a spiked and a
+still-dear network in both themes, and its fee colors are computed by the
+renderer itself, so what you see is what the panel draws. Which fee is measured is set by
+`fee_parameter` under **General**. The window behind "normal" (30 days) and
+the neutral band (5%) are fixed in code, not settings.
 
 ![Fee color scale](diagrams/fee-color-scale.svg)
 
@@ -120,7 +131,7 @@ locally instead, warmed on first run from the last ~15 blocks.
 #### The base color
 
 `color_block_height_light` and `color_block_height_dark` set the color an
-**ordinary** block reads as — one within `fee_neutral_band_pct` of the median,
+**ordinary** block reads as — one within 5% of the median,
 which has nothing to report. Each end of the gradient falls back to it
 independently, so it can appear at the top, the bottom, or both.
 

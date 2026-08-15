@@ -351,26 +351,58 @@ class HashFrameMixin:
             }
             fee_key = fee_type_keys.get(fee_parameter, "minimum")
             fee_type_display = self.t.get(fee_key, "Unknown")
-            fee_text = f"{fee_type_display}: {self._format_fee(configured_fee)} sat/vB"
-            
+            fee_label_text = f"{fee_type_display}:"
+            fee_value_text = f"{self._format_fee(configured_fee)} sat/vB"
+            fee_text = f"{fee_label_text} {fee_value_text}"
+
             try:
                 font_small = self._get_font(self.font_regular, self._scale_font_size(12, min_value=8))
             except:
                 font_small = font_block_label
-                
-            # Measured on the string as drawn, separators included. A comma
-            # descends ~23px below the baseline at 124px where a dot descends 2,
-            # so the label has to be placed below the ink that is actually there
-            # rather than below the digits: measuring the digits alone puts the
-            # label 15px *inside* the comma's tail. The label therefore sits a
-            # little lower under a comma-grouped height than a dot-grouped one,
-            # which is the separator being given the room it occupies, not drift.
-            bbox = used_font_block_value.getbbox(formatted_height)
+
+            # Measured on the digits, not the punctuated string. A comma descends
+            # ~23px below the baseline at 124px where a dot descends 2, and
+            # measuring the whole string pushes the label down by that much -
+            # far enough to land on the hash frame below it. The label keeps its
+            # place and steps around the comma horizontally instead.
+            digits_only = ''.join(c for c in formatted_height if c.isdigit()) or formatted_height
+            bbox = used_font_block_value.getbbox(digits_only)
             fee_y = value_y + bbox[3] - bbox[1] + self._scale_px(42, min_value=14)
-            
+
             # Fee label always uses bottom color of gradient
             fee_color = block_height_end_color
-            self.draw_centered(draw, fee_text, fee_y, font_small, fee_color)
+
+            # A comma hangs into the line below; a dot does not. So when the
+            # thousands separator is a comma the label is split in two and set
+            # either side of it - "Fastest (~1 block):" left of the comma, the
+            # value right of it - leaving the comma's tail its own column.
+            gap = self._scale_px(10, min_value=4)
+            spans = [] if _GROUP != ',' else self._squeezed_char_spans(
+                formatted_height, used_font_block_value, _DOT_FRACTION, _GROUP)
+            placed = False
+            if spans:
+                label_w = font_small.getlength(fee_label_text)
+                value_w = font_small.getlength(fee_value_text)
+                mid = x + text_width / 2.0
+                # Split at whichever separator sits nearest the middle, so the
+                # two halves stay as close to centred as the number allows.
+                left, right = min(spans, key=lambda s: abs(x + (s[0] + s[1]) / 2.0 - mid))
+                label_x = x + left - gap - label_w
+                value_x = x + right + gap
+                margin = self._scale_px(6, min_value=2)
+                # A second separator (heights past 1,000,000) or a canvas edge
+                # can leave one half nowhere to go. Centring the whole string is
+                # then still correct - it just sits under a comma somewhere.
+                clash = any(not (value_x > x + s1 or value_x + value_w < x + s0)
+                            or not (label_x > x + s1 or label_x + label_w < x + s0)
+                            for s0, s1 in spans if (s0, s1) != (left, right))
+                if (label_x >= margin and value_x + value_w <= self.width - margin
+                        and not clash):
+                    draw.text((int(label_x), fee_y), fee_label_text, font=font_small, fill=fee_color)
+                    draw.text((int(value_x), fee_y), fee_value_text, font=font_small, fill=fee_color)
+                    placed = True
+            if not placed:
+                self.draw_centered(draw, fee_text, fee_y, font_small, fee_color)
 
     
     def patch_hash_frame_on_image(self, img, block_hash, web_quality, y_override=None):

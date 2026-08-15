@@ -102,6 +102,18 @@ UNKNOWN_COLOR = (120, 120, 130)
 # minimumFee itself goes to zero and nothing is waiting to be undercut.
 FALLBACK_CHEAP_FLOOR = 0.0
 
+# How close to the baseline still reads as an ordinary fee, and so renders in
+# the configured base colour rather than a cool or warm one.
+#
+# Not a setting. Its effect only becomes visible once a month of history has
+# accumulated, and nothing about the rendered image tells you whether the number
+# wants raising or lowering - so it was a box that could be typed into but not
+# judged. It was also actively harmful as a setting: the form posted 0 for any
+# number field missing from config.json, 0 is inside the range this accepted,
+# and the band silently switched off, leaving every fee reading cheap or dear
+# and none ordinary.
+NEUTRAL_BAND = 0.05
+
 
 def _interpolate(stops, position, low_default=None, high_default=None):
     """Linear interpolation across a sorted (position, rgb) table."""
@@ -292,12 +304,7 @@ class FormattingMixin:
         derive a substituted end, and a second copy of the constant in
         JavaScript is a second thing to keep in step.
         """
-        try:
-            neutral_band = float(self.config.get("fee_neutral_band_pct", 5)) / 100.0
-        except (TypeError, ValueError):
-            neutral_band = 0.05
-        neutral_band = max(0.0, min(0.5, neutral_band))
-
+        neutral_band = NEUTRAL_BAND
         baseline = None
         store = getattr(self, "fee_baseline", None)
         if store is not None:
@@ -440,12 +447,7 @@ class FormattingMixin:
 
         mode = normalise_mode(self.config.get("fee_color_mode"))
 
-        try:
-            neutral_band = float(self.config.get("fee_neutral_band_pct", 5)) / 100.0
-        except (TypeError, ValueError):
-            neutral_band = 0.05
-        neutral_band = max(0.0, min(0.5, neutral_band))
-
+        neutral_band = NEUTRAL_BAND
         baseline = None
         store = getattr(self, "fee_baseline", None)
         if store is not None and mode == "relative":

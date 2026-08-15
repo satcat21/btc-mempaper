@@ -302,7 +302,8 @@ async function saveConfiguration() {
             } else if (element.type === 'checkbox') {
                 formConfig[key] = element.checked;
             } else if (element.type === 'number') {
-                formConfig[key] = parseInt(element.value) || 0;
+                const n = _numFieldValue(element);
+                if (n !== undefined) formConfig[key] = n;
             } else {
                 formConfig[key] = element.value;
             }
@@ -422,7 +423,8 @@ if (saveButton) {
                 } else if (element.type === 'checkbox') {
                     formConfig[key] = element.checked;
                 } else if (element.type === 'number') {
-                    formConfig[key] = parseInt(element.value) || 0;
+                    const n = _numFieldValue(element);
+                    if (n !== undefined) formConfig[key] = n;
                 } else {
                     formConfig[key] = element.value;
                 }

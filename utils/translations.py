@@ -24,6 +24,7 @@ translations = {
         "login_sealed_store": "Configuration is sealed — the Tang server cannot be reached, so credentials cannot be verified. Retrying in the background.",
  
         # Configuration Categories
+        "theming_settings": "Theming",
         "general_settings": "General",
         "display_settings": "Display Settings",
         "bitcoin_settings": "Bitcoin Settings", 
@@ -338,10 +339,6 @@ translations = {
         "fee_manual_orange_desc": "Expensive — send only what cannot wait.",
         "fee_manual_red_desc": "Very expensive — wait unless it is urgent.",
         "fee_manual_hint": "Each value is the fee, in sat/vB, at which that color takes over. The examples above follow whatever you type here.",
-        "fee_baseline_days": "Fee Baseline Window (days)",
-        "fee_baseline_days_desc": "How far back to look when deciding what a normal fee is. Ignored by the fixed-threshold scale.",
-        "fee_neutral_band_pct": "Neutral Band (%)",
-        "fee_neutral_band_pct_desc": "How close to the median still counts as normal, and so renders in the neutral color. Only used by the neutral relative scale.",
         "color_block_height_light": "Block Height (Light Mode)",
         "color_block_height_light_desc": "Base color for the block height digits in light mode. The fee reading sits at the bottom of the number and a lighter tone of this color at the top.",
         "color_block_height_dark": "Block Height (Dark Mode)",
@@ -852,6 +849,7 @@ translations = {
         "login_sealed_store": "Konfiguration ist versiegelt — der Tang-Server ist nicht erreichbar, daher können die Anmeldedaten nicht geprüft werden. Es wird im Hintergrund erneut versucht.",
 
         # Configuration Categories
+        "theming_settings": "Design",
         "general_settings": "Allgemein",
         "display_settings": "Anzeige-Einstellungen",
         "bitcoin_settings": "Bitcoin-Einstellungen",
@@ -1165,10 +1163,6 @@ translations = {
         "fee_manual_orange_desc": "Teuer — nur senden, was nicht warten kann.",
         "fee_manual_red_desc": "Sehr teuer — warten, außer es ist dringend.",
         "fee_manual_hint": "Jeder Wert ist die Gebühr in sat/vB, ab der diese Farbe gilt. Die Beispiele oben richten sich nach dem, was du hier einträgst.",
-        "fee_baseline_days": "Zeitfenster der Gebühren-Basislinie (Tage)",
-        "fee_baseline_days_desc": "Wie weit zurückgeschaut wird, um zu bestimmen, was eine normale Gebühr ist. Wird von der Skala mit festen Schwellen ignoriert.",
-        "fee_neutral_band_pct": "Neutraler Bereich (%)",
-        "fee_neutral_band_pct_desc": "Wie nah am Median noch als normal gilt und daher in der neutralen Farbe erscheint. Nur für die neutrale relative Skala.",
         "color_block_height_light": "Blockhöhe (Heller Modus)",
         "color_block_height_light_desc": "Grundfarbe der Blockhöhen-Ziffern im hellen Modus. Der Gebührenwert steht unten an der Zahl, ein hellerer Ton dieser Farbe oben.",
         "color_block_height_dark": "Blockhöhe (Dunkler Modus)",
@@ -1683,6 +1677,7 @@ translations = {
         "login_sealed_store": "La configuración está sellada: no se puede acceder al servidor Tang, por lo que no se pueden verificar las credenciales. Reintentando en segundo plano.",
 
         # Configuration Categories
+        "theming_settings": "Apariencia",
         "general_settings": "General",
         "display_settings": "Configuración de Pantalla",
         "bitcoin_settings": "Configuración de Bitcoin",
@@ -1960,10 +1955,6 @@ translations = {
         "fee_manual_orange_desc": "Caro — envía solo lo que no pueda esperar.",
         "fee_manual_red_desc": "Muy caro — espera salvo que sea urgente.",
         "fee_manual_hint": "Cada valor es la comisión, en sat/vB, a partir de la cual se aplica ese color. Los ejemplos de arriba siguen lo que escribas aquí.",
-        "fee_baseline_days": "Ventana de Referencia de Comisiones (días)",
-        "fee_baseline_days_desc": "Cuánto tiempo atrás mirar para decidir qué es una comisión normal. La escala de umbrales fijos lo ignora.",
-        "fee_neutral_band_pct": "Banda Neutra (%)",
-        "fee_neutral_band_pct_desc": "Qué tan cerca de la mediana sigue contando como normal, y por tanto se muestra en el color neutro. Solo para la escala relativa neutra.",
         "color_block_height_light": "Altura de bloque (modo claro)",
         "color_block_height_light_desc": "Color base de los dígitos de la altura de bloque en modo claro. La lectura de la comisión va en la parte inferior del número y un tono más claro de este color en la superior.",
         "color_block_height_dark": "Altura de bloque (modo oscuro)",
@@ -2498,6 +2489,7 @@ translations = {
         "login_sealed_store": "La configuration est scellée : le serveur Tang est injoignable, les identifiants ne peuvent donc pas être vérifiés. Nouvelle tentative en arrière-plan.",
 
         # Configuration Categories
+        "theming_settings": "Apparence",
         "general_settings": "Général",
         "display_settings": "Paramètres d'Affichage",
         "bitcoin_settings": "Paramètres Bitcoin",
@@ -2775,10 +2767,6 @@ translations = {
         "fee_manual_orange_desc": "Cher — n’envoyez que ce qui ne peut pas attendre.",
         "fee_manual_red_desc": "Très cher — attendez sauf urgence.",
         "fee_manual_hint": "Chaque valeur est le niveau de frais, en sat/vB, à partir duquel cette couleur s’applique. Les exemples ci-dessus suivent ce que vous saisissez ici.",
-        "fee_baseline_days": "Fenêtre de Référence des Frais (jours)",
-        "fee_baseline_days_desc": "Jusqu’où remonter pour déterminer ce qu’est un frais normal. Ignoré par l’échelle à seuils fixes.",
-        "fee_neutral_band_pct": "Bande Neutre (%)",
-        "fee_neutral_band_pct_desc": "Quelle proximité avec la médiane compte encore comme normale, et s’affiche donc dans la couleur neutre. Utilisé uniquement par l’échelle relative neutre.",
         "color_block_height_light": "Hauteur de bloc (mode clair)",
         "color_block_height_light_desc": "Couleur de base des chiffres de la hauteur de bloc en mode clair. La lecture des frais se place en bas du nombre et un ton plus clair de cette couleur en haut.",
         "color_block_height_dark": "Hauteur de bloc (mode sombre)",
@@ -3314,6 +3302,7 @@ translations = {
         "login_sealed_store": "La configurazione è sigillata: il server Tang non è raggiungibile, quindi le credenziali non possono essere verificate. Nuovo tentativo in background.",
 
         # Configuration Categories
+        "theming_settings": "Aspetto",
         "general_settings": "Generale",
         "display_settings": "Impostazioni Display",
         "bitcoin_settings": "Impostazioni Bitcoin",
@@ -3627,10 +3616,6 @@ translations = {
         "fee_manual_orange_desc": "Caro — invia solo ciò che non può attendere.",
         "fee_manual_red_desc": "Molto caro — aspetta a meno che non sia urgente.",
         "fee_manual_hint": "Ogni valore è la commissione, in sat/vB, alla quale quel colore subentra. Gli esempi sopra seguono ciò che scrivi qui.",
-        "fee_baseline_days": "Finestra di Riferimento Commissioni (giorni)",
-        "fee_baseline_days_desc": "Quanto indietro guardare per stabilire cos’è una commissione normale. Ignorato dalla scala a soglie fisse.",
-        "fee_neutral_band_pct": "Banda Neutra (%)",
-        "fee_neutral_band_pct_desc": "Quanto vicino alla mediana conta ancora come normale, e quindi viene reso nel colore neutro. Usato solo dalla scala relativa neutra.",
         "color_block_height_light": "Altezza blocco (modalità chiara)",
         "color_block_height_light_desc": "Colore base delle cifre dell'altezza del blocco in modalità chiara. La lettura della commissione sta in basso nel numero e una tonalità più chiara di questo colore in alto.",
         "color_block_height_dark": "Altezza blocco (modalità scura)",

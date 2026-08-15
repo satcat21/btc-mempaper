@@ -517,7 +517,7 @@ function _renderCategorySection(category, section) {
                 if (!key) return;
                 const val = keyEl.getValue ? keyEl.getValue()
                           : keyEl.type === 'checkbox' ? keyEl.checked
-                          : keyEl.type === 'number'   ? (parseInt(keyEl.value) || 0)
+                          : keyEl.type === 'number'   ? _numFieldValue(keyEl)
                           : keyEl.value;
                 window._pendingConfigOverrides[key] = val;
                 // Text field blur in a colour picker: skip _reorganize (same logic as input
@@ -1035,7 +1035,13 @@ function createFormField(key, field, value) {
             input = document.createElement('input');
             input.type = 'number';
             input.className = 'form-input';
-            input.value = value !== undefined && value !== null ? value : '';
+            // Fall back to the schema's own default rather than leaving the
+            // box empty: an empty box was collected as 0, which for a field
+            // whose range excludes 0 was rejected on save, so the key stayed
+            // missing and the box stayed empty - a loop that never settled.
+            input.value = value !== undefined && value !== null
+                ? value
+                : (field.default !== undefined ? field.default : '');
             input.min = field.min || '';
             input.max = field.max || '';
             break;

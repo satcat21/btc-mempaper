@@ -323,7 +323,8 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
                 {"value": "economyFee",  "label": t.get("economy",   "Economy (~1 day)"),        "_lk": "economy"},
                 {"value": "minimumFee",  "label": t.get("minimum",   "Minimum"),                 "_lk": "minimum"}
             ],
-            "category": "mempool"
+            "category": "general",
+            "order": 3
         },
         "fee_color_mode": {
             "type": "select",
@@ -389,32 +390,6 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
                                  "at the bottom."),
             "default": "#919191",
             "category": "_block_height_color"
-        },
-        "fee_baseline_days": {
-            "type": "number",
-            "label": t.get("fee_baseline_days", "Fee Baseline Window (days)"),
-            "min": 3,
-            "max": 90,
-            "default": 30,
-            "description": t.get("fee_baseline_days_desc",
-                                 "How far back to look when deciding what a normal fee is. "
-                                 "Ignored by the fixed-threshold scale."),
-            "category": "mempool",
-            "advanced": True,
-            "order": 6
-        },
-        "fee_neutral_band_pct": {
-            "type": "number",
-            "label": t.get("fee_neutral_band_pct", "Neutral Band (%)"),
-            "min": 0,
-            "max": 50,
-            "default": 5,
-            "description": t.get("fee_neutral_band_pct_desc",
-                                 "How close to the median still counts as normal, and so renders "
-                                 "in the neutral color. Only used by the neutral relative scale."),
-            "category": "mempool",
-            "advanced": True,
-            "order": 7
         },
         "mempool_host": {
             "type": "text",
@@ -554,7 +529,7 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
             "description": t.get("prioritize_large_scaled_meme_desc", "When enabled, maximize meme display space by hiding stats if necessary."),
             "default": False,
             "category": "general",
-            "order": 4
+            "order": 5
         },
         "number_format": {
             "type": "select",
@@ -569,16 +544,14 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
                 {"value": "us", "label": t.get("number_format_us", "62,923  ·  0.51  (comma groups, dot decimals)"), "_lk": "number_format_us"},
             ],
             "category": "general",
-            "order": 8,
-            "advanced": True
+            "order": 2
         },
         "date_color_group": {
             "type": "date_color_group",
             "label": t.get("date_color_group_label", "Date Gradient Colors"),
             "_lk": "date_color_group_label",
-            "category": "general",
-            "order": 5,
-            "advanced": True
+            "category": "theming",
+            "order": 3
         },
         "color_date_start_light": {
             "type": "color",
@@ -608,9 +581,8 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
             "type": "holiday_color_group",
             "label": t.get("holiday_color_group_label", "Holiday Text Gradient Colors"),
             "_lk": "holiday_color_group_label",
-            "category": "general",
-            "order": 6,
-            "advanced": True
+            "category": "theming",
+            "order": 4
         },
         "color_holiday_start_light": {
             "type": "color",
@@ -643,9 +615,8 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
             "description": t.get("block_height_color_group_desc",
                                  "The base color of the block height digits and how the current "
                                  "fee is turned into the other end of the gradient."),
-            "category": "general",
-            "order": 7,
-            "advanced": True
+            "category": "theming",
+            "order": 5
         },
         "omni_device_name": {
             "type": "select",
@@ -664,7 +635,8 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
                 {"value": True,  "label": t.get("theme_dark",  "Dark"),  "_lk": "theme_dark",  "_tk": "theme_dark_tooltip",  "icon": "/static/icons/dark.svg"},
             ],
             "default": False,
-            "category": "eink_display"
+            "category": "theming",
+            "order": 2
         },
         "public_dashboard": {
             "type": "boolean",
@@ -672,7 +644,7 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
             "description": t.get("public_dashboard_desc", "Allow unauthenticated users to view the dashboard. Admin login is still required to access settings."),
             "default": False,
             "category": "general",
-            "order": 2
+            "order": 4
         },
         "color_mode_dark": {
             "type": "toggle",
@@ -683,8 +655,8 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
                 {"value": True,  "label": t.get("theme_dark",  "Dark"),  "_lk": "theme_dark",  "_tk": "theme_dark_tooltip",  "icon": "/static/icons/dark.svg"},
             ],
             "default": True,
-            "category": "general",
-            "order": 3
+            "category": "theming",
+            "order": 1
         },
         "meme_management": {
             "type": "meme_management",

@@ -165,6 +165,34 @@ class TextMixin:
                 cx += font.getlength(ch)
         return int(cx)
 
+    @staticmethod
+    def _squeezed_char_spans(text: str, font, dot_fraction: float = 1.0,
+                             squeeze_char: str = '.'):
+        """Where each separator glyph actually lands, as (left, right) offsets.
+
+        Mirrors the advance arithmetic of _squeezed_text_width, because the
+        squeeze moves every glyph after the first separator - measuring the
+        separator's position with unsqueezed advances would put it several
+        pixels off, which is enough to matter when laying text out around it.
+        """
+        spans = []
+        cx = 0.0
+        for ch in text:
+            adv = font.getlength(ch)
+            if ch == squeeze_char:
+                bb = font.getbbox(ch)
+                glyph_w = bb[2] - bb[0]
+                if dot_fraction < 1.0:
+                    natural_gap = max(0.5, (adv - glyph_w) / 2)
+                    gap = max(1.0, natural_gap * dot_fraction)
+                    spans.append((cx + gap, cx + gap + glyph_w))
+                    cx += glyph_w + 2 * gap
+                    continue
+                side = max(0.0, (adv - glyph_w) / 2)
+                spans.append((cx + side, cx + side + glyph_w))
+            cx += adv
+        return spans
+
     def draw_vertical_gradient_text(self, img, draw, text, x, y, font, start_color, end_color,
                                     dot_fraction: float = 1.0,
                                     squeeze_char: str = '.'):

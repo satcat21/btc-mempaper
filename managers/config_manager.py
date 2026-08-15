@@ -615,6 +615,7 @@ class ConfigManager:
             {"id": "general",          "_lk": "general_settings",  "label": t.get("general_settings",  "General Settings"),    "icon": "/static/icons/settings.svg"},
             {"id": "mempool",          "_lk": "mempool_settings",  "label": t.get("mempool_settings",  "Mempool"),             "icon": "/static/icons/bottom_drawer.svg"},
             {"id": "eink_display",     "_lk": "eink_display",      "label": t.get("eink_display",      "E-Ink Display"),       "icon": "/static/icons/photo_frame.svg"},
+            {"id": "theming",          "_lk": "theming_settings",  "label": t.get("theming_settings",  "Theming"),            "icon": "/static/icons/theme.svg"},
             {"id": "price_stats",      "_lk": "price_stats",       "label": t.get("price_stats",       "Price Stats"),         "icon": "/static/icons/price.svg"},
             {"id": "countdown",        "_lk": "countdown_settings","label": t.get("countdown_settings","Countdown"),           "icon": "/static/icons/countdown.svg"},
             {"id": "halving",          "_lk": "halving_settings",  "label": t.get("halving_settings",  "Halving"),             "icon": "/static/icons/halving.svg"},

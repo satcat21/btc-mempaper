@@ -3,6 +3,23 @@
 // Part 1 of 8, split from config.js. Load order matters:
 // these run as classic scripts sharing one global scope.
 
+// What a number input is worth when the form is collected.
+//
+// parseInt was wrong twice over. It truncates, so a manual fee threshold typed
+// as 0.5 was posted as 0 - the server accepts fractions there, but the decimals
+// never reached it. And `|| 0` turned an empty box into a real zero, which is
+// how a field missing from config.json came to post 0, get rejected by its own
+// range check, stay missing, and render empty again on the next load.
+//
+// undefined means "say nothing about this field": the key is left out of the
+// payload, and validate_config keeps whatever is already stored.
+function _numFieldValue(el) {
+    const raw = String(el.value ?? '').trim();
+    if (raw === '') return undefined;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : undefined;
+}
+
 function _formatDonationTime(timestamp) {
     if (!timestamp) return '—';
     const d = new Date(timestamp + 'Z');
