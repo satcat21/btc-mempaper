@@ -695,13 +695,20 @@ function createBlockHeightColorGroup() {
     };
 
     // Mode C's five thresholds. Only shown for that scale; they mean nothing to
-    // the other two.
+    // the other two. The fifth entry is what each band means, shown on hover
+    // rather than under the box: five sentences under five narrow number fields
+    // would crowd the grid out of usefulness.
     const MANUAL_FIELDS = [
-        ['fee_manual_blue',   t.fee_manual_blue   || 'Blue up to',   '#005AFF', 0.5],
-        ['fee_manual_green',  t.fee_manual_green  || 'Green up to',  '#00C846', 0.8],
-        ['fee_manual_yellow', t.fee_manual_yellow || 'Yellow up to', '#EBD700', 1.5],
-        ['fee_manual_orange', t.fee_manual_orange || 'Orange up to', '#FF8200', 3.0],
-        ['fee_manual_red',    t.fee_manual_red    || 'Red from',     '#D71919', 5.0],
+        ['fee_manual_blue',   t.fee_manual_blue   || 'Blue up to',   '#005AFF', 0.5,
+         t.fee_manual_blue_desc   || 'Very cheap — a good moment for transactions and UTXO consolidation.'],
+        ['fee_manual_green',  t.fee_manual_green  || 'Green up to',  '#00C846', 0.8,
+         t.fee_manual_green_desc  || 'Cheap — comfortable for everyday transactions.'],
+        ['fee_manual_yellow', t.fee_manual_yellow || 'Yellow up to', '#EBD700', 1.5,
+         t.fee_manual_yellow_desc || 'Moderate — routine transactions are fine, consolidation can wait.'],
+        ['fee_manual_orange', t.fee_manual_orange || 'Orange up to', '#FF8200', 3.0,
+         t.fee_manual_orange_desc || 'Expensive — send only what cannot wait.'],
+        ['fee_manual_red',    t.fee_manual_red    || 'Red from',     '#D71919', 5.0,
+         t.fee_manual_red_desc    || 'Very expensive — wait unless it is urgent.'],
     ];
 
     const lighten = (hex) => {
@@ -724,19 +731,21 @@ function createBlockHeightColorGroup() {
     wrapper.style.width = '100%';
 
     // ── Scale selector, above both theme rows ────────────────────────────────
+    // No label of its own: the group is already headed "Block Height Color &
+    // Scale", and a "Block Height Color Scale" caption under it said the same
+    // thing twice before the reader reached the dropdown.
     const modeWrap = document.createElement('div');
     modeWrap.style.cssText = 'display:flex; flex-direction:column; gap:4px; margin-bottom:12px;';
-    const modeLabel = document.createElement('span');
-    modeLabel.style.cssText = 'font-size:0.85em; font-weight:600; color:var(--text-secondary)';
-    modeLabel.textContent = t.fee_color_mode || 'Block Height Color Scale';
-    modeWrap.appendChild(modeLabel);
 
     const modeSelect = document.createElement('select');
     modeSelect.className = 'form-select';
     modeSelect.dataset.configKey = 'fee_color_mode';
     [
         ['constant', t.fee_mode_constant || 'Constant — always your color'],
-        ['relative', t.fee_mode_relative || 'Relative — cheap or dear for the times'],
+        // Marked in the option rather than the description: this is the choice
+        // being made, so the steer belongs where the choosing happens.
+        ['relative', (t.fee_mode_relative || 'Relative — cheap or dear (right now)')
+                     + ' ' + (t.recommended || '(recommended)')],
         ['manual',   t.fee_mode_manual   || 'Manual — your own sat/vB thresholds'],
     ].forEach(([val, label]) => {
         const o = document.createElement('option');
@@ -863,11 +872,15 @@ function createBlockHeightColorGroup() {
     const manualWrap = document.createElement('div');
     manualWrap.style.cssText = 'display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:8px; margin-top:12px;';
     const manualInputs = {};
-    MANUAL_FIELDS.forEach(([key, label, swatch, fallback]) => {
+    MANUAL_FIELDS.forEach(([key, label, swatch, fallback, hint]) => {
         const box = document.createElement('div');
         box.style.cssText = 'display:flex; flex-direction:column; gap:3px;';
         const lab = document.createElement('span');
-        lab.style.cssText = 'font-size:0.78em; font-weight:600; color:var(--text-secondary); display:flex; align-items:center; gap:6px;';
+        // The title sits on the label, which contains the swatch, so hovering
+        // either the colour or the words explains the band. cursor:help is what
+        // says there is something to hover in the first place.
+        lab.title = hint;
+        lab.style.cssText = 'font-size:0.78em; font-weight:600; color:var(--text-secondary); display:flex; align-items:center; gap:6px; cursor:help;';
         const dot = document.createElement('span');
         dot.style.cssText = `width:10px; height:10px; border-radius:2px; background:${swatch}; flex:none;`;
         lab.appendChild(dot);
