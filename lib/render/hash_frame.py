@@ -226,7 +226,7 @@ class HashFrameMixin:
 
         # Whatever reading the caller already holds, if any. It is the same one
         # the fee label below is drawn from, so using it here is what keeps the
-        # colour and the printed figure describing the same moment.
+        # color and the printed figure describing the same moment.
         live_fees = precached_fee if isinstance(precached_fee, dict) else None
 
         # Fetch only when there is nothing usable for this height: the block
@@ -242,7 +242,7 @@ class HashFrameMixin:
             # Compute fee_color or use a default
             fee_color = self.get_color("fee", web_quality) if hasattr(self, 'get_color') else "gray"
             self._update_block_fee_cache(display_block_height, fee_data, fee_color)
-        # Colour reads the fee the user actually cares about - the configured
+        # color reads the fee the user actually cares about - the configured
         # tier - against the rolling median of block medians. The tier is the
         # question being asked: "is next-block inclusion expensive right now"
         # and "is a min-fee transaction worth broadcasting" are different
@@ -255,8 +255,8 @@ class HashFrameMixin:
         # The bottom of the gradient is the number printed under it - the same
         # `configured_fee` the label formats, not a second lookup that can drift
         # from it. The two used to be fetched independently: the label followed
-        # the live pre-cache while the colour read a snapshot frozen when the
-        # block landed, so a tier that moved mid-block rendered a colour that
+        # the live pre-cache while the color read a snapshot frozen when the
+        # block landed, so a tier that moved mid-block rendered a color that
         # belonged to a figure no longer on screen.
         curr_fee = configured_fee
         if curr_fee is None:

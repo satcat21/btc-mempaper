@@ -342,7 +342,7 @@ def validate_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
     ]
     # A field the form did not post means "unchanged", never "delete it".
     # validated starts from get_default_config(), which carries only 9 of the
-    # 25 colour keys the app actually reads, so an omitted colour was not
+    # 25 color keys the app actually reads, so an omitted color was not
     # falling back to its default - it vanished from config.json altogether,
     # and the config page and renderer then each showed their own hardcoded
     # default. One save that missed a field made the loss permanent, since the

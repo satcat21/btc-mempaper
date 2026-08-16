@@ -1,9 +1,9 @@
 """What each fee tier has normally cost, over a rolling window of days.
 
-The block-height colour asks "is this fee cheap right now", which only has an
+The block-height color asks "is this fee cheap right now", which only has an
 answer relative to what that *same* fee has been doing lately. The earlier
 baseline answered it with a median of mined-block medians, which is a different
-quantity from the tier being coloured: fastestFee sits above a block median by
+quantity from the tier being colored: fastestFee sits above a block median by
 construction and minimumFee below it, so every reading carried a constant offset
 set by the chosen tier rather than by the market. A minimumFee device read blue
 more or less permanently.
@@ -289,7 +289,7 @@ class FeeTierBaseline:
     def baseline(self, tier):
         """Median of the daily medians for one tier, or None when too thin.
 
-        None is meaningful: it tells the colour mapper to use the absolute scale
+        None is meaningful: it tells the color mapper to use the absolute scale
         rather than invent a ratio from a handful of minutes.
         """
         if tier not in TIERS:

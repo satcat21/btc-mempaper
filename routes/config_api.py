@@ -414,8 +414,8 @@ def register(self):
                 }
             except Exception:
                 btc_h_compact = {}
-            # The fee colour scale itself — stop tables, the rolling median and
-            # the slider range around it — so the block-height preview can colour
+            # The fee color scale itself — stop tables, the rolling median and
+            # the slider range around it — so the block-height preview can color
             # whatever fee the reader drags to without a request per step. One
             # payload covers all three scales, so the dropdown switches instantly.
             try:

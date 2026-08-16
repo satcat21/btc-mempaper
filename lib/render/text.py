@@ -196,7 +196,7 @@ class TextMixin:
     def draw_vertical_gradient_text(self, img, draw, text, x, y, font, start_color, end_color,
                                     dot_fraction: float = 1.0,
                                     squeeze_char: str = '.'):
-        """Draw *text* at (x, y) with a top-to-bottom colour gradient.
+        """Draw *text* at (x, y) with a top-to-bottom color gradient.
 
         dot_fraction — when < 1.0 each separator is rendered with that fraction
         of its natural advance width, tightening the gap around thousand
@@ -242,9 +242,9 @@ class TextMixin:
         # text_height is ascent + descent + 8, but digits ink only from the cap
         # top down to the baseline - about 58% of it. Interpolating across the
         # box therefore started the visible text 17% into the ramp and stopped it
-        # at 74%, so neither end colour was ever actually drawn: a violet-to-
+        # at 74%, so neither end color was ever actually drawn: a violet-to-
         # light-orange gradient arrived as violet over muddy salmon, and the
-        # configured base colour was never the colour anyone saw. Mapping the
+        # configured base color was never the color anyone saw. Mapping the
         # ramp onto the ink box makes both ends exact and puts the 50/50 blend
         # at the middle of the digits, where it looks like it should be.
         ink = text_img.getbbox()

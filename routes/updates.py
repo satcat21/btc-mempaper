@@ -14,7 +14,7 @@ import threading
 import time
 import traceback
 
-# The update log is a browser element, not a terminal. Helper scripts colour
+# The update log is a browser element, not a terminal. Helper scripts color
 # their output for the SSH case - postinstall.sh sets a blue step marker and a
 # green tick - and those escapes arrived in the log as literal [0;34m noise
 # wrapped around every line.

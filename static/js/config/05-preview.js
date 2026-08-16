@@ -662,7 +662,7 @@ function createBlockHeightColorGroup() {
 
     // The scale comes from the server - the same stop tables, median, neutral
     // band and floor the renderer maps with - and the page walks it here. It has
-    // to: the fee is chosen by a slider now, so no set of pre-coloured samples
+    // to: the fee is chosen by a slider now, so no set of pre-colored samples
     // can answer for the value the reader lands on. The tables themselves stay
     // defined in one place, lib/render/formatting.py, and arrive as data.
     const data = window.blockHeightPreview || {};
@@ -723,7 +723,7 @@ function createBlockHeightColorGroup() {
     };
 
     // Mode C's five thresholds. Only shown for that scale; they mean nothing to
-    // the other two. The colours and defaults come from the server's own table,
+    // the other two. The colors and defaults come from the server's own table,
     // so the swatch beside each field is the ink that field actually selects;
     // only the wording lives here. `hint` is shown on hover rather than under
     // the box: five sentences under five narrow number fields would crowd the
@@ -751,7 +751,7 @@ function createBlockHeightColorGroup() {
     });
 
     // Declared here rather than beside the fields it collects: the theme rows
-    // are built first and colour themselves from these live values, so the
+    // are built first and color themselves from these live values, so the
     // binding has to exist before the first paint.
     const manualInputs = {};
 
@@ -768,7 +768,7 @@ function createBlockHeightColorGroup() {
 
     // What the user has typed, right now — not what was last saved. The slider
     // is dragged while these are being edited, so reading the fields keeps the
-    // colour under the thumb answering to the numbers on screen.
+    // color under the thumb answering to the numbers on screen.
     const manualThreshold = (f) => {
         const live = parseFloat(manualInputs[f.key] && manualInputs[f.key].value);
         if (Number.isFinite(live)) return Math.max(0, live);
@@ -785,7 +785,7 @@ function createBlockHeightColorGroup() {
 
     // The port of _fee_color_for. null means "no signal" — the fee reads as
     // ordinary, or was never consulted — and the caller substitutes the picked
-    // base colour, which is precisely what the renderer does with its own null.
+    // base color, which is precisely what the renderer does with its own null.
     const feeColorFor = (fee, mode) => {
         if (mode === 'constant') return null;
         if (fee === null || fee === undefined || !Number.isFinite(fee)) return UNKNOWN;
@@ -817,7 +817,7 @@ function createBlockHeightColorGroup() {
     // past the top one, midpoint halfway, which leaves that track plain linear.
     // It can afford to be - it spans a handful of sat/vB rather than a thousand
     // - and above the top threshold the table has nothing further to say, so
-    // travel spent up there could only show the same colour again.
+    // travel spent up there could only show the same color again.
     const manualSliderRange = () => {
         const top = manualStops().reduce((a, s) => Math.max(a, s.pos), 0);
         if (!(top > 0)) return null;
@@ -826,7 +826,7 @@ function createBlockHeightColorGroup() {
     };
 
     const sliderRange = (mode) => {
-        // Relative without a median colours from the manual table, so it takes
+        // Relative without a median colors from the manual table, so it takes
         // that table's frame too rather than a span around a median it does not
         // have.
         if (mode === 'manual' || (mode === 'relative' && !BASELINE)) {
@@ -859,7 +859,7 @@ function createBlockHeightColorGroup() {
 
     // ── The track, painted in the scale it selects from ──────────────────────
     // The slider is the scale, so it may as well show it: every position is
-    // already a fee, and every fee already has a colour. Reading the ramp off
+    // already a fee, and every fee already has a color. Reading the ramp off
     // the track answers "where does green stop" without dragging to find out,
     // and makes the neutral band visible as the gap it is rather than something
     // the reader discovers by accident. It also exposes the shape of the travel
@@ -917,7 +917,7 @@ function createBlockHeightColorGroup() {
         document.head.appendChild(el);
     }
 
-    // The picked colour paints the stretch where the fee says nothing - the
+    // The picked color paints the stretch where the fee says nothing - the
     // neutral band, and the whole of the constant scale. Which of the two
     // pickers is the honest answer depends on the theme the *config page* is in,
     // since that is the background the track is being read against.
@@ -949,7 +949,7 @@ function createBlockHeightColorGroup() {
             `linear-gradient(90deg,${stops.join(',')})`);
     }
 
-    // The tip the device is actually on, from the same fee cache the colours are
+    // The tip the device is actually on, from the same fee cache the colors are
     // read out of. The literal below is a last resort for a page opened before
     // the first block has been seen - a preview of a real height is the only one
     // whose digit count matches what the panel will draw.
@@ -1011,14 +1011,14 @@ function createBlockHeightColorGroup() {
                 : (BASELINE || 1);
     let prevFee = currFee;
 
-    // The tier being coloured, named as the panel names it under the digits.
+    // The tier being colored, named as the panel names it under the digits.
     const FEE_TIER_LABEL = {
         fastestFee: t.fastest, halfHourFee: t.half_hour, hourFee: t.hour,
         economyFee: t.economy, minimumFee: t.minimum,
     }[cfg.fee_parameter || 'minimumFee'] || (t.minimum || 'Minimum');
 
     // The line under the digits: what this fee reads as on the selected scale.
-    // Says why the digits look the way they do, which a colour alone cannot.
+    // Says why the digits look the way they do, which a color alone cannot.
     function readingFor(fee, mode) {
         if (mode === 'constant') return t.block_height_reading_constant || 'The fee is never consulted';
         if (mode === 'relative' && !BASELINE) {
@@ -1029,7 +1029,7 @@ function createBlockHeightColorGroup() {
             // The band the fee has reached: the last threshold at or below it,
             // or the lowest one when it sits under them all. Sorted first, for
             // the same reason manualStops() sorts - a transposed pair of numbers
-            // should not name a band the colour did not come from.
+            // should not name a band the color did not come from.
             const ranked = MANUAL_FIELDS
                 .map(f => ({ f, at: manualThreshold(f) }))
                 .sort((a, b) => a.at - b.at);
@@ -1082,7 +1082,7 @@ function createBlockHeightColorGroup() {
         // that varies now, so a second sample beside it would only show the same
         // fee twice. Laid out as the panel lays it out - digits, then the fee
         // label beneath them - because that pairing is the point. The label
-        // colour tracks the bottom of the gradient exactly as it does on the
+        // color tracks the bottom of the gradient exactly as it does on the
         // device, where the two are read together.
         const cap = `font-size:0.7em; line-height:1.3; text-align:center; color:${themeKey === 'dark' ? '#c8c8d0' : '#4a4a55'};`;
         const digits = document.createElement('span');
@@ -1102,16 +1102,16 @@ function createBlockHeightColorGroup() {
         function update() {
             const mode = modeSelect.value;
             const base = (colorInput.getValue ? colorInput.getValue() : colorVal) || colorVal;
-            // The base colour is the whole of the constant scale and the neutral
+            // The base color is the whole of the constant scale and the neutral
             // reading of the relative one, but says nothing in manual mode -
-            // every band there has its own colour - so the picker goes away.
+            // every band there has its own color - so the picker goes away.
             pickGroup.style.display = mode === 'manual' ? 'none' : 'flex';
             // null from feeColorFor means the fee reads as normal, or was never
-            // consulted, so the picked colour takes that end. Tone follows the
+            // consulted, so the picked color takes that end. Tone follows the
             // theme exactly as fee_to_colors tones it: on dark the top is raw and
             // the bottom lightened; on light the top is lightened and the bottom
             // deepened - except a neutral bottom, which is the anchor end and
-            // renders the picked colour exactly rather than an approximation.
+            // renders the picked color exactly rather than an approximation.
             const isDark = themeKey === 'dark';
             const topRaw = feeColorFor(prevFee, mode);
             const botRaw = feeColorFor(currFee, mode);
@@ -1200,7 +1200,7 @@ function createBlockHeightColorGroup() {
     sliderWrap.appendChild(sliderHint);
 
     // Where the median actually is, and how much history it rests on. The one
-    // number the colour is judged against was previously readable only by
+    // number the color is judged against was previously readable only by
     // reverse-engineering an example fee.
     const medianLine = document.createElement('span');
     medianLine.style.cssText = 'font-size:0.76em; color:var(--text-secondary); opacity:.8;';
@@ -1293,7 +1293,7 @@ function createBlockHeightColorGroup() {
     manualWrap.appendChild(manualHint);
     wrapper.appendChild(manualWrap);
 
-    // Typing a threshold recolours the sample immediately - manualStops() reads
+    // Typing a threshold recolors the sample immediately - manualStops() reads
     // the fields, not the saved config - and re-frames the slider, whose travel
     // is scaled to the bands being defined.
     Object.values(manualInputs).forEach(input => {
@@ -1319,7 +1319,7 @@ function createBlockHeightColorGroup() {
 
     // Lets a number_format change repunctuate the sample height, the slider
     // readout and the fee figures without rebuilding the panel, which would
-    // discard colour edits the user has made but not yet saved.
+    // discard color edits the user has made but not yet saved.
     window._refreshBlockHeightPreview = () => {
         syncSliderScale();
         syncMedianLine();

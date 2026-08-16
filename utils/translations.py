@@ -314,7 +314,7 @@ translations = {
         "prioritize_large_scaled_meme": "Prioritize Large Scaled Memes",
         "prioritize_large_scaled_meme_desc": "When enabled, maximize meme display space by hiding stats if necessary.",
         "fee_parameter": "Fee Used for the Block Height",
-        "fee_parameter_desc": "Which fee level is printed under the block height and compared against the rolling median to colour it. Pick the priority you actually transact at: a fast fee reads warm more often, a minimum fee cool.",
+        "fee_parameter_desc": "Which fee level is printed under the block height and compared against the rolling median to color it. Pick the priority you actually transact at: a fast fee reads warm more often, a minimum fee cool.",
         "fee_color_mode": "Block Height Color Scale",
         "fee_color_mode_desc": "How the fee decides the color of the block height.",
         "fee_mode_constant": "Constant — always your color",

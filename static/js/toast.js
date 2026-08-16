@@ -70,7 +70,7 @@
     }
 
     // Build the 16px <img> icon used in toast titles. `variant` picks the
-    // colour filter class ('accent' | 'success' | 'error'); omit it to keep
+    // color filter class ('accent' | 'success' | 'error'); omit it to keep
     // the theme-neutral default.
     window._toastIcon = function (name, variant) {
         const img = document.createElement('img');
@@ -220,7 +220,7 @@
         return toast;
     };
 
-    // Type-to-colour map for showNotification
+    // Type-to-color map for showNotification
     var _notifyColors = {
         success: '#28a745',
         error:   '#dc3545',

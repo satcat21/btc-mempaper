@@ -1,4 +1,4 @@
-"""Presentation helpers with no layout dependency: fee-to-colour mapping, localised date strings and the font size that makes a date fit.
+"""Presentation helpers with no layout dependency: fee-to-color mapping, localised date strings and the font size that makes a date fit.
 """
 
 import math
@@ -8,7 +8,7 @@ from datetime import datetime
 
 
 # ── The three scales ──────────────────────────────────────────────────────
-# constant  the configured colour, always. The fee is not consulted.
+# constant  the configured color, always. The fee is not consulted.
 # relative  cheap or dear against what this same fee tier has cost lately.
 # manual    fixed sat/vB thresholds the user sets by hand.
 MODES = ("constant", "relative", "manual")
@@ -20,7 +20,7 @@ def normalise_mode(raw):
 
 
 # ── Manual scale (mode C) ─────────────────────────────────────────────────
-# Five fixed colours whose thresholds the user sets, in real sat/vB. No
+# Five fixed colors whose thresholds the user sets, in real sat/vB. No
 # baseline is involved, so this mode says something on a fresh install and
 # never changes its mind about a given fee. The trade is the opposite of the
 # relative scale's: a threshold chosen in a quiet month reads the same in a
@@ -50,7 +50,7 @@ MANUAL_DEFAULTS = {
 #
 # Split around a neutral centre rather than running one ramp through it: cool
 # means cheaper than usual, warm means dearer, and the band in the middle is
-# handled separately so "ordinary" gets the user's own colour.
+# handled separately so "ordinary" gets the user's own color.
 RELATIVE_NEUTRAL_COOL = [
     (-2.0, (  0,  90, 255)),   # blue    - exceptionally cheap
     (-1.0, (  0, 160, 210)),   # teal
@@ -67,7 +67,7 @@ RELATIVE_NEUTRAL_WARM = [
 ]
 # fmt: on
 
-# The base colour of the block height: what the digits read as when the fee has
+# The base color of the block height: what the digits read as when the fee has
 # nothing to say, and the anchor end of the gradient in every other case.
 # A neutral grey by default, in the two tones the themes need - dark enough to
 # hold up against white, light enough against black. Neutral on purpose: this is
@@ -90,13 +90,13 @@ DEEPEN_AMOUNT = 0.85
 # No baseline yet, or no fee at all.
 UNKNOWN_COLOR = (120, 120, 130)
 
-# A fee at or under the floor reads as the cheapest colour whatever the ratio
+# A fee at or under the floor reads as the cheapest color whatever the ratio
 # says, because there is nothing cheaper to wait for.
 #
 # The floor is not a constant. It is whatever the mempool is currently
 # accepting, so the caller passes minimumFee from the live fee recommendations.
 # Hardcoding 1 sat/vB was wrong in both directions: blocks clear at fractions of
-# a sat/vB, so everything from 0.1 to 1.0 collapsed onto one colour - a full
+# a sat/vB, so everything from 0.1 to 1.0 collapsed onto one color - a full
 # order of magnitude, and precisely the range a quiet market lives in.
 #
 # Only while the baseline is above it, either way. At a median of 0.5 a fee of
@@ -108,7 +108,7 @@ UNKNOWN_COLOR = (120, 120, 130)
 FALLBACK_CHEAP_FLOOR = 0.0
 
 # How close to the baseline still reads as an ordinary fee, and so renders in
-# the configured base colour rather than a cool or warm one.
+# the configured base color rather than a cool or warm one.
 #
 # Not a setting. Its effect only becomes visible once a month of history has
 # accumulated, and nothing about the rendered image tells you whether the number
@@ -137,12 +137,12 @@ def _interpolate(stops, position, low_default=None, high_default=None):
 
 
 def _lighten(rgb, amount=LIGHTEN_AMOUNT):
-    """Move a colour toward white, keeping its hue."""
+    """Move a color toward white, keeping its hue."""
     return tuple(int(v + amount * (255 - v)) for v in rgb)
 
 
 def _deepen(rgb, factor=DEEPEN_AMOUNT):
-    """Move a colour toward black, keeping its hue."""
+    """Move a color toward black, keeping its hue."""
     return tuple(max(0, min(255, int(v * factor))) for v in rgb)
 
 
@@ -153,7 +153,7 @@ def _hex(rgb):
 
 # The fee slider's far right, as a multiple of the value it centres on. Ten
 # doublings past the median is log2 = 3.32, comfortably past the +2.0 stop where
-# the warm ramp runs out of colours, so the whole scale is reachable and the last
+# the warm ramp runs out of colors, so the whole scale is reachable and the last
 # stretch of travel is the part that no longer changes - which is itself the
 # reading: past 4x normal, dearer stops being a distinction worth drawing.
 SLIDER_HEADROOM = 10.0
@@ -168,7 +168,7 @@ SLIDER_FIXED_MAX = 1000.0
 
 # How far past the top manual threshold that scale's slider runs. The manual
 # table says nothing above its last threshold - everything from `red` upward is
-# the same colour - so a track that continued to 1000 would be nine hundred and
+# the same color - so a track that continued to 1000 would be nine hundred and
 # ninety-five sat/vB of nothing happening. A tenth past it is enough to show that
 # the top band has been entered and does not end, without spending the travel on
 # a stretch that cannot change.
@@ -176,7 +176,7 @@ MANUAL_HEADROOM = 1.1
 
 
 class FormattingMixin:
-    """Presentation helpers with no layout dependency: fee-to-colour mapping, localised date strings and the font size that makes a date fit."""
+    """Presentation helpers with no layout dependency: fee-to-color mapping, localised date strings and the font size that makes a date fit."""
 
     def _format_fee(self, fee):
         """A fee as the label shows it, with decimals only where they say something.
@@ -204,14 +204,14 @@ class FormattingMixin:
 
         Returns None when the fee carries no signal - inside the neutral band,
         where the whole point is that nothing stands out. The caller substitutes
-        the configured base colour, which is what "nothing to see here" looks
+        the configured base color, which is what "nothing to see here" looks
         like for the theme in use.
 
         `cheap_floor` is the network's current minimum, below which one fee is
         not meaningfully cheaper than another. Zero disables the floor entirely.
         """
         # Constant: the fee has no say. None *is* the answer here - it means
-        # "the configured colour", which is the whole of this mode.
+        # "the configured color", which is the whole of this mode.
         if mode == "constant":
             return None
 
@@ -234,9 +234,9 @@ class FormattingMixin:
             return UNKNOWN_COLOR
         position = math.log2(ratio)
 
-        # A flat neutral plateau, then colour outwards.
+        # A flat neutral plateau, then color outwards.
         # The band is a plateau rather than a single point so "normal" reads as
-        # a deliberate state instead of a colour the gradient happens to cross.
+        # a deliberate state instead of a color the gradient happens to cross.
         if abs(ratio - 1.0) <= neutral_band:
             return None
         if position < 0:
@@ -244,11 +244,11 @@ class FormattingMixin:
         return _interpolate(RELATIVE_NEUTRAL_WARM, position)
 
     def _base_color(self, is_dark):
-        """The configured block-height colour for the theme in use.
+        """The configured block-height color for the theme in use.
 
-        Format is "#rrggbb", the same as every other colour setting. Anything
+        Format is "#rrggbb", the same as every other color setting. Anything
         unparseable falls back to the built-in default rather than raising:
-        a bad colour must not take the whole render down with it.
+        a bad color must not take the whole render down with it.
         """
         key = "color_block_height_dark" if is_dark else "color_block_height_light"
         fallback = BASE_DARK if is_dark else BASE_LIGHT
@@ -264,10 +264,10 @@ class FormattingMixin:
             return fallback
 
     def manual_thresholds(self):
-        """The sat/vB level each of the five colours starts at.
+        """The sat/vB level each of the five colors starts at.
 
-        One number per colour, read individually: a typo in one field falls
-        back to that colour's default rather than discarding the other four,
+        One number per color, read individually: a typo in one field falls
+        back to that color's default rather than discarding the other four,
         which is what the user would expect from five separate inputs.
 
         Sorted on the way out. Thresholds that cross over - red below orange,
@@ -290,9 +290,9 @@ class FormattingMixin:
         return sorted(stops, key=lambda s: s[0])
 
     def block_height_preview_scale(self):
-        """The scale itself, so the config page can colour any fee the user picks.
+        """The scale itself, so the config page can color any fee the user picks.
 
-        The preview used to be four fixed scenarios coloured here and shipped as
+        The preview used to be four fixed scenarios colored here and shipped as
         finished swatches - the page held no scale tables, so it could not
         disagree with the renderer. A fee slider ends that arrangement: the
         reader chooses the fee now, continuously, and no enumeration of samples
@@ -306,7 +306,7 @@ class FormattingMixin:
 
         Manual thresholds are deliberately *not* included. They are being typed
         into the form while the slider moves, so the page pairs its own live
-        values with the colour order below; sending the saved ones would colour
+        values with the color order below; sending the saved ones would color
         the slider against numbers the reader had already replaced.
 
         The slider ranges travel too, for the same reason the stops do - where
@@ -380,7 +380,7 @@ class FormattingMixin:
                                "anchor": round(float(baseline), 3),
                                "max": round(float(baseline) * SLIDER_HEADROOM, 3)}
         else:
-            # No window yet, so `relative` is colouring from the manual table -
+            # No window yet, so `relative` is coloring from the manual table -
             # give it that table's range rather than a span around a median that
             # does not exist.
             relative_slider = dict(manual_slider)
@@ -425,10 +425,10 @@ class FormattingMixin:
           warm over cool    the fee has just crashed
 
         An end whose fee reads as normal - inside the neutral band, or with no
-        baseline yet - carries the configured block-height colour instead, so
+        baseline yet - carries the configured block-height color instead, so
         "nothing to report" looks like a deliberate state rather than a hue that
         happens to mean nothing. Two normal blocks therefore render the digits as
-        two tones of the configured colour, exactly as a flat gradient should.
+        two tones of the configured color, exactly as a flat gradient should.
 
         Tone follows the theme, because the end that has to recede differs:
 
@@ -437,10 +437,10 @@ class FormattingMixin:
 
         so the bottom - where the fee label sits - is always the readable end.
 
-        Colour meaning depends on `fee_color_mode`:
-          constant - the configured colour, whatever the fee is doing
+        color meaning depends on `fee_color_mode`:
+          constant - the configured color, whatever the fee is doing
           relative - cool below the rolling median, warm above it
-          manual   - five fixed colours at thresholds the user sets, in sat/vB
+          manual   - five fixed colors at thresholds the user sets, in sat/vB
 
         `recent_fee` defaults to the current fee, which renders flat - correct for
         any caller that has no previous block to compare against.
@@ -491,8 +491,8 @@ class FormattingMixin:
             recent_fee = current_fee
 
         # None from _fee_color_for means the fee reads as normal, so the
-        # configured colour speaks for that end. Tracked per end, because a
-        # neutral end renders the configured colour at its own tone rather than
+        # configured color speaks for that end. Tracked per end, because a
+        # neutral end renders the configured color at its own tone rather than
         # the fee treatment - otherwise the picker never shows what is drawn.
         top_color = self._fee_color_for(recent_fee, baseline, mode, neutral_band,
                                         cheap_floor)
@@ -511,9 +511,9 @@ class FormattingMixin:
             # one the fee label sits against.
             return top_color, _lighten(bottom_color)
         # Light background: the bottom is the dark, readable end and the top is
-        # lightened - including when it is the configured colour, or two normal
+        # lightened - including when it is the configured color, or two normal
         # blocks would collapse the gradient to a single flat fill. The bottom is
-        # the anchor end here, so a neutral one renders the configured colour
+        # the anchor end here, so a neutral one renders the configured color
         # exactly rather than a deepened approximation of it.
         return (_lighten(top_color),
                 bottom_color if bottom_is_base else _deepen(bottom_color))

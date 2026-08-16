@@ -33,7 +33,7 @@ _group() {
     printf '%s' "$_g"
 }
 
-# ── Colour codes ──────────────────────────────────────────────────────────────
+# ── color codes ──────────────────────────────────────────────────────────────
 _B='\033[1m'   _R='\033[0m'   _D='\033[2m'
 _O='\033[38;5;214m'   _G='\033[32m'   _RE='\033[31m'   _Y='\033[33m'
 _W='\033[1;97m'
@@ -227,7 +227,7 @@ fi
 # Load averages
 _LD=$(uptime 2>/dev/null | awk -F'load average:' '{print $2}' | xargs)
 
-# Print system rows (no colour in value strings — printf width works correctly)
+# Print system rows (no color in value strings — printf width works correctly)
 # Left value column is 23 display chars; temp uses 24 to compensate for the
 # 2-byte UTF-8 degree sign (° = 0xC2 0xB0) which printf counts as 2 chars.
 printf "  %-9s ${_TC}%-23s${_R} %-13s %s\n" \
@@ -314,7 +314,7 @@ else
 fi
 
 # ── Print mempaper rows ───────────────────────────────────────────────────────
-# Coloured-dot rows: label(9) + " ● "(3 vis.) + value(20) + label(13) + value
+# colored-dot rows: label(9) + " ● "(3 vis.) + value(20) + label(13) + value
 # _COL=20 empirically aligns with system rows — ● is ambiguous-width in some
 # terminals, causing a 1-column offset vs. the byte-count calculation.
 _COL=20

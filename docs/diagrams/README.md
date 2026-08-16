@@ -14,7 +14,7 @@ clone, and in a Markdown preview.
 | [`topology-self-hosted.svg`](topology-self-hosted.svg) | Topology C | Self-hosted mempool on your own node — nothing leaves the LAN |
 | [`topology-tor.svg`](topology-tor.svg) | Topology D | mempool.space reached over Tor via its onion service |
 | [`topology-tang-sealed.svg`](topology-tang-sealed.svg) | Topology E, and [Self-Hosting Guide](../SELF_HOSTING_GUIDE.md) Part 8 | Self-hosted mempool plus storage sealed to a Tang server — the key is off the device |
-| [`fee-color-scale.svg`](fee-color-scale.svg) | [README](../../README.md) and [Config Reference](../CONFIG_REFERENCE.md#block-height-color-scale) | How the block-height colour is anchored to the rolling median fee, so the same sat/vB reads differently in different fee regimes |
+| [`fee-color-scale.svg`](fee-color-scale.svg) | [README](../../README.md) and [Config Reference](../CONFIG_REFERENCE.md#block-height-color-scale) | How the block-height color is anchored to the rolling median fee, so the same sat/vB reads differently in different fee regimes |
 | [`privacy-options-ranked.svg`](privacy-options-ranked.svg) | Summary | The four topologies ordered by privacy strength |
 | [`latency-and-reliability.svg`](latency-and-reliability.svg) | Pros and cons | What Tor costs in round-trip time, and why it rarely matters here |
 | [`mempool-host-dominance.svg`](mempool-host-dominance.svg) | What leaves the device | Why `mempool_host` is the single setting that decides exposure |

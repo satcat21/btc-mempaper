@@ -533,7 +533,7 @@ class CachingMixin:
                 except Exception as e:
                     print(f"⚠️ Failed to pre-cache fees: {e}")
 
-        # Feed the rolling baseline that the relative colour scales compare
+        # Feed the rolling baseline that the relative color scales compare
         # against. All five tiers from the reading we already have - no extra
         # request, and no cold window when fee_parameter changes. Costs one
         # append to a list in RAM; the day is reduced to five medians and

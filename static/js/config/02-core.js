@@ -1696,7 +1696,7 @@ async function loadConfiguration() {
         categories = data.categories;
         colorOptions = data.color_options || [];
         window.btcHolidays = data.btc_holidays || {};
-        // Fee-side colours for the block-height preview, one set per scale, so
+        // Fee-side colors for the block-height preview, one set per scale, so
         // switching the scale dropdown does not need another request.
         window.blockHeightPreview = data.block_height_preview || {};
         window.mempoolOnionPresets = data.mempool_onion_presets || [];

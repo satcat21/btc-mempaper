@@ -471,7 +471,7 @@ class ImageRenderer(ColorMixin, MemeMixin, HashFrameMixin, TextMixin,
         self.fee_param = config.get('fee_param', 'fastestFee')  # Default fee param
 
         # What each fee tier has normally cost lately, used by the relative
-        # colour scales to decide whether the current fee is cheap or dear.
+        # color scales to decide whether the current fee is cheap or dear.
         # Shared process-wide: this renderer is rebuilt on every config change,
         # and the window it needs is measured in weeks. None leaves
         # fee_to_colors on the absolute scale.
@@ -811,9 +811,9 @@ class ImageRenderer(ColorMixin, MemeMixin, HashFrameMixin, TextMixin,
         The entry for the height on screen is rewritten whenever a fresher
         reading arrives, not just when the block changes. Fees move within a
         block, and the label under the height already follows them; freezing the
-        entry at block arrival left the gradient colouring a number that had
+        entry at block arrival left the gradient coloring a number that had
         stopped being true - up to ten minutes stale, and the one thing the
-        colour must agree with is the figure printed beneath it.
+        color must agree with is the figure printed beneath it.
 
         Once the next block lands this height stops being written and becomes
         the top of the gradient, holding the last fee seen during it - which is
@@ -2538,9 +2538,9 @@ class ImageRenderer(ColorMixin, MemeMixin, HashFrameMixin, TextMixin,
         """Render Bitcoin holiday information with a horizontal gradient.
 
         The gradient flows left-to-right (holiday_start → holiday_end) mapped
-        to absolute x positions.  The longest line spans the full colour range;
+        to absolute x positions.  The longest line spans the full color range;
         shorter centered lines use the inner portion so equal x positions
-        always show the same colour tone.
+        always show the same color tone.
 
         Args:
             img (Image): Target image to composite onto
@@ -2588,7 +2588,7 @@ class ImageRenderer(ColorMixin, MemeMixin, HashFrameMixin, TextMixin,
         # The longest line (title or any description line) defines the full
         # gradient range (x_min → x_max = start_color → end_color).
         # Shorter centered lines use the inner portion of the gradient,
-        # so equal x positions always have the same colour tone.
+        # so equal x positions always have the same color tone.
 
         img_width = img.size[0]
 

@@ -1,4 +1,4 @@
-// Form-level input validation: addresses, xpubs, SSH keys, colours,
+// Form-level input validation: addresses, xpubs, SSH keys, colors,
 // plus address masking and the wallet-balance privacy toggle.
 // Part 1 of 8, split from config.js. Load order matters:
 // these run as classic scripts sharing one global scope.

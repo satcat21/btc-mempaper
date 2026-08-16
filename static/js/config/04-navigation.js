@@ -421,7 +421,7 @@ function _renderCategorySection(category, section) {
             section.appendChild(_previewWrapper);
 
             // ── One-time layout setup ────────────────────────────────────────────
-            // Move the two colour-picker form-groups into _previewWrapper ONCE,
+            // Move the two color-picker form-groups into _previewWrapper ONCE,
             // next to fixed slot divs that will hold the preview cards.
             // Doing this here (not inside _reorganize) means form-groups are never
             // detached during user interaction → no focus loss on mobile.
@@ -520,7 +520,7 @@ function _renderCategorySection(category, section) {
                           : keyEl.type === 'number'   ? _numFieldValue(keyEl)
                           : keyEl.value;
                 window._pendingConfigOverrides[key] = val;
-                // Text field blur in a colour picker: skip _reorganize (same logic as input
+                // Text field blur in a color picker: skip _reorganize (same logic as input
                 // listener). The input listener already updated _pendingConfigOverrides live;
                 // _reorganize will run on the next swatch interaction or section change.
                 if (e.target.type === 'text' && e.target.closest('.color-input-container')) return;
@@ -552,8 +552,8 @@ function _renderCategorySection(category, section) {
                 if (!key || !key.startsWith('color_')) return;
                 window._pendingConfigOverrides[key] = keyEl.getValue ? keyEl.getValue() : keyEl.value;
                 // Skip _reorganize while the user is actively typing in the hex text field.
-                // Also skip when the native colour swatch fires an input event caused by the
-                // text↔swatch sync (some mobile browsers fire a synthetic input on the colour
+                // Also skip when the native color swatch fires an input event caused by the
+                // text↔swatch sync (some mobile browsers fire a synthetic input on the color
                 // input when its value is set programmatically while the text field has focus).
                 const container = e.target.closest('.color-input-container');
                 if (container) {
@@ -733,7 +733,7 @@ function _fetchPreviewData(attempt) {
         });
 }
 
-// Cache and helper for loading SVG icons with a specific fill colour
+// Cache and helper for loading SVG icons with a specific fill color
 const _mpaIconCache = {};
 ['check', 'error'].forEach(name => {
     fetch(`/static/icons/${name}.svg`)

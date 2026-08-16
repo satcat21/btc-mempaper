@@ -1,5 +1,5 @@
-"""Palette handling: theme colour lookup and the e-paper quantisation that
-maps a full-colour render onto the panel's fixed ink set.
+"""Palette handling: theme color lookup and the e-paper quantisation that
+maps a full-color render onto the panel's fixed ink set.
 """
 
 from PIL import Image
@@ -7,7 +7,7 @@ from utils.color_lut import ColorLUT
 
 
 class ColorMixin:
-    """Palette handling: theme colour lookup and the e-paper quantisation that"""
+    """Palette handling: theme color lookup and the e-paper quantisation that"""
 
     def get_color(self, color_name, web_quality=False):
         """

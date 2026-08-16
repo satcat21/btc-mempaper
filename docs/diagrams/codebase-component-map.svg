@@ -110,7 +110,7 @@
           <rect x="228" y="430" width="600" height="112" rx="9" class="bx" stroke-width="2"/>
           <text x="252" y="462" class="t-md f-t" font-size="19">image_renderer.py</text>
           <text x="252" y="492" class="t-xxs f-t2">render_dual_images() → one layout, two outputs</text>
-          <text x="252" y="518" class="t-xxs f-t2">meme + info blocks · colours resolved per target theme</text>
+          <text x="252" y="518" class="t-xxs f-t2">meme + info blocks · colors resolved per target theme</text>
 
           <rect x="860" y="430" width="384" height="112" rx="9" class="bx-soft"/>
           <text x="884" y="462" class="t-sm f-t">unified_secure_cache</text>

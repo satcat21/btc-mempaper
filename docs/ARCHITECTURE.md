@@ -306,7 +306,7 @@ renderer produces both images, two sinks deliver them.
 | `config_manager` | Watches and validates config, splits sensitive fields into their own file |
 
 The renderer produces the web and e-ink images from a single layout pass, with
-colours resolved separately per target — that is why `eink_dark_mode` is
+colors resolved separately per target — that is why `eink_dark_mode` is
 independent of the web theme.
 
 The display worker is a **persistent subprocess** speaking newline-delimited JSON
@@ -371,7 +371,7 @@ btc-mempaper/
 |   |-- memes.py                 Meme/OPSec selection, cache, tags, cropping
 |   |-- hash_frame.py            Block-hash frame and the info drawn in it
 |   |-- text.py                  Wrapping, truncation, emoji-aware measurement
-|   +-- formatting.py            Fee colours, localised dates, date font size
+|   +-- formatting.py            Fee colors, localised dates, date font size
 |
 |-- managers/                    Configuration & Security
 |   |-- config_manager.py        Load, save and watch config

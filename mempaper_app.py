@@ -2238,7 +2238,7 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
             else:
                 # OPSec disabled: re-render the full dashboard through the normal e-ink
                 # pipeline. Converting the web image with convert_to_7color gives wrong
-                # colours because the web image was rendered for a full RGB display.
+                # colors because the web image was rendered for a full RGB display.
                 print("🔓 OPSec disabled — re-rendering dashboard for e-ink")
                 if self.current_block_height and self.current_block_hash:
                     threading.Thread(

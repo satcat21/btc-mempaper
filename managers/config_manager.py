@@ -330,7 +330,7 @@ class ConfigManager:
         what it is, for the next person changing one.
 
         Note that these are not the only defaults: fields defined in
-        config_schema.py carry their own, which is where the colour keys and
+        config_schema.py carry their own, which is where the color keys and
         the select fields get theirs.
 
         Returns:

@@ -314,7 +314,7 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
         "fee_parameter": {
             "type": "select",
             "label": t.get("fee_parameter", "Fee Used for the Block Height"),
-            "description": t.get("fee_parameter_desc", "Which fee level is printed under the block height and compared against the rolling median to colour it. Pick the priority you actually transact at: a fast fee reads warm more often, a minimum fee cool."),
+            "description": t.get("fee_parameter_desc", "Which fee level is printed under the block height and compared against the rolling median to color it. Pick the priority you actually transact at: a fast fee reads warm more often, a minimum fee cool."),
             "default": "minimumFee",
             "options": [
                 {"value": "fastestFee",  "label": t.get("fastest",   "Fastest (~1 block)"),      "_lk": "fastest"},

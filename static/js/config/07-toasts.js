@@ -4,7 +4,7 @@
 
 // ── Live toast helpers ────────────────────────────────────────────────────────
 
-// Resolve the configured section colour for the current theme
+// Resolve the configured section color for the current theme
 function _getLiveToastColor(keyBase) {
     const isDark = document.body.classList.contains('dark-mode');
     const cfg = window.currentConfig || {};
@@ -32,7 +32,7 @@ function showDonationToast(donation) {
     _buildLiveToast(title, lines, _getLiveToastColor('color_donation'), 8000);
 }
 
-// title    — short section label shown in the configured colour (e.g. "Wallet", "Bitaxe")
+// title    — short section label shown in the configured color (e.g. "Wallet", "Bitaxe")
 // message  — detail text (user data — rendered as text, never as markup)
 // colorKey — config key base (e.g. 'color_wallets', 'color_bitaxe_stats')
 function showLiveToast(title, message, colorKey) {
