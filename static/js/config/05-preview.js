@@ -805,9 +805,10 @@ function createBlockHeightColorGroup() {
     // middle of the track whatever the range around it. Each scale needs a
     // different frame, and one linear sweep cannot serve them all: the constant
     // scale's 0-1000 sat/vB would put every fee ever paid in the first percent
-    // of the travel, and 0-10x a median of 1.8 would give the whole cheap half
-    // of the relative scale a tenth of it. Where the two halves happen to be
-    // equal - the manual scale - the mapping degenerates to linear on its own.
+    // of the travel, and 0-4x a median of 1.8 would give the whole cheap half of
+    // the relative scale a quarter of it - the half that decides whether now is
+    // a good moment to send. Where the two halves happen to be equal - the
+    // manual scale - the mapping degenerates to linear on its own.
     const SLIDER_STEPS = 1000;
     const MANUAL_HEADROOM = typeof data.manual_headroom === 'number'
         ? data.manual_headroom : 1.1;
@@ -1177,6 +1178,12 @@ function createBlockHeightColorGroup() {
     slider.step = '1';
     slider.className = 'fee-scale-slider';
     slider.setAttribute('aria-label', t.block_height_fee_slider || 'Try a fee');
+    // Not a setting: it asks the scale a question, it does not answer one. The
+    // flag keeps its events out of unsaved-change tracking, which otherwise
+    // treats any input inside the form as a reason to re-check and - on a phone,
+    // where a drag emits a long run of them - to light the Save button up over a
+    // fee that was never going to be saved.
+    slider.dataset.previewOnly = '1';
     sliderWrap.appendChild(slider);
     sliderEl = slider;
 

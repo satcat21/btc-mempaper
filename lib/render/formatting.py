@@ -151,12 +151,16 @@ def _hex(rgb):
     return "#%02X%02X%02X" % tuple(int(max(0, min(255, v))) for v in rgb)
 
 
-# The fee slider's far right, as a multiple of the value it centres on. Ten
-# doublings past the median is log2 = 3.32, comfortably past the +2.0 stop where
-# the warm ramp runs out of colors, so the whole scale is reachable and the last
-# stretch of travel is the part that no longer changes - which is itself the
-# reading: past 4x normal, dearer stops being a distinction worth drawing.
-SLIDER_HEADROOM = 10.0
+# The fee slider's far right, as a multiple of the value it centres on. Four
+# times the median is log2 = 2.0, exactly the last stop of the warm ramp: the
+# whole scale is reachable and the track ends where it runs out of colors.
+#
+# It used to run to 10x, on the reasoning that a stretch which no longer changes
+# is itself a reading - past 4x normal, dearer stops being a distinction worth
+# drawing. In practice that spent the last third of the travel on one flat
+# color, and against a low median the numbers up there stopped being fees anyone
+# recognised: at a median of 2 the track ran to 20 sat/vB.
+SLIDER_HEADROOM = 4.0
 
 # Where the constant scale centres its slider. It has no baseline to sit on and
 # no thresholds to frame, so 0-1000 sat/vB is the honest span - but linear it

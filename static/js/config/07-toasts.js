@@ -198,6 +198,15 @@ async function uploadOpsecFiles(files) {
 // ── Unsaved-changes tracking ─────────────────────────────────────────────────
 let _savedSnapshot = '';
 
+// Controls that drive a preview rather than a setting - the fee slider in the
+// block-height panel is the only one so far. They carry no config key, so they
+// never reach the snapshot; this marks them so their events do not run the
+// check either. Moving one cannot change what would be saved, and a check it
+// triggers can only report a difference it had nothing to do with.
+function _isPreviewOnly(el) {
+    return !!(el && el.closest && el.closest('[data-preview-only]'));
+}
+
 function _collectFormSnapshot() {
     const vals = {};
     document.querySelectorAll('[data-config-key]').forEach(el => {
@@ -225,12 +234,14 @@ function _markClean() {
 function _initDirtyTracking() {
     _savedSnapshot = _collectFormSnapshot();
     const form = document.getElementById('config-form') || document.getElementById('config-container');
+    const onActivity = (e) => { if (!_isPreviewOnly(e.target)) _checkDirty(); };
     if (form) {
-        form.addEventListener('input', _checkDirty);
-        form.addEventListener('change', _checkDirty);
+        form.addEventListener('input', onActivity);
+        form.addEventListener('change', onActivity);
     }
     // Also listen for custom toggle clicks (boolean switches fire click, not change)
     document.addEventListener('click', (e) => {
+        if (_isPreviewOnly(e.target)) return;
         if (e.target.closest('.boolean-switch, .toggle-switch, [data-config-key]')) {
             setTimeout(_checkDirty, 50);
         }
