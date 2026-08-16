@@ -660,24 +660,57 @@ function createBlockHeightColorGroup() {
     const t = window.translations || {};
     const cfg = window.currentConfig || {};
 
-    // Fee-side colours come from the server, which computes them with the same
-    // code that renders the image - the page only derives the *other* end from
-    // the picked colour. Keeps the preview honest without a second copy of the
-    // scale tables living in JavaScript.
+    // The scale comes from the server - the same stop tables, median, neutral
+    // band and floor the renderer maps with - and the page walks it here. It has
+    // to: the fee is chosen by a slider now, so no set of pre-coloured samples
+    // can answer for the value the reader lands on. The tables themselves stay
+    // defined in one place, lib/render/formatting.py, and arrive as data.
     const data = window.blockHeightPreview || {};
-    const modes = data.modes || {};
     const LIGHTEN = typeof data.lighten === 'number' ? data.lighten : 0.45;
-    // Every scale brings its own examples: multiples of the median for the
-    // relative one, the user's own thresholds for the manual one, and a single
-    // swatch for constant, where the fee is never consulted at all.
-    const scenariosFor = (mode) => ((modes[mode] || {}).scenarios) || [];
-    const MAX_CELLS = 4;
+    const DEEPEN  = typeof data.deepen  === 'number' ? data.deepen  : 0.85;
+    const BAND    = typeof data.neutral_band === 'number' ? data.neutral_band : 0.05;
+    const BASELINE = (typeof data.baseline === 'number' && data.baseline > 0)
+        ? data.baseline : null;
+    const CHEAP_FLOOR = typeof data.cheap_floor === 'number' ? data.cheap_floor : 0;
+    const UNKNOWN = data.unknown || '#787882';
 
-    const SCENARIO_LABELS = {
-        steady: t.block_height_scenario_steady || 'Steady',
-        cheap:  t.block_height_scenario_cheap  || 'Still cheap',
-        spike:  t.block_height_scenario_spike  || 'Spiked',
-        dear:   t.block_height_scenario_dear   || 'Still dear',
+    const parseHex = (hex) => {
+        const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || '').trim());
+        if (!m) return null;
+        const n = parseInt(m[1], 16);
+        return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+    };
+    // Truncating, not rounding: Python's int() drops the fraction, and a channel
+    // that disagrees by one is a channel that disagrees - the whole point of
+    // shipping the tables rather than a lookalike is that the two agree exactly.
+    const toHex = (rgb) => '#' + rgb
+        .map(v => Math.trunc(Math.max(0, Math.min(255, v))).toString(16).padStart(2, '0'))
+        .join('');
+    const stopTable = (rows) => (rows || [])
+        .map(([pos, hex]) => ({ pos, rgb: parseHex(hex) }))
+        .filter(s => s.rgb);
+
+    const COOL = stopTable((data.relative || {}).cool);
+    const WARM = stopTable((data.relative || {}).warm);
+
+    // Straight port of _interpolate: clamped at both ends, linear between the
+    // two stops the position falls inside.
+    const interpolate = (stops, pos) => {
+        if (!stops.length) return parseHex(UNKNOWN);
+        if (pos <= stops[0].pos) return stops[0].rgb;
+        if (pos >= stops[stops.length - 1].pos) return stops[stops.length - 1].rgb;
+        for (let i = 0; i < stops.length - 1; i++) {
+            const a = stops[i], b = stops[i + 1];
+            if (a.pos <= pos && pos <= b.pos) {
+                const span = (b.pos - a.pos) || 1;
+                const k = (pos - a.pos) / span;
+                // Truncated here as well as in toHex, because the renderer
+                // truncates at both steps too: an interpolated channel is an int
+                // before it is ever lightened or deepened.
+                return a.rgb.map((v, j) => Math.trunc(v + k * (b.rgb[j] - v)));
+            }
+        }
+        return stops[stops.length - 1].rgb;
     };
 
     const MODE_HINTS = {
@@ -690,36 +723,243 @@ function createBlockHeightColorGroup() {
     };
 
     // Mode C's five thresholds. Only shown for that scale; they mean nothing to
-    // the other two. The fifth entry is what each band means, shown on hover
-    // rather than under the box: five sentences under five narrow number fields
-    // would crowd the grid out of usefulness.
-    const MANUAL_FIELDS = [
-        ['fee_manual_blue',   t.fee_manual_blue   || 'Blue up to',   '#005AFF', 0.5,
-         t.fee_manual_blue_desc   || 'Very cheap — a good moment for transactions and UTXO consolidation.'],
-        ['fee_manual_green',  t.fee_manual_green  || 'Green up to',  '#00C846', 0.8,
-         t.fee_manual_green_desc  || 'Cheap — comfortable for everyday transactions.'],
-        ['fee_manual_yellow', t.fee_manual_yellow || 'Yellow up to', '#EBD700', 1.5,
-         t.fee_manual_yellow_desc || 'Moderate — routine transactions are fine, consolidation can wait.'],
-        ['fee_manual_orange', t.fee_manual_orange || 'Orange up to', '#FF8200', 3.0,
-         t.fee_manual_orange_desc || 'Expensive — send only what cannot wait.'],
-        ['fee_manual_red',    t.fee_manual_red    || 'Red from',     '#D71919', 5.0,
-         t.fee_manual_red_desc    || 'Very expensive — wait unless it is urgent.'],
-    ];
+    // the other two. The colours and defaults come from the server's own table,
+    // so the swatch beside each field is the ink that field actually selects;
+    // only the wording lives here. `hint` is shown on hover rather than under
+    // the box: five sentences under five narrow number fields would crowd the
+    // grid out of usefulness.
+    const MANUAL_TEXT = {
+        blue:   [t.fee_manual_blue   || 'Blue up to',
+                 t.fee_manual_blue_desc   || 'Very cheap — a good moment for transactions and UTXO consolidation.'],
+        green:  [t.fee_manual_green  || 'Green up to',
+                 t.fee_manual_green_desc  || 'Cheap — comfortable for everyday transactions.'],
+        yellow: [t.fee_manual_yellow || 'Yellow up to',
+                 t.fee_manual_yellow_desc || 'Moderate — routine transactions are fine, consolidation can wait.'],
+        orange: [t.fee_manual_orange || 'Orange up to',
+                 t.fee_manual_orange_desc || 'Expensive — send only what cannot wait.'],
+        red:    [t.fee_manual_red    || 'Red from',
+                 t.fee_manual_red_desc    || 'Very expensive — wait unless it is urgent.'],
+    };
+    const MANUAL_ORDER = (data.manual_order && data.manual_order.length)
+        ? data.manual_order
+        : [['blue', '#005AFF', 0.5], ['green', '#00C846', 0.8],
+           ['yellow', '#EBD700', 1.5], ['orange', '#FF8200', 3.0],
+           ['red', '#D71919', 5.0]];
+    const MANUAL_FIELDS = MANUAL_ORDER.map(([name, hex, dflt]) => {
+        const [label, hint] = MANUAL_TEXT[name] || [name, ''];
+        return { name, key: 'fee_manual_' + name, hex, dflt, label, hint };
+    });
+
+    // Declared here rather than beside the fields it collects: the theme rows
+    // are built first and colour themselves from these live values, so the
+    // binding has to exist before the first paint.
+    const manualInputs = {};
 
     const lighten = (hex) => {
-        const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || '').trim());
-        if (!m) return hex;
-        const n = parseInt(m[1], 16);
-        const ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255]
-            .map(v => Math.round(v + LIGHTEN * (255 - v)));
-        return '#' + ch.map(v => v.toString(16).padStart(2, '0')).join('');
+        const rgb = parseHex(hex);
+        if (!rgb) return hex;
+        return toHex(rgb.map(v => v + LIGHTEN * (255 - v)));
+    };
+    const deepen = (hex) => {
+        const rgb = parseHex(hex);
+        if (!rgb) return hex;
+        return toHex(rgb.map(v => v * DEEPEN));
     };
 
+    // What the user has typed, right now — not what was last saved. The slider
+    // is dragged while these are being edited, so reading the fields keeps the
+    // colour under the thumb answering to the numbers on screen.
+    const manualThreshold = (f) => {
+        const live = parseFloat(manualInputs[f.key] && manualInputs[f.key].value);
+        if (Number.isFinite(live)) return Math.max(0, live);
+        const saved = parseFloat(cfg[f.key]);
+        return Math.max(0, Number.isFinite(saved) ? saved : f.dflt);
+    };
+    // Sorted, exactly as _manual_stops sorts: thresholds that cross over would
+    // otherwise invert a section of the ramp, and a transposed digit should not
+    // discard the other four numbers.
+    const manualStops = () => MANUAL_FIELDS
+        .map(f => ({ pos: manualThreshold(f), rgb: parseHex(f.hex) }))
+        .filter(s => s.rgb)
+        .sort((a, b) => a.pos - b.pos);
+
+    // The port of _fee_color_for. null means "no signal" — the fee reads as
+    // ordinary, or was never consulted — and the caller substitutes the picked
+    // base colour, which is precisely what the renderer does with its own null.
+    const feeColorFor = (fee, mode) => {
+        if (mode === 'constant') return null;
+        if (fee === null || fee === undefined || !Number.isFinite(fee)) return UNKNOWN;
+        if (mode === 'manual' || !BASELINE) return toHex(interpolate(manualStops(), fee));
+        if (CHEAP_FLOOR && fee <= CHEAP_FLOOR && CHEAP_FLOOR < BASELINE) {
+            return COOL.length ? toHex(COOL[0].rgb) : UNKNOWN;
+        }
+        const ratio = fee / BASELINE;
+        if (ratio <= 0) return UNKNOWN;
+        if (Math.abs(ratio - 1) <= BAND) return null;
+        const pos = Math.log2(ratio);
+        return toHex(interpolate(pos < 0 ? COOL : WARM, pos));
+    };
+
+    // ── Slider travel ────────────────────────────────────────────────────────
+    // Two linear halves joined at the anchor, so the anchor sits under the
+    // middle of the track whatever the range around it. Each scale needs a
+    // different frame, and one linear sweep cannot serve them all: the constant
+    // scale's 0-1000 sat/vB would put every fee ever paid in the first percent
+    // of the travel, and 0-10x a median of 1.8 would give the whole cheap half
+    // of the relative scale a tenth of it. Where the two halves happen to be
+    // equal - the manual scale - the mapping degenerates to linear on its own.
+    const SLIDER_STEPS = 1000;
+    const MANUAL_HEADROOM = typeof data.manual_headroom === 'number'
+        ? data.manual_headroom : 1.1;
+
+    // The manual track is framed by the thresholds themselves, read live so it
+    // re-frames while they are being typed rather than after a save: a tenth
+    // past the top one, midpoint halfway, which leaves that track plain linear.
+    // It can afford to be - it spans a handful of sat/vB rather than a thousand
+    // - and above the top threshold the table has nothing further to say, so
+    // travel spent up there could only show the same colour again.
+    const manualSliderRange = () => {
+        const top = manualStops().reduce((a, s) => Math.max(a, s.pos), 0);
+        if (!(top > 0)) return null;
+        const max = top * MANUAL_HEADROOM;
+        return { min: 0, anchor: max / 2, max };
+    };
+
+    const sliderRange = (mode) => {
+        // Relative without a median colours from the manual table, so it takes
+        // that table's frame too rather than a span around a median it does not
+        // have.
+        if (mode === 'manual' || (mode === 'relative' && !BASELINE)) {
+            const framed = manualSliderRange();
+            if (framed) return framed;
+        }
+        const r = (data.slider || {})[mode] || {};
+        const min = Number.isFinite(r.min) ? r.min : 0;
+        const max = Number.isFinite(r.max) && r.max > min ? r.max : 1000;
+        const anchor = Number.isFinite(r.anchor) ? r.anchor : (min + max) / 2;
+        return { min, max, anchor: Math.min(Math.max(anchor, min), max) };
+    };
+    const feeAtPosition = (pos, range) => {
+        const half = SLIDER_STEPS / 2;
+        return pos <= half
+            ? range.min + (range.anchor - range.min) * (pos / half)
+            : range.anchor + (range.max - range.anchor) * ((pos - half) / half);
+    };
+    const positionOfFee = (fee, range) => {
+        const half = SLIDER_STEPS / 2;
+        if (fee <= range.anchor) {
+            const span = range.anchor - range.min;
+            return span > 0 ? Math.round(((fee - range.min) / span) * half) : 0;
+        }
+        const span = range.max - range.anchor;
+        return span > 0
+            ? Math.round(half + ((fee - range.anchor) / span) * half)
+            : SLIDER_STEPS;
+    };
+
+    // ── The track, painted in the scale it selects from ──────────────────────
+    // The slider is the scale, so it may as well show it: every position is
+    // already a fee, and every fee already has a colour. Reading the ramp off
+    // the track answers "where does green stop" without dragging to find out,
+    // and makes the neutral band visible as the gap it is rather than something
+    // the reader discovers by accident. It also exposes the shape of the travel
+    // - the manual scale's five even bands look nothing like the relative
+    // scale's long cool run into a short warm one.
+    //
+    // A range input's track can only be reached through vendor pseudo-elements,
+    // which inline styles cannot set, so the ramp is handed over as a custom
+    // property (those do inherit into pseudo-elements) and the rules are
+    // injected once. Keeping them here rather than in config.css means the group
+    // carries its own appearance, exactly as the rest of this panel does.
+    const PANEL_STYLE_ID = 'fee-scale-slider-style';
+    function ensurePanelStyles() {
+        if (document.getElementById(PANEL_STYLE_ID)) return;
+        const el = document.createElement('style');
+        el.id = PANEL_STYLE_ID;
+        el.textContent = `
+.fee-scale-slider { -webkit-appearance:none; appearance:none; width:100%; height:20px;
+    background:transparent; cursor:pointer; }
+.fee-scale-slider:focus { outline:none; }
+.fee-scale-slider::-webkit-slider-runnable-track { height:10px; border-radius:5px;
+    background:var(--fee-scale-track,#888); border:1px solid rgba(127,127,127,.4); }
+.fee-scale-slider::-moz-range-track { height:10px; border-radius:5px;
+    background:var(--fee-scale-track,#888); border:1px solid rgba(127,127,127,.4); }
+.fee-scale-slider::-webkit-slider-thumb { -webkit-appearance:none; width:18px; height:18px;
+    margin-top:-5px; border-radius:50%; background:#fff; border:2px solid rgba(0,0,0,.6);
+    box-shadow:0 1px 3px rgba(0,0,0,.45); }
+.fee-scale-slider::-moz-range-thumb { width:18px; height:18px; border-radius:50%;
+    background:#fff; border:2px solid rgba(0,0,0,.6); box-shadow:0 1px 3px rgba(0,0,0,.45); }
+.fee-scale-slider:focus-visible::-webkit-slider-thumb { outline:2px solid var(--accent,#f7931a); outline-offset:2px; }
+.fee-scale-slider:focus-visible::-moz-range-thumb { outline:2px solid var(--accent,#f7931a); outline-offset:2px; }
+
+/* What each manual band means, on hover. Its own element rather than a title
+   attribute: the browser holds a native tooltip back for about a second and
+   pairs it with a help cursor, and neither is wanted on a label whose whole job
+   is to be read. This one appears the moment the pointer arrives, leaves the
+   cursor alone, and is real text in the DOM - so it reaches a screen reader,
+   which a title attribute does not reliably do. :focus-within brings it up for
+   the keyboard too, when the field beneath it is tabbed into. */
+.fee-tip-host { position:relative; }
+.fee-tip {
+    position:absolute; left:50%; transform:translateX(-50%);
+    bottom:calc(100% + 7px); z-index:40;
+    width:max-content; max-width:min(260px,70vw); padding:7px 9px;
+    border-radius:6px; font-size:0.95em; font-weight:400; line-height:1.35;
+    text-align:left; white-space:normal;
+    background:#22222c; color:#f2f2f6; border:1px solid rgba(255,255,255,.16);
+    box-shadow:0 5px 16px rgba(0,0,0,.4);
+    opacity:0; visibility:hidden; pointer-events:none; transition:none; }
+.fee-tip::after {
+    content:''; position:absolute; top:100%; left:50%; margin-left:-5px;
+    border:5px solid transparent; border-top-color:#22222c; }
+.fee-tip-host:hover > .fee-tip,
+.fee-tip-host:focus-within > .fee-tip { opacity:1; visibility:visible; }`;
+        document.head.appendChild(el);
+    }
+
+    // The picked colour paints the stretch where the fee says nothing - the
+    // neutral band, and the whole of the constant scale. Which of the two
+    // pickers is the honest answer depends on the theme the *config page* is in,
+    // since that is the background the track is being read against.
+    const baseInputs = {};
+    function neutralInk() {
+        const key = document.body && document.body.classList.contains('dark-mode')
+            ? 'dark' : 'light';
+        const input = baseInputs[key] || baseInputs.light || baseInputs.dark;
+        const picked = input && input.getValue ? input.getValue() : null;
+        return parseHex(picked) ? picked : (key === 'dark' ? '#919191' : '#545454');
+    }
+
+    // Enough samples that the piecewise ramps read as continuous; both scales
+    // are linear between stops, so nothing is lost between them.
+    const TRACK_SAMPLES = 60;
+    let sliderEl = null;
+    function paintTrack() {
+        if (!sliderEl) return;
+        const mode = modeSelect.value;
+        const range = sliderRange(mode);
+        const neutral = neutralInk();
+        const stops = [];
+        for (let i = 0; i <= TRACK_SAMPLES; i++) {
+            const pct = i / TRACK_SAMPLES;
+            const fee = feeAtPosition(pct * SLIDER_STEPS, range);
+            stops.push(`${feeColorFor(fee, mode) || neutral} ${(pct * 100).toFixed(2)}%`);
+        }
+        sliderEl.style.setProperty('--fee-scale-track',
+            `linear-gradient(90deg,${stops.join(',')})`);
+    }
+
+    // The tip the device is actually on, from the same fee cache the colours are
+    // read out of. The literal below is a last resort for a page opened before
+    // the first block has been seen - a preview of a real height is the only one
+    // whose digit count matches what the panel will draw.
+    //
     // Grouped by the number_format setting, exactly as the renderer groups it.
     // Read at paint time rather than captured once, so switching the setting
     // repunctuates the sample instead of leaving it on the old separator.
-    const sampleHeight = () =>
-        _fmtNum(window._previewData?.blockHeight || cfg.__block_height || 914427);
+    const sampleHeight = () => _fmtNum(
+        data.block_height || window._previewData?.blockHeight
+        || cfg.__block_height || 914427);
 
     const wrapper = document.createElement('div');
     wrapper.style.width = '100%';
@@ -759,6 +999,56 @@ function createBlockHeightColorGroup() {
 
     const rowUpdaters = [];
 
+    // ── What the slider is showing ───────────────────────────────────────────
+    // `curr` is where the thumb is; `prev` is where it was when the drag began.
+    // The renderer's gradient is a move between two blocks - previous fee on
+    // top, current underneath - so a preview that fed one fee to both ends would
+    // draw the one thing the real digits never are: a flat fill. Holding the
+    // drag's starting point at the top turns the slider into that move, and
+    // letting go settles both ends together, which is what a quiet network
+    // genuinely looks like.
+    let currFee = Number.isFinite(data.current_fee) ? data.current_fee
+                : (BASELINE || 1);
+    let prevFee = currFee;
+
+    // The tier being coloured, named as the panel names it under the digits.
+    const FEE_TIER_LABEL = {
+        fastestFee: t.fastest, halfHourFee: t.half_hour, hourFee: t.hour,
+        economyFee: t.economy, minimumFee: t.minimum,
+    }[cfg.fee_parameter || 'minimumFee'] || (t.minimum || 'Minimum');
+
+    // The line under the digits: what this fee reads as on the selected scale.
+    // Says why the digits look the way they do, which a colour alone cannot.
+    function readingFor(fee, mode) {
+        if (mode === 'constant') return t.block_height_reading_constant || 'The fee is never consulted';
+        if (mode === 'relative' && !BASELINE) {
+            return t.block_height_median_pending
+                || 'No 30-day median yet — falling back to the manual thresholds';
+        }
+        if (mode === 'manual') {
+            // The band the fee has reached: the last threshold at or below it,
+            // or the lowest one when it sits under them all. Sorted first, for
+            // the same reason manualStops() sorts - a transposed pair of numbers
+            // should not name a band the colour did not come from.
+            const ranked = MANUAL_FIELDS
+                .map(f => ({ f, at: manualThreshold(f) }))
+                .sort((a, b) => a.at - b.at);
+            if (!ranked.length) return '';
+            const hit = (ranked.filter(r => r.at <= fee).pop() || ranked[0]).f;
+            return (MANUAL_TEXT[hit.name] || [hit.name])[0];
+        }
+        if (CHEAP_FLOOR && fee <= CHEAP_FLOOR && CHEAP_FLOOR < BASELINE) {
+            return t.block_height_reading_floor
+                || 'At the network minimum — nothing cheaper to wait for';
+        }
+        const ratio = fee / BASELINE;
+        if (ratio <= 0) return '';
+        if (Math.abs(ratio - 1) <= BAND) {
+            return t.block_height_reading_ordinary || 'Ordinary — your base color';
+        }
+        return `${_fmtFee(Math.round(ratio * 100) / 100)}${t.block_height_reading_times || '× the median'}`;
+    }
+
     function buildRow(themeLabel, themeKey, colorKey, colorVal, rowBg, previewBg, slotClass) {
         const row = document.createElement('div');
         row.className = 'date-color-row';
@@ -779,73 +1069,68 @@ function createBlockHeightColorGroup() {
         colorInput.dataset.configKey = colorKey;
         pickGroup.appendChild(colorInput);
         row.appendChild(pickGroup);
+        // Registered so the slider can paint its neutral stretch in whichever of
+        // the two the config page's own theme calls for.
+        baseInputs[themeKey] = colorInput;
 
         const preview = document.createElement('div');
         preview.className = 'date-color-preview';
-        preview.style.cssText = `flex:1; min-width:220px; display:flex; gap:14px; align-items:flex-end; justify-content:space-around; padding:10px 14px; border-radius:6px; background:${previewBg};`;
+        preview.style.cssText = `flex:1; min-width:220px; display:flex; flex-direction:column; align-items:center; gap:2px; padding:12px 14px; border-radius:6px; background:${previewBg};`;
         if (slotClass) preview.classList.add(slotClass);
 
-        // Built once and reused. The scale can change under them, and rebuilding
-        // the row on every dropdown change would take the colour input's focus
-        // with it. Cells past the current mode's scenario count are hidden.
-        const cap = `font-size:0.66em; line-height:1.25; text-align:center; color:${themeKey === 'dark' ? '#c8c8d0' : '#4a4a55'};`;
-        const cells = Array.from({ length: MAX_CELLS }, () => {
-            const cell = document.createElement('div');
-            cell.style.cssText = 'display:flex; flex-direction:column; align-items:center; gap:2px; min-width:0;';
-            const digits = document.createElement('span');
-            // background-clip:text over a vertical gradient is the browser's
-            // equivalent of draw_vertical_gradient_text.
-            digits.style.cssText = "font-family:'RobotoCondensed','Roboto Condensed','Arial Narrow',sans-serif; font-weight:800; font-size:1.3em; line-height:1.05; -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; color:transparent;";
-            digits.textContent = sampleHeight();
-            const caption = document.createElement('span');
-            caption.style.cssText = cap + 'opacity:.85; font-weight:600;';
-            const fees = document.createElement('span');
-            fees.style.cssText = cap + 'opacity:.6;';
-            cell.appendChild(digits);
-            cell.appendChild(caption);
-            cell.appendChild(fees);
-            preview.appendChild(cell);
-            return { cell, digits, caption, fees };
-        });
+        // One sample rather than a row of scenarios: the slider is the thing
+        // that varies now, so a second sample beside it would only show the same
+        // fee twice. Laid out as the panel lays it out - digits, then the fee
+        // label beneath them - because that pairing is the point. The label
+        // colour tracks the bottom of the gradient exactly as it does on the
+        // device, where the two are read together.
+        const cap = `font-size:0.7em; line-height:1.3; text-align:center; color:${themeKey === 'dark' ? '#c8c8d0' : '#4a4a55'};`;
+        const digits = document.createElement('span');
+        // background-clip:text over a vertical gradient is the browser's
+        // equivalent of draw_vertical_gradient_text.
+        digits.style.cssText = "font-family:'RobotoCondensed','Roboto Condensed','Arial Narrow',sans-serif; font-weight:800; font-size:2.6em; line-height:1.02; -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; color:transparent;";
+        digits.textContent = sampleHeight();
+        const feeLine = document.createElement('span');
+        feeLine.style.cssText = 'font-size:0.78em; font-weight:600; line-height:1.3; text-align:center;';
+        const reading = document.createElement('span');
+        reading.style.cssText = cap + 'opacity:.7; margin-top:2px;';
+        preview.appendChild(digits);
+        preview.appendChild(feeLine);
+        preview.appendChild(reading);
         row.appendChild(preview);
 
         function update() {
             const mode = modeSelect.value;
             const base = (colorInput.getValue ? colorInput.getValue() : colorVal) || colorVal;
-            const set = (modes[mode] || {})[themeKey] || {};
-            const list = scenariosFor(mode);
             // The base colour is the whole of the constant scale and the neutral
             // reading of the relative one, but says nothing in manual mode -
             // every band there has its own colour - so the picker goes away.
             pickGroup.style.display = mode === 'manual' ? 'none' : 'flex';
-            // A null end means the fee reads as normal, or was never consulted,
-            // so the picked colour takes it — at the tone that end uses,
-            // exactly as the renderer does.
+            // null from feeColorFor means the fee reads as normal, or was never
+            // consulted, so the picked colour takes that end. Tone follows the
+            // theme exactly as fee_to_colors tones it: on dark the top is raw and
+            // the bottom lightened; on light the top is lightened and the bottom
+            // deepened - except a neutral bottom, which is the anchor end and
+            // renders the picked colour exactly rather than an approximation.
             const isDark = themeKey === 'dark';
-            const baseTop = isDark ? base : lighten(base);
-            const baseBottom = isDark ? lighten(base) : base;
-            cells.forEach((ref, i) => {
-                const sc = list[i];
-                if (!sc) { ref.cell.style.display = 'none'; return; }
-                ref.cell.style.display = 'flex';
-                const ends = set[sc.key] || {};
-                const top = ends.top || baseTop;
-                const bottom = ends.bottom || baseBottom;
-                ref.digits.textContent = sampleHeight();
-                ref.digits.style.background = `linear-gradient(180deg,${top},${bottom})`;
-                ref.digits.style.webkitBackgroundClip = 'text';
-                ref.digits.style.backgroundClip = 'text';
-                ref.caption.textContent = SCENARIO_LABELS[sc.key] || sc.key;
-                // prev → curr, the move the gradient is showing. The unit is
-                // spelled out because the figures move with the median: without
-                // it, "2 → 14" on a busy day and "0.1 → 0.7" on a quiet one read
-                // as different kinds of number rather than the same one at two
-                // market levels. Constant mode has no fees to show.
-                ref.fees.textContent = (sc.prev == null || sc.curr == null)
-                    ? '' : `${_fmtFee(sc.prev)} → ${_fmtFee(sc.curr)} sat/vB`;
-            });
+            const topRaw = feeColorFor(prevFee, mode);
+            const botRaw = feeColorFor(currFee, mode);
+            const top = topRaw === null
+                ? (isDark ? base : lighten(base))
+                : (isDark ? topRaw : lighten(topRaw));
+            const bottom = botRaw === null
+                ? (isDark ? lighten(base) : base)
+                : (isDark ? lighten(botRaw) : deepen(botRaw));
+
+            digits.textContent = sampleHeight();
+            digits.style.background = `linear-gradient(180deg,${top},${bottom})`;
+            digits.style.webkitBackgroundClip = 'text';
+            digits.style.backgroundClip = 'text';
+            feeLine.textContent = `${FEE_TIER_LABEL}: ${_fmtFee(currFee)} sat/vB`;
+            feeLine.style.color = bottom;
+            reading.textContent = readingFor(currFee, mode);
         }
-        colorInput.addEventListener('input', update);
+        colorInput.addEventListener('input', () => { update(); paintTrack(); });
         rowUpdaters.push(update);
         update();
 
@@ -863,21 +1148,130 @@ function createBlockHeightColorGroup() {
         'rgba(0,0,0,.04)', '#1a1a2e', 'preview-card-dark'
     ));
 
+    // The group's own appearance - the painted slider track and the manual-band
+    // tooltips - neither of which can be expressed as an inline style. Injected
+    // here, before the first element that needs it.
+    ensurePanelStyles();
+
+    // ── The fee slider, driving both previews ────────────────────────────────
+    // One control for both themes: it is the same fee either way, and a slider
+    // per row would invite the reader to compare two different numbers.
+    const sliderWrap = document.createElement('div');
+    sliderWrap.style.cssText = 'display:flex; flex-direction:column; gap:5px; margin-top:14px;';
+
+    const sliderHead = document.createElement('div');
+    sliderHead.style.cssText = 'display:flex; justify-content:space-between; align-items:baseline; gap:10px; font-size:0.8em; color:var(--text-secondary);';
+    const sliderLabel = document.createElement('span');
+    sliderLabel.style.fontWeight = '600';
+    sliderLabel.textContent = t.block_height_fee_slider || 'Try a fee';
+    const sliderValue = document.createElement('span');
+    sliderValue.style.cssText = 'font-variant-numeric:tabular-nums; color:var(--text-primary); font-weight:600;';
+    sliderHead.appendChild(sliderLabel);
+    sliderHead.appendChild(sliderValue);
+    sliderWrap.appendChild(sliderHead);
+
+    const slider = document.createElement('input');
+    slider.type = 'range';
+    slider.min = '0';
+    slider.max = String(SLIDER_STEPS);
+    slider.step = '1';
+    slider.className = 'fee-scale-slider';
+    slider.setAttribute('aria-label', t.block_height_fee_slider || 'Try a fee');
+    sliderWrap.appendChild(slider);
+    sliderEl = slider;
+
+    // The two ends and the anchor, printed under the track so the travel is
+    // readable without dragging it. The middle mark is the median on the
+    // relative scale and the top threshold's neighbourhood on the manual one.
+    const sliderScale = document.createElement('div');
+    sliderScale.style.cssText = 'display:flex; justify-content:space-between; font-size:0.7em; color:var(--text-secondary); opacity:.65; font-variant-numeric:tabular-nums;';
+    const scaleMin = document.createElement('span');
+    const scaleMid = document.createElement('span');
+    const scaleMax = document.createElement('span');
+    sliderScale.appendChild(scaleMin);
+    sliderScale.appendChild(scaleMid);
+    sliderScale.appendChild(scaleMax);
+    sliderWrap.appendChild(sliderScale);
+
+    const sliderHint = document.createElement('span');
+    sliderHint.style.cssText = 'font-size:0.76em; color:var(--text-secondary); opacity:.8;';
+    sliderHint.textContent = t.block_height_slider_hint ||
+        'Drag to try a fee. The top of the digits holds the fee you started from, so the gradient shows the move — the same way the panel shows one block against the last.';
+    sliderWrap.appendChild(sliderHint);
+
+    // Where the median actually is, and how much history it rests on. The one
+    // number the colour is judged against was previously readable only by
+    // reverse-engineering an example fee.
+    const medianLine = document.createElement('span');
+    medianLine.style.cssText = 'font-size:0.76em; color:var(--text-secondary); opacity:.8;';
+    sliderWrap.appendChild(medianLine);
+
+    wrapper.appendChild(sliderWrap);
+
+    function syncSliderScale() {
+        const range = sliderRange(modeSelect.value);
+        scaleMin.textContent = `${_fmtFee(range.min)} sat/vB`;
+        scaleMid.textContent = _fmtFee(range.anchor);
+        scaleMax.textContent = `${_fmtFee(range.max)} sat/vB`;
+        // The fee is kept and its position recomputed, not the other way round:
+        // switching scale should not silently move the fee being previewed.
+        slider.value = String(Math.min(SLIDER_STEPS, Math.max(0,
+            positionOfFee(currFee, range))));
+        sliderValue.textContent = `${_fmtFee(currFee)} sat/vB`;
+        // The track is the scale, so it is repainted whenever the scale moves:
+        // a new mode, a new range, or an edited threshold.
+        paintTrack();
+    }
+
+    function syncMedianLine() {
+        const stats = data.baseline_stats || {};
+        if (!BASELINE) {
+            medianLine.textContent = t.block_height_median_pending
+                || 'No 30-day median yet — falling back to the manual thresholds';
+            medianLine.style.display = modeSelect.value === 'relative' ? '' : 'none';
+            return;
+        }
+        const days = Number(stats.days) || 0;
+        const window = Number(stats.window_days) || 30;
+        medianLine.textContent =
+            `${t.block_height_median || '30-day median'}: ${_fmtFee(BASELINE)} sat/vB`
+            + ` · ${days}/${window} ${t.block_height_median_days || 'days collected'}`;
+        medianLine.style.display = modeSelect.value === 'relative' ? '' : 'none';
+    }
+
+    slider.addEventListener('input', () => {
+        const range = sliderRange(modeSelect.value);
+        currFee = feeAtPosition(Number(slider.value), range);
+        sliderValue.textContent = `${_fmtFee(currFee)} sat/vB`;
+        rowUpdaters.forEach(fn => fn());
+    });
+    // Letting go settles the move: the fee you landed on becomes the fee the
+    // next drag departs from, so both ends agree and the digits render flat -
+    // which is exactly what a network that has stopped moving looks like.
+    ['change', 'pointerup', 'keyup'].forEach(ev =>
+        slider.addEventListener(ev, () => {
+            prevFee = currFee;
+            rowUpdaters.forEach(fn => fn());
+        }));
+
     // ── Manual thresholds, shown only for that scale ─────────────────────────
     const manualWrap = document.createElement('div');
     manualWrap.style.cssText = 'display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:8px; margin-top:12px;';
-    const manualInputs = {};
-    MANUAL_FIELDS.forEach(([key, label, swatch, fallback, hint]) => {
+    MANUAL_FIELDS.forEach(({ key, label, hex, dflt, hint }) => {
+        // The whole box is the hover target - swatch, words and field alike - so
+        // the explanation is there wherever the pointer lands rather than only
+        // over the four words that happen to carry it.
         const box = document.createElement('div');
+        box.className = 'fee-tip-host';
         box.style.cssText = 'display:flex; flex-direction:column; gap:3px;';
+        const tip = document.createElement('span');
+        tip.className = 'fee-tip';
+        tip.textContent = hint;
+        box.appendChild(tip);
         const lab = document.createElement('span');
-        // The title sits on the label, which contains the swatch, so hovering
-        // either the colour or the words explains the band. cursor:help is what
-        // says there is something to hover in the first place.
-        lab.title = hint;
-        lab.style.cssText = 'font-size:0.78em; font-weight:600; color:var(--text-secondary); display:flex; align-items:center; gap:6px; cursor:help;';
+        lab.style.cssText = 'font-size:0.78em; font-weight:600; color:var(--text-secondary); display:flex; align-items:center; gap:6px;';
         const dot = document.createElement('span');
-        dot.style.cssText = `width:10px; height:10px; border-radius:2px; background:${swatch}; flex:none;`;
+        dot.style.cssText = `width:10px; height:10px; border-radius:2px; background:${hex}; flex:none;`;
         lab.appendChild(dot);
         lab.appendChild(document.createTextNode(label));
         const input = document.createElement('input');
@@ -886,7 +1280,7 @@ function createBlockHeightColorGroup() {
         input.step = '0.1';
         input.min = '0';
         input.dataset.configKey = key;
-        input.value = (cfg[key] !== undefined && cfg[key] !== null) ? cfg[key] : fallback;
+        input.value = (cfg[key] !== undefined && cfg[key] !== null) ? cfg[key] : dflt;
         manualInputs[key] = input;
         box.appendChild(lab);
         box.appendChild(input);
@@ -895,46 +1289,16 @@ function createBlockHeightColorGroup() {
     const manualHint = document.createElement('span');
     manualHint.style.cssText = 'grid-column:1/-1; font-size:0.78em; color:var(--text-secondary); opacity:.8;';
     manualHint.textContent = t.fee_manual_hint ||
-        'Each value is the fee, in sat/vB, at which that color takes over. The examples above follow whatever you type here.';
+        'Each value is the fee, in sat/vB, at which that color takes over. The preview above follows whatever you type here.';
     manualWrap.appendChild(manualHint);
     wrapper.appendChild(manualWrap);
 
-    // The swatch colours come from the server so this page never keeps a second
-    // copy of the scale tables. The example *fees* are plain arithmetic on these
-    // five numbers, though, so they are recomputed here and track what is being
-    // typed; the colours catch up on save.
-    const previewFee = (v) => {
-        v = Math.max(0.01, Number(v) || 0);
-        return v < 1 ? Math.round(v * 100) / 100 : Math.round(v * 10) / 10;
-    };
-    function recomputeManualScenarios() {
-        const entry = modes.manual;
-        if (!entry || !Array.isArray(entry.scenarios)) return;
-        const val = (k, d) => {
-            const raw = parseFloat(manualInputs[k] && manualInputs[k].value);
-            return Number.isFinite(raw) && raw >= 0 ? raw : d;
-        };
-        const blue = val('fee_manual_blue', 0.5);
-        const green = val('fee_manual_green', 0.8);
-        const yellow = val('fee_manual_yellow', 1.5);
-        const orange = val('fee_manual_orange', 3);
-        const red = val('fee_manual_red', 5);
-        // Same pairs the renderer previews: each example sits on the band the
-        // thresholds either side of it describe.
-        const pairs = {
-            cheap:  [blue * 0.6, green],
-            steady: [yellow, yellow],
-            spike:  [green, orange],
-            dear:   [orange, red * 0.96],
-        };
-        entry.scenarios.forEach(sc => {
-            const p = pairs[sc.key];
-            if (p) { sc.prev = previewFee(p[0]); sc.curr = previewFee(p[1]); }
-        });
-    }
+    // Typing a threshold recolours the sample immediately - manualStops() reads
+    // the fields, not the saved config - and re-frames the slider, whose travel
+    // is scaled to the bands being defined.
     Object.values(manualInputs).forEach(input => {
         input.addEventListener('input', () => {
-            recomputeManualScenarios();
+            syncSliderScale();
             rowUpdaters.forEach(fn => fn());
         });
     });
@@ -943,16 +1307,24 @@ function createBlockHeightColorGroup() {
         const mode = modeSelect.value;
         manualWrap.style.display = mode === 'manual' ? 'grid' : 'none';
         modeHint.textContent = MODE_HINTS[mode] || '';
-        if (mode === 'manual') recomputeManualScenarios();
+        // A scale change moves the ends of the track without moving the fee, so
+        // both previews keep showing the same number under the new rules - which
+        // is the comparison the dropdown is there to make.
+        syncSliderScale();
+        syncMedianLine();
         rowUpdaters.forEach(fn => fn());
     }
     modeSelect.addEventListener('change', syncMode);
     syncMode();
 
-    // Lets a number_format change repunctuate the sample height and the fee
-    // figures without rebuilding the panel, which would discard colour edits
-    // the user has made but not yet saved.
-    window._refreshBlockHeightPreview = () => rowUpdaters.forEach(fn => fn());
+    // Lets a number_format change repunctuate the sample height, the slider
+    // readout and the fee figures without rebuilding the panel, which would
+    // discard colour edits the user has made but not yet saved.
+    window._refreshBlockHeightPreview = () => {
+        syncSliderScale();
+        syncMedianLine();
+        rowUpdaters.forEach(fn => fn());
+    };
 
     return wrapper;
 }

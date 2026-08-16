@@ -224,13 +224,21 @@ class HashFrameMixin:
         else:
             display_block_height = str(block_height)
 
-        # Refresh the fee cache if the block height changed, or if the entry for
-        # this height has no usable fee data (e.g. a prior fetch for this same
-        # height failed/timed out) — otherwise a single transient API failure
-        # permanently locks the gradient to grey until the next block.
+        # Whatever reading the caller already holds, if any. It is the same one
+        # the fee label below is drawn from, so using it here is what keeps the
+        # colour and the printed figure describing the same moment.
+        live_fees = precached_fee if isinstance(precached_fee, dict) else None
+
+        # Fetch only when there is nothing usable for this height: the block
+        # changed, or a previous fetch for this same height failed — otherwise a
+        # single transient API failure locks the gradient to grey until the next
+        # block. A pre-cached reading costs no request, so it is always taken.
         _cached_fee_data = self.block_fee_cache.get(display_block_height, {}).get('fee_data')
         if self._block_fee_cache["current"]["height"] != display_block_height or not _cached_fee_data:
-            fee_data = precached_fee or (mempool_api.get_fee_recommendations() if mempool_api else None)
+            fee_data = live_fees or (mempool_api.get_fee_recommendations() if mempool_api else None)
+        else:
+            fee_data = live_fees
+        if fee_data:
             # Compute fee_color or use a default
             fee_color = self.get_color("fee", web_quality) if hasattr(self, 'get_color') else "gray"
             self._update_block_fee_cache(display_block_height, fee_data, fee_color)
@@ -244,12 +252,23 @@ class HashFrameMixin:
         fee_parameter = self.config.get("fee_parameter", "minimumFee")
         _fee_cache = self._block_fee_cache
         prev_fee = self._get_fee_for_parameter(_fee_cache["previous"]["height"], fee_parameter)
-        curr_fee = self._get_fee_for_parameter(_fee_cache["current"]["height"], fee_parameter)
-        # The network's own minimum, from the same recommendations the tier
-        # comes from. Below it there is nothing cheaper to wait for; it goes to
-        # zero on a cleared mempool, where no floor is the right answer.
-        cheap_floor = self._get_fee_for_parameter(_fee_cache["current"]["height"],
-                                                  "minimumFee")
+        # The bottom of the gradient is the number printed under it - the same
+        # `configured_fee` the label formats, not a second lookup that can drift
+        # from it. The two used to be fetched independently: the label followed
+        # the live pre-cache while the colour read a snapshot frozen when the
+        # block landed, so a tier that moved mid-block rendered a colour that
+        # belonged to a figure no longer on screen.
+        curr_fee = configured_fee
+        if curr_fee is None:
+            curr_fee = self._get_fee_for_parameter(_fee_cache["current"]["height"],
+                                                   fee_parameter)
+        # The network's own minimum, from the same reading the tier comes from.
+        # Below it there is nothing cheaper to wait for; it goes to zero on a
+        # cleared mempool, where no floor is the right answer.
+        cheap_floor = (live_fees or {}).get("minimumFee")
+        if cheap_floor is None:
+            cheap_floor = self._get_fee_for_parameter(_fee_cache["current"]["height"],
+                                                      "minimumFee")
         block_height_start_color, block_height_end_color = self.fee_to_colors(
             curr_fee, prev_fee, web_quality, cheap_floor)
         # Position block info (same as existing _render_block_info)

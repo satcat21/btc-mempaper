@@ -414,13 +414,14 @@ def register(self):
                 }
             except Exception:
                 btc_h_compact = {}
-            # Fee-side colours the block-height preview draws, computed by the
-            # renderer itself so the config page cannot disagree with the image.
-            # All three scales at once, so the dropdown updates without a fetch.
+            # The fee colour scale itself — stop tables, the rolling median and
+            # the slider range around it — so the block-height preview can colour
+            # whatever fee the reader drags to without a request per step. One
+            # payload covers all three scales, so the dropdown switches instantly.
             try:
-                block_height_samples = self.image_renderer.block_height_preview_samples()
+                block_height_samples = self.image_renderer.block_height_preview_scale()
             except Exception as e:
-                print(f"⚠️ Block height preview samples unavailable: {e}")
+                print(f"⚠️ Block height preview scale unavailable: {e}")
                 block_height_samples = {}
 
             _rbt = _read_reboot_time()

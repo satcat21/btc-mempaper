@@ -92,12 +92,15 @@ Notes that matter in practice:
 
 - **Both ends of the gradient are fee readings** — the previous block at the top,
   the current one at the bottom — so the digits show the move, not just the level.
-- **`fee_parameter` chooses which fee is measured**, and so decides where the
-  scale sits against the baseline. The baseline is a median of what blocks
-  actually cost, so `fastestFee` reads warm more often and `minimumFee` cool.
-  That is the intent, not a side effect: *"is next-block inclusion expensive
-  right now"* and *"is a minimum-fee transaction worth broadcasting"* are
-  different questions, and the color should answer the one you asked.
+  The bottom end is the very figure printed beneath the height, so the color
+  always belongs to the number you can read.
+- **`fee_parameter` chooses which fee is measured**, and each tier is measured
+  against *its own* history. `fastestFee` is compared to what `fastestFee` has
+  been costing, not to what blocks cost — otherwise every reading would carry a
+  constant offset set by the tier rather than by the market, and a `minimumFee`
+  device would read cheap more or less permanently. *"Is next-block inclusion
+  expensive right now"* and *"is a minimum-fee transaction worth broadcasting"*
+  are different questions, and the color answers the one you asked.
 - **Fractions of a sat/vB are read and printed.** The tiers come from mempool's
   `/v1/fees/precise`, which does not floor them at 1 sat/vB, so a quiet mempool
   shows `0.8` rather than being rounded up to `1`. Below 10 sat/vB the label
@@ -119,14 +122,37 @@ Notes that matter in practice:
 - **The median is used, not the mean.** One inscription weekend at 300 sat/vB
   would drag a mean upward for a month and make genuinely expensive blocks look
   ordinary; the median barely moves.
-- **No baseline yet, no guessing.** Under 12 samples in the window, the relative
-  modes fall back to the absolute table rather than inventing a ratio.
+- **No baseline yet, no guessing.** A day needs at least 6 samples before it
+  counts, and until at least one day does, `relative` falls back to the `manual`
+  thresholds rather than inventing a ratio from a handful of minutes.
 
-Baseline history lives in `cache/fee_history.json`. It fills itself from the
-blocks mempaper already polls, and is backfilled from
-`/v1/mining/blocks/fee-rates` where the mempool instance has block indexing
-enabled — a self-hosted instance without the mining module simply accumulates
-locally instead, warmed on first run from the last ~15 blocks.
+##### Where the baseline lives
+
+There is no history to fetch. mempool publishes past *block* medians, but
+`/v1/fees/recommended` is point-in-time — nothing reports what `fastestFee` was
+last Tuesday — so the window is accumulated locally, from the readings mempaper
+already polls. All five tiers are recorded on every sample, so changing
+`fee_parameter` reads an already-warm window instead of starting cold.
+
+| File | Holds |
+|---|---|
+| `cache/fee_tier_today.json` | Today's raw samples, flushed about hourly so a restart before midnight does not lose the day |
+| `cache/fee_tier_history.json` | One median per tier per *finished* day, up to 30 |
+
+A day closes at the local date change and is reduced to one median per tier. The
+baseline is the median **of those daily medians**, so every day weighs the same
+however many samples it contributed: a device booted at 20:00 cannot outvote a
+full day, and one frantic hour cannot move the window. Days the device was off
+are simply absent — nothing is interpolated, and the window repairs itself as new
+days arrive and old ones age out.
+
+The first flat example on the config page's block-height preview *is* the current
+baseline: in `relative` mode the preview scenarios are multiples of it, and the
+steady one is the baseline times 1.0. If it reads `20`, there is no baseline yet.
+
+> Older builds kept a single `cache/fee_history.json` — a median of mined-block
+> medians, shared by every tier. It is no longer read or written, and can be
+> deleted.
 
 #### The base color
 

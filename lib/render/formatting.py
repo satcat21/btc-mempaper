@@ -62,8 +62,8 @@ RELATIVE_NEUTRAL_WARM = [
     ( 0.38,(255, 180,   0)),   # amber      - ~1.3x normal
     ( 0.72,(255, 130,   0)),   # orange     - ~1.65x
     ( 1.10,(245,  75,  10)),   # orange-red - ~2.1x
-    ( 1.55,(215,  25,  25)),   # red        - ~2.9x
-    ( 2.00,(150,  10,  30)),   # deep red   - 4x and beyond
+    ( 1.55,(225,  35,  35)),   # red        - ~2.9x
+    ( 2.00,(200,  25,  60)),   # deep red   - 4x and beyond
 ]
 # fmt: on
 
@@ -81,6 +81,11 @@ BASE_DARK = (200, 200, 210)    # #C8C8D2
 # visibly different without the lighter one washing out to the background, and
 # this is the same half-way figure the fee ends already use.
 LIGHTEN_AMOUNT = 0.45
+
+# And toward black, for the end that has to stay readable on a light panel. Much
+# less travel than the lightening: the fee hues are already dark enough to read
+# against white, and a heavier hand turns the cool end of the scale to mud.
+DEEPEN_AMOUNT = 0.85
 
 # No baseline yet, or no fee at all.
 UNKNOWN_COLOR = (120, 120, 130)
@@ -136,25 +141,38 @@ def _lighten(rgb, amount=LIGHTEN_AMOUNT):
     return tuple(int(v + amount * (255 - v)) for v in rgb)
 
 
-def _deepen(rgb, factor=0.85):
+def _deepen(rgb, factor=DEEPEN_AMOUNT):
     """Move a colour toward black, keeping its hue."""
     return tuple(max(0, min(255, int(v * factor))) for v in rgb)
 
 
-def _preview_fee(v):
-    """A preview figure at a sensible precision, and never zero.
+def _hex(rgb):
+    """An (r, g, b) triple as the "#rrggbb" the config page draws with."""
+    return "#%02X%02X%02X" % tuple(int(max(0, min(255, v))) for v in rgb)
 
-    Two decimals under 1 sat/vB, one above. Blocks clear at fractions of a
-    sat/vB in a quiet month, and rounding those to whole numbers collapsed
-    every scenario onto the same figure. Never zero, because a fee of 0 has no
-    ratio and would preview as the grey "unknown" swatch - which reads as a
-    broken preview rather than a cheap one.
-    """
-    try:
-        v = max(0.01, float(v))
-    except (TypeError, ValueError):
-        return None
-    return round(v, 2) if v < 1 else round(v, 1)
+
+# The fee slider's far right, as a multiple of the value it centres on. Ten
+# doublings past the median is log2 = 3.32, comfortably past the +2.0 stop where
+# the warm ramp runs out of colours, so the whole scale is reachable and the last
+# stretch of travel is the part that no longer changes - which is itself the
+# reading: past 4x normal, dearer stops being a distinction worth drawing.
+SLIDER_HEADROOM = 10.0
+
+# Where the constant scale centres its slider. It has no baseline to sit on and
+# no thresholds to frame, so 0-1000 sat/vB is the honest span - but linear it
+# would bury every fee anyone has ever paid in the first percent of the track,
+# so the midpoint anchors somewhere fees actually live and the two halves are
+# scaled independently either side of it.
+SLIDER_FIXED_ANCHOR = 10.0
+SLIDER_FIXED_MAX = 1000.0
+
+# How far past the top manual threshold that scale's slider runs. The manual
+# table says nothing above its last threshold - everything from `red` upward is
+# the same colour - so a track that continued to 1000 would be nine hundred and
+# ninety-five sat/vB of nothing happening. A tenth past it is enough to show that
+# the top band has been entered and does not end, without spending the travel on
+# a stretch that cannot change.
+MANUAL_HEADROOM = 1.1
 
 
 class FormattingMixin:
@@ -271,125 +289,126 @@ class FormattingMixin:
         stops = [(levels[name], rgb) for name, rgb in MANUAL_COLORS]
         return sorted(stops, key=lambda s: s[0])
 
-    def block_height_preview_samples(self):
-        """Both gradient ends for a few representative block-to-block moves.
+    def block_height_preview_scale(self):
+        """The scale itself, so the config page can colour any fee the user picks.
 
-        The config page draws its block-height preview from this rather than
-        reimplementing the scale in JavaScript, so the swatches cannot drift from
-        what the renderer actually produces. All three modes are returned at once
-        so switching the dropdown updates instantly instead of costing a request.
+        The preview used to be four fixed scenarios coloured here and shipped as
+        finished swatches - the page held no scale tables, so it could not
+        disagree with the renderer. A fee slider ends that arrangement: the
+        reader chooses the fee now, continuously, and no enumeration of samples
+        answers for a value the server was never asked about.
 
-        Scenarios rather than single fees, because the gradient now reads as a
-        move: the previous block at the top, the current one at the bottom. A
-        steady cheap network is blue over blue, a spike is blue over red.
+        So what travels is the scale rather than its output - the same stop
+        tables, neutral band, baseline and floor `_fee_color_for` maps with. The
+        page walks the identical curve instead of approximating it, and these
+        tables stay the only definition: retuning a stop is still an edit to this
+        file alone.
 
-        A null end means that fee reads as normal, so the page substitutes the
-        colour currently in the picker - which the browser knows and the server
-        does not. Tone for that substitution is the caller's job and follows the
-        same rule as here: on dark the top is raw and the bottom lightened, on
-        light the top is lightened and the bottom raw.
+        Manual thresholds are deliberately *not* included. They are being typed
+        into the form while the slider moves, so the page pairs its own live
+        values with the colour order below; sending the saved ones would colour
+        the slider against numbers the reader had already replaced.
 
-        Each mode brings its own scenarios, because a useful example depends on
-        the scale: the relative one wants multiples of the median, the manual
-        one wants figures either side of the thresholds the user just typed,
-        and the constant one wants a single swatch, the fee having no say.
+        The slider ranges travel too, for the same reason the stops do - where
+        "normal" sits on the track is a property of the scale, not a layout
+        choice. Each is (min, anchor, max) with the anchor at the midpoint of the
+        travel, and each scale is framed by whatever it is measured against:
 
-        Shape: {"lighten": 0.45,
-                "modes": {mode: {
-                    "scenarios": [{"key":..., "prev":..., "curr":...}, ...],
-                    "light"|"dark": {key: {"top": hex|None,
-                                           "bottom": hex|None}}}}}
+          relative  0 to ten times the median, median under the middle
+          manual    0 to a tenth past the top threshold, so the track is exactly
+                    the table the user typed and no wider
+          constant  0-1000 sat/vB around a workable centre, the fee having no
+                    say - the span is arbitrary because nothing constrains it
 
-        `lighten` travels with it because the page needs the same figure to
-        derive a substituted end, and a second copy of the constant in
-        JavaScript is a second thing to keep in step.
+        Shape: {"lighten", "deepen", "neutral_band", "baseline", "cheap_floor",
+                "current_fee", "block_height", "unknown", "baseline_stats",
+                "relative": {"cool": [[pos, hex], ...], "warm": [...]},
+                "manual_order": [[name, hex, default_threshold], ...],
+                "slider": {mode: {"min", "anchor", "max"}}}
         """
-        neutral_band = NEUTRAL_BAND
         baseline = None
+        stats = None
         store = getattr(self, "fee_baseline", None)
         if store is not None:
             try:
-                baseline = store.baseline(
-                    self.config.get("fee_parameter", "minimumFee"))
+                tier = self.config.get("fee_parameter", "minimumFee")
+                baseline = store.baseline(tier)
+                stats = store.stats(tier)
             except Exception:
-                baseline = None
+                baseline, stats = None, None
 
-        # The floor the renderer will actually apply, so the picker shows what
-        # gets drawn rather than an unfloored idealisation of it.
+        # The floor and the fee the renderer is working with right now, so the
+        # slider opens on the state the panel is actually in rather than on an
+        # idealisation of it.
         cheap_floor = FALLBACK_CHEAP_FLOOR
+        current_fee = None
+        block_height = None
         try:
+            height = self._block_fee_cache["current"]["height"]
             cheap_floor = self._get_fee_for_parameter(
-                self._block_fee_cache["current"]["height"],
-                "minimumFee") or FALLBACK_CHEAP_FLOOR
+                height, "minimumFee") or FALLBACK_CHEAP_FLOOR
+            current_fee = self._get_fee_for_parameter(
+                height, self.config.get("fee_parameter", "minimumFee"))
+            # The tip the panel is currently showing. The preview drew a
+            # hardcoded 914427 before, which is a plausible-looking number and
+            # nothing more: the reader cannot tell a preview of their own device
+            # from a mock-up, and the digit count is the whole geometry of the
+            # thing being previewed.
+            block_height = int(height)
         except Exception:
             pass
 
-        modes = {}
-        for mode in MODES:
-            scenarios = self._preview_scenarios(mode, baseline)
-            entry = {"scenarios": scenarios}
-            for theme, is_dark in (("light", False), ("dark", True)):
-                per_key = {}
-                for sc in scenarios:
-                    ends = {}
-                    for end, fee in (("top", sc["prev"]), ("bottom", sc["curr"])):
-                        rgb = self._fee_color_for(fee, baseline, mode,
-                                                  neutral_band, cheap_floor)
-                        if rgb is None:
-                            ends[end] = None          # the configured colour
-                            continue
-                        if is_dark:
-                            toned = rgb if end == "top" else _lighten(rgb)
-                        else:
-                            toned = _lighten(rgb) if end == "top" else _deepen(rgb)
-                        ends[end] = "#%02X%02X%02X" % tuple(toned)
-                    per_key[sc["key"]] = ends
-                entry[theme] = per_key
-            modes[mode] = entry
-        return {"lighten": LIGHTEN_AMOUNT, "modes": modes}
+        fixed_slider = {"min": 0.0, "anchor": SLIDER_FIXED_ANCHOR,
+                        "max": SLIDER_FIXED_MAX}
 
-    def _preview_scenarios(self, mode, baseline):
-        """Four representative block-to-block moves, chosen to suit the scale.
+        # The manual scale is framed by the numbers it is made of: a tenth past
+        # the top threshold, with the midpoint halfway - which makes that track
+        # plain linear, and it can afford to be, spanning a handful of sat/vB
+        # rather than a thousand. `red` is normally the top, but the thresholds
+        # are only sorted when they are used, so take whichever is highest and a
+        # transposed pair still frames the whole table.
+        levels = self.manual_thresholds()
+        top = max([levels.get("red", 0.0)] + list(levels.values()))
+        if top > 0:
+            span = round(top * MANUAL_HEADROOM, 3)
+            manual_slider = {"min": 0.0, "anchor": round(span / 2, 3), "max": span}
+        else:
+            manual_slider = dict(fixed_slider)
 
-        Pairs rather than single fees, and genuine moves rather than two equal
-        ends: flat pairs make a swatch one colour, which is the one thing the
-        gradient is not, and they leave the middle of the scale unvisited.
-        """
-        if mode == "constant":
-            # The fee is never consulted, so a second swatch would only repeat
-            # the first. One sample is the honest preview of this mode.
-            return [{"key": "steady", "prev": None, "curr": None}]
+        if baseline and baseline > 0:
+            relative_slider = {"min": 0.0,
+                               "anchor": round(float(baseline), 3),
+                               "max": round(float(baseline) * SLIDER_HEADROOM, 3)}
+        else:
+            # No window yet, so `relative` is colouring from the manual table -
+            # give it that table's range rather than a span around a median that
+            # does not exist.
+            relative_slider = dict(manual_slider)
 
-        if mode == "manual":
-            # Anchored on the thresholds the user just typed, so the examples
-            # move with them: set orange 3 and red 5 and the dear case shows
-            # 3 -> 4.8, which is exactly the band those two numbers describe.
-            t = self.manual_thresholds()
-            return [
-                {"key": "cheap",  "prev": _preview_fee(t["blue"] * 0.6),
-                                  "curr": _preview_fee(t["green"])},
-                {"key": "steady", "prev": _preview_fee(t["yellow"]),
-                                  "curr": _preview_fee(t["yellow"])},
-                {"key": "spike",  "prev": _preview_fee(t["green"]),
-                                  "curr": _preview_fee(t["orange"])},
-                {"key": "dear",   "prev": _preview_fee(t["orange"]),
-                                  "curr": _preview_fee(t["red"] * 0.96)},
-            ]
-
-        # Relative: multiples of the baseline, so the figures shown are always
-        # plausible fees for the market the device is actually in. At a median
-        # of 1 the cheap case reads 0.1 -> 0.7, at a median of 20, 2 -> 14.
-        normal = float(baseline) if baseline and baseline > 0 else 20.0
-        return [
-            {"key": key, "prev": _preview_fee(normal * lo),
-                         "curr": _preview_fee(normal * hi)}
-            for key, lo, hi in (
-                ("steady", 1.0, 1.0),   # inside the neutral band: base colour
-                ("cheap",  0.1, 0.7),   # floor-cheap, easing back to normal
-                ("spike",  1.1, 2.0),   # ordinary into clearly dear
-                ("dear",   3.0, 1.8),   # dear, but coming back down
-            )
-        ]
+        return {
+            "lighten": LIGHTEN_AMOUNT,
+            "deepen": DEEPEN_AMOUNT,
+            "neutral_band": NEUTRAL_BAND,
+            "baseline": baseline,
+            "cheap_floor": cheap_floor,
+            "current_fee": current_fee,
+            "block_height": block_height,
+            "unknown": _hex(UNKNOWN_COLOR),
+            "baseline_stats": stats,
+            "relative": {
+                "cool": [[pos, _hex(rgb)] for pos, rgb in RELATIVE_NEUTRAL_COOL],
+                "warm": [[pos, _hex(rgb)] for pos, rgb in RELATIVE_NEUTRAL_WARM],
+            },
+            "manual_order": [[name, _hex(rgb), MANUAL_DEFAULTS[name]]
+                             for name, rgb in MANUAL_COLORS],
+            # Travels so the page can re-frame the manual track from the numbers
+            # being typed, rather than waiting for a save to find out where it
+            # now ends.
+            "manual_headroom": MANUAL_HEADROOM,
+            "slider": {"constant": fixed_slider,
+                       "relative": relative_slider,
+                       "manual": manual_slider},
+        }
 
     def fee_to_colors(self, current_fee, recent_fee=None, web_quality=False,
                       cheap_floor=None):

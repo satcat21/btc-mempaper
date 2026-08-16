@@ -806,33 +806,42 @@ class ImageRenderer(ColorMixin, MemeMixin, HashFrameMixin, TextMixin,
 
     def _update_block_fee_cache(self, block_height, fee_data, fee_color):
         """
-        Update block fee cache when a new block is found.
-        Stores fee data and fee color for the current block height.
-        Keeps previous block's data for gradient rendering.
+        Record the latest fee reading against the block height it was taken at.
+
+        The entry for the height on screen is rewritten whenever a fresher
+        reading arrives, not just when the block changes. Fees move within a
+        block, and the label under the height already follows them; freezing the
+        entry at block arrival left the gradient colouring a number that had
+        stopped being true - up to ten minutes stale, and the one thing the
+        colour must agree with is the figure printed beneath it.
+
+        Once the next block lands this height stops being written and becomes
+        the top of the gradient, holding the last fee seen during it - which is
+        exactly what the bottom of the display was showing a block ago, so the
+        two ends read as one movement rather than two unrelated samples.
         """
         # Ensure block_height is always a string (hashable)
         if isinstance(block_height, dict):
             block_height = str(block_height)
-            
+
         # Ensure fee_data is a dict
         if fee_data is None:
             fee_data = {}
 
-        is_new_block = block_height != self.last_block_height
-        has_data = bool(self.block_fee_cache.get(block_height, {}).get('fee_data'))
-        if is_new_block or not has_data:
-            # New block detected, or retrying a height whose fee fetch previously failed
-            self.block_fee_cache[block_height] = {
-                'fee_data': fee_data,
-                'fee_color': fee_color
-            }
-            # Optionally, keep only last two blocks to limit memory
-            if len(self.block_fee_cache) > 2:
-                # Remove oldest block
-                oldest = sorted(self.block_fee_cache.keys())[0]
-                del self.block_fee_cache[oldest]
-            self.last_block_height = block_height
-        # Otherwise, we already have usable data for this height — keep it
+        # An empty reading never displaces a usable one: a single timed-out fee
+        # fetch would otherwise blank the gradient to grey until the next block.
+        if not fee_data and self.block_fee_cache.get(block_height, {}).get('fee_data'):
+            return
+
+        self.block_fee_cache[block_height] = {
+            'fee_data': fee_data,
+            'fee_color': fee_color
+        }
+        # Two heights are all the gradient needs; drop anything older.
+        if len(self.block_fee_cache) > 2:
+            oldest = sorted(self.block_fee_cache.keys())[0]
+            del self.block_fee_cache[oldest]
+        self.last_block_height = block_height
 
     # ...existing code...
     
