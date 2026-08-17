@@ -852,22 +852,49 @@ except Exception as e:
 
 # Treat the shipped default (Thu 13:00) as "never chosen".
 already = cfg.get("meme_sync_schedule_randomised", False)
-if already:
+names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+
+if already and "meme_sync_minute" in cfg:
     print("   schedule already randomised — leaving it alone")
     sys.exit(0)
 
-day  = random.randint(0, 6)    # cron: 0=Sun … 6=Sat
-hour = random.randint(0, 23)
-cfg["meme_sync_day"] = str(day)
-cfg["meme_sync_hour"] = str(hour)
-cfg["meme_sync_schedule_randomised"] = True
+if already:
+    # Upgrade path: this device picked a day and hour before the minute was
+    # spread too, so it currently fires on the stroke of the hour along with
+    # every other device that drew the same hour. Give it a minute without
+    # touching the day and hour the user may since have chosen themselves.
+    day  = int(cfg.get("meme_sync_day", 4))
+    hour = int(cfg.get("meme_sync_hour", 13))
+else:
+    day  = random.randint(0, 6)    # cron: 0=Sun … 6=Sat
+    hour = random.randint(0, 23)
+    cfg["meme_sync_day"] = str(day)
+    cfg["meme_sync_hour"] = str(hour)
+    cfg["meme_sync_schedule_randomised"] = True
 
-names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+minute = random.randint(0, 59)
+cfg["meme_sync_minute"] = str(minute)
+
 tmp = p.with_suffix(".json.tmp")
 tmp.write_text(json.dumps(cfg, indent=2))
 tmp.replace(p)
-print(f"   weekly meme sync scheduled for {names[day]} at {hour:02d}:00")
+print(f"   weekly meme sync scheduled for {names[day]} at {hour:02d}:{minute:02d}")
 PYEOF
+fi
+
+# ── Write the meme-sync crontab entry ─────────────────────────────────────────
+# Written here so the schedule exists on the device from the moment it is
+# installed, rather than only after the service has started once with the
+# toggle already on — which is what used to happen, and meant `crontab -l` on a
+# fresh device showed nothing and implied the feature did not exist.
+#
+# The block is written commented out while the feature is off, so the randomised
+# schedule is visible where anyone would look for it. The web UI toggle rewrites
+# it live through the same code, so there is no need to uncomment it by hand.
+if [ -f config/config.json ]; then
+    sudo -u "$SERVICE_USER" python3 -m utils.meme_sync_cron --apply \
+        && ok "Meme-sync crontab entry written" \
+        || warn "Could not write the meme-sync crontab entry (non-fatal)"
 fi
 
 # ── Network-bound encryption (Tang) ───────────────────────────────────────────

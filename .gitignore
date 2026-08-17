@@ -68,3 +68,6 @@ mempaper.service
 # Removed scripts — kept here so local copies are not re-tracked by git
 tools/einundzwanzig_memes.py
 tools/download_all_memes.py
+
+# Cron job logs (weekly meme sync); the directory is created by the installer
+logs/

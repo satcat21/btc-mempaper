@@ -39,6 +39,7 @@ from managers.config_manager import ConfigManager
 from utils.technical_config import (TechnicalConfig, build_mempool_api_url,
                                     build_mempool_proxies)
 from utils.tor_recovery import tor_recovery
+from utils.meme_sync_cron import apply_meme_sync_crontab
 from utils.security_config import SecurityConfig
 from managers.auth_manager import AuthManager
 from managers.tang_store import TangLocked
@@ -2277,59 +2278,20 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
             self._generate_new_image(self.current_block_height, self.current_block_hash, skip_epaper=False, use_new_meme=False)
 
     def _apply_meme_sync_crontab(self, config=None):
-        """Write or remove the mempaper meme-sync cron entry for the current (mempaper) user.
+        """Keep the meme-sync cron entry in step with the current settings.
+
+        The entry format lives in utils.meme_sync_cron because install.sh writes
+        the same block before this app has ever run — see that module for why it
+        is one implementation rather than two.
 
         Uses the standard crontab command — no sudo needed because the app runs
         as the mempaper user and manages only its own crontab.
-        The entry is tagged with a comment marker so it can be found on updates.
         """
         if config is None:
             config = self.config
 
-        MARKER = '# mempaper-meme-sync'
-        enabled = config.get('meme_sync_enabled', False)
-        day = str(config.get('meme_sync_day', '4'))
-        hour = str(config.get('meme_sync_hour', '13'))
-        tor = config.get('tor_meme_downloads', False)
-
-        # Read existing crontab (empty crontab returns exit 1 on some systems)
-        result = subprocess.run(['crontab', '-l'], capture_output=True, text=True)
-        existing = result.stdout if result.returncode == 0 else ''
-
-        # Strip any previous mempaper meme-sync line
-        lines = [ln for ln in existing.splitlines() if MARKER not in ln]
-
-        if enabled:
-            project_dir = os.path.dirname(os.path.abspath(__file__))
-            # The sync script needs requests/PySocks, which live in the venv only —
-            # cron runs with a bare environment, so name the interpreter by full
-            # path rather than relying on anything being activated. The python3
-            # fallback is for a dev checkout without a venv; on a real install
-            # .venv always exists, and the script warns if it is run outside it.
-            venv_python = os.path.join(project_dir, '.venv', 'bin', 'python')
-            python = venv_python if os.path.exists(venv_python) else 'python3'
-            script = os.path.join(project_dir, 'tools', 'sync_memes.py')
-            log_dir = os.path.join(project_dir, 'logs')
-            os.makedirs(log_dir, exist_ok=True)
-            log_file = os.path.join(log_dir, 'meme-sync.log')
-            tor_flag = ' --tor' if tor else ''
-            lines.append(
-                f'0 {hour} * * {day} '
-                f'cd {project_dir} && {python} {script} --update{tor_flag} '
-                f'>> {log_file} 2>&1 {MARKER}'
-            )
-
-        new_crontab = '\n'.join(lines)
-        if new_crontab and not new_crontab.endswith('\n'):
-            new_crontab += '\n'
-
-        proc = subprocess.run(['crontab', '-'], input=new_crontab, text=True, capture_output=True)
-        if proc.returncode != 0:
-            print(f'⚠️ Failed to update meme sync crontab: {proc.stderr.strip()}')
-        elif enabled:
-            print(f'📅 Meme sync scheduled: 0 {hour} * * {day}{"  (Tor)" if tor else ""}')
-        else:
-            print('📅 Meme sync crontab entry removed')
+        project_dir = os.path.dirname(os.path.abspath(__file__))
+        apply_meme_sync_crontab(config, project_dir)
 
     def _refresh_eink_for_opsec_toggle(self, opsec_enabled):
         """

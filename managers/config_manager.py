@@ -431,11 +431,14 @@ class ConfigManager:
 
             "opsec_mode_enabled": False,
             # --- Meme sync schedule ---
-            # install.sh randomises day and hour per device, so the world's
-            # mempapers do not all hit the meme host in the same Thursday hour.
+            # install.sh randomises day, hour and minute per device, so the
+            # world's mempapers do not all hit the meme host in the same
+            # Thursday hour — nor all on the stroke of it, which is what a fixed
+            # minute of 0 amounted to once the hour was spread out.
             "meme_sync_enabled": False,
             "meme_sync_day": "4",
             "meme_sync_hour": "13",
+            "meme_sync_minute": "0",
             "tor_meme_downloads": False,
             # --- Donation block ---
             "show_donation_block": False,
@@ -624,6 +627,7 @@ class ConfigManager:
             {"id": "bitaxe_stats",     "_lk": "bitaxe_stats",      "label": t.get("bitaxe_stats",      "Bitaxe Stats"),        "icon": "/static/icons/bitaxe.svg"},
             {"id": "donation",         "_lk": "donation_settings", "label": t.get("donation_settings", "Lightning Donation"),  "icon": "/static/icons/donation.svg"},
             {"id": "meme_management",  "_lk": "meme_management",   "label": t.get("meme_management",   "Meme Management"),     "icon": "/static/icons/mood.svg"},
+            {"id": "meme_sync",        "_lk": "meme_sync_settings","label": t.get("meme_sync_settings","Meme Sync"),           "icon": "/static/icons/download.svg"},
             {"id": "opsec",            "_lk": "opsec_settings",    "label": t.get("opsec_settings",    "OPSec"),               "icon": "/static/icons/opsec.svg"},
             {"id": "wifi",             "_lk": "wifi_settings",     "label": t.get("wifi_settings",     "WiFi"),                "icon": "/static/icons/wifi.svg"},
             {"id": "updates",          "_lk": "updates_settings",  "label": t.get("updates_settings",  "Updates"),             "icon": "/static/icons/update.svg"},

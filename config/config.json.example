@@ -89,5 +89,6 @@
   ],
   "meme_sync_enabled": false,
   "meme_sync_day": "4",
-  "meme_sync_hour": "13"
+  "meme_sync_hour": "13",
+  "meme_sync_minute": "0"
 }

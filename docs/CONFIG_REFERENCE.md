@@ -379,16 +379,37 @@ these settings.
 | **Sync Hour** | `meme_sync_hour` | Select | Hour of the day, 24-hour | `"0"` … `"23"`, default `"13"` |
 | **Download over Tor** | `tor_meme_downloads` | Switch | Append `--tor` so the download uses the Tor SOCKS proxy, keeping your IP off the meme host too | `true`, `false` (default) |
 
-**`install.sh` randomises the day and hour per device** at install time and sets
-`meme_sync_schedule_randomised` so it never does so again. Without that, every
-mempaper in the world would inherit the same Thursday 13:00 default and hit
-einundzwanzig-memes.space in the same hour. Changing the schedule in the web UI
-overrides it and is never overwritten by a later install run.
+**`install.sh` randomises the day, hour and minute per device** at install time
+and sets `meme_sync_schedule_randomised` so it never does so again. Without
+that, every mempaper in the world would inherit the same Thursday 13:00 default
+and hit einundzwanzig-memes.space in the same hour. The minute
+(`meme_sync_minute`) is randomised separately and has no web UI field — with the
+hour spread but the minute fixed at `0`, every device sharing an hour still
+fired on the stroke of it. Changing the schedule in the web UI overrides the day
+and hour and is never overwritten by a later install run.
 
-> The sync script (`tools/sync_memes.py`) is currently a **placeholder** —
-> the upstream API endpoint does not exist yet. A scheduled run reports what it
-> would have done and exits 0, so the job shows as succeeding rather than
-> failing in the cron log until the implementation lands.
+The cron entry itself is written by `utils/meme_sync_cron.py`, which both
+`install.sh` and the app call so the line has exactly one definition. **The
+installer writes the entry even when the feature is disabled**, commented out,
+so `crontab -l` shows the schedule the device would use rather than nothing at
+all. Enabling the toggle in the web UI rewrites the block live — there is no
+need to uncomment it by hand, and edits made that way are overwritten on the
+next config change.
+
+Any hand-written cron line invoking `tools/sync_memes.py` or
+`tools/download_all_memes.py` is removed when the block is written. Entries
+predating this module carry no marker comment, so without that sweep a device
+would end up running two downloaders against the same directory.
+
+> **The sync script (`tools/sync_memes.py`) is currently a placeholder** and
+> downloads nothing. It accepts the full command line, prints why there is
+> nothing to report and exits 0, so a scheduled run shows as succeeding rather
+> than failing. The downloader it will eventually call is not part of this
+> repository, so everything around it — the schedule, the cron entry, the web
+> button — is deployed and working ahead of the implementation. When that lands,
+> no crontab needs rewriting: the entry already invokes this file with the
+> arguments the real version will take. `tor_meme_downloads` is likewise
+> accepted and recorded now, and takes effect then.
 
 ---
 
