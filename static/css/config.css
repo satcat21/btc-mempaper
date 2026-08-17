@@ -2565,7 +2565,7 @@ body.dark-mode .wifi-badge-saved {
 }
 
 .update-github-link {
-    margin-left: auto;
+    margin-left: 8px;   /* sits with the version; Check for Updates takes the far end */
     color: var(--text-secondary);
     text-decoration: none;
     font-size: 0.8rem;
@@ -2580,24 +2580,33 @@ body.dark-mode .wifi-badge-saved {
 }
 
 /* Updates section small bordered button */
+/* "Check for Updates" and "View on GitHub/GitLab" are the same kind of thing:
+   secondary actions beside the version, neither of which changes the device.
+   They share one appearance so that neither competes with the Install button,
+   which is the only control in this section that does anything irreversible.
+   Check for Updates used to be filled accent, which read as the primary action
+   and sat directly beside a version number it does not change. */
 .check-updates-btn {
-    margin-left: 8px;
+    margin-left: auto;   /* pushed to the far end of the row */
     display: inline-flex;
     align-items: center;
     gap: 5px;
     padding: 3px 10px;
     font-size: 0.8rem;
-    background: var(--accent);
-    color: #fff;
-    border: 1px solid var(--accent);
+    background: transparent;
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
     cursor: pointer;
-    transition: background 0.2s, border-color 0.2s;
+    transition: color 0.2s, border-color 0.2s;
     white-space: nowrap;
     text-decoration: none;
     font-family: inherit;
 }
-.check-updates-btn:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+.check-updates-btn:hover:not(:disabled) {
+    color: var(--accent);
+    border-color: var(--accent);
+}
 .check-updates-btn:disabled { opacity: 0.5; cursor: default; }
 
 /* Mempool action buttons */
@@ -2724,9 +2733,17 @@ body.dark-mode .wifi-badge-saved {
     box-shadow: 0 2px 8px rgba(247, 147, 26, 0.3);
 }
 
+/* Disabled is grey, not a faded accent. This button is the only control in the
+   section that changes the device, so its colour is the signal that there is
+   something to do — a translucent orange still reads as "the thing to press",
+   which is wrong when the selected release is the one already running. */
 .update-install-btn:disabled {
-    opacity: 0.5;
+    opacity: 1;
+    background: var(--bg-elevated);
+    color: var(--text-secondary);
     cursor: not-allowed;
+    box-shadow: none;
+    transform: none;
 }
 
 .update-release-notes {

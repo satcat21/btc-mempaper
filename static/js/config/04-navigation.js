@@ -1019,7 +1019,7 @@ function createFormField(key, field, value) {
                 const testBtn = document.createElement('button');
                 testBtn.type = 'button';
                 testBtn.className = 'mempool-action-btn';
-                testBtn.textContent = window.translations?.check_relay_connection || 'Check Relay Connection';
+                testBtn.textContent = window.translations?.check_connection || 'Check Connection';
                 testBtn.style.flexShrink = '0';
 
                 testBtn.addEventListener('click', () => {
@@ -1235,7 +1235,8 @@ function createFormField(key, field, value) {
             const tangBtn = document.createElement('button');
             tangBtn.type = 'button';
             tangBtn.className = 'mempool-action-btn';
-            tangBtn.textContent = field.label_check || 'Check Tang Connection';
+            tangBtn.textContent = field.label_check
+                || window.translations?.check_connection || 'Check Connection';
             tangBtn.addEventListener('click', () => {
                 // Test what is currently in the form rather than what was last
                 // saved, so a value can be verified before committing to it.

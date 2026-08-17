@@ -709,7 +709,14 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
         "tang_check": {
             "type": "tang_check",
             "label": t.get("tang_check", "Tang Connection"),
-            "label_check": t.get("check_tang_connection", "Check Tang Connection"),
+            # The same "Check Connection" the mempool section uses. What is being
+            # checked is already named by the group heading above the button, so
+            # a per-feature wording bought nothing and cost two things: a key
+            # that had to be translated five times over again, and — because it
+            # carried no _lk_check — a label that never followed a live language
+            # switch, leaving a German button sitting in an English page.
+            "label_check": t.get("check_connection", "Check Connection"),
+            "_lk_check": "check_connection",
             "_lk": "tang_check",
             "description": t.get("tang_check_desc", "Tests the whole path against the values above: reaches the server, reads its signing key, then seals and unseals a throwaway key. Nothing is written and no wallet data is touched."),
             "_dk": "tang_check_desc",

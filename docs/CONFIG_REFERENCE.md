@@ -265,7 +265,7 @@ refused by a hidden service listening on 80.
 | **Display Driver** | `omni_device_name` | String | Driver name (Native or Omni-EPD) | `epd13in3E` (Recommended -- Waveshare 13.3"), `epd7in3f` (Default -- Waveshare 7.3"), `inky.impression`, `inky.auto` |
 | **Display Width** | `display_width` | Number | Resolution Width (pixels) -- Auto-set by device selection | Automatically determined from the selected device. Held landscape-native; the canvas is always rendered portrait |
 | **Display Height** | `display_height` | Number | Resolution Height (pixels) -- Auto-set by device selection | Automatically determined from the selected device. Held landscape-native; the canvas is always rendered portrait |
-> **Changing the display model is not possible from this page.** The selector shows the configured model read-only; it can download missing drivers for that model, but not switch to another. Re-run `install.sh`, or `sudo -u mempaper .venv/bin/python tools/configure_display.py`.
+> **Changing the display model is not possible from this page.** The selector shows the configured model read-only; it can download missing drivers for that model, but not switch to another. Run `sudo -u mempaper .venv/bin/python tools/configure_display.py` on the Pi — it updates the model, downloads the matching drivers and sets the resolution. Re-running `install.sh` also works; it calls the same script.
 
 ### Automatic disable and recovery
 

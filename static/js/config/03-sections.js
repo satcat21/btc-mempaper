@@ -730,11 +730,15 @@ function createSoftwareUpdateSection() {
     // Current version display
     const versionRow = document.createElement('div');
     versionRow.className = 'update-version-row';
+    // Repo link next to the version it describes; Check for Updates at the far
+    // end. Both are secondary and styled alike — see the CSS note. The previous
+    // order put a filled accent button immediately after the version number,
+    // where it read as the thing to press.
     versionRow.innerHTML = `
         <span class="update-version-label">${window.translations?.current_version || 'Current version'}:</span>
         <span class="update-version-value" id="update-current-version">...</span>
-        <button type="button" class="check-updates-btn" id="check-updates-btn">${window.translations?.check_for_updates || 'Check for Updates'}</button>
         <a href="#" target="_blank" rel="noopener" class="update-github-link" id="update-repo-link" style="display:none">View on GitHub</a>
+        <button type="button" class="check-updates-btn" id="check-updates-btn">${window.translations?.check_for_updates || 'Check for Updates'}</button>
     `;
     wrapper.appendChild(versionRow);
 
@@ -757,10 +761,13 @@ function createSoftwareUpdateSection() {
     loadingOpt.selected = true;
     select.appendChild(loadingOpt);
 
+    // "Install", not "Update": the dropdown beside it can select any release,
+    // including an older one, so "Update" described only one of the things
+    // pressing it does.
     const updateBtn = document.createElement('button');
     updateBtn.type = 'button';
     updateBtn.className = 'update-install-btn';
-    updateBtn.textContent = window.translations?.update_now || 'Update';
+    updateBtn.textContent = window.translations?.install_now || 'Install';
     updateBtn.disabled = true;
 
     selectorRow.appendChild(select);
@@ -795,6 +802,7 @@ function createSoftwareUpdateSection() {
 
     // Show release notes when selection changes
     select.addEventListener('change', () => {
+        _syncInstallButton(select, updateBtn);
         const selectedOpt = select.options[select.selectedIndex];
         const body = selectedOpt?.dataset?.body;
         if (body) {
@@ -814,7 +822,7 @@ function createSoftwareUpdateSection() {
         const confirmed = await showConfirmModal({
             title: window.translations?.confirm_update || 'Install update',
             message: selectedName,
-            confirmText: window.translations?.update_now || 'Update',
+            confirmText: window.translations?.install_now || 'Install',
             cancelText: window.translations?.cancel || 'Cancel',
             icon: '/static/icons/update.svg'
         });
@@ -848,6 +856,29 @@ function createSoftwareUpdateSection() {
     return formGroup;
 }
 
+// Whether pressing Install would change anything, and saying so before it is
+// pressed. Selecting the release already running and installing it is a
+// twenty-minute no-op that ends with a service restart — the button now reports
+// that state instead of accepting it. The installed tag rides on the select
+// element rather than a module variable so that a re-check refreshes both
+// together and neither can go stale against the other.
+function _syncInstallButton(selectEl, btn) {
+    const t = window.translations || {};
+    const opt = selectEl.options[selectEl.selectedIndex];
+    const selected = selectEl.value;
+    const installed = selectEl.dataset.installedTag || '';
+    // The placeholder options ("Loading releases…", "No releases found") are
+    // disabled and carry no tag; nothing is installable while one is showing.
+    const nothingSelected = !selected || !opt || opt.disabled;
+    const alreadyInstalled = !!selected && selected === installed;
+
+    btn.disabled = nothingSelected || alreadyInstalled;
+    btn.title = alreadyInstalled
+        ? (t.already_installed || '{version} is already installed.')
+              .replace('{version}', selected)
+        : '';
+}
+
 async function _loadUpdateData(selectEl, updateBtn, versionEl, notesContainer) {
 
     try {
@@ -868,6 +899,11 @@ async function _loadUpdateData(selectEl, updateBtn, versionEl, notesContainer) {
                 versionEl.textContent = tag ? `${tag} (${commit})` : commit;
             }
         }
+        // Recorded before the dropdown is filled, so the first _syncInstallButton
+        // below already knows what is running. A checkout that is not exactly on
+        // a tag leaves this empty, which correctly means "nothing matches" and
+        // keeps every release installable.
+        selectEl.dataset.installedTag = (versionData.success && versionData.current_tag) || '';
 
         // Update repo link dynamically
         if (releasesData.success && releasesData.repo_url) {
@@ -924,7 +960,7 @@ async function _loadUpdateData(selectEl, updateBtn, versionEl, notesContainer) {
             selectEl.addEventListener('focus', () => { selectEl.style.color = ''; });
             selectEl.addEventListener('blur', _updateSelectStyle);
 
-            updateBtn.disabled = false;
+            _syncInstallButton(selectEl, updateBtn);
 
             // Show notes for first release
             if (releases[0]?.body && notesContainer) {
@@ -1687,10 +1723,10 @@ function _setDisplayHint(hint, state) {
     if (state === 'error') {
         hint.style.color = 'var(--danger,#ef4444)';
         hint.textContent = window.translations?.wrong_display_driver_detected ||
-            'Wrong display driver detected — re-run install.sh to configure the correct display.';
+            'Wrong display driver detected — run sudo -u mempaper .venv/bin/python tools/configure_display.py to configure the correct display.';
     } else {
         hint.style.color = 'var(--text-muted,#888)';
-        hint.textContent = window.translations?.display_change_via_install || 'To change display type, re-run install.sh on the Pi.';
+        hint.textContent = window.translations?.display_change_via_install || 'To change display type, run sudo -u mempaper .venv/bin/python tools/configure_display.py on the Pi.';
     }
 }
 
@@ -1698,7 +1734,7 @@ async function _enhanceDisplaySelect() {
     const selectEl = document.querySelector('[data-config-key="omni_device_name"]');
     if (!selectEl || selectEl.tagName !== 'SELECT') return;
 
-    selectEl.title = window.translations?.display_change_via_install || 'Change display type by re-running install.sh on the Pi';
+    selectEl.title = window.translations?.display_change_via_install || 'Change display type by running sudo -u mempaper .venv/bin/python tools/configure_display.py on the Pi';
 
     let hint = document.getElementById('display-driver-hint');
     if (!hint) {
@@ -1726,54 +1762,26 @@ function createSystemUpdateSection() {
     const wrapper = document.createElement('div');
     wrapper.className = 'update-wrapper';
 
-    const row = document.createElement('div');
-    row.className = 'update-selector-row';
-
-    const hint = document.createElement('span');
-    hint.className = 'system-update-hint';
-    hint.textContent = window.translations?.system_update_hint || 'Update Raspberry Pi system packages (apt upgrade)';
-
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'update-install-btn';
-    btn.textContent = window.translations?.update_packages || 'Update';
-
-    row.appendChild(hint);
-    row.appendChild(btn);
-    wrapper.appendChild(row);
     formGroup.appendChild(wrapper);
 
-    btn.addEventListener('click', async () => {
-        const confirmed = await showConfirmModal({
-            title: window.translations?.system_update || 'System Update',
-            message: window.translations?.system_update_confirm || 'Run apt update && apt upgrade on this device? This may take several minutes.',
-            confirmText: window.translations?.update_packages || 'Update',
-            cancelText: window.translations?.cancel || 'Cancel',
-            icon: '/static/icons/update.svg'
-        });
-        if (!confirmed) return;
-
-        _startSystemUpdate(btn);
-    });
-
-    // ── Full upgrade ─────────────────────────────────────────────────────
-    // A second, separately-labelled action rather than a mode of the first.
-    // `apt upgrade` cannot remove a package; a full upgrade can, and the two
-    // deserve different words and a different confirmation for exactly that
-    // reason. What the ordinary update leaves behind — anything whose new
-    // version needs a new dependency — is what this clears.
+    // ── Update ───────────────────────────────────────────────────────────
+    // The only system-package action offered. There used to be a plain
+    // `apt upgrade` button beside this one, but the run below already starts
+    // with that same step before going on to full-upgrade and autoremove, so
+    // the two buttons differed only in how far they got — a distinction that
+    // asked the reader to know apt's semantics to choose between them.
     const fullRow = document.createElement('div');
     fullRow.className = 'update-selector-row';
 
     const fullHint = document.createElement('span');
     fullHint.className = 'system-update-hint';
     fullHint.textContent = window.translations?.full_upgrade_hint
-        || 'Resolve held-back upgrades and remove orphaned packages (apt full-upgrade + autoremove). Packages pinned in apt-requirements.txt stay at their pinned version.';
+        || 'Updates system packages via apt and removes orphaned packages (apt upgrade + full-upgrade + autoremove). Packages pinned in apt-requirements.txt stay at their pinned version.';
 
     const fullBtn = document.createElement('button');
     fullBtn.type = 'button';
     fullBtn.className = 'update-install-btn';
-    fullBtn.textContent = window.translations?.full_upgrade || 'Full Upgrade';
+    fullBtn.textContent = window.translations?.full_upgrade || 'Update';
 
     fullRow.appendChild(fullHint);
     fullRow.appendChild(fullBtn);
@@ -1799,7 +1807,7 @@ function createSystemUpdateSection() {
 
         if (!preview || !preview.success) {
             await showConfirmModal({
-                title: t.full_upgrade || 'Full Upgrade',
+                title: t.full_upgrade || 'Update',
                 message: (t.upgrade_preview_failed || 'Could not determine what a full upgrade would change')
                          + ': ' + (preview?.message || 'unknown error'),
                 confirmText: t.ok || 'OK',
@@ -1816,7 +1824,7 @@ function createSystemUpdateSection() {
 
         if (!nUp && !nNew && !rem.length) {
             await showConfirmModal({
-                title: t.full_upgrade || 'Full Upgrade',
+                title: t.full_upgrade || 'Update',
                 message: t.nothing_further || 'Nothing further to upgrade — the system is already up to date.',
                 confirmText: t.ok || 'OK',
                 cancelText: null,
@@ -1829,7 +1837,7 @@ function createSystemUpdateSection() {
         // letting the user approve something that will abort.
         if (blocked.length) {
             await showConfirmModal({
-                title: t.full_upgrade || 'Full Upgrade',
+                title: t.full_upgrade || 'Update',
                 message: (t.full_upgrade_blocked
                           || 'This full upgrade would remove packages mempaper depends on, so it will not be run')
                          + ':\n\n' + blocked.join(', ')
@@ -1855,15 +1863,15 @@ function createSystemUpdateSection() {
                          || 'This can take a long time on a Pi Zero, and may install a new kernel.');
 
         const go = await showConfirmModal({
-            title: t.full_upgrade || 'Full Upgrade',
+            title: t.full_upgrade || 'Update',
             message: msg,
-            confirmText: t.full_upgrade || 'Full Upgrade',
+            confirmText: t.full_upgrade || 'Update',
             cancelText: t.cancel || 'Cancel',
             icon: '/static/icons/update.svg'
         });
         if (!go) return;
 
-        _startSystemUpdate(fullBtn, '/api/system/full-upgrade', t.full_upgrade || 'Full Upgrade');
+        _startSystemUpdate(fullBtn, '/api/system/full-upgrade', t.full_upgrade || 'Update');
     });
 
     return formGroup;

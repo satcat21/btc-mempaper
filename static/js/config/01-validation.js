@@ -800,7 +800,7 @@ function closeMemeModal() {
                 _buildLiveToast(
                     [_toastIcon('error'), ' ' + (t.toast_error || 'Error')],
                     [t.wrong_display_driver_detected ||
-                        'Wrong display driver detected — re-run install.sh to configure the correct display.'],
+                        'Wrong display driver detected — run sudo -u mempaper .venv/bin/python tools/configure_display.py to configure the correct display.'],
                     '#dc3545',
                     12000
                 );
