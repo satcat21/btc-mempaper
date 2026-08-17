@@ -1758,6 +1758,224 @@ function createSystemUpdateSection() {
         _startSystemUpdate(btn);
     });
 
+    // ── Full upgrade ─────────────────────────────────────────────────────
+    // A second, separately-labelled action rather than a mode of the first.
+    // `apt upgrade` cannot remove a package; a full upgrade can, and the two
+    // deserve different words and a different confirmation for exactly that
+    // reason. What the ordinary update leaves behind — anything whose new
+    // version needs a new dependency — is what this clears.
+    const fullRow = document.createElement('div');
+    fullRow.className = 'update-selector-row';
+
+    const fullHint = document.createElement('span');
+    fullHint.className = 'system-update-hint';
+    fullHint.textContent = window.translations?.full_upgrade_hint
+        || 'Resolve held-back upgrades and remove orphaned packages (apt full-upgrade + autoremove). Packages pinned in apt-requirements.txt stay at their pinned version.';
+
+    const fullBtn = document.createElement('button');
+    fullBtn.type = 'button';
+    fullBtn.className = 'update-install-btn';
+    fullBtn.textContent = window.translations?.full_upgrade || 'Full Upgrade';
+
+    fullRow.appendChild(fullHint);
+    fullRow.appendChild(fullBtn);
+    wrapper.appendChild(fullRow);
+
+    fullBtn.addEventListener('click', async () => {
+        const t = window.translations || {};
+        // Ask apt what it would do before asking the user to approve it. The
+        // removal list is the part worth reading — everything else a full
+        // upgrade does is the same kind of change the ordinary update makes.
+        fullBtn.disabled = true;
+        const original = fullBtn.textContent;
+        fullBtn.textContent = t.checking || 'Checking…';
+        let preview = null;
+        try {
+            const r = await fetch('/api/system/upgrade-preview');
+            preview = await r.json();
+        } catch (err) {
+            preview = { success: false, message: String(err) };
+        }
+        fullBtn.disabled = false;
+        fullBtn.textContent = original;
+
+        if (!preview || !preview.success) {
+            await showConfirmModal({
+                title: t.full_upgrade || 'Full Upgrade',
+                message: (t.upgrade_preview_failed || 'Could not determine what a full upgrade would change')
+                         + ': ' + (preview?.message || 'unknown error'),
+                confirmText: t.ok || 'OK',
+                cancelText: null,
+                icon: '/static/icons/update.svg'
+            });
+            return;
+        }
+
+        const nUp = (preview.upgrade || []).length;
+        const nNew = (preview.install || []).length;
+        const rem = preview.remove || [];
+        const blocked = preview.blocked || [];
+
+        if (!nUp && !nNew && !rem.length) {
+            await showConfirmModal({
+                title: t.full_upgrade || 'Full Upgrade',
+                message: t.nothing_further || 'Nothing further to upgrade — the system is already up to date.',
+                confirmText: t.ok || 'OK',
+                cancelText: null,
+                icon: '/static/icons/update.svg'
+            });
+            return;
+        }
+
+        // A refusal is knowable before the run, so say so now rather than
+        // letting the user approve something that will abort.
+        if (blocked.length) {
+            await showConfirmModal({
+                title: t.full_upgrade || 'Full Upgrade',
+                message: (t.full_upgrade_blocked
+                          || 'This full upgrade would remove packages mempaper depends on, so it will not be run')
+                         + ':\n\n' + blocked.join(', ')
+                         + '\n\n' + (t.full_upgrade_blocked_hint
+                                     || 'Resolve this over SSH — it usually means a pinned version is blocking a dependency change.'),
+                confirmText: t.ok || 'OK',
+                cancelText: null,
+                icon: '/static/icons/update.svg'
+            });
+            return;
+        }
+
+        let msg = (t.full_upgrade_confirm || 'Run a full system upgrade?')
+                + `\n\n${nUp} ${t.to_upgrade || 'to upgrade'}`
+                + `, ${nNew} ${t.to_install || 'to install'}`
+                + `, ${rem.length} ${t.to_remove || 'to remove'}.`;
+        // Always spell the removals out. Counts are enough for the safe half of
+        // the operation; the removals are the half worth reading by name.
+        if (rem.length) {
+            msg += '\n\n' + (t.will_be_removed || 'Will be removed') + ':\n' + rem.join(', ');
+        }
+        msg += '\n\n' + (t.full_upgrade_time_hint
+                         || 'This can take a long time on a Pi Zero, and may install a new kernel.');
+
+        const go = await showConfirmModal({
+            title: t.full_upgrade || 'Full Upgrade',
+            message: msg,
+            confirmText: t.full_upgrade || 'Full Upgrade',
+            cancelText: t.cancel || 'Cancel',
+            icon: '/static/icons/update.svg'
+        });
+        if (!go) return;
+
+        _startSystemUpdate(fullBtn, '/api/system/full-upgrade', t.full_upgrade || 'Full Upgrade');
+    });
+
+    return formGroup;
+}
+
+// ── Meme Sync (manual trigger) ───────────────────────────────
+// The weekly schedule above decides *when*; this runs the same command now.
+// Worth having as a button because the two moments people most want memes are
+// the two the schedule serves worst: right after a fresh install, and right
+// after a scheduled run failed.
+function createMemeSyncSection() {
+    const t = window.translations || {};
+
+    const formGroup = document.createElement('div');
+    formGroup.className = 'form-group system-update-section';
+
+    const label = document.createElement('label');
+    label.className = 'form-label';
+    label.textContent = t.meme_sync_now || 'Sync Memes Now';
+    formGroup.appendChild(label);
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'update-wrapper';
+
+    const row = document.createElement('div');
+    row.className = 'update-selector-row';
+
+    const hint = document.createElement('span');
+    hint.className = 'system-update-hint';
+    hint.textContent = t.meme_sync_now_hint
+        || 'Download memes that are not already on this device. Safe to run any time — existing files are skipped.';
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'update-install-btn';
+    btn.textContent = t.meme_sync_start || 'Sync now';
+
+    const status = document.createElement('div');
+    status.className = 'system-update-hint';
+    status.style.cssText = 'margin-top:6px; white-space:pre-wrap; font-variant-numeric:tabular-nums;';
+
+    row.appendChild(hint);
+    row.appendChild(btn);
+    wrapper.appendChild(row);
+    wrapper.appendChild(status);
+    formGroup.appendChild(wrapper);
+
+    // A sync started before this page was opened is still running on the
+    // device, so ask rather than assume idle — the button would otherwise offer
+    // to start a second one that the server would refuse.
+    fetch('/api/memes/sync-status')
+        .then(r => r.ok ? r.json() : null)
+        .then(d => {
+            if (d?.success && d.status && d.status !== 'idle') {
+                status.textContent = (t.meme_sync_state || 'State') + ': ' + d.status;
+            }
+        })
+        .catch(() => {});
+
+    btn.addEventListener('click', async () => {
+        const socket = window.configSocket;
+        if (!socket) {
+            status.textContent = t.no_connection || 'No connection to the device.';
+            return;
+        }
+        btn.disabled = true;
+        btn.textContent = t.meme_sync_running || 'Syncing…';
+        status.textContent = '';
+
+        // Only the last line is shown. The downloader is chatty by design —
+        // it reports per-tag progress across thousands of tags — and a full
+        // log pane here would be a wall of text for an operation whose only
+        // interesting output is "how far along" and "what failed".
+        function onOut(data) {
+            if (data?.line) status.textContent = data.line;
+        }
+        function onDone(data) {
+            socket.off('meme_sync_output', onOut);
+            socket.off('meme_sync_done', onDone);
+            btn.disabled = false;
+            btn.textContent = t.meme_sync_start || 'Sync now';
+            status.textContent = data?.success
+                ? (t.meme_sync_complete || 'Meme sync complete.')
+                : ((t.meme_sync_failed || 'Meme sync failed') + ': ' + (data?.error || ''));
+            if (data?.success && typeof loadMemes === 'function') {
+                try { loadMemes(); } catch (e) { /* gallery not on screen */ }
+            }
+        }
+        socket.on('meme_sync_output', onOut);
+        socket.on('meme_sync_done', onDone);
+
+        try {
+            const r = await fetch('/api/memes/sync', { method: 'POST' });
+            const d = await r.json();
+            if (!d.success) {
+                socket.off('meme_sync_output', onOut);
+                socket.off('meme_sync_done', onDone);
+                btn.disabled = false;
+                btn.textContent = t.meme_sync_start || 'Sync now';
+                status.textContent = d.message || 'Failed to start';
+            }
+        } catch (err) {
+            socket.off('meme_sync_output', onOut);
+            socket.off('meme_sync_done', onDone);
+            btn.disabled = false;
+            btn.textContent = t.meme_sync_start || 'Sync now';
+            status.textContent = 'Request failed: ' + err;
+        }
+    });
+
     return formGroup;
 }
 
@@ -2363,7 +2581,12 @@ function _pollForService(overlay, countdownNumber, countdownLabel, progressFill,
     }, 1000);
 }
 
-function _startSystemUpdate(btn) {
+// `endpoint` selects which apt run this drives. Both stream the same
+// apt_output/apt_done events and share this whole modal, because from the log's
+// point of view they are the same operation with a different command list —
+// only the route and the heading differ.
+function _startSystemUpdate(btn, endpoint, heading_) {
+    const url = endpoint || '/api/system/update-packages';
     btn.disabled = true;
     btn.textContent = window.translations?.updating || 'Updating...';
 
@@ -2379,7 +2602,7 @@ function _startSystemUpdate(btn) {
 
     const heading = document.createElement('h3');
     heading.className = 'confirm-modal-title';
-    heading.innerHTML = `<img src="/static/icons/update.svg" alt="" class="modal-title-icon"> ${window.translations?.system_update || 'System Update'}`;
+    heading.innerHTML = `<img src="/static/icons/update.svg" alt="" class="modal-title-icon"> ${heading_ || window.translations?.system_update || 'System Update'}`;
 
     const phaseBar = document.createElement('div');
     phaseBar.className = 'system-update-phase';
@@ -2474,6 +2697,9 @@ function _startSystemUpdate(btn) {
             upgrade:  window.translations?.installing_upgrades || 'Installing upgrades (apt upgrade)\u2026',
             deps:     window.translations?.installing_mempaper_deps || 'Installing mempaper dependencies\u2026',
             cleanup:  window.translations?.restoring_readonly || 'Restoring read-only filesystem\u2026',
+            fullupgrade: window.translations?.running_full_upgrade || 'Running full upgrade (apt full-upgrade)\u2026',
+            autoremove:  window.translations?.removing_orphans || 'Removing packages nothing needs any more\u2026',
+            verify:      window.translations?.verifying_system || 'Verifying nothing is left to upgrade\u2026',
         };
         if (data.phase && phaseLabels[data.phase]) {
             phaseBar.textContent = phaseLabels[data.phase];
@@ -2504,7 +2730,7 @@ function _startSystemUpdate(btn) {
     socket.on('apt_done', onAptDone);
 
     // Trigger the update
-    fetch('/api/system/update-packages', { method: 'POST' })
+    fetch(url, { method: 'POST' })
         .then(r => r.json())
         .then(data => {
             if (!data.success) {

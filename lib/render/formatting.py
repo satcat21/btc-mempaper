@@ -268,7 +268,7 @@ class FormattingMixin:
         if len(h) != 6:
             return fallback
         try:
-            return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
+            return int(h[:2], 16), int(h[2:4], 16), int(h[4:6], 16)
         except ValueError:
             return fallback
 
@@ -297,6 +297,104 @@ class FormattingMixin:
         levels = self.manual_thresholds()
         stops = [(levels[name], rgb) for name, rgb in MANUAL_COLORS]
         return sorted(stops, key=lambda s: s[0])
+
+    def _preview_block_context(self):
+        """The tip the panel is showing, and the floor beneath every tier.
+
+        Returns (cheap_floor, block_height, height, prev_height). The preview
+        drew a hardcoded 914427 before, which is a plausible-looking number and
+        nothing more: the reader cannot tell a preview of their own device from
+        a mock-up, and the digit count is the whole geometry of the thing being
+        previewed.
+        """
+        cheap_floor = FALLBACK_CHEAP_FLOOR
+        block_height = None
+        height = None
+        prev_height = None
+        try:
+            cache = self._block_fee_cache
+            height = cache["current"]["height"]
+            cheap_floor = self._get_fee_for_parameter(
+                height, "minimumFee") or FALLBACK_CHEAP_FLOOR
+            block_height = int(height)
+            # The block before it, because the gradient is a move between the
+            # two: previous fee at the top, current underneath. With one block
+            # cached the two are the same height and the preview renders flat,
+            # which is also what the panel draws in that state.
+            prev_height = cache["previous"]["height"]
+        except Exception:
+            height = None
+            prev_height = None
+        return cheap_floor, block_height, height, prev_height
+
+    def _preview_tier_table(self, height, prev_height):
+        """One entry per tier, so the dropdown can re-scale without a save.
+
+        Each is read independently: a tier with too little history simply has no
+        median yet, and that must not cost the other four theirs.
+        """
+        store = getattr(self, "fee_baseline", None)
+        tiers = {}
+        for tier in TIERS:
+            tier_baseline, tier_stats = None, None
+            if store is not None:
+                try:
+                    tier_baseline = store.baseline(tier)
+                    tier_stats = store.stats(tier)
+                except Exception:
+                    tier_baseline, tier_stats = None, None
+            tier_fee = None
+            if height is not None:
+                try:
+                    tier_fee = self._get_fee_for_parameter(height, tier)
+                except Exception:
+                    tier_fee = None
+            tier_prev_fee = None
+            if prev_height is not None:
+                try:
+                    tier_prev_fee = self._get_fee_for_parameter(prev_height, tier)
+                except Exception:
+                    tier_prev_fee = None
+            tiers[tier] = {"baseline": tier_baseline, "stats": tier_stats,
+                           "current_fee": tier_fee,
+                           "previous_fee": tier_prev_fee}
+        return tiers
+
+    def _preview_slider_ranges(self, baseline):
+        """The (min, anchor, max) travel of each scale's slider.
+
+        Returns (fixed, relative, manual). Each scale is framed by whatever it
+        is measured against, so where "normal" sits on the track is a property
+        of the scale rather than a layout choice.
+        """
+        fixed_slider = {"min": 0.0, "anchor": SLIDER_FIXED_ANCHOR,
+                        "max": SLIDER_FIXED_MAX}
+
+        # The manual scale is framed by the numbers it is made of: a tenth past
+        # the top threshold, with the midpoint halfway - which makes that track
+        # plain linear, and it can afford to be, spanning a handful of sat/vB
+        # rather than a thousand. `red` is normally the top, but the thresholds
+        # are only sorted when they are used, so take whichever is highest and a
+        # transposed pair still frames the whole table.
+        levels = self.manual_thresholds()
+        top = max([levels.get("red", 0.0)] + list(levels.values()))
+        if top > 0:
+            span = round(top * MANUAL_HEADROOM, 3)
+            manual_slider = {"min": 0.0, "anchor": round(span / 2, 3), "max": span}
+        else:
+            manual_slider = dict(fixed_slider)
+
+        if baseline and baseline > 0:
+            relative_slider = {"min": 0.0,
+                               "anchor": round(float(baseline), 3),
+                               "max": round(float(baseline) * SLIDER_HEADROOM, 3)}
+        else:
+            # No window yet, so `relative` is coloring from the manual table -
+            # give it that table's range rather than a span around a median that
+            # does not exist.
+            relative_slider = dict(manual_slider)
+
+        return fixed_slider, relative_slider, manual_slider
 
     def block_height_preview_scale(self):
         """The scale itself, so the config page can color any fee the user picks.
@@ -352,90 +450,14 @@ class FormattingMixin:
         if selected_tier not in TIERS:
             selected_tier = "minimumFee"
 
-        # The tip the panel is currently showing, and the floor beneath every
-        # tier. The preview drew a hardcoded 914427 before, which is a
-        # plausible-looking number and nothing more: the reader cannot tell a
-        # preview of their own device from a mock-up, and the digit count is the
-        # whole geometry of the thing being previewed.
-        cheap_floor = FALLBACK_CHEAP_FLOOR
-        block_height = None
-        height = None
-        prev_height = None
-        try:
-            cache = self._block_fee_cache
-            height = cache["current"]["height"]
-            cheap_floor = self._get_fee_for_parameter(
-                height, "minimumFee") or FALLBACK_CHEAP_FLOOR
-            block_height = int(height)
-            # The block before it, because the gradient is a move between the
-            # two: previous fee at the top, current underneath. With one block
-            # cached the two are the same height and the preview renders flat,
-            # which is also what the panel draws in that state.
-            prev_height = cache["previous"]["height"]
-        except Exception:
-            height = None
-            prev_height = None
-
-        # One entry per tier, so the dropdown beside this panel can re-scale the
-        # whole preview without a save and a reload. Each is read independently:
-        # a tier with too little history simply has no median yet, and that must
-        # not cost the other four theirs.
-        store = getattr(self, "fee_baseline", None)
-        tiers = {}
-        for tier in TIERS:
-            tier_baseline, tier_stats = None, None
-            if store is not None:
-                try:
-                    tier_baseline = store.baseline(tier)
-                    tier_stats = store.stats(tier)
-                except Exception:
-                    tier_baseline, tier_stats = None, None
-            tier_fee = None
-            if height is not None:
-                try:
-                    tier_fee = self._get_fee_for_parameter(height, tier)
-                except Exception:
-                    tier_fee = None
-            tier_prev_fee = None
-            if prev_height is not None:
-                try:
-                    tier_prev_fee = self._get_fee_for_parameter(prev_height, tier)
-                except Exception:
-                    tier_prev_fee = None
-            tiers[tier] = {"baseline": tier_baseline, "stats": tier_stats,
-                           "current_fee": tier_fee,
-                           "previous_fee": tier_prev_fee}
+        cheap_floor, block_height, height, prev_height = self._preview_block_context()
+        tiers = self._preview_tier_table(height, prev_height)
 
         baseline = tiers[selected_tier]["baseline"]
         stats = tiers[selected_tier]["stats"]
         current_fee = tiers[selected_tier]["current_fee"]
 
-        fixed_slider = {"min": 0.0, "anchor": SLIDER_FIXED_ANCHOR,
-                        "max": SLIDER_FIXED_MAX}
-
-        # The manual scale is framed by the numbers it is made of: a tenth past
-        # the top threshold, with the midpoint halfway - which makes that track
-        # plain linear, and it can afford to be, spanning a handful of sat/vB
-        # rather than a thousand. `red` is normally the top, but the thresholds
-        # are only sorted when they are used, so take whichever is highest and a
-        # transposed pair still frames the whole table.
-        levels = self.manual_thresholds()
-        top = max([levels.get("red", 0.0)] + list(levels.values()))
-        if top > 0:
-            span = round(top * MANUAL_HEADROOM, 3)
-            manual_slider = {"min": 0.0, "anchor": round(span / 2, 3), "max": span}
-        else:
-            manual_slider = dict(fixed_slider)
-
-        if baseline and baseline > 0:
-            relative_slider = {"min": 0.0,
-                               "anchor": round(float(baseline), 3),
-                               "max": round(float(baseline) * SLIDER_HEADROOM, 3)}
-        else:
-            # No window yet, so `relative` is coloring from the manual table -
-            # give it that table's range rather than a span around a median that
-            # does not exist.
-            relative_slider = dict(manual_slider)
+        fixed_slider, relative_slider, manual_slider = self._preview_slider_ranges(baseline)
 
         return {
             "lighten": LIGHTEN_AMOUNT,

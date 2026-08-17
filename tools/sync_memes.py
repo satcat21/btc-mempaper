@@ -1,72 +1,59 @@
 #!/usr/bin/env python3
 """
-Meme sync via the einundzwanzig-memes.space API — PLACEHOLDER.
+Meme sync against einundzwanzig-memes.space.
 
-Status: not implemented. This is a stub reserving the shape of the eventual
-API-based sync, pending an API endpoint from einundzwanzig-memes.space.
+This is the entry point the weekly cron line invokes — _apply_meme_sync_crontab()
+in mempaper_app.py writes a crontab entry naming this file, and the web "Sync
+now" button runs the same command. It used to be a placeholder that printed what
+it would have done and exited 0, on the understanding that a list-all API
+endpoint was still needed.
 
-This is the script the weekly cron entry invokes — _apply_meme_sync_crontab()
-in mempaper_app.py writes the line that points here. Until the functions below
-are filled in, a scheduled run reports what it would have done and exits 0, so
-the job is a no-op rather than a failure in the log.
+That endpoint never arrived, and it turned out not to be needed: tools/
+download_all_memes.py already solves the problem the hard way. The site caps
+/random and the filter endpoints at the same popular results, so the working
+strategy is semantic search across the ~5 800 real tags from /api/v1/tags, with
+cursor pagination and de-duplication by UUID. That is a lot of machinery, it
+exists, it is resumable, and it is tested — so this file delegates to it rather
+than growing a second, thinner implementation that would drift out of agreement.
 
-To promote this to the real implementation, fill in fetch_manifest() and
-download_new() below. Nothing else has to change: the crontab line already
-names this file, and startup rewrites it from the same function, so an existing
-schedule carries over untouched.
+Kept as its own entry point rather than pointing cron straight at
+download_all_memes.py, because crontab lines written by earlier releases already
+name this path. Repointing them would strand every device whose schedule was
+written before the change.
 
-Run it with the project virtualenv's interpreter, not the system one — requests
-and PySocks are installed in the venv only, so a bare `python3` run fails on the
-import once this is implemented:
+    .venv/bin/python tools/sync_memes.py --update [--tor] [--out-dir static/memes]
+    .venv/bin/python tools/sync_memes.py --status
+    .venv/bin/python tools/sync_memes.py --stop
 
-    /home/mempaper/btc-mempaper/.venv/bin/python tools/sync_memes.py --update [--tor] [--out-dir static/memes]
-
-The cron entry already does this: _apply_meme_sync_crontab() builds the command
-from .venv/bin/python whenever that exists.
+Run it with the project virtualenv's interpreter, not the system one: requests
+and PySocks are installed in the venv only.
 """
 
-import argparse
 import sys
 from pathlib import Path
 
-# The cron entry sets cwd to the project root; resolve relative to this file so
-# a manual run from anywhere still behaves.
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+# tools/ has to be importable by name: download_all_memes does a top-level
+# `import einundzwanzig_memes`, which only resolves when its own directory is on
+# the path. Direct execution puts it there already; a cron run with a different
+# cwd does not, and that difference used to be an ImportError hours after the
+# fact in a log nobody reads.
+TOOLS_DIR = Path(__file__).resolve().parent
+if str(TOOLS_DIR) not in sys.path:
+    sys.path.insert(0, str(TOOLS_DIR))
+
+PROJECT_ROOT = TOOLS_DIR.parent
 DEFAULT_OUT_DIR = PROJECT_ROOT / "static" / "memes"
 VENV_DIR = PROJECT_ROOT / ".venv"
-
-# Populated once the endpoint exists.
-API_BASE = "https://einundzwanzig-memes.space"
-
-
-def fetch_manifest(session):
-    """Return the remote list of available memes.
-
-    NOT IMPLEMENTED — awaiting an API endpoint. Should return a list of dicts
-    carrying at minimum an id/filename and a download URL, so download_new()
-    can diff it against what is already on disk.
-    """
-    raise NotImplementedError("einundzwanzig-memes.space API endpoint not available yet")
-
-
-def download_new(session, manifest, out_dir):
-    """Download every manifest entry not already present in out_dir.
-
-    NOT IMPLEMENTED — see fetch_manifest(). Should skip existing files so a
-    weekly run is cheap, and write atomically so an interrupted download cannot
-    leave a truncated image that the renderer would later fail on.
-    """
-    raise NotImplementedError("einundzwanzig-memes.space API endpoint not available yet")
 
 
 def warn_if_outside_venv():
     """Say so when this is running on an interpreter other than the project venv.
 
     The dependencies live in .venv only, so a system-python run fails at import
-    time once the functions above are implemented — with a bare ImportError in a
-    cron log, hours after the fact. Checking the interpreter instead names the
-    cause while there is still something readable on screen. A warning rather
-    than an exit: a venv somewhere else that has the packages is perfectly fine.
+    time — with a bare ImportError in a cron log, hours after the fact. Checking
+    the interpreter instead names the cause while there is still something
+    readable on screen. A warning rather than an exit: a venv somewhere else
+    that has the packages is perfectly fine.
     """
     if not VENV_DIR.exists():
         return
@@ -85,29 +72,35 @@ def warn_if_outside_venv():
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__,
-                                     formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--update", action="store_true",
-                        help="Fetch only memes not already present locally")
-    parser.add_argument("--tor", action="store_true",
-                        help="Route downloads through Tor (socks5h://127.0.0.1:9050)")
-    parser.add_argument("--out-dir", default=str(DEFAULT_OUT_DIR),
-                        help="Destination directory (default: static/memes)")
-    args = parser.parse_args()
-
-    out_dir = Path(args.out_dir)
     warn_if_outside_venv()
 
-    print("mempaper meme sync (API client) — not implemented yet.")
-    print(f"  target dir : {out_dir}")
-    print(f"  mode       : {'update' if args.update else 'full'}")
-    print(f"  tor        : {'yes' if args.tor else 'no'}")
-    print(f"  api base   : {API_BASE}")
-    print()
-    print("No memes were fetched — fill in fetch_manifest() and download_new().")
+    try:
+        import download_all_memes
+    except ImportError as exc:
+        # Almost always the venv warning above coming true.
+        print(f"ERROR: cannot import the downloader: {exc}")
+        print("   Install dependencies with: .venv/bin/pip install -r requirements.txt")
+        return 1
 
-    # Exit 0 deliberately: a placeholder must not look like a failed job in the
-    # cron log or trip any future alerting on non-zero exits.
+    # Hand the arguments straight through. The downloader owns the CLI contract
+    # — --update, --tor, --out-dir, --status, --stop, --workers and the rest —
+    # and re-declaring a subset here would mean two parsers to keep in agreement
+    # and a flag that works on one entry point but not the other.
+    #
+    # --out-dir is defaulted only when the caller did not supply one, so a cron
+    # line written without it still writes where the app reads.
+    argv = sys.argv[1:]
+    if not any(a == "--out-dir" or a.startswith("--out-dir=") for a in argv):
+        argv += ["--out-dir", str(DEFAULT_OUT_DIR)]
+
+    sys.argv = ["download_all_memes.py"] + argv
+    try:
+        download_all_memes.main()
+    except SystemExit as exc:
+        return exc.code or 0
+    except KeyboardInterrupt:
+        print("Interrupted.")
+        return 130
     return 0
 
 

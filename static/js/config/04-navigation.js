@@ -395,6 +395,12 @@ function _renderCategorySection(category, section) {
             fieldsAdded += 1;
         }
 
+        // Manual "Sync now" beneath the weekly schedule fields.
+        if (category.id === 'meme_sync') {
+            section.appendChild(createMemeSyncSection());
+            fieldsAdded += 1;
+        }
+
         // Populate the WiFi section
         if (category.id === 'wifi') {
             section.appendChild(createWifiSection());

@@ -5,15 +5,20 @@
 # on Pi Zero 1 WH hardware (gevent, Pillow/WebP, all dependencies).
 #
 # What this script does:
-#   1. Reads the required minor from tools/python_version (written by install.sh
-#      or updated manually by the developer before pushing a release)
-#   2. Unholds python3/python3-dev/python3-venv
-#   3. apt upgrade installs the new Python minor
-#   4. Rebuilds the virtual environment (old minor binaries are gone after upgrade)
-#   5. Reinstalls all Python dependencies (including ARMv6 source builds if needed)
-#   6. Re-holds python3 at the new minor
-#   7. Records the new minor to tools/python_version
+#   1. Reads the required minor from tools/python_version (updated manually by
+#      the developer before tagging a release)
+#   2. Refuses outright if that minor has no package in this release's archive
+#   3. Unholds python3/python3-dev/python3-venv
+#   4. apt installs the new Python minor, and verifies it actually moved before
+#      touching anything that cannot be undone
+#   5. Rebuilds the virtual environment (old minor binaries are gone after upgrade)
+#   6. Reinstalls all Python dependencies (including ARMv6 source builds if needed)
+#   7. Re-holds python3 at the new minor
 #   8. Restarts the mempaper service
+#
+# tools/python_version is read, never written: it is repository state describing
+# what a release requires, and a device rewriting it would be overwritten by the
+# next checkout anyway.
 #
 # Usage:
 #   sudo bash tools/upgrade_python.sh              # interactive
@@ -92,6 +97,32 @@ if ! $FORCE; then
     [[ "$_CHOICE" =~ ^[Yy]$ ]] || { echo "  Aborted."; exit 0; }
 fi
 
+# ── Step 0: Is that version even obtainable? ─────────────────────────────────
+# Debian ships exactly one Python minor per release: bookworm has 3.11, trixie
+# has 3.13, and there is no python3.12 or python3.14 package to be had on them.
+# Asking for one is a plausible mistake - it is a single digit in a text file -
+# and until this check existed it was an expensive one. The install below would
+# fail, fall through to its `apt-get upgrade python3` fallback, which succeeds
+# as a no-op because python3 is already current, and the script would then carry
+# on to delete and rebuild the venv: twenty to forty minutes on a Pi Zero,
+# ending on exactly the interpreter it started with. Worse, nothing recorded the
+# attempt, so the next update found the same unreachable number and did it all
+# again, every time, forever.
+#
+# Checking the archive first turns that into a five-second refusal that names
+# the reason. Done before the unhold, so a device that fails here has not been
+# touched at all.
+step "Checking that Python ${CURRENT_MAJOR}.${REQUIRED_MINOR} exists for ${OS_CODENAME}"
+apt-get update -qq || warn "apt-get update failed — checking against the cached index"
+if ! apt-cache show "python3.${REQUIRED_MINOR}" >/dev/null 2>&1; then
+    fail "No python3.${REQUIRED_MINOR} package exists for Debian '${OS_CODENAME}'.
+      tools/python_version asks for 3.${REQUIRED_MINOR}, but that minor is not in this
+      release's archive — Debian ships one Python minor per release.
+      Nothing has been changed. Either correct '${OS_CODENAME}=' in tools/python_version,
+      or upgrade the OS release first."
+fi
+ok "python3.${REQUIRED_MINOR} is available"
+
 # ── Step 1: Unhold Python metapackages ───────────────────────────────────────
 step "Unholding Python metapackages"
 apt-mark unhold python3 python3-dev python3-venv 2>/dev/null || true
@@ -109,6 +140,30 @@ apt-get install -y "python3.${REQUIRED_MINOR}" "python3.${REQUIRED_MINOR}-dev" \
     || apt-get upgrade -y python3 python3-dev python3-venv
 NEW_MINOR=$(python3 -c "import sys; print(sys.version_info.minor)" 2>/dev/null || echo "?")
 ok "System Python is now ${CURRENT_MAJOR}.${NEW_MINOR}"
+
+# Confirm the upgrade actually happened before doing anything irreversible.
+# The install above ends in `|| apt-get upgrade -y python3 …`, and that fallback
+# reports success whether or not it moved anything - so a failed install and a
+# completed one are indistinguishable by exit code. Everything past this point
+# destroys the venv, so this is the last moment at which the device can be left
+# exactly as it was found.
+if [ "$NEW_MINOR" = "?" ] || ! [ "$NEW_MINOR" -ge "$REQUIRED_MINOR" ] 2>/dev/null; then
+    warn "Python is still ${CURRENT_MAJOR}.${NEW_MINOR} after the upgrade attempt"
+    # Restore the holds taken off in step 1. Leaving them off would let the next
+    # ordinary apt upgrade move the interpreter the venv is built against - the
+    # exact failure the hold exists to prevent, arrived at by way of a failed
+    # attempt to change it deliberately.
+    RESTORE=()
+    for _pkg in python3 python3-dev python3-venv; do
+        dpkg-query -W -f='${Status}' "$_pkg" 2>/dev/null | grep -q ' ok installed$' \
+            && RESTORE+=("$_pkg")
+    done
+    [ ${#RESTORE[@]} -gt 0 ] && apt-mark hold "${RESTORE[@]}" >/dev/null 2>&1
+    fail "Could not upgrade to Python ${CURRENT_MAJOR}.${REQUIRED_MINOR}.
+      The venv was left untouched and the holds were restored, so the device is
+      unchanged and still running. Check that python3.${REQUIRED_MINOR} is
+      installable on '${OS_CODENAME}' before retrying."
+fi
 
 # ── Step 3: Rebuild virtual environment ───────────────────────────────────────
 step "Rebuilding virtual environment"

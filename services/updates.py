@@ -233,7 +233,7 @@ class UpdateSchedulerMixin:
                                     cwd=project_dir, capture_output=True, timeout=600
                                 )
                                 if result.returncode != 0:
-                                    print(f"⚠️ Auto-update: pip install failed, rolling back...")
+                                    print("⚠️ Auto-update: pip install failed, rolling back...")
                                     subprocess.run(
                                         ['git', 'checkout', current_tag or 'HEAD~1'],
                                         cwd=project_dir, capture_output=True, check=True

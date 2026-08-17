@@ -1,5 +1,24 @@
 # System dependencies for mempaper Bitcoin Dashboard
 # Parsed by the web updater to ensure required apt packages are installed.
+#
+# One package per line, in either form:
+#
+#   imagemagick             float — whatever the archive currently offers
+#   tor=0.4.8.12-1          pin   — exactly this version, and held there
+#
+# A pin is enforced, not advisory: the installer puts that version on and then
+# `apt-mark hold`s the package, so neither `apt upgrade` nor the web Full
+# Upgrade can move it. Removing the "=version" releases the hold again on the
+# next reconcile. A pinned package installed at some other version is detected
+# at startup and corrected, downgrades included.
+#
+# Before adding one, weigh what it costs:
+#   - Debian ships security fixes as new versions of the same upstream release
+#     (1.2.3-4+deb12u1 → +deb12u2). A pinned package stops receiving them.
+#   - Versions are codename-bound. A version that exists on bookworm generally
+#     does not exist on trixie, and this same file is read on both — the pin
+#     then fails to resolve and the package is left where it is.
+# Pin what actually breaks when it moves; leave everything else floating.
 
 # Build tools and Python development
 libffi-dev

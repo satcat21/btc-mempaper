@@ -13,6 +13,7 @@ Version: 2.0 (Refactored)
 import time
 import io
 import base64
+import contextlib
 import queue
 import threading
 import traceback
@@ -104,9 +105,7 @@ def _reserve_upload_path(directory, raw_filename, file_ext):
     # it here means the guarantee does not depend on a sanitiser three lines up
     # continuing to behave the same way.
     path = safe_join(directory, candidate)
-    if path is None:
-        return None, None
-    return candidate, path
+    return (None, None) if path is None else (candidate, path)
 
 
 def _parse_git_remote(remote_url):
@@ -121,9 +120,7 @@ def _parse_git_remote(remote_url):
     import re
     m = re.match(r'^(?:(?:https?|ssh|git)://)?(?:[^@/]+@)?([^/:]+)[:/](.+?)/?$',
                  (remote_url or '').strip())
-    if not m:
-        return None, None
-    return m.group(1).lower(), m.group(2)
+    return (m.group(1).lower(), m.group(2)) if m else (None, None)
 
 
 def _safe_error(exc, context=''):
@@ -150,8 +147,11 @@ def _read_reboot_time():
                 content = f.read()
             if 'Automatic-Reboot-Time' not in content:
                 continue
-            m = re.search(r'^(?!\s*//).*Automatic-Reboot-Time\s+"(\d{1,2}):(\d{2})"', content, re.MULTILINE)
-            if m:
+            if m := re.search(
+                r'^(?!\s*//).*Automatic-Reboot-Time\s+"(\d{1,2}):(\d{2})"',
+                content,
+                re.MULTILINE,
+            ):
                 return int(m.group(1)), int(m.group(2))
         except Exception:
             continue
@@ -287,26 +287,25 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
     def _init_socketio(self):
         """Initialize SocketIO with proper configuration."""
         # Configure SocketIO with extended timeouts for 48-hour sessions
-        skip_socketio = self.config.get("skip_socketio_on_startup", False)
-        if skip_socketio:
+        if self.config.get("skip_socketio_on_startup", False):
             print("⚙️ Skipping SocketIO initialization for faster startup")
             self.socketio = None
         else:
             # Auto-detect async mode based on environment and available packages
             is_production = os.getenv('FLASK_ENV') == 'production' or os.getenv('GUNICORN_CMD_ARGS') is not None
-            
+
             # Check if gevent is available
             try:
                 gevent_available = True
             except ImportError:
                 gevent_available = False
-            
+
             # Use gevent only if available and in production, otherwise use threading
             async_mode = "gevent" if (is_production and gevent_available) else "threading"
-            
+
             # Raspberry Pi Zero WH optimizations (512MB RAM, single core)
             # is_pi_zero = os.path.exists('/proc/device-tree/model') and 'Zero' in open('/proc/device-tree/model', 'rb').read().decode('utf-8', errors='ignore')
-            
+
             socketio_config = {
                 # cors_allowed_origins is deliberately not set: Engine.IO then
                 # allows the same origin only, which covers every way the panel
@@ -329,13 +328,13 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
                 'transports': ['websocket', 'polling']  # Explicitly allow websocket and polling
             }
             print(f"🚀 SocketIO async mode: {async_mode} ({'production' if is_production else 'development'})")
-            
+
             # Suppress Engine.IO transport warnings at Python logging level
             logging.getLogger('engineio').setLevel(logging.CRITICAL)
             logging.getLogger('engineio.server').setLevel(logging.CRITICAL)
             logging.getLogger('socketio').setLevel(logging.CRITICAL)
             logging.getLogger('socketio.server').setLevel(logging.CRITICAL)
-            
+
             self.socketio = SocketIO(self.app, **socketio_config)
     
     def _init_app_components(self):
@@ -626,6 +625,38 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
         }
         return [p for p in pkgs if p not in installed]
 
+    @staticmethod
+    def _drifted_pins(wanted):
+        """Which pinned packages are installed at a version other than the pin.
+
+        `wanted` is {name: version}. A package that is not installed at all is
+        not drift — the missing-package check owns that case, and reporting it
+        twice would print the same package on two lines.
+
+        Drift is not a rare state. It is what a device is in the moment a
+        release adds a pin to a package it already had, and what a full upgrade
+        would produce if a hold were ever lost. Nothing else notices it: a
+        pinned package at the wrong version is present, so every presence check
+        reports the device converged while the declaration says otherwise.
+        """
+        if not wanted:
+            return []
+        try:
+            result = subprocess.run(
+                ['dpkg-query', '-W', '-f=${Package} ${Status} ${Version}\\n'] + list(wanted),
+                capture_output=True, text=True, timeout=15
+            )
+        except (subprocess.SubprocessError, OSError):
+            return []
+        drifted = []
+        for line in (result.stdout or '').splitlines():
+            parts = line.split()
+            if len(parts) >= 5 and parts[3] == 'installed':
+                name, version = parts[0], parts[4]
+                if name in wanted and version != wanted[name]:
+                    drifted.append(name)
+        return drifted
+
     def _run_dependency_health_check(self):
         """Verify that all required apt and pip packages are installed.
 
@@ -637,99 +668,8 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
             return
 
         project_dir = os.path.dirname(os.path.abspath(__file__))
-
-        # ── apt packages ──
-        apt_req_file = os.path.join(project_dir, 'apt-requirements.txt')
-        if os.path.exists(apt_req_file):
-            try:
-                with open(apt_req_file) as f:
-                    apt_pkgs = [
-                        line.strip() for line in f
-                        if line.strip() and not line.strip().startswith('#')
-                    ]
-                if apt_pkgs:
-                    missing_apt = self._missing_apt_packages(apt_pkgs)
-                    if missing_apt:
-                        print(f'📦 Dependency check: missing apt packages: {", ".join(missing_apt)}')
-                        subprocess.run(['sudo', 'mount', '-o', 'remount,rw', '/'], timeout=10, capture_output=True)
-                        # Scoped wrapper (installs from apt-requirements.txt, no args accepted) —
-                        # a raw 'apt-get install <pkgs>' isn't in sudoers and would hang on a
-                        # password prompt, silently failing under capture_output.
-                        wrapper = '/usr/local/bin/mempaper-apt-install'
-                        if not os.path.exists(wrapper):
-                            # Predates the wrapper, or the sudoers/wrapper set was never
-                            # refreshed after an update. Nothing here can install without it.
-                            print('⚠️ Dependency check: {} is missing — run '
-                                  '"sudo bash tools/install_wifi_permissions.sh {}" over SSH'
-                                  .format(wrapper, os.environ.get('USER', 'mempaper')))
-                        else:
-                            result = subprocess.run(['sudo', wrapper],
-                                                    capture_output=True, text=True, timeout=600)
-                            # Re-query rather than trusting the exit code: this used to print
-                            # success unconditionally, so a failed install (stale package index,
-                            # one unavailable package aborting the whole batch, no sudoers entry)
-                            # looked identical to a good one and the package stayed missing
-                            # through every subsequent update.
-                            still_missing = self._missing_apt_packages(missing_apt)
-                            if still_missing:
-                                print('❌ Dependency check: still missing after install: '
-                                      f'{", ".join(still_missing)}')
-                                tail = (result.stderr or result.stdout or '').strip().splitlines()
-                                for line in tail[-5:]:
-                                    print(f'   apt: {line}')
-                            else:
-                                print(f'📦 Dependency check: installed {", ".join(missing_apt)}')
-                    else:
-                        print('✅ Dependency check: all apt packages present')
-            except Exception as e:
-                print(f'⚠️ Dependency check (apt): {e}')
-
-        # ── pip packages ──
-        requirements_file = os.path.join(project_dir, 'requirements.txt')
-        venv_pip = os.path.join(project_dir, '.venv', 'bin', 'pip')
-        if os.path.exists(venv_pip) and os.path.exists(requirements_file):
-            try:
-                # --disable-pip-version-check: without it, pip makes an HTTP call to
-                # PyPI to check for a newer pip release on nearly every invocation,
-                # even for this purely local package listing. Right after boot, while
-                # NetworkManager is still finishing DHCP/DNS, that call can't resolve
-                # and burns the full 30s timeout below for no reason — this is a
-                # local-only check and never needs the network at all.
-                result = subprocess.run(
-                    [venv_pip, 'list', '--format=freeze', '--disable-pip-version-check'],
-                    capture_output=True, text=True, timeout=30
-                )
-                installed_pip = {}
-                if result.returncode == 0:
-                    for line in result.stdout.strip().splitlines():
-                        if '==' in line:
-                            name, ver = line.split('==', 1)
-                            installed_pip[name.lower().replace('-', '_')] = ver
-
-                missing_pip = []
-                with open(requirements_file) as f:
-                    for line in f:
-                        line = line.split('#')[0].strip()
-                        if not line:
-                            continue
-                        pkg_name = line.split('==')[0].split('>=')[0].split('[')[0].strip().lower().replace('-', '_')
-                        if pkg_name and pkg_name not in installed_pip:
-                            missing_pip.append(line)
-
-                if missing_pip:
-                    print(f'📦 Dependency check: missing pip packages: {", ".join(missing_pip)}')
-                    result = subprocess.run(
-                        [venv_pip, 'install', '--disable-pip-version-check'] + missing_pip,
-                        capture_output=True, timeout=600
-                    )
-                    if result.returncode == 0:
-                        print('📦 Dependency check: pip packages installed — restart recommended')
-                    else:
-                        print(f'⚠️ Dependency check: pip install failed')
-                else:
-                    print('✅ Dependency check: all pip packages present')
-            except Exception as e:
-                print(f'⚠️ Dependency check (pip): {e}')
+        self._check_apt_packages(project_dir)
+        self._check_pip_packages(project_dir)
 
         # ── Compatibility checks ──
         # Catches an apt package silently losing compatibility after a security
@@ -739,8 +679,150 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
         # to run on every boot regardless of hotspot/network state. Pillow/image
         # encoding is intentionally not covered here (see comment near
         # self._dependency_health_issues in __init__).
-        issues = []
+        issues = [issue for issue in (self._check_nftables_syntax(),
+                                      self._check_dnsmasq_syntax()) if issue]
+        self._dependency_health_issues = issues or None
 
+    def _check_apt_packages(self, project_dir):
+        """Install any apt packages listed in apt-requirements.txt but missing."""
+        apt_req_file = os.path.join(project_dir, 'apt-requirements.txt')
+        if not os.path.exists(apt_req_file):
+            return
+        try:
+            # Names only. A declaration may carry a version pin
+            # ('tor=0.4.8.12-1'), and handing that whole string to
+            # dpkg-query asks about a package that does not exist — the
+            # pinned package would read as missing on every boot and send
+            # the installer after it forever.
+            from utils.apt_requirements import (package_names,
+                                                parse_apt_requirements,
+                                                pinned_versions)
+            _apt_entries = parse_apt_requirements(apt_req_file)
+            if not (apt_pkgs := package_names(_apt_entries)):
+                return
+
+            missing_apt = self._missing_apt_packages(apt_pkgs)
+            # A pinned package sitting at the wrong version is present,
+            # so the check above reports the device converged while a
+            # declaration is unsatisfied. The wrapper knows how to fix
+            # it; this only has to notice and call it.
+            drifted = self._drifted_pins(pinned_versions(_apt_entries))
+            if not missing_apt and not drifted:
+                print('✅ Dependency check: all apt packages present at declared versions')
+                return
+
+            if missing_apt:
+                print(f'📦 Dependency check: missing apt packages: {", ".join(missing_apt)}')
+            if drifted:
+                print(f'📌 Dependency check: pinned to another version: {", ".join(drifted)}')
+            self._reconcile_apt_packages(missing_apt, drifted, _apt_entries)
+        except Exception as e:
+            print(f'⚠️ Dependency check (apt): {e}')
+
+    def _reconcile_apt_packages(self, missing_apt, drifted, apt_entries):
+        """Run the scoped apt wrapper, then re-query to confirm it actually converged."""
+        from utils.apt_requirements import pinned_versions
+
+        subprocess.run(['sudo', 'mount', '-o', 'remount,rw', '/'], timeout=10, capture_output=True)
+        # Scoped wrapper (installs from apt-requirements.txt, no args accepted) —
+        # a raw 'apt-get install <pkgs>' isn't in sudoers and would hang on a
+        # password prompt, silently failing under capture_output.
+        wrapper = '/usr/local/bin/mempaper-apt-install'
+        if not os.path.exists(wrapper):
+            # Predates the wrapper, or the sudoers/wrapper set was never
+            # refreshed after an update. Nothing here can install without it.
+            _user = os.environ.get('USER', 'mempaper')
+            print(f'⚠️ Dependency check: {wrapper} is missing — run '
+                  f'"sudo bash tools/install_wifi_permissions.sh {_user}" over SSH')
+            return
+
+        result = subprocess.run(['sudo', wrapper],
+                                capture_output=True, text=True, timeout=600)
+        # Re-query rather than trusting the exit code: this used to print
+        # success unconditionally, so a failed install (stale package index,
+        # one unavailable package aborting the whole batch, no sudoers entry)
+        # looked identical to a good one and the package stayed missing
+        # through every subsequent update.
+        still_missing = self._missing_apt_packages(missing_apt)
+        still_drifted = self._drifted_pins(
+            {k: v for k, v in pinned_versions(apt_entries).items()
+             if k in drifted})
+        if not still_missing and not still_drifted:
+            _fixed = missing_apt + drifted
+            print(f'📦 Dependency check: reconciled {", ".join(_fixed)}')
+            return
+
+        if still_missing:
+            print('❌ Dependency check: still missing after install: '
+                  f'{", ".join(still_missing)}')
+        if still_drifted:
+            print('❌ Dependency check: could not pin: '
+                  f'{", ".join(still_drifted)} '
+                  '(is that version still in the archive?)')
+        tail = (result.stderr or result.stdout or '').strip().splitlines()
+        for line in tail[-5:]:
+            print(f'   apt: {line}')
+
+    def _check_pip_packages(self, project_dir):
+        """Install any requirements.txt packages missing from the venv."""
+        requirements_file = os.path.join(project_dir, 'requirements.txt')
+        venv_pip = os.path.join(project_dir, '.venv', 'bin', 'pip')
+        if not os.path.exists(venv_pip) or not os.path.exists(requirements_file):
+            return
+        try:
+            installed_pip = self._installed_pip_versions(venv_pip)
+            missing_pip = self._missing_pip_packages(requirements_file, installed_pip)
+            if not missing_pip:
+                print('✅ Dependency check: all pip packages present')
+                return
+
+            print(f'📦 Dependency check: missing pip packages: {", ".join(missing_pip)}')
+            result = subprocess.run(
+                [venv_pip, 'install', '--disable-pip-version-check'] + missing_pip,
+                capture_output=True, timeout=600
+            )
+            if result.returncode == 0:
+                print('📦 Dependency check: pip packages installed — restart recommended')
+            else:
+                print('⚠️ Dependency check: pip install failed')
+        except Exception as e:
+            print(f'⚠️ Dependency check (pip): {e}')
+
+    def _installed_pip_versions(self, venv_pip):
+        """{normalised package name: version} for everything installed in the venv."""
+        # --disable-pip-version-check: without it, pip makes an HTTP call to
+        # PyPI to check for a newer pip release on nearly every invocation,
+        # even for this purely local package listing. Right after boot, while
+        # NetworkManager is still finishing DHCP/DNS, that call can't resolve
+        # and burns the full 30s timeout below for no reason — this is a
+        # local-only check and never needs the network at all.
+        result = subprocess.run(
+            [venv_pip, 'list', '--format=freeze', '--disable-pip-version-check'],
+            capture_output=True, text=True, timeout=30
+        )
+        installed_pip = {}
+        if result.returncode == 0:
+            for line in result.stdout.strip().splitlines():
+                if '==' in line:
+                    name, ver = line.split('==', 1)
+                    installed_pip[name.lower().replace('-', '_')] = ver
+        return installed_pip
+
+    def _missing_pip_packages(self, requirements_file, installed_pip):
+        """The requirement lines whose package is not installed in the venv."""
+        missing_pip = []
+        with open(requirements_file) as f:
+            for line in f:
+                line = line.split('#')[0].strip()
+                if not line:
+                    continue
+                pkg_name = line.split('==')[0].split('>=')[0].split('[')[0].strip().lower().replace('-', '_')
+                if pkg_name and pkg_name not in installed_pip:
+                    missing_pip.append(line)
+        return missing_pip
+
+    def _check_nftables_syntax(self):
+        """Syntax-check a throwaway nftables ruleset. Returns an issue dict, or None if OK."""
         try:
             ruleset = (
                 'table inet mempaper_healthcheck {\n'
@@ -756,14 +838,16 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
             )
             if r.returncode != 0:
                 detail = r.stderr.strip()[:200]
-                issues.append({'name': 'nftables rule syntax', 'detail': detail})
                 print(f'⚠️ Dependency check: nftables rule syntax check failed: {detail}')
-            else:
-                print('✅ Dependency check: nftables rule syntax OK')
+                return {'name': 'nftables rule syntax', 'detail': detail}
+            print('✅ Dependency check: nftables rule syntax OK')
+            return None
         except Exception as e:
-            issues.append({'name': 'nftables rule syntax', 'detail': str(e)})
             print(f'⚠️ Dependency check (nft): {e}')
+            return {'name': 'nftables rule syntax', 'detail': str(e)}
 
+    def _check_dnsmasq_syntax(self):
+        """Syntax-check a throwaway dnsmasq config. Returns an issue dict, or None if OK."""
         try:
             import tempfile
             with tempfile.NamedTemporaryFile(mode='w', suffix='.conf', delete=False) as tf:
@@ -778,15 +862,13 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
                 os.remove(tmp_path)
             if r.returncode != 0:
                 detail = r.stderr.decode(errors='replace').strip()[:200]
-                issues.append({'name': 'dnsmasq config syntax', 'detail': detail})
                 print(f'⚠️ Dependency check: dnsmasq config syntax check failed: {detail}')
-            else:
-                print('✅ Dependency check: dnsmasq config syntax OK')
+                return {'name': 'dnsmasq config syntax', 'detail': detail}
+            print('✅ Dependency check: dnsmasq config syntax OK')
+            return None
         except Exception as e:
-            issues.append({'name': 'dnsmasq config syntax', 'detail': str(e)})
             print(f'⚠️ Dependency check (dnsmasq): {e}')
-
-        self._dependency_health_issues = issues or None
+            return {'name': 'dnsmasq config syntax', 'detail': str(e)}
 
 
     def _get_prerender_mode_signature(self):
@@ -831,78 +913,84 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
         # FIRST: Check if wallet monitoring is enabled
         from managers.config_manager import ConfigManager
         config_manager = ConfigManager()
-        
-        wallet_monitoring_enabled = config_manager.get("show_wallet_balances_block", True)
-        
-        if wallet_monitoring_enabled:
-            # Check if wallet bootstrap is needed at startup - smart cache-based decision
+
+        if config_manager.get("show_wallet_balances_block", True):
+            self._maybe_bootstrap_wallet_at_startup(config_manager)
+
+        if self._startup_cache_is_current():
+            return
+
+        self._render_startup_image()
+
+    def _maybe_bootstrap_wallet_at_startup(self, config_manager):
+        """Kick off extended-key bootstrap detection if the address cache can't serve it."""
+        # Check if wallet bootstrap is needed at startup - smart cache-based decision
+        try:
+            # Get wallet addresses from modern table format
+            wallet_addresses = config_manager.get("wallet_balance_addresses_with_comments", [])
+
+            extended_keys = []
+
+            for entry in wallet_addresses:
+                address = entry.get("address", "") if isinstance(entry, dict) else str(entry)
+                # Check if it's an extended key (XPUB/ZPUB are typically 100+ characters)
+                if len(address) > 50 and (address.lower().startswith(('xpub', 'zpub', 'ypub'))):
+                    extended_keys.append(address)
+
+            if not wallet_addresses or not extended_keys:
+                return
+
+            # Extended keys found - check if we have valid cached address derivation
+            print(f"🔑 [STARTUP] Found {len(extended_keys)} extended key(s) - checking cache status...")
+
+            bootstrap_needed = False
+            current_height = 0
+            current_hash = "unknown"
+
+            # Get current block info for cache validation
             try:
-                # Get wallet addresses from modern table format
-                wallet_addresses = config_manager.get("wallet_balance_addresses_with_comments", [])
-                
-                extended_keys = []
-                
-                for entry in wallet_addresses:
-                    if isinstance(entry, dict):
-                        address = entry.get("address", "")
-                    else:
-                        address = str(entry)
-                    
-                    # Check if it's an extended key (XPUB/ZPUB are typically 100+ characters)
-                    if len(address) > 50 and (address.lower().startswith(('xpub', 'zpub', 'ypub'))):
-                        extended_keys.append(address)
-                
-                if not wallet_addresses or not extended_keys:
-                    pass  # No extended keys - no bootstrap needed
-                else:
-                    # Extended keys found - check if we have valid cached address derivation
-                    print(f"🔑 [STARTUP] Found {len(extended_keys)} extended key(s) - checking cache status...")
-                    
-                    bootstrap_needed = False
-                    current_height = 0
-                    current_hash = "unknown"
-                    
-                    # Get current block info for cache validation
-                    try:
-                        current_block_info = self.mempool_api.get_current_block_info()
-                        current_height = current_block_info['block_height']
-                        current_hash = current_block_info['block_hash']
-                    except Exception as e:
-                        print(f"⚠️ Could not get current block info: {e}")
-                    
-                    # Check async wallet address cache for each extended key
-                    for xpub in extended_keys:
-                        cache_status = self._check_async_wallet_cache_status(xpub, current_height)
-                        
-                        if cache_status == "missing":
-                            print(f"🚀 [STARTUP] No cached addresses found for {xpub[:20]}... - bootstrap needed")
-                            bootstrap_needed = True
-                            break
-                        elif cache_status == "outdated":
-                            print(f"⚙️ [STARTUP] Cached addresses outdated for {xpub[:20]}... - bootstrap needed")
-                            bootstrap_needed = True
-                            break
-                        # elif cache_status == "valid":
-                        #     print(f"✅ [STARTUP] Valid cached addresses found for {xpub[:20]}... - bootstrap not needed")
-                        # else:
-                        elif cache_status != "valid":
-                            print(f"⚠️ [STARTUP] Unknown cache status for {xpub[:20]}... - bootstrap needed as fallback")
-                            bootstrap_needed = True
-                            break
-                    
-                    if bootstrap_needed:
-                        print("🚀 [STARTUP] Triggering bootstrap detection for extended keys...")
-                        threading.Thread(
-                            target=self._safe_wallet_refresh_thread,
-                            args=(current_height, current_hash, True),  # True for startup_mode
-                            daemon=True
-                        ).start()
-                        print("✅ [STARTUP] Bootstrap detection started in background")
-                    else:
-                        print("✅ [STARTUP] All extended keys have valid cached data")
+                current_block_info = self.mempool_api.get_current_block_info()
+                current_height = current_block_info['block_height']
+                current_hash = current_block_info['block_hash']
             except Exception as e:
-                print(f"⚠️ Could not check wallet status: {e}")
-        
+                print(f"⚠️ Could not get current block info: {e}")
+
+            # Check async wallet address cache for each extended key
+            for xpub in extended_keys:
+                cache_status = self._check_async_wallet_cache_status(xpub, current_height)
+
+                if cache_status == "missing":
+                    print(f"🚀 [STARTUP] No cached addresses found for {xpub[:20]}... - bootstrap needed")
+                    bootstrap_needed = True
+                    break
+                elif cache_status == "outdated":
+                    print(f"⚙️ [STARTUP] Cached addresses outdated for {xpub[:20]}... - bootstrap needed")
+                    bootstrap_needed = True
+                    break
+                # elif cache_status == "valid":
+                #     print(f"✅ [STARTUP] Valid cached addresses found for {xpub[:20]}... - bootstrap not needed")
+                # else:
+                elif cache_status != "valid":
+                    print(f"⚠️ [STARTUP] Unknown cache status for {xpub[:20]}... - bootstrap needed as fallback")
+                    bootstrap_needed = True
+                    break
+
+            if bootstrap_needed:
+                print("🚀 [STARTUP] Triggering bootstrap detection for extended keys...")
+                threading.Thread(
+                    target=self._safe_wallet_refresh_thread,
+                    args=(current_height, current_hash, True),  # True for startup_mode
+                    daemon=True
+                ).start()
+                print("✅ [STARTUP] Bootstrap detection started in background")
+            else:
+                print("✅ [STARTUP] All extended keys have valid cached data")
+        except Exception as e:
+            print(f"⚠️ Could not check wallet status: {e}")
+
+    def _startup_cache_is_current(self):
+        """True if the cached image already matches the chain tip, so startup can skip generation."""
+
         # Get current block info for image cache comparison
         try:
             current_block_info = self.mempool_api.get_current_block_info()
@@ -913,23 +1001,23 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
             # Proceed with generation if we can't get block info
             current_height = None
             current_hash = None
-        
+
         # If we have valid cache metadata and current block info
         if (self.current_block_height is not None and 
             self.image_is_current and 
             os.path.exists(self.current_image_path) and
             os.path.exists(self.current_eink_image_path) and
             current_height is not None):
-            
+
             # Check if cache is for the current block
             if (self.current_block_height == current_height and
                 self.current_block_hash == current_hash):
                 print(f"💾 Cache is current for block {current_height} - skipping generation")
-                return
+                return True
             else:
                 print(f"👁️ Block changed: {self.current_block_height} → {current_height}")
                 self.image_is_current = False
-        
+
         # Check for recent cached image as fallback
         elif os.path.exists(self.current_image_path) and current_height is not None:
             file_age = time.time() - os.path.getmtime(self.current_image_path)
@@ -945,8 +1033,8 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
                     self.current_block_hash = current_hash
                     self.image_is_current = True
                     self._save_cache_metadata()
-                    return
-        
+                    return True
+
         # Check if we have a recent cached image first
         if os.path.exists(self.current_image_path):
             file_age = time.time() - os.path.getmtime(self.current_image_path)
@@ -954,7 +1042,7 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
                 # Check if the cached image is for the current block
                 try:
                     block_info = self.mempool_api.get_current_block_info()
-                    
+
                     # If we don't know what block our cached image is for, or it's for a different block
                     # Use string comparison to avoid type mismatches
                     if (self.current_block_height is None or 
@@ -967,16 +1055,19 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
                         self.image_is_current = True  # Mark as current since it's for the right block
                         # Save metadata to ensure persistence
                         self._save_cache_metadata()
-                        return
+                        return True
                 except Exception as e:
                     print(f"⚠️ Could not verify block info, marking image as potentially outdated: {e}")
                     self.image_is_current = False
                     # Allow generation to proceed
 
-        
+        return False
+
+    def _render_startup_image(self):
+        """Render and cache the first dashboard image, then fan out the background startup work."""
         try:
-            print(f"⚙️ Generating initial dashboard image with cached data...")
-            
+            print("⚙️ Generating initial dashboard image with cached data...")
+
             # Get current block info from mempool API
             try:
                 block_info = self.mempool_api.get_current_block_info()
@@ -1007,26 +1098,26 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
                 startup_mode=True,  # This forces use of cached data only
                 override_content_path=override_meme
             )
-            
+
             # Track displayed info blocks
             self.displayed_info_blocks = displayed_blocks
-            
+
             # Cache in RAM for instant web serving, save to disk for persistence
             self._cache_web_image(web_img)
             self._cached_eink_image = eink_img
             self._save_images_to_disk(web_img, eink_img)
-            
+
             # Update cache state
             self.current_block_height = block_info['block_height']
             self.current_block_hash = block_info['block_hash']
             self.current_meme_path = meme_path  # Cache the selected meme
             self.image_is_current = True
-            
+
             # Save persistent cache metadata
             self._save_cache_metadata()
-            
+
             print("✅ Initial dashboard image generated and cached")
-            
+
             # ASYNC WALLET REFRESH: Update wallet balances in background and regenerate if changed
             if self.config.get("show_wallet_balances_block", True):
                 threading.Thread(
@@ -1034,7 +1125,7 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
                     args=(block_info['block_height'], block_info['block_hash']),
                     daemon=True
                 ).start()
-            
+
             # Display on e-Paper in background thread (don't block startup)
             if self.e_ink_enabled:
                 threading.Thread(
@@ -1042,10 +1133,10 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
                     args=(self._eink_worker_path(), self.current_block_height, self.current_block_hash),
                     daemon=True
                 ).start()
-            
+
             # Pre-render next block in background
             threading.Thread(target=self._prerender_next_block, daemon=True).start()
-            
+
         except Exception as e:
             print(f"⚠️ Failed to generate initial image: {e}")
             print("   Image will be generated on first user request")
@@ -1145,17 +1236,15 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
         # Try gap limit cache keys first
         for test_count in test_counts:
             cache_key = f"{xpub}:gap_limit:{test_count}"
-            addresses = cache_manager.get_addresses(cache_key)
-            if addresses:
+            if addresses := cache_manager.get_addresses(cache_key):
                 return addresses, test_count
-        
+
         # Try regular derivation cache keys as fallback
         for test_count in [20, 40, 60, 80, 100]:
             cache_key = f"{xpub}:{test_count}"
-            addresses = cache_manager.get_addresses(cache_key)
-            if addresses:
+            if addresses := cache_manager.get_addresses(cache_key):
                 return addresses, test_count
-        
+
         return None, 0
     
     def _warm_up_apis(self):
@@ -1239,14 +1328,14 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
         # If triggered, run synchronously so WiFi profiles are deleted BEFORE
         # the WiFi check thread tries to connect to them.
         factory_reset_triggered = False
-        if os.name != 'nt':  # Only on Linux/Pi, not Windows dev
-            if self._check_power_cycle_reset():
-                factory_reset_triggered = True
-                self._execute_factory_reset()
-                # The delivery-image push above already covers it — don't let
-                # the boot-refresh logic in _run_background_startup() re-push
-                # the stale dashboard image over it.
-                self._pending_boot_refresh = False
+        # Only on Linux/Pi, not Windows dev
+        if os.name != 'nt' and self._check_power_cycle_reset():
+            factory_reset_triggered = True
+            self._execute_factory_reset()
+            # The delivery-image push above already covers it — don't let
+            # the boot-refresh logic in _run_background_startup() re-push
+            # the stale dashboard image over it.
+            self._pending_boot_refresh = False
 
         # Check if we have a cached image to show immediately
         has_cached_image = (os.path.exists(self.current_image_path) and
@@ -1290,10 +1379,10 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
             is_dark_mode = self.config.get("color_mode_dark", False)
             bg_color = (46, 50, 78) if is_dark_mode else (255, 255, 255)  # Dark: #2e324e, Light: white
             text_color = (255, 255, 255) if is_dark_mode else (0, 0, 0)  # White text for dark, black for light
-            
+
             img = Image.new('RGB', (width, height), color=bg_color)
             draw = ImageDraw.Draw(img)
-            
+
             # Try to use the configured font, fallback to default
             unicode_fonts = True
             try:
@@ -1301,7 +1390,7 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
                 font = ImageFont.truetype(font_path, 48)
                 medium_font = ImageFont.truetype(font_path, 32)
                 small_font = ImageFont.truetype(font_path, 24)
-            except:
+            except Exception:
                 font = ImageFont.load_default()
                 medium_font = ImageFont.load_default()
                 small_font = ImageFont.load_default()
@@ -1314,7 +1403,7 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
             title_x = (width - title_width) // 2
             title_y = 120
             draw.text((title_x, title_y), title, fill=text_color, font=medium_font)
-            
+
             # Draw loading message
             loading_msg = self.translations.get("loading_bitcoin_data", "Loading Bitcoin data...")
             bbox = draw.textbbox((0, 0), loading_msg, font=small_font)
@@ -1323,7 +1412,7 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
             loading_y = title_y + 60
             gray_text = (160, 160, 160) if is_dark_mode else (128, 128, 128)
             draw.text((loading_x, loading_y), loading_msg, fill=gray_text, font=small_font)
-            
+
             # Draw progress dots (ASCII-safe)
             progress_msg = ". . . ."
             bbox = draw.textbbox((0, 0), progress_msg, font=small_font)
@@ -1331,7 +1420,7 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
             progress_x = (width - progress_width) // 2
             progress_y = loading_y + 40
             draw.text((progress_x, progress_y), progress_msg, fill='#f7931a', font=small_font)
-            
+
             # Draw bottom message
             bottom_msg = "Website ready • Background processing in progress"
             bbox = draw.textbbox((0, 0), bottom_msg, font=small_font)
@@ -1340,19 +1429,19 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
             bottom_y = height - 80
             bottom_gray = (140, 140, 140) if is_dark_mode else (102, 102, 102)
             draw.text((bottom_x, bottom_y), bottom_msg, fill=bottom_gray, font=small_font)
-            
+
             # Cache placeholder in RAM and save to disk
             self._cache_web_image(img)
             self._cached_eink_image = img
             self._save_images_to_disk(img, img)
-            
+
             print("💾 Created informative placeholder images for instant startup")
-            
+
             # Set basic cache state
             self.image_is_current = False
             self.current_block_height = None
             self.current_block_hash = None
-            
+
         except Exception as e:
             print(f"⚠️ Failed to create placeholder image: {e}")
 
@@ -1403,49 +1492,7 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
             self._start_precache_updater()
 
             # Check block height now (moved from __init__ to avoid 10s+ timeout when offline)
-            needs_post_connectivity_recheck = False
-            try:
-                block_info = self.mempool_api.get_current_block_info()
-                current_bh = str(block_info.get('block_height', ''))
-                cached_bh = str(self.current_block_height) if self.current_block_height is not None else None
-
-                # get_current_block_info() falls back to a sentinel (height 0 + the
-                # genesis hash) on network failure instead of raising. Several other
-                # startup tasks (webhook relay, precache, wallet scan) fire concurrent
-                # requests to the same mempool host in this same window, so a single
-                # timeout here is common — treating the sentinel as a real "block 0"
-                # would look like "the block changed" and force an unnecessary
-                # regenerate + e-ink push on every restart, not just real block changes.
-                _fb = self.mempool_api.fallback_data
-                if (block_info.get('block_height') == _fb['block_height']
-                        and block_info.get('block_hash') == _fb['block_hash']):
-                    print("⚠️ [STARTUP] Could not verify current block (mempool API unreachable) — keeping cached image")
-                    if cached_bh:
-                        self.image_is_current = True
-                    needs_post_connectivity_recheck = True
-                elif cached_bh and current_bh and cached_bh != current_bh:
-                    print(f"⚙️ [STARTUP] Block changed since last run: {cached_bh} -> {current_bh}")
-                    self.current_block_height = block_info.get('block_height')
-                    self.current_block_hash = block_info.get('block_hash')
-                    self.image_is_current = False
-                elif cached_bh and current_bh and cached_bh == current_bh:
-                    print(f"[STARTUP] Block unchanged: {current_bh} - cache is valid")
-                    self.image_is_current = True
-                elif not cached_bh and current_bh:
-                    # No prior cache at all (fresh install / factory reset) — bootstrap
-                    # from the current chain tip instead of leaving current_block_height
-                    # unset. Otherwise the "regenerate real image" branch below never
-                    # fires (it requires current_block_height), and the only thing that
-                    # reaches the e-ink display is the text-only startup placeholder,
-                    # wasting a refresh cycle before the real dashboard image is ready.
-                    print(f"⚙️ [STARTUP] No prior cache — bootstrapping from current block {current_bh}")
-                    self.current_block_height = block_info.get('block_height')
-                    self.current_block_hash = block_info.get('block_hash')
-                    self.image_is_current = False
-            except Exception as e:
-                print(f"[STARTUP] Failed to check current block: {e}")
-                self.image_is_current = False
-                needs_post_connectivity_recheck = True
+            needs_post_connectivity_recheck = self._reconcile_block_height_at_startup()
 
             # Sync cache to current blockchain height (important for recovery after downtime)
             if self.block_monitor:
@@ -1453,7 +1500,7 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
                     self.block_monitor.sync_cache_to_current()
                 except Exception as e:
                     print(f"⚠️ Cache sync failed: {e}")
-            
+
             # Start block monitoring if addresses are configured and not skipped for fast startup
             skip_block_monitoring = self.config.get("skip_block_monitoring_on_startup", False)
             if not skip_block_monitoring:
@@ -1462,32 +1509,11 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
                 total_addresses = len(block_table_addresses)
                 if total_addresses > 0:
                     print(f"👁️ Block reward monitoring started for {total_addresses} addresses")
-            
+
             # Warm up APIs
             self._warm_up_apis()
-            
-            # If blocks were missed during downtime, regenerate now that APIs are warmed up
-            if not self.image_is_current and self.current_block_height and self.current_block_hash:
-                print(f"⚙️ Image outdated at startup — regenerating for block {self.current_block_height}...")
-                self._generate_new_image(
-                    self.current_block_height,
-                    self.current_block_hash,
-                    use_new_meme=True
-                )
-            elif (self._pending_boot_refresh and self.e_ink_enabled
-                  and not self._onboarding_connected_active
-                  and os.path.exists(self.current_eink_image_path)):
-                # Cached image is already current for this block, but we still
-                # owe the user a refresh push to confirm the device came back
-                # up after a reboot or a fresh install.
-                print("🔄 Pushing fast e-ink refresh after reboot/install...")
-                threading.Thread(
-                    target=self._display_on_epaper_async,
-                    args=(self._eink_worker_path(), self.current_block_height, self.current_block_hash),
-                    daemon=True
-                ).start()
 
-            self._pending_boot_refresh = False  # consumed — one-shot per boot/install
+            self._refresh_display_after_startup()
 
             # The check above couldn't verify the real chain tip
             if needs_post_connectivity_recheck:
@@ -1498,7 +1524,7 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
                 ).start()
 
             print("✅ Background initialization completed!")
-            
+
         except Exception as e:
             print(f"⚠️ Background initialization failed: {e}")
             # Notify web clients of the error
@@ -1508,7 +1534,78 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
                     'timestamp': time.time()
                 })
 
-    
+    def _reconcile_block_height_at_startup(self):
+        """Compare the cached block against the chain tip. Returns True if a recheck is owed."""
+        try:
+            block_info = self.mempool_api.get_current_block_info()
+            current_bh = str(block_info.get('block_height', ''))
+            cached_bh = str(self.current_block_height) if self.current_block_height is not None else None
+
+            # get_current_block_info() falls back to a sentinel (height 0 + the
+            # genesis hash) on network failure instead of raising. Several other
+            # startup tasks (webhook relay, precache, wallet scan) fire concurrent
+            # requests to the same mempool host in this same window, so a single
+            # timeout here is common — treating the sentinel as a real "block 0"
+            # would look like "the block changed" and force an unnecessary
+            # regenerate + e-ink push on every restart, not just real block changes.
+            _fb = self.mempool_api.fallback_data
+            if (block_info.get('block_height') == _fb['block_height']
+                    and block_info.get('block_hash') == _fb['block_hash']):
+                print("⚠️ [STARTUP] Could not verify current block (mempool API unreachable) — keeping cached image")
+                if cached_bh:
+                    self.image_is_current = True
+                return True
+            if cached_bh and current_bh and cached_bh != current_bh:
+                print(f"⚙️ [STARTUP] Block changed since last run: {cached_bh} -> {current_bh}")
+                self.current_block_height = block_info.get('block_height')
+                self.current_block_hash = block_info.get('block_hash')
+                self.image_is_current = False
+            elif cached_bh and current_bh:
+                print(f"[STARTUP] Block unchanged: {current_bh} - cache is valid")
+                self.image_is_current = True
+            elif not cached_bh and current_bh:
+                # No prior cache at all (fresh install / factory reset) — bootstrap
+                # from the current chain tip instead of leaving current_block_height
+                # unset. Otherwise the "regenerate real image" branch below never
+                # fires (it requires current_block_height), and the only thing that
+                # reaches the e-ink display is the text-only startup placeholder,
+                # wasting a refresh cycle before the real dashboard image is ready.
+                print(f"⚙️ [STARTUP] No prior cache — bootstrapping from current block {current_bh}")
+                self.current_block_height = block_info.get('block_height')
+                self.current_block_hash = block_info.get('block_hash')
+                self.image_is_current = False
+            return False
+        except Exception as e:
+            print(f"[STARTUP] Failed to check current block: {e}")
+            self.image_is_current = False
+            return True
+
+    def _refresh_display_after_startup(self):
+        """Regenerate a stale image, or push the one-shot boot refresh if it is already current."""
+        # If blocks were missed during downtime, regenerate now that APIs are warmed up
+        if not self.image_is_current and self.current_block_height and self.current_block_hash:
+            print(f"⚙️ Image outdated at startup — regenerating for block {self.current_block_height}...")
+            self._generate_new_image(
+                self.current_block_height,
+                self.current_block_hash,
+                use_new_meme=True
+            )
+        elif (self._pending_boot_refresh and self.e_ink_enabled
+              and not self._onboarding_connected_active
+              and os.path.exists(self.current_eink_image_path)):
+            # Cached image is already current for this block, but we still
+            # owe the user a refresh push to confirm the device came back
+            # up after a reboot or a fresh install.
+            print("🔄 Pushing fast e-ink refresh after reboot/install...")
+            threading.Thread(
+                target=self._display_on_epaper_async,
+                args=(self._eink_worker_path(), self.current_block_height, self.current_block_hash),
+                daemon=True
+            ).start()
+
+        self._pending_boot_refresh = False  # consumed — one-shot per boot/install
+
+
     def _extract_wallet_addresses_from_config(self, config):
         """
         Extract all wallet addresses from configuration.
@@ -1520,17 +1617,16 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
             Set of addresses and XPUB keys
         """
         wallet_addresses = set()
-        
+
         # Get wallet balance addresses from modern table format (primary and only source)
         wallet_table = config.get("wallet_balance_addresses_with_comments", [])
         for entry in wallet_table:
             if isinstance(entry, dict):
-                address = entry.get("address", "")
-                if address:
+                if address := entry.get("address", ""):
                     wallet_addresses.add(address.strip())
             elif isinstance(entry, str):
                 wallet_addresses.add(entry.strip())
-        
+
         return wallet_addresses
     
     def _cleanup_removed_wallet_caches(self, old_config, new_config):
@@ -1545,142 +1641,151 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
             # Extract wallet addresses from both configs
             old_addresses = self._extract_wallet_addresses_from_config(old_config)
             new_addresses = self._extract_wallet_addresses_from_config(new_config)
-            
+
             # Find addresses that were removed
             removed_addresses = old_addresses - new_addresses
-            
+
             if not removed_addresses:
                 return
-            
+
             print(f"🧹 Cleaning up cache for {len(removed_addresses)} removed wallet address(es)")
-            
-            # Initialize cache managers for comprehensive cleanup
-            async_cache_cleared = False
-            unified_cache_cleared = False
-            
+
             # 1. Clear async address cache manager
-            try:
-                from managers.config_observer import AsyncAddressCacheManager
-                async_cache = AsyncAddressCacheManager()
-                
-                # Clear cache entries for each removed address
-                for address in removed_addresses:
-                    print(f"   🗑️ Cleaning cache for: {address[:20]}...")
-                    
-                    # Clear patterns for the removed address/XPUB (async cache)
-                    if hasattr(async_cache, 'invalidate_cache'):
-                        # Use the actual method name from AsyncAddressCacheManager
-                        async_cache.invalidate_cache(address[:20])
-                        print(f"      ✅ Cleared async cache patterns for: {address[:20]}...")
-                        async_cache_cleared = True
-                    else:
-                        print(f"      ⚠️ Async cache manager does not support pattern clearing")
-                        
-            except ImportError:
-                print("   ⚠️ Async cache manager not available - skipping async cache cleanup")
-            except Exception as e:
-                print(f"   ⚠️ Error during async cache cleanup: {e}")
-            
+            async_cache_cleared = self._clear_async_wallet_cache(removed_addresses)
+
             # 2. Clear unified secure cache for XPUBs/ZPUBs and addresses
             try:
                 from managers.unified_secure_cache import get_unified_cache
                 unified_cache = get_unified_cache()
-                
+
+                unified_cache_cleared = False
                 for address in removed_addresses:
-                    # Clear optimized balance cache for XPUBs/ZPUBs
-                    if address.startswith(('xpub', 'zpub')) and hasattr(self, 'wallet_api'):
-                        try:
-                            if hasattr(self.wallet_api, 'unified_cache'):
-                                # Clear optimized balance cache
-                                optimized_cache = self.wallet_api.unified_cache.get_cache("optimized_balance_cache")
-                                if optimized_cache:
-                                    cache_key = self.wallet_api._get_optimized_balance_cache_key(address)
-                                    if cache_key in optimized_cache:
-                                        del optimized_cache[cache_key]
-                                        self.wallet_api.unified_cache.save_cache("optimized_balance_cache", optimized_cache)
-                                        print(f"      ✅ Cleared optimized balance cache for: {address[:20]}...")
-                                        unified_cache_cleared = True
-                                
-                                # Clear address derivation cache for XPUBs/ZPUBs
-                                address_cache = self.wallet_api.unified_cache.get_cache("address_derivation_cache")
-                                if address_cache:
-                                    keys_to_remove = [key for key in address_cache.keys() if address[:20] in key]
-                                    for key in keys_to_remove:
-                                        del address_cache[key]
-                                        print(f"      ✅ Cleared address derivation cache entry: {key[:50]}...")
-                                        unified_cache_cleared = True
-                                    if keys_to_remove:
-                                        self.wallet_api.unified_cache.save_cache("address_derivation_cache", address_cache)
-                                
-                                # Clear general wallet cache entries
-                                wallet_cache = self.wallet_api.unified_cache.get_cache("wallet_cache")
-                                if wallet_cache:
-                                    keys_to_remove = [key for key in wallet_cache.keys() if address[:20] in key]
-                                    for key in keys_to_remove:
-                                        del wallet_cache[key]
-                                        print(f"      ✅ Cleared wallet cache entry: {key[:50]}...")
-                                        unified_cache_cleared = True
-                                    if keys_to_remove:
-                                        self.wallet_api.unified_cache.save_cache("wallet_cache", wallet_cache)
-                                        
-                        except Exception as e:
-                            print(f"      ⚠️ Could not clear unified cache for XPUB/ZPUB: {e}")
-                    
-                    # For regular addresses, clear any cache entries containing the address
-                    else:
-                        try:
-                            # Check all cache types for entries containing this address
-                            cache_types = ["address_derivation_cache", "wallet_cache", "balance_cache"]
-                            for cache_type in cache_types:
-                                try:
-                                    cache_data = unified_cache.get_cache(cache_type)
-                                    if cache_data:
-                                        keys_to_remove = [key for key in cache_data.keys() if address in key]
-                                        for key in keys_to_remove:
-                                            del cache_data[key]
-                                            print(f"      ✅ Cleared {cache_type} entry: {key[:50]}...")
-                                            unified_cache_cleared = True
-                                        if keys_to_remove:
-                                            unified_cache.save_cache(cache_type, cache_data)
-                                except Exception as cache_e:
-                                    print(f"      ⚠️ Could not clear {cache_type}: {cache_e}")
-                                    
-                        except Exception as e:
-                            print(f"      ⚠️ Could not clear unified cache for address: {e}")
-                
+                    if self._clear_unified_cache_for_address(address, unified_cache):
+                        unified_cache_cleared = True
+
                 # 3. Force wallet API to refresh derived addresses for any remaining XPUBs/ZPUBs
-                try:
-                    if hasattr(self, 'wallet_api') and removed_addresses:
-                        # Check if any of the removed addresses were XPUBs/ZPUBs
-                        removed_xpubs = [addr for addr in removed_addresses if addr.startswith(('xpub', 'zpub'))]
-                        if removed_xpubs:
-                            print(f"   ⚙️ Triggering wallet API refresh for remaining addresses...")
-                            # This will force re-derivation of addresses for remaining XPUBs
-                            if hasattr(self.wallet_api, '_reinitialize_cache'):
-                                self.wallet_api._reinitialize_cache()
-                                unified_cache_cleared = True
-                except Exception as e:
-                    print(f"   ⚠️ Could not trigger wallet API refresh: {e}")
-                
+                if self._refresh_wallet_api_after_removal(removed_addresses):
+                    unified_cache_cleared = True
+
                 # Report cleanup results
                 cleanup_status = []
                 if async_cache_cleared:
                     cleanup_status.append("async cache")
                 if unified_cache_cleared:
                     cleanup_status.append("unified cache")
-                
+
                 if cleanup_status:
                     print(f"✅ Cache cleanup completed for removed addresses ({', '.join(cleanup_status)} cleared)")
                 else:
-                    print(f"⚠️ No cache entries found for removed addresses (cache may already be clean)")
-                
+                    print("⚠️ No cache entries found for removed addresses (cache may already be clean)")
+
             except ImportError:
                 print("   ⚠️ Unified cache not available - skipping unified cache cleanup")
             except Exception as e:
                 print(f"   ⚠️ Error during unified cache cleanup: {e}")
-                
+
         except Exception as e:
             print(f"❌ Failed to cleanup removed wallet caches: {e}")
+
+    def _clear_async_wallet_cache(self, removed_addresses):
+        """Clear the async address cache for removed addresses. Returns True if anything was cleared."""
+        cleared = False
+        try:
+            from managers.config_observer import AsyncAddressCacheManager
+            async_cache = AsyncAddressCacheManager()
+
+            # Clear cache entries for each removed address
+            for address in removed_addresses:
+                print(f"   🗑️ Cleaning cache for: {address[:20]}...")
+
+                # Clear patterns for the removed address/XPUB (async cache)
+                if hasattr(async_cache, 'invalidate_cache'):
+                    # Use the actual method name from AsyncAddressCacheManager
+                    async_cache.invalidate_cache(address[:20])
+                    print(f"      ✅ Cleared async cache patterns for: {address[:20]}...")
+                    cleared = True
+                else:
+                    print("      ⚠️ Async cache manager does not support pattern clearing")
+
+        except ImportError:
+            print("   ⚠️ Async cache manager not available - skipping async cache cleanup")
+        except Exception as e:
+            print(f"   ⚠️ Error during async cache cleanup: {e}")
+        return cleared
+
+    def _clear_unified_cache_for_address(self, address, unified_cache):
+        """Clear unified-cache entries for one removed address. Returns True if anything was cleared."""
+        if address.startswith(('xpub', 'zpub')) and hasattr(self, 'wallet_api'):
+            return self._clear_unified_cache_for_xpub(address)
+
+        # For regular addresses, clear any cache entries containing the address
+        cleared = False
+        try:
+            # Check all cache types for entries containing this address
+            cache_types = ["address_derivation_cache", "wallet_cache", "balance_cache"]
+            for cache_type in cache_types:
+                try:
+                    if cache_data := unified_cache.get_cache(cache_type):
+                        keys_to_remove = [key for key in cache_data.keys() if address in key]
+                        for key in keys_to_remove:
+                            del cache_data[key]
+                            print(f"      ✅ Cleared {cache_type} entry: {key[:50]}...")
+                            cleared = True
+                        if keys_to_remove:
+                            unified_cache.save_cache(cache_type, cache_data)
+                except Exception as cache_e:
+                    print(f"      ⚠️ Could not clear {cache_type}: {cache_e}")
+
+        except Exception as e:
+            print(f"      ⚠️ Could not clear unified cache for address: {e}")
+        return cleared
+
+    def _clear_unified_cache_for_xpub(self, address):
+        """Clear the three wallet_api caches keyed on an removed XPUB/ZPUB."""
+        cleared = False
+        try:
+            if not hasattr(self.wallet_api, 'unified_cache'):
+                return False
+
+            # Clear optimized balance cache
+            if optimized_cache := self.wallet_api.unified_cache.get_cache("optimized_balance_cache"):
+                cache_key = self.wallet_api._get_optimized_balance_cache_key(address)
+                if cache_key in optimized_cache:
+                    del optimized_cache[cache_key]
+                    self.wallet_api.unified_cache.save_cache("optimized_balance_cache", optimized_cache)
+                    print(f"      ✅ Cleared optimized balance cache for: {address[:20]}...")
+                    cleared = True
+
+            # Clear address derivation cache and general wallet cache for XPUBs/ZPUBs
+            for cache_type, noun in (("address_derivation_cache", "address derivation cache"),
+                                     ("wallet_cache", "wallet cache")):
+                if cache_data := self.wallet_api.unified_cache.get_cache(cache_type):
+                    keys_to_remove = [key for key in cache_data.keys() if address[:20] in key]
+                    for key in keys_to_remove:
+                        del cache_data[key]
+                        print(f"      ✅ Cleared {noun} entry: {key[:50]}...")
+                        cleared = True
+                    if keys_to_remove:
+                        self.wallet_api.unified_cache.save_cache(cache_type, cache_data)
+
+        except Exception as e:
+            print(f"      ⚠️ Could not clear unified cache for XPUB/ZPUB: {e}")
+        return cleared
+
+    def _refresh_wallet_api_after_removal(self, removed_addresses):
+        """Force re-derivation for any remaining XPUBs when an extended key was removed."""
+        try:
+            # Check if any of the removed addresses were XPUBs/ZPUBs
+            if (hasattr(self, 'wallet_api')
+                    and any(addr.startswith(('xpub', 'zpub')) for addr in removed_addresses)):
+                print("   ⚙️ Triggering wallet API refresh for remaining addresses...")
+                # This will force re-derivation of addresses for remaining XPUBs
+                if hasattr(self.wallet_api, '_reinitialize_cache'):
+                    self.wallet_api._reinitialize_cache()
+                    return True
+        except Exception as e:
+            print(f"   ⚠️ Could not trigger wallet API refresh: {e}")
+        return False
     
     def _reinitialize_after_config_change(self, old_config=None):
         """Reinitialize components after configuration changes."""
@@ -1829,29 +1934,29 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
     def _generate_placeholder_image(self):
         """Generate a simple placeholder image quickly."""
         from PIL import Image, ImageDraw, ImageFont
-        
+
         width, height = 480, 800
-            
+
         # Create simple placeholder
         img = Image.new('RGB', (width, height), color='#667eea')
         draw = ImageDraw.Draw(img)
-        
+
         # Simple text
         try:
             font = ImageFont.truetype(self.config.get("font_bold", "static/fonts/Roboto-Bold.ttf"), 48)
-        except:
+        except Exception:
             font = ImageFont.load_default()
-            
+
         text = "Loading Dashboard..."
         bbox = draw.textbbox((0, 0), text, font=font)
         text_width = bbox[2] - bbox[0]
         text_height = bbox[3] - bbox[1]
-        
+
         x = (width - text_width) // 2
         y = (height - text_height) // 2
-        
+
         draw.text((x, y), text, fill='white', font=font)
-        
+
         return img
     
     
@@ -1861,7 +1966,60 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
         Triggers immediate image regeneration with cached meme for visual settings.
         """
         print("🔧 Configuration change detected, checking if image refresh needed...")
-        
+
+        # Compare old and new config for image-affecting changes
+        old_config = self.config
+
+        # Restart webhook relay listener immediately if its URL changed
+        if old_config.get("webhook_relay_ws_url") != new_config.get("webhook_relay_ws_url"):
+            print("⚡ webhook relay URL changed — restarting listener")
+            self._restart_webhook_site_listener()
+
+        opsec_toggled = old_config.get('opsec_mode_enabled') != new_config.get('opsec_mode_enabled')
+        prioritize_layout_toggled = (
+            old_config.get('prioritize_large_scaled_meme') != new_config.get('prioritize_large_scaled_meme')
+        )
+
+        if changed_settings := self._image_affecting_changes(old_config, new_config):
+            print(f"⚙️ Settings changed ({', '.join(changed_settings)}) — triggering image refresh")
+            self._apply_config_image_refresh(new_config, changed_settings, prioritize_layout_toggled)
+        elif opsec_toggled:
+            # OPSec mode changed but nothing else — fast path: only update e-ink display,
+            # web image stays unchanged (data hasn't changed, no block update).
+            opsec_enabled = new_config.get('opsec_mode_enabled', False)
+            print(f"🔒 OPSec mode {'enabled' if opsec_enabled else 'disabled'} — refreshing e-ink only...")
+            self.config = new_config
+            self.image_renderer = ImageRenderer(self.config, self.translations)
+            threading.Thread(
+                target=self._refresh_eink_for_opsec_toggle,
+                args=(opsec_enabled,),
+                daemon=True
+            ).start()
+        else:
+            # Update config reference even if no image refresh needed
+            self.config = new_config
+            print("📝 Configuration updated (no image refresh required)")
+
+        # Check for block reward address changes (independent of image refresh).
+        # Runs in a background thread: scanning new addresses involves mempool API
+        # calls that can take many seconds per address and must not block the HTTP response.
+        threading.Thread(
+            target=self._check_block_reward_address_changes,
+            args=(old_config, new_config),
+            daemon=True,
+        ).start()
+
+        # Reschedule auto-update timer in case the schedule settings changed.
+        if hasattr(self, '_reschedule_auto_update'):
+            self._reschedule_auto_update()
+
+        # Update meme sync crontab if any of its settings changed.
+        _meme_sync_keys = {'meme_sync_enabled', 'meme_sync_day', 'meme_sync_hour', 'tor_meme_downloads'}
+        if any(old_config.get(k) != new_config.get(k) for k in _meme_sync_keys):
+            self._apply_meme_sync_crontab(new_config)
+
+    def _image_affecting_changes(self, old_config, new_config):
+        """The settings that changed and actually alter what gets drawn."""
         # Define settings that affect image rendering and require full regeneration
         image_affecting_settings = {
             # Hardware settings
@@ -1900,19 +2058,7 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
             'show_donation_block', 'donation_display_mode',
         }
 
-        # Compare old and new config for image-affecting changes
-        old_config = self.config
-
-        # Restart webhook relay listener immediately if its URL changed
-        if old_config.get("webhook_relay_ws_url") != new_config.get("webhook_relay_ws_url"):
-            print("⚡ webhook relay URL changed — restarting listener")
-            self._restart_webhook_site_listener()
-        config_changed = False
         changed_settings = []
-        opsec_toggled = old_config.get('opsec_mode_enabled') != new_config.get('opsec_mode_enabled')
-        prioritize_layout_toggled = (
-            old_config.get('prioritize_large_scaled_meme') != new_config.get('prioritize_large_scaled_meme')
-        )
 
         for setting in image_affecting_settings:
             old_value = old_config.get(setting)
@@ -1920,8 +2066,9 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
             # Ignore transitions from a real value to absent (None) — that means
             # the field was an auto-set default not stored in config.json, not a
             # deliberate user change.
-            if old_value != new_value and not (old_value is not None and new_value is None):
-                config_changed = True
+            if old_value != new_value and (
+                old_value is None or new_value is not None
+            ):
                 changed_settings.append(setting)
 
         # Color settings: only trigger refresh when the affected block is currently displayed.
@@ -1956,131 +2103,98 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
             if (visibility == 'always' or
                     (visibility == 'holiday' and today_is_holiday) or
                     visibility in displayed_blocks):
-                config_changed = True
                 changed_settings.append(setting)
 
-        if config_changed:
-            print(f"⚙️ Settings changed ({', '.join(changed_settings)}) — triggering image refresh")
+        return changed_settings
 
-            # Update config references
-            self.config = new_config
+    def _apply_config_image_refresh(self, new_config, changed_settings, prioritize_layout_toggled):
+        """Adopt the new config and kick off the regeneration it calls for."""
+        # Update config references
+        self.config = new_config
 
-            # Update translations if language changed
-            if 'language' in changed_settings:
-                lang = new_config.get("language", "en")
-                self.translations = translations.get(lang, translations["en"])
-                print(f"🌐 Updated translations to language: {lang}")
+        # Update translations if language changed
+        if 'language' in changed_settings:
+            lang = new_config.get("language", "en")
+            self.translations = translations.get(lang, translations["en"])
+            print(f"🌐 Updated translations to language: {lang}")
 
-            # Recreate image renderer with new config
-            self.image_renderer = ImageRenderer(self.config, self.translations)
+        # Recreate image renderer with new config
+        self.image_renderer = ImageRenderer(self.config, self.translations)
 
-            # Force current image refresh path to run even if block height/hash are unchanged.
-            self.image_is_current = False
+        # Force current image refresh path to run even if block height/hash are unchanged.
+        self.image_is_current = False
 
-            # If layout mode toggled, clear stale preselection artifacts immediately.
-            if prioritize_layout_toggled:
-                print("🎭 prioritize_large_scaled_meme toggled — forcing current + next image refresh")
-                with self._precache['lock']:
-                    self._precache['next_meme_path'] = None
-                    self._precache['selected_block_types'] = None
-                # Prime pre-cache now so the very next pre-render uses the new layout mode.
-                try:
-                    self._update_precache_data()
-                except Exception as e:
-                    print(f"⚠️ Failed to refresh pre-cache after layout toggle: {e}")
+        # If layout mode toggled, clear stale preselection artifacts immediately.
+        if prioritize_layout_toggled:
+            print("🎭 prioritize_large_scaled_meme toggled — forcing current + next image refresh")
+            with self._precache['lock']:
+                self._precache['next_meme_path'] = None
+                self._precache['selected_block_types'] = None
+            # Prime pre-cache now so the very next pre-render uses the new layout mode.
+            try:
+                self._update_precache_data()
+            except Exception as e:
+                print(f"⚠️ Failed to refresh pre-cache after layout toggle: {e}")
 
-            # Discard stale pre-rendered image so the next block doesn't use it
-            self._invalidate_prerender()
+        # Discard stale pre-rendered image so the next block doesn't use it
+        self._invalidate_prerender()
 
-            # Trigger immediate refresh regardless of image_is_current state.
-            # Run in a background thread to avoid blocking the save response.
-            if (self.current_block_height and
-                self.current_block_hash and
-                hasattr(self, 'current_meme_path') and
-                self.current_meme_path and
-                os.path.exists(self.current_meme_path)):
+        # Trigger immediate refresh regardless of image_is_current state.
+        # Run in a background thread to avoid blocking the save response.
+        if (self.current_block_height and
+            self.current_block_hash and
+            hasattr(self, 'current_meme_path') and
+            self.current_meme_path and
+            os.path.exists(self.current_meme_path)):
 
-                # Fast path: reuse cached meme, force e-ink update
-                threading.Thread(
-                    target=self._regenerate_image_with_cached_meme,
-                    daemon=True
-                ).start()
-            else:
-                # No cached meme yet — full generation with forced e-ink
-                print("💾 No cached meme available, starting full background generation...")
-                threading.Thread(
-                    target=self._background_image_generation,
-                    kwargs={"force_eink": True, "use_cached_block": True},
-                    daemon=True
-                ).start()
-        elif opsec_toggled:
-            # OPSec mode changed but nothing else — fast path: only update e-ink display,
-            # web image stays unchanged (data hasn't changed, no block update).
-            opsec_enabled = new_config.get('opsec_mode_enabled', False)
-            print(f"🔒 OPSec mode {'enabled' if opsec_enabled else 'disabled'} — refreshing e-ink only...")
-            self.config = new_config
-            self.image_renderer = ImageRenderer(self.config, self.translations)
+            # Fast path: reuse cached meme, force e-ink update
             threading.Thread(
-                target=self._refresh_eink_for_opsec_toggle,
-                args=(opsec_enabled,),
+                target=self._regenerate_image_with_cached_meme,
                 daemon=True
             ).start()
         else:
-            # Update config reference even if no image refresh needed
-            self.config = new_config
-            print("📝 Configuration updated (no image refresh required)")
-        
-        # Check for block reward address changes (independent of image refresh).
-        # Runs in a background thread: scanning new addresses involves mempool API
-        # calls that can take many seconds per address and must not block the HTTP response.
-        threading.Thread(
-            target=self._check_block_reward_address_changes,
-            args=(old_config, new_config),
-            daemon=True,
-        ).start()
+            # No cached meme yet — full generation with forced e-ink
+            print("💾 No cached meme available, starting full background generation...")
+            threading.Thread(
+                target=self._background_image_generation,
+                kwargs={"force_eink": True, "use_cached_block": True},
+                daemon=True
+            ).start()
 
-        # Reschedule auto-update timer in case the schedule settings changed.
-        if hasattr(self, '_reschedule_auto_update'):
-            self._reschedule_auto_update()
 
-        # Update meme sync crontab if any of its settings changed.
-        _meme_sync_keys = {'meme_sync_enabled', 'meme_sync_day', 'meme_sync_hour', 'tor_meme_downloads'}
-        if any(old_config.get(k) != new_config.get(k) for k in _meme_sync_keys):
-            self._apply_meme_sync_crontab(new_config)
-    
     def _check_block_reward_address_changes(self, old_config, new_config):
         """Check if block reward addresses have changed and update cache accordingly."""
         try:
             # Get old addresses from table
-            old_table = set()
-            for entry in old_config.get("block_reward_addresses_table", []):
-                if isinstance(entry, dict) and entry.get("address"):
-                    old_table.add(entry["address"])
-            old_addresses = old_table
-            
+            old_addresses = {
+                entry["address"]
+                for entry in old_config.get("block_reward_addresses_table", [])
+                if isinstance(entry, dict) and entry.get("address")
+            }
+
             # Get new addresses from table
-            new_table = set()
-            for entry in new_config.get("block_reward_addresses_table", []):
-                if isinstance(entry, dict) and entry.get("address"):
-                    new_table.add(entry["address"])
-            new_addresses = new_table
-            
+            new_addresses = {
+                entry["address"]
+                for entry in new_config.get("block_reward_addresses_table", [])
+                if isinstance(entry, dict) and entry.get("address")
+            }
+
             # Check for changes
             if old_addresses != new_addresses:
                 added_addresses = new_addresses - old_addresses
                 removed_addresses = old_addresses - new_addresses
-                
+
                 if added_addresses:
                     print(f"➕ New block reward addresses detected: {', '.join(added_addresses)}")
-                
+
                 if removed_addresses:
                     print(f"➖ Removed block reward addresses: {', '.join(removed_addresses)}")
-                
+
                 # Update block monitor and cache
                 if hasattr(self, 'block_monitor') and self.block_monitor:
                     self.block_monitor._update_monitored_addresses()
                     print("✅ Block reward cache updated with new address list")
-                
+
         except Exception as e:
             print(f"⚠️ Error checking block reward address changes: {e}")
     
@@ -2089,7 +2203,7 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
         try:
             with self.generation_lock:
                 print(f"⚙️ Regenerating images with cached meme for block {self.current_block_height}")
-                
+
                 # Verify cached meme still exists
                 if not os.path.exists(self.current_meme_path):
                     print(f"⚠️ Cached meme {self.current_meme_path} no longer exists, will select new one")
@@ -2097,7 +2211,7 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
                     # Fall back to normal generation
                     self._generate_new_image(self.current_block_height, self.current_block_hash, skip_epaper=False, use_new_meme=False)
                     return
-                
+
                 # Generate images with the cached meme
                 self.image_renderer._donation_data = self._get_active_donation()
                 precached_price, precached_bitaxe, precached_fee, _, precached_network = self._get_precached_data()
@@ -2118,7 +2232,7 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
                 if eink_img is not None:
                     self._write_eink_image(eink_img)
                 self._save_images_to_disk(web_img, None)  # eink already saved above
-                
+
                 # Update cache metadata (deferred to reduce SD writes)
                 self.image_is_current = True
                 self._deferred_save_cache_metadata()
@@ -2130,15 +2244,14 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
                         args=(self._eink_worker_path(), self.current_block_height, self.current_block_hash),
                         daemon=True
                     ).start()
-                
+
                 # Push fresh image to connected web clients from RAM cache
                 try:
-                    image_data = self._get_web_image_base64()
-                    if image_data:
+                    if image_data := self._get_web_image_base64():
                         self.socketio.emit('new_image', {'image': image_data})
                 except Exception as e:
                     print(f"⚠️ Failed to send image to web clients: {e}")
-                
+
                 # Start async wallet refresh in background
                 if self.config.get("show_wallet_balances_block", True):
                     try:
@@ -2208,11 +2321,10 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
         proc = subprocess.run(['crontab', '-'], input=new_crontab, text=True, capture_output=True)
         if proc.returncode != 0:
             print(f'⚠️ Failed to update meme sync crontab: {proc.stderr.strip()}')
+        elif enabled:
+            print(f'📅 Meme sync scheduled: 0 {hour} * * {day}{"  (Tor)" if tor else ""}')
         else:
-            if enabled:
-                print(f'📅 Meme sync scheduled: 0 {hour} * * {day}{"  (Tor)" if tor else ""}')
-            else:
-                print('📅 Meme sync crontab entry removed')
+            print('📅 Meme sync crontab entry removed')
 
     def _refresh_eink_for_opsec_toggle(self, opsec_enabled):
         """
@@ -2274,7 +2386,7 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
     def _seed_bitaxe_emission_state(self):
         """Pre-fill _last_emitted_bitaxe with current values so the next
         emit does not treat existing data as new (avoids false toasts)."""
-        try:
+        with contextlib.suppress(Exception):
             config = self.config_manager.get_current_config()
             miner_table = config.get('bitaxe_miner_table', [])
             if not miner_table:
@@ -2285,16 +2397,12 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
                 ip = entry.get('address', '').strip() if isinstance(entry, dict) else ''
                 if not ip:
                     continue
-                try:
+                with contextlib.suppress(Exception):
                     info = bitaxe_api.get_miner_info(ip)
                     self._last_emitted_bitaxe[ip] = {
                         'best_diff': info.get('best_diff', 0),
                         'online': info.get('online', False),
                     }
-                except Exception:
-                    pass
-        except Exception:
-            pass
 
     def _has_authenticated_clients(self):
         """True if any client is currently in the 'authenticated' room.
@@ -2490,67 +2598,80 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
             return
         try:
             config = self.config_manager.get_current_config()
-
-            # Bitaxe stats for all configured miners (with labels)
-            miner_table = config.get('bitaxe_miner_table', [])
-            bitaxe_enabled = config.get('bitaxe_enabled', True) and config.get('show_bitaxe_block', True)
-            if miner_table and bitaxe_enabled:
-                from lib.bitaxe_api import BitaxeAPI
-                bitaxe_api = getattr(self.image_renderer, 'bitaxe_api', None) or BitaxeAPI()
-                miners = {}
-                for entry in miner_table:
-                    ip = entry.get('address', '').strip() if isinstance(entry, dict) else ''
-                    if not ip:
-                        continue
-                    label = entry.get('comment', '').strip() if isinstance(entry, dict) else ''
-                    try:
-                        info = bitaxe_api.get_miner_info(ip)
-                        prev = self._last_emitted_bitaxe.get(ip, {})
-                        miners[ip] = {
-                            'best_diff': info.get('best_diff', 0),
-                            'online': info.get('online', False),
-                            'label': label or ip,
-                            'prev_best_diff': prev.get('best_diff', 0),
-                            'prev_online': prev.get('online', False),
-                        }
-                        self._last_emitted_bitaxe[ip] = {
-                            'best_diff': info.get('best_diff', 0),
-                            'online': info.get('online', False),
-                        }
-                    except Exception:
-                        miners[ip] = {'best_diff': 0, 'online': False, 'label': label or ip, 'prev_best_diff': 0, 'prev_online': False}
-                if miners:
-                    bitaxe_cache = self._precache.get('bitaxe_data', {}) if hasattr(self, '_precache') else {}
-                    self.socketio.emit('bitaxe_stats_updated', {
-                        'miners': miners,
-                        'hashrate_ths': bitaxe_cache.get('total_hashrate_ths', 0),
-                        'valid_blocks': bitaxe_cache.get('valid_blocks', 0),
-                    }, room='authenticated')
-
-            # Found blocks for all configured addresses (with labels)
-            block_reward_table = config.get('block_reward_addresses_table', [])
-            if block_reward_table and hasattr(self, 'block_monitor') and self.block_monitor:
-                blocks = {}
-                for entry in block_reward_table:
-                    address = entry.get('address', '').strip() if isinstance(entry, dict) else ''
-                    if not address:
-                        continue
-                    label = entry.get('comment', '').strip() if isinstance(entry, dict) else ''
-                    try:
-                        count = self.block_monitor.get_coinbase_count(address) if hasattr(self.block_monitor, 'get_coinbase_count') else 0
-                        prev_count = self._last_emitted_blocks.get(address, 0)
-                        blocks[address] = {
-                            'count': count,
-                            'prev_count': prev_count,
-                            'label': label or address[:12] + '...',
-                        }
-                        self._last_emitted_blocks[address] = count
-                    except Exception:
-                        blocks[address] = {'count': 0, 'prev_count': 0, 'label': label or address[:12] + '...'}
-                if blocks:
-                    self.socketio.emit('found_blocks_updated', {'blocks': blocks}, room='authenticated')
+            self._emit_bitaxe_stats(config)
+            self._emit_found_blocks(config)
         except Exception as e:
             print(f"⚠️ Error emitting config page updates: {e}")
+
+    def _emit_bitaxe_stats(self, config):
+        """Bitaxe stats for all configured miners (with labels)."""
+        miner_table = config.get('bitaxe_miner_table', [])
+        bitaxe_enabled = config.get('bitaxe_enabled', True) and config.get('show_bitaxe_block', True)
+        if not miner_table or not bitaxe_enabled:
+            return
+
+        from lib.bitaxe_api import BitaxeAPI
+        bitaxe_api = getattr(self.image_renderer, 'bitaxe_api', None) or BitaxeAPI()
+        miners = {}
+        for entry in miner_table:
+            ip = entry.get('address', '').strip() if isinstance(entry, dict) else ''
+            if not ip:
+                continue
+            label = entry.get('comment', '').strip() if isinstance(entry, dict) else ''
+            try:
+                info = bitaxe_api.get_miner_info(ip)
+                prev = self._last_emitted_bitaxe.get(ip, {})
+                miners[ip] = {
+                    'best_diff': info.get('best_diff', 0),
+                    'online': info.get('online', False),
+                    'label': label or ip,
+                    'prev_best_diff': prev.get('best_diff', 0),
+                    'prev_online': prev.get('online', False),
+                }
+                self._last_emitted_bitaxe[ip] = {
+                    'best_diff': info.get('best_diff', 0),
+                    'online': info.get('online', False),
+                }
+            except Exception:
+                miners[ip] = {'best_diff': 0, 'online': False, 'label': label or ip, 'prev_best_diff': 0, 'prev_online': False}
+
+        if miners:
+            bitaxe_cache = self._precache.get('bitaxe_data', {}) if hasattr(self, '_precache') else {}
+            self.socketio.emit('bitaxe_stats_updated', {
+                'miners': miners,
+                'hashrate_ths': bitaxe_cache.get('total_hashrate_ths', 0),
+                'valid_blocks': bitaxe_cache.get('valid_blocks', 0),
+            }, room='authenticated')
+
+    def _emit_found_blocks(self, config):
+        """Found blocks for all configured addresses (with labels)."""
+        block_reward_table = config.get('block_reward_addresses_table', [])
+        if not block_reward_table or not getattr(self, 'block_monitor', None):
+            return
+
+        blocks = {}
+        for entry in block_reward_table:
+            address = entry.get('address', '').strip() if isinstance(entry, dict) else ''
+            if not address:
+                continue
+            label = entry.get('comment', '').strip() if isinstance(entry, dict) else ''
+            try:
+                count = self.block_monitor.get_coinbase_count(address) if hasattr(self.block_monitor, 'get_coinbase_count') else 0
+                blocks[address] = {
+                    'count': count,
+                    'prev_count': self._last_emitted_blocks.get(address, 0),
+                    'label': label or f'{address[:12]}...',
+                }
+                self._last_emitted_blocks[address] = count
+            except Exception:
+                blocks[address] = {
+                    'count': 0,
+                    'prev_count': 0,
+                    'label': label or f'{address[:12]}...',
+                }
+
+        if blocks:
+            self.socketio.emit('found_blocks_updated', {'blocks': blocks}, room='authenticated')
 
     def _safe_wallet_refresh_thread(self, block_height, block_hash, startup_mode=False):
         """Safe wallet refresh that runs in thread but uses subprocess for actual work."""
@@ -2602,7 +2723,9 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
             return
         buf = io.BytesIO()
         img.save(buf, format='PNG', compress_level=1)
-        self._cached_web_image_base64 = 'data:image/png;base64,' + base64.b64encode(buf.getvalue()).decode()
+        self._cached_web_image_base64 = (
+            f'data:image/png;base64,{base64.b64encode(buf.getvalue()).decode()}'
+        )
 
     def _encode_pil_to_base64(self, img):
         """Encode a PIL image to a base64 data URI string without caching."""
@@ -2610,7 +2733,7 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
             return None
         buf = io.BytesIO()
         img.save(buf, format='PNG', compress_level=1)
-        return 'data:image/png;base64,' + base64.b64encode(buf.getvalue()).decode()
+        return f'data:image/png;base64,{base64.b64encode(buf.getvalue()).decode()}'
 
     def _get_web_image_base64(self):
         """Get the web image as base64 data URI, from RAM cache or disk fallback."""
@@ -2619,9 +2742,8 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
         # Fallback after a restart, before anything has been rendered. Opens the
         # sealed copy when Tang is on, so the image survives a reboot without a
         # re-render, and warms the RAM cache so later requests never touch disk.
-        raw = self._read_rendered_image(self.current_image_path)
-        if raw:
-            data = 'data:image/png;base64,' + base64.b64encode(raw).decode()
+        if raw := self._read_rendered_image(self.current_image_path):
+            data = f'data:image/png;base64,{base64.b64encode(raw).decode()}'
             self._cached_web_image_base64 = data  # warm RAM cache
             return data
         return None
@@ -2636,10 +2758,8 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
                         try:
                             self._write_rendered_image(web_img, self.current_webp_image_path, format='WEBP', quality=82, method=4)
                         except Exception:
-                            try:
+                            with contextlib.suppress(OSError):
                                 os.remove(self.current_webp_image_path)
-                            except OSError:
-                                pass
                 if eink_img is not None:
                     self._write_eink_image(eink_img)
             except Exception as e:
@@ -2695,7 +2815,7 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
                 override_content_path=precached_meme,
                 # Pass pre-selected types only when the list is non-empty; an empty list or
                 # None lets render_dual_images run _preselect_info_blocks itself.
-                preserve_info_blocks=precached_selected if precached_selected else None,
+                preserve_info_blocks=precached_selected or None,
                 precached_price=precached_price,
                 precached_bitaxe=precached_bitaxe,
                 precached_fee=precached_fee,
@@ -2809,10 +2929,8 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
                     try:
                         self._write_rendered_image(web_img_patched, self.current_webp_image_path, format='WEBP', quality=82, method=4)
                     except Exception:
-                        try:
+                        with contextlib.suppress(OSError):
                             os.remove(self.current_webp_image_path)
-                        except OSError:
-                            pass
             self._deferred_save_cache_metadata()
         threading.Thread(target=_persist, daemon=True).start()
 
@@ -2828,14 +2946,12 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
 
             # Start wallet refresh
             if self.config.get("show_wallet_balances_block", True):
-                try:
+                with contextlib.suppress(Exception):
                     threading.Thread(
                         target=self._safe_wallet_refresh_thread,
                         args=(block_height, block_hash, False),
                         daemon=True
                     ).start()
-                except Exception:
-                    pass
 
         threading.Thread(target=_post_block_tasks, daemon=True).start()
         return True
@@ -2934,9 +3050,10 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
             """Start wallet refresh in background."""
             if self.config.get("show_wallet_balances_block", True):
                 # Check if wallet refresh is already in progress (prevent concurrent scans)
-                if hasattr(self.image_renderer, 'wallet_api') and hasattr(self.image_renderer.wallet_api, '_fetch_lock'):
-                    if self.image_renderer.wallet_api._fetch_lock.locked():
-                        return
+                if (hasattr(self.image_renderer, 'wallet_api')
+                        and hasattr(self.image_renderer.wallet_api, '_fetch_lock')
+                        and self.image_renderer.wallet_api._fetch_lock.locked()):
+                    return
                 
                 threading.Thread(
                     target=self._safe_wallet_refresh_thread,
@@ -3036,8 +3153,8 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
                 'subsidy_btc': 3.125,
                 'median_fee_sat_vb': 0  # Will be updated
             }
-            
-            
+
+
             # Send instant notification to subscribed clients
             with self.app.app_context():
                 if self.block_notification_subscribers:
@@ -3046,7 +3163,7 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
                     print(f"📡 Instant notification sent to {len(self.block_notification_subscribers)} clients")
 
                 # Push updated countdown/halving data to config page preview cards
-                try:
+                with contextlib.suppress(Exception):
                     from lib.image_renderer import ImageRenderer as _IR
                     bh = block_height
                     sup = _IR._compute_supply_stats(bh)
@@ -3063,8 +3180,6 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
                             'estimated_date': hal['estimated_date'].isoformat() if hal.get('estimated_date') else None,
                         },
                     }, room='authenticated')
-                except Exception:
-                    pass
 
             # 🔄 Enrich notification data in background (non-blocking)
             def enrich_notification():
@@ -3072,8 +3187,8 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
                     # Check if there are subscribers BEFORE making expensive API call
                     if not self.block_notification_subscribers:
                         return  # Skip enrichment if no clients subscribed
-                    
-                    print(f"🌐 Enriching block notification with API data...")
+
+                    print("🌐 Enriching block notification with API data...")
                     base_url = self._get_mempool_base_url()
                     # Route through Tor when configured. Without this the .onion
                     # host is handed to the system resolver, which cannot resolve
@@ -3086,7 +3201,7 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
                         verify=self.config.get("mempool_verify_ssl", True),
                         proxies=_proxies,
                     )
-                    
+
                     if block_response.ok:
                         block_data = block_response.json()
                         timestamp = block_data.get('timestamp', int(time.time()))
@@ -3094,7 +3209,7 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
                         subsidy = block_data.get('extras', {}).get('reward', 3.125 * 100000000)
                         pool_name = block_data.get('extras', {}).get('pool', {}).get('name', 'Unknown')
                         median_fee = block_data.get('extras', {}).get('medianFee', 0)
-                        
+
                         enriched_data = {
                             'block_height': block_height,
                             'block_hash': self._format_block_hash_for_display(block_hash),
@@ -3107,9 +3222,9 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
                             'median_fee_sat_vb': median_fee,
                             'enriched': True  # Flag to indicate this is enriched data
                         }
-                        
+
                         print(f"✅ Block notification enriched: {pool_name}")
-                        
+
                         # Send updated notification
                         with self.app.app_context():
                             if self.block_notification_subscribers:
@@ -3118,10 +3233,10 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
                                 print(f"📡 Enriched notification sent to {len(self.block_notification_subscribers)} clients")
                 except Exception as e:
                     print(f"⚠️ Failed to enrich notification: {e}")
-            
+
             # Run enrichment in background thread
             threading.Thread(target=enrich_notification, daemon=True).start()
-                
+
         except Exception as e:
             print(f"⚠️ Error sending new block notification: {e}")
             traceback.print_exc()
@@ -3169,7 +3284,7 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
         # 🔧 FIX: Prevent concurrent regeneration calls
         if not self.generation_lock.acquire(blocking=False):
             return
-            
+
         try:
             # Check if we already have this block cached to avoid unnecessary regeneration
             if (self.current_block_height == block_height and 
@@ -3179,7 +3294,7 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
                 os.path.exists(self.current_eink_image_path)):
                 print(f"💾 Dashboard already current for block {block_height} - no regeneration needed")
                 return
-        
+
             max_retries = 3
             for attempt in range(1, max_retries + 1):
                 try:
@@ -3187,12 +3302,13 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
                     active_bootstrap = False
                     if hasattr(self, 'wallet_api') and hasattr(self.wallet_api, '_active_gap_limit_detection'):
                         active_bootstrap = len(self.wallet_api._active_gap_limit_detection) > 0
-                    
+
                     if active_bootstrap:
                         print(f"⏳ Bootstrap detection running - using cached wallet data (attempt {attempt})")
-                        
-                    img = self._generate_new_image(block_height, block_hash, use_new_meme=True)
-                    if img:
+
+                    if img := self._generate_new_image(
+                        block_height, block_hash, use_new_meme=True
+                    ):
                         with self.app.app_context():
                             try:
                                 image_data = self._get_web_image_base64()
@@ -3211,11 +3327,11 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
                     print(f"❌ Error regenerating dashboard for block {block_height} (attempt {attempt}): {e}")
                     traceback.print_exc()
                 if attempt < max_retries:
-                    print(f"🔁 Retrying image generation in 2 seconds...")
+                    print("🔁 Retrying image generation in 2 seconds...")
                     time.sleep(2)
                 else:
                     print(f"❌ All {max_retries} attempts to generate dashboard image failed for block {block_height}")
-                
+
         finally:
             # Always release the generation lock
             self.generation_lock.release()

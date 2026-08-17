@@ -64,7 +64,26 @@ if [ ! -f "$APT_REQ" ]; then
     exit 1
 fi
 
-mapfile -t PKGS < <(grep -v '^\s*#' "$APT_REQ" | grep -v '^\s*$' | tr -d '\r')
+# A declaration is 'name' or 'name=version'. The name is what dpkg-query and
+# apt-mark take; the full spec is what apt-get install takes. Keeping the two
+# apart is the whole reason this parsing is no longer one grep: handing
+# 'tor=0.4.8.12-1' to dpkg-query reports an unknown package, so a pinned
+# package would read as permanently missing.
+declare -a PKGS=()          # names, declaration order
+declare -A WANT_VERSION=()  # name -> pinned version, only for pinned entries
+while IFS= read -r line; do
+    line="${line%$'\r'}"
+    line="${line%%#*}"
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    [ -z "$line" ] && continue
+    name="${line%%=*}"
+    if [ "$name" != "$line" ]; then
+        WANT_VERSION["$name"]="${line#*=}"
+    fi
+    PKGS+=("$name")
+done < "$APT_REQ"
+
 if [ ${#PKGS[@]} -eq 0 ]; then
     echo "No packages listed in apt-requirements.txt — nothing to install."
     exit 0
@@ -82,10 +101,101 @@ _missing() {
     done
 }
 
+_installed_version() {
+    dpkg-query -W -f='${Version}' "$1" 2>/dev/null || true
+}
+
+# The spec apt-get install should receive for a package: pinned entries carry
+# their version so apt puts that exact one on, everything else stays bare and
+# floats to whatever the archive offers.
+_spec() {
+    if [ -n "${WANT_VERSION[$1]+x}" ]; then
+        echo "$1=${WANT_VERSION[$1]}"
+    else
+        echo "$1"
+    fi
+}
+
+# Packages whose hold belongs to tools/upgrade_python.sh rather than to this
+# file. python3-dev is declared in apt-requirements.txt *and* held there to pin
+# the Python minor version, so the release sweep below has to step around it:
+# unholding it would let the next apt upgrade move the interpreter the venv is
+# built against, which is exactly the failure the hold exists to prevent.
+PYTHON_HOLDS=(python3 python3-dev python3-venv)
+
+# ── Holds, reconciled against the declarations ───────────────────────────────
+# A pin is only a pin if apt is told about it. Installing the right version is
+# half the job; without a hold the next `apt upgrade` moves it again and the
+# declaration silently stops meaning anything. The reverse matters just as much:
+# dropping the '=version' from a line has to release the hold, or the package
+# stays frozen forever at a version nothing declares any more.
+_apply_holds() {
+    local p held to_hold=() to_release=()
+    held="$(apt-mark showhold 2>/dev/null || true)"
+    for p in "${PKGS[@]}"; do
+        if [ -n "${WANT_VERSION[$p]+x}" ]; then
+            # Only hold what is actually on the device. apt-mark hold on an
+            # uninstalled package pins it as "never install" - silently, with no
+            # error - which is how a declared package becomes permanently
+            # uninstallable. The block at the top of this script exists because
+            # that has happened.
+            if [ -n "$(_installed_version "$p")" ]; then
+                printf '%s\n' "$held" | grep -qxF "$p" || to_hold+=("$p")
+            fi
+        else
+            printf '%s\n' "${PYTHON_HOLDS[@]}" | grep -qxF "$p" && continue
+            printf '%s\n' "$held" | grep -qxF "$p" && to_release+=("$p")
+        fi
+    done
+    if [ ${#to_hold[@]} -gt 0 ]; then
+        apt-mark hold "${to_hold[@]}" >/dev/null 2>&1 \
+            && echo "📌 Pinned (held): ${to_hold[*]}" \
+            || echo "⚠️  Could not hold: ${to_hold[*]}" >&2
+    fi
+    if [ ${#to_release[@]} -gt 0 ]; then
+        apt-mark unhold "${to_release[@]}" >/dev/null 2>&1 \
+            && echo "🔓 Pin removed, now floating: ${to_release[*]}" \
+            || echo "⚠️  Could not unhold: ${to_release[*]}" >&2
+    fi
+    return 0
+}
+
+# ── Pins that have drifted ───────────────────────────────────────────────────
+# A pinned package that is installed at the wrong version is not "missing", so
+# the presence check below would leave it alone forever. It gets there by an
+# ordinary route: the pin was added or changed in a release, and the device
+# already had some other version on it. Reconcile these first, before the
+# missing-package pass, so a single run converges the device either way.
+DRIFTED=()
+for p in "${PKGS[@]}"; do
+    [ -n "${WANT_VERSION[$p]+x}" ] || continue
+    have="$(_installed_version "$p")"
+    [ -z "$have" ] && continue                       # not installed - the missing pass owns it
+    [ "$have" = "${WANT_VERSION[$p]}" ] && continue  # already exactly right
+    DRIFTED+=("$p")
+done
+
+if [ ${#DRIFTED[@]} -gt 0 ]; then
+    echo "Pinned but at another version: ${DRIFTED[*]}"
+    # Unhold first: a held package cannot be changed at all, and these are
+    # precisely the packages this script holds itself on the way out.
+    apt-mark unhold "${DRIFTED[@]}" >/dev/null 2>&1 || true
+    apt-get update || echo "⚠️  apt-get update failed — continuing with the cached index" >&2
+    for p in "${DRIFTED[@]}"; do
+        # --allow-downgrades because a pin may point backwards: that is the
+        # entire purpose of pinning a version that a later upgrade moved past.
+        apt-get install -y --allow-downgrades "$(_spec "$p")" \
+            || echo "❌ could not pin $p to ${WANT_VERSION[$p]} (is that version in the archive?)" >&2
+    done
+fi
+
 mapfile -t MISSING < <(_missing "${PKGS[@]}")
 if [ ${#MISSING[@]} -eq 0 ]; then
-    echo "All ${#PKGS[@]} declared packages already installed — nothing to do."
-    exit 0
+    if [ ${#DRIFTED[@]} -eq 0 ]; then
+        echo "All ${#PKGS[@]} declared packages already installed — nothing to do."
+    fi
+    _apply_holds
+    exit $?
 fi
 echo "Missing: ${MISSING[*]}"
 
@@ -132,10 +242,16 @@ apt-get update || echo "⚠️  apt-get update failed — continuing with the ca
 # Pi Zero. But apt-get install is all-or-nothing, so a single unavailable package
 # silently takes every other package down with it. On failure, retry one at a time
 # so the damage is limited to the package that actually cannot be installed.
-if ! apt-get install -y --no-upgrade "${MISSING[@]}"; then
+#
+# --no-upgrade keeps an already-installed package where it is; it is harmless
+# alongside a version spec, which names the target explicitly rather than asking
+# for "newer".
+SPECS=()
+for p in "${MISSING[@]}"; do SPECS+=("$(_spec "$p")"); done
+if ! apt-get install -y --no-upgrade "${SPECS[@]}"; then
     echo "⚠️  Batch install failed — retrying each package individually" >&2
     for p in "${MISSING[@]}"; do
-        apt-get install -y --no-upgrade "$p" || echo "❌ failed: $p" >&2
+        apt-get install -y --no-upgrade "$(_spec "$p")" || echo "❌ failed: $p" >&2
     done
 fi
 
@@ -143,6 +259,10 @@ fi
 # app and the web updater use this status to decide whether to warn the user, so
 # it must not report success for a package that is still missing.
 mapfile -t STILL_MISSING < <(_missing "${MISSING[@]}")
+# Holds are applied either way: a package that installed correctly should be
+# pinned now, and a partial failure must not leave the packages that did land
+# unpinned until the next run.
+_apply_holds
 if [ ${#STILL_MISSING[@]} -gt 0 ] || [ ${#BLOCKED[@]} -gt 0 ]; then
     [ ${#STILL_MISSING[@]} -gt 0 ] \
         && echo "❌ Still missing after install: ${STILL_MISSING[*]}" >&2
@@ -180,6 +300,45 @@ WRAPPER
 chown root:root "${POSTINSTALL_WRAPPER}"
 chmod 755 "${POSTINSTALL_WRAPPER}"
 echo "✅  Post-install wrapper installed: ${POSTINSTALL_WRAPPER}"
+
+# Install permissions-refresh wrapper — re-runs *this* script for the service
+# user it was originally installed for.
+#
+# Without it, every change to this file needs an SSH session as a sudo-capable
+# user, and until someone does that the device keeps running the old wrappers
+# and the old sudoers set. That is how a release ships a new grant to every
+# device and the grant to none of them: the web updater checks out code that
+# expects a wrapper which was never regenerated. The apt-install wrapper below
+# is written by this script, so a change to how packages are declared - version
+# pins, say - lands as new file content that nothing on the device reads.
+#
+# The service user is baked in at generation time rather than passed as an
+# argument, so the sudoers rule below needs no wildcard and the grant cannot be
+# redirected at another account.
+#
+# On privilege: this grants no reach that is not already granted. The
+# post-install and Python-upgrade wrappers directly above both exec a script
+# inside PROJECT_DIR as root, and PROJECT_DIR is writable by the service user -
+# so anything able to write there already had root by way of those two. This
+# adds a third door to a room that is already open, and in exchange the
+# permission set stops silently drifting out of date on every device.
+REFRESH_PERMS_WRAPPER="/usr/local/bin/mempaper-refresh-permissions"
+cat > "${REFRESH_PERMS_WRAPPER}" <<WRAPPER
+#!/bin/bash
+exec bash "${PROJECT_DIR}/tools/install_wifi_permissions.sh" "${SERVICE_USER}"
+WRAPPER
+chown root:root "${REFRESH_PERMS_WRAPPER}"
+chmod 755 "${REFRESH_PERMS_WRAPPER}"
+echo "✅  Permissions refresh wrapper installed: ${REFRESH_PERMS_WRAPPER}"
+
+# Record which revision of this script produced the wrappers currently on disk.
+# The app compares this against the hash of the file in the repo, so it can say
+# "the helper scripts are out of date" instead of failing obscurely later, and
+# the web updater uses the same comparison to decide whether a refresh is due.
+PERMS_STAMP="/usr/local/bin/.mempaper-permissions-stamp"
+sha256sum "${SCRIPT_DIR}/install_wifi_permissions.sh" 2>/dev/null | awk '{print $1}' \
+    > "${PERMS_STAMP}" || true
+chmod 644 "${PERMS_STAMP}" 2>/dev/null || true
 
 # Install WiFi clear wrapper — removes ALL saved client WiFi profiles including
 # netplan-managed ones (Pi Imager creates these as netplan-wlan0-SSID).
@@ -385,6 +544,17 @@ ${SERVICE_USER} ALL=(root) NOPASSWD: ${APT_GET_BIN} update
 ${SERVICE_USER} ALL=(root) NOPASSWD: ${APT_GET_BIN} upgrade -y
 ${SERVICE_USER} ALL=(root) NOPASSWD: ${APT_GET_BIN} autoremove -y
 
+# Full upgrade. Unlike 'upgrade', this one is allowed to install new packages and
+# to REMOVE existing ones in order to resolve a dependency change - which is both
+# why it is needed (an ordinary upgrade silently holds back anything requiring a
+# new dependency, and that residue never clears) and why it is the most dangerous
+# grant in this file. The web route never calls it blind: it first runs
+# 'apt-get -s dist-upgrade', which needs no privileges at all, and refuses to
+# proceed if the simulation wants to remove a package that apt-requirements.txt
+# declares or that the Python pin depends on.
+${SERVICE_USER} ALL=(root) NOPASSWD: ${APT_GET_BIN} dist-upgrade -y
+${SERVICE_USER} ALL=(root) NOPASSWD: ${APT_BIN} full-upgrade -y
+
 # Scoped apt install wrapper — only installs packages from apt-requirements.txt,
 # accepts no arguments (no wildcard, cannot be used to install arbitrary packages).
 ${SERVICE_USER} ALL=(root) NOPASSWD: ${APT_INSTALL_WRAPPER}
@@ -397,6 +567,13 @@ ${SERVICE_USER} ALL=(root) NOPASSWD: ${UPGRADE_PYTHON_WRAPPER}
 # adds). Lets the web updater apply system state it otherwise could not touch.
 # Scoped to a single fixed script path; takes no arguments.
 ${SERVICE_USER} ALL=(root) NOPASSWD: ${POSTINSTALL_WRAPPER}
+
+# Permissions refresh — re-runs install_wifi_permissions.sh for this same user,
+# so a release that changes a wrapper or adds a sudoers grant reaches the device
+# through the web updater instead of waiting for someone to SSH in as pi.
+# The service user is compiled into the wrapper, so there is no argument to
+# abuse. See the note beside the wrapper for why this adds no new reach.
+${SERVICE_USER} ALL=(root) NOPASSWD: ${REFRESH_PERMS_WRAPPER}
 
 # WiFi profile clear wrapper — deletes all saved client WiFi profiles including
 # Pi Imager netplan-managed connections that nmcli refuses to remove directly.

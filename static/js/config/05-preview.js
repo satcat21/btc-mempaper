@@ -1687,8 +1687,7 @@ function createBooleanSwitch(value) {
     
     // Add getter for value
     container.getValue = () => {
-        const active = switchEl.classList.contains('active');
-        return active;
+        return switchEl.classList.contains('active');
     };
     
     // Add setter for value (useful for programmatic updates)
@@ -1810,7 +1809,7 @@ function createTagsInput(values, placeholder) {
     
     // Auto-add tag when user types comma or semicolon (good for mobile)
     input.addEventListener('input', (e) => {
-        const value = input.value;
+        const {value} = input;
         if (value.includes(',') || value.includes(';')) {
             const parts = value.split(/[,;]+/);
             const lastPart = parts.pop(); // Keep the last part in input
@@ -2146,22 +2145,20 @@ function createWalletTableInput(values, field) {
     // Add getter for value (used by form system)
     container.getValue = () => {
         const rows = tbody.querySelectorAll('tr');
-        const result = Array.from(rows).map(row => {
+        return Array.from(rows).map(row => {
             const addressInput = row.querySelector('.wallet-address-input');
             const commentInput = row.querySelector('.wallet-comment-input');
             const address = addressInput ? addressInput.value.trim() : '';
             const comment = commentInput ? commentInput.value.trim() : '';
-            
+
             if (!address) return null; // Skip empty addresses
-            
+
             return {
                 address: address,
                 comment: comment,
                 type: detectAddressType(address)
             };
         }).filter(entry => entry !== null);
-        
-        return result;
     };
     
     // Add value property for compatibility
@@ -2433,21 +2430,19 @@ function createBitaxeTableInput(values, field) {
     // Add getter for value (used by form system)
     container.getValue = () => {
         const rows = tbody.querySelectorAll('tr');
-        const result = Array.from(rows).map(row => {
+        return Array.from(rows).map(row => {
             const addressInput = row.querySelector('.bitaxe-address-input');
             const commentInput = row.querySelector('.bitaxe-comment-input');
             const address = addressInput ? addressInput.value.trim() : '';
             const comment = commentInput ? commentInput.value.trim() : '';
-            
+
             if (!address) return null; // Skip empty addresses
-            
+
             return {
                 address: address,
                 comment: comment
             };
         }).filter(entry => entry !== null);
-        
-        return result;
     };
     
     // Add value property for compatibility

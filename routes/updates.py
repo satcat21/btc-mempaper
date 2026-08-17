@@ -5,6 +5,7 @@ from utils.paths import PROJECT_ROOT
 from flask import jsonify
 from flask import request
 from managers.auth_manager import require_auth
+from utils.apt_requirements import package_names, parse_apt_requirements, pinned_versions
 import os
 import re
 import requests
@@ -13,6 +14,102 @@ import sys
 import threading
 import time
 import traceback
+
+# Packages a source-built Pillow links against. Pillow is compiled on this
+# device rather than installed as a wheel - that is what the .pillow-rebuild-
+# needed mechanism exists for - so when one of these moves underneath it the
+# result is a Pillow that either lost a codec or refuses to import. A full
+# upgrade is precisely the operation that moves them.
+PILLOW_NATIVE_DEPS = (
+    'libjpeg62-turbo', 'libwebp7', 'libwebpdemux2', 'libwebpmux3',
+    'libfreetype6', 'libopenjp2-7', 'zlib1g', 'libtiff6', 'liblcms2-2',
+)
+
+# Held to pin the Python minor the venv is built against. Never a candidate for
+# removal, and named here so the guard below can say so by name.
+PYTHON_PINS = ('python3', 'python3-dev', 'python3-venv')
+
+
+def _write_version_reports(project_dir, emit_line):
+    """Refresh cache/currently_installed_*.txt after a successful operation.
+
+    Deliberately swallows its own failures: this is a report written at the tail
+    of work that has already succeeded, and being unable to write it is not a
+    reason to tell the user their upgrade failed.
+    """
+    try:
+        from utils.installed_report import write_installed_reports
+        write_installed_reports(project_dir, log=emit_line)
+    except Exception as exc:
+        try:
+            emit_line(f'Could not write version report: {exc}')
+        except Exception:
+            pass
+
+
+def _simulate_dist_upgrade():
+    """What a full upgrade would do, without doing any of it.
+
+    `apt-get -s` prints one machine-readable verb per action - Inst, Conf,
+    Remv - which is far steadier to parse than the human summary and is the
+    reason this can be trusted as a gate. An Inst line carrying a bracketed
+    old version is an upgrade; one without is a new package.
+
+    Runs unprivileged on purpose: simulation needs no root, so the preview a
+    user is shown before approving costs no grant at all.
+
+    Returns (upgrade, install, remove, error). Any failure yields empty lists
+    and an error string, and the caller must treat that as "do not proceed" -
+    an unreadable simulation is not permission to run the real thing.
+    """
+    try:
+        proc = subprocess.run(
+            ['apt-get', '-s', 'dist-upgrade'],
+            capture_output=True, text=True, timeout=180
+        )
+    except (subprocess.SubprocessError, OSError) as exc:
+        return [], [], [], str(exc)
+    if proc.returncode != 0:
+        tail = (proc.stderr or proc.stdout or '').strip().splitlines()
+        return [], [], [], '; '.join(tail[-3:]) or f'apt-get -s exited {proc.returncode}'
+
+    upgrade, install, remove = [], [], []
+    for line in proc.stdout.splitlines():
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        verb, name = parts[0], parts[1]
+        if verb == 'Inst':
+            # 'Inst name [old-version] (new-version …)' is an upgrade;
+            # 'Inst name (new-version …)' is a package that was not there before.
+            if len(parts) >= 3 and parts[2].startswith('['):
+                upgrade.append(name)
+            else:
+                install.append(name)
+        elif verb == 'Remv':
+            remove.append(name)
+    return upgrade, install, remove, None
+
+
+def _installed_versions(names):
+    """{name: version} for those of `names` dpkg currently has installed."""
+    if not names:
+        return {}
+    try:
+        proc = subprocess.run(
+            ['dpkg-query', '-W', '-f=${Package} ${Status} ${Version}\\n'] + list(names),
+            capture_output=True, text=True, timeout=30
+        )
+    except (subprocess.SubprocessError, OSError):
+        return {}
+    out = {}
+    for line in (proc.stdout or '').splitlines():
+        parts = line.split()
+        # 'name want error state version' — only an installed state has a
+        # version worth recording, and a purged package prints none at all.
+        if len(parts) >= 5 and parts[3] == 'installed':
+            out[parts[0]] = parts[4]
+    return out
 
 # The update log is a browser element, not a terminal. Helper scripts color
 # their output for the SSH case - postinstall.sh sets a blue step marker and a
@@ -208,6 +305,87 @@ def register(self):
             cmd.extend(extra_args)
         return cmd
 
+    # ── Meme sync ─────────────────────────────────────────────────────────
+    # The weekly cron entry runs exactly this command; these routes give it a
+    # button so a new device does not have to wait until the scheduled day to
+    # get its memes, and so a failed scheduled run can be retried without SSH.
+    # State lives in the output directory rather than in this process — the
+    # downloader keeps its own status/stop files so a run survives a service
+    # restart, and the status route reads what it wrote.
+
+    @self.app.route('/api/memes/sync-status', methods=['GET'])
+    @require_auth(self.auth_manager)
+    def meme_sync_status():
+        """idle / running / paused / done, straight from the downloader."""
+        try:
+            out = subprocess.run(
+                _meme_download_cmd(PROJECT_ROOT, ['--status']),
+                cwd=PROJECT_ROOT, capture_output=True, text=True, timeout=30
+            )
+            status = (out.stdout or '').strip().splitlines()
+            return jsonify({'success': True, 'status': status[-1] if status else 'idle'})
+        except Exception as e:
+            return jsonify({'success': False, 'message': _safe_error(e)}), 500
+
+    @self.app.route('/api/memes/sync-stop', methods=['POST'])
+    @require_auth(self.auth_manager)
+    def meme_sync_stop():
+        """Ask a running download to stop at the next clean point.
+
+        The downloader is resumable, so this pauses rather than cancels: the
+        discovered-UUID cache survives and the next run picks up where this one
+        left off instead of re-walking several thousand tags.
+        """
+        try:
+            subprocess.run(
+                _meme_download_cmd(PROJECT_ROOT, ['--stop']),
+                cwd=PROJECT_ROOT, capture_output=True, text=True, timeout=30
+            )
+            return jsonify({'success': True})
+        except Exception as e:
+            return jsonify({'success': False, 'message': _safe_error(e)}), 500
+
+    @self.app.route('/api/memes/sync', methods=['POST'])
+    @require_auth(self.auth_manager)
+    def meme_sync_start():
+        """Fetch memes that are not already on disk, streaming progress."""
+        if getattr(self, '_meme_sync_running', False):
+            return jsonify({'success': False, 'message': 'A meme sync is already running'}), 409
+
+        # --update is the cheap path: it asks which UUIDs are new relative to
+        # what is on disk instead of re-discovering the whole catalogue. A full
+        # rescan is available from the CLI and deliberately not from a button —
+        # it walks thousands of tags and takes hours on a Pi Zero.
+        cmd = _meme_download_cmd(PROJECT_ROOT, ['--update'])
+
+        def _emit(event, data):
+            if self.socketio:
+                self.socketio.emit(event, data, room='authenticated')
+
+        def _run():
+            self._meme_sync_running = True
+            try:
+                _emit('meme_sync_output', {'line': self.translations.get('syncing_memes', 'Checking einundzwanzig-memes.space for new memes...'), 'header': True})
+                proc = subprocess.Popen(
+                    cmd, cwd=PROJECT_ROOT, stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT, text=True, bufsize=1
+                )
+                for line in proc.stdout:
+                    _emit('meme_sync_output', {'line': _clean_line(line)})
+                proc.wait()
+                _emit('meme_sync_done', {
+                    'success': proc.returncode == 0,
+                    'error': None if proc.returncode == 0 else f'Meme sync exited {proc.returncode}',
+                })
+            except Exception as e:
+                print(f"Meme sync error: {e}")
+                _emit('meme_sync_done', {'success': False, 'error': _safe_error(e)})
+            finally:
+                self._meme_sync_running = False
+
+        threading.Thread(target=_run, daemon=True).start()
+        return jsonify({'success': True, 'message': 'Meme sync started'})
+
     @self.app.route('/api/update/install', methods=['POST'])
     @require_auth(self.auth_manager)
     def install_update():
@@ -288,6 +466,24 @@ def register(self):
                         if before is None or after is None:
                             return True
                         return before != after
+
+                    def _file_differs(path):
+                        """True when the file's raw bytes differ between the two refs.
+
+                        Used for the helper-script refresh, where _deps_differ's
+                        parsed comparison makes no sense: every line of a shell
+                        script matters, including its comments, because the file
+                        *is* the thing being deployed. True when either side
+                        cannot be read, so an unreadable ref refreshes rather
+                        than silently skipping.
+                        """
+                        before = subprocess.run(['git', 'show', f'HEAD:{path}'],
+                                                cwd=project_dir, capture_output=True)
+                        after = subprocess.run(['git', 'show', f'refs/tags/{tag}:{path}'],
+                                               cwd=project_dir, capture_output=True)
+                        if before.returncode != 0 or after.returncode != 0:
+                            return True
+                        return before.stdout != after.stdout
 
                     # Exact per-file checks. The previous substring test
                     # ('requirements.txt' in changed_files) also matched
@@ -390,6 +586,54 @@ def register(self):
                                 return
                     except (ValueError, OSError):
                         pass  # malformed file — ignore and proceed
+
+                # ── Refresh the sudo wrappers and sudoers set ───────────────
+                # tools/install_wifi_permissions.sh generates every helper this
+                # updater calls — mempaper-apt-install above all — plus the
+                # sudoers grants that make them reachable. When a release
+                # changes it, the device keeps running the previous generation
+                # until someone SSHes in as a sudo-capable user, which meant a
+                # release could ship a new grant to every device and the grant
+                # to none of them. Re-run it from here instead, and do it before
+                # the apt step below so the same update uses the new wrapper
+                # rather than the next one.
+                #
+                # Only when the file actually changed: regenerating sudoers on
+                # every update is a write to /etc for no reason, and this runs
+                # on devices where / is remounted read-only between updates.
+                perms_wrapper = '/usr/local/bin/mempaper-refresh-permissions'
+                perms_changed = False
+                try:
+                    perms_changed = _file_differs('tools/install_wifi_permissions.sh')
+                except Exception:
+                    perms_changed = True
+                if perms_changed and os.path.exists(perms_wrapper):
+                    _emit('update_output', {'line': self.translations.get('refreshing_permissions', 'Refreshing helper scripts and sudo permissions...'), 'phase': 'apt', 'header': True})
+                    try:
+                        subprocess.run(['sudo', 'mount', '-o', 'remount,rw', '/'], timeout=10, capture_output=True)
+                        proc = subprocess.Popen(
+                            ['sudo', perms_wrapper],
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            text=True, bufsize=1
+                        )
+                        for line in proc.stdout:
+                            _emit('update_output', {'line': _clean_line(line), 'phase': 'apt'})
+                        proc.wait()
+                        if proc.returncode != 0:
+                            _emit('update_output', {'line': f'Warning: permissions refresh exited {proc.returncode} — some helpers may be stale', 'phase': 'apt', 'header': True})
+                    except Exception as perm_err:
+                        _emit('update_output', {'line': f'Warning: {perm_err}', 'phase': 'apt'})
+                elif perms_changed:
+                    # The device predates the refresh wrapper. It cannot install
+                    # the wrapper from here — that needs root — so this is the
+                    # one remaining case that still wants an SSH session, and it
+                    # happens exactly once per device.
+                    _user = os.environ.get('USER', 'mempaper')
+                    _emit('update_output', {
+                        'line': f'Helper scripts changed in this release but {perms_wrapper} is not installed yet. '
+                                f'Run "sudo bash tools/install_wifi_permissions.sh {_user}" over SSH once; '
+                                f'future releases will apply themselves.',
+                        'phase': 'apt', 'header': True})
 
                 # Install apt dependencies when the declared set changed, or when
                 # anything it declares is not actually on the device.
@@ -569,6 +813,13 @@ def register(self):
                             _emit('update_output', {'line': 'Minification failed — app will use source files', 'phase': 'pip', 'header': True})
                     except Exception as minify_err:
                         _emit('update_output', {'line': f'JS minification skipped: {minify_err}', 'phase': 'pip'})
+
+                # Record what this release actually resolved to. Written after
+                # everything else has succeeded, so the report describes a
+                # combination that installed cleanly rather than one that was
+                # half-applied.
+                _write_version_reports(project_dir,
+                                       lambda m: _emit('update_output', {'line': m, 'phase': 'pip'}))
 
                 # Emit restart message before update_done (frontend unsubscribes from update_output on done)
                 _emit('update_output', {'line': self.translations.get('restarting_service', 'Restarting mempaper service...'), 'phase': 'restart', 'header': True})
@@ -831,6 +1082,9 @@ def register(self):
                         if proc.returncode != 0:
                             _emit('apt_output', {'line': self.translations.get('mempaper_deps_warning', 'Warning: some mempaper dependencies failed to install'), 'phase': 'deps', 'header': True})
 
+                _write_version_reports(project_dir,
+                                       lambda m: _emit('apt_output', {'line': m, 'phase': 'deps'}))
+
                 _emit('apt_done', {'success': True})
             except Exception as e:
                 print(f"System update error: {e}")
@@ -845,3 +1099,211 @@ def register(self):
 
         threading.Thread(target=_run_apt, daemon=True).start()
         return jsonify({'success': True, 'message': 'System update started'})
+
+    # ── Full Upgrade ──────────────────────────────────────────────────────
+
+    def _protected_packages():
+        """Packages a full upgrade must never be allowed to remove.
+
+        Everything apt-requirements.txt declares, plus the Python metapackages
+        the venv is pinned against. These are the packages whose absence turns
+        the device into a brick that can only be fixed with a keyboard and a
+        monitor, which is the failure this whole gate exists to prevent.
+        """
+        entries = parse_apt_requirements(os.path.join(PROJECT_ROOT, 'apt-requirements.txt'))
+        return set(package_names(entries)) | set(PYTHON_PINS)
+
+    @self.app.route('/api/system/upgrade-preview', methods=['GET'])
+    @require_auth(self.auth_manager)
+    def get_upgrade_preview():
+        """What a full upgrade would change, for the confirmation dialog.
+
+        The removal list is the reason this exists. `apt upgrade` cannot remove
+        anything, so the existing System Update button needs no preview; a full
+        upgrade resolves dependency changes by removing packages, and the user
+        approving it deserves to see which ones before rather than after.
+        """
+        upgrade, install, remove, error = _simulate_dist_upgrade()
+        if error:
+            return jsonify({'success': False, 'message': error}), 500
+        protected = _protected_packages()
+        blocked = sorted(set(remove) & protected)
+        return jsonify({
+            'success': True,
+            'upgrade': sorted(upgrade),
+            'install': sorted(install),
+            'remove': sorted(remove),
+            # Non-empty means the run will refuse. Surfaced here so the dialog
+            # can say so up front instead of offering a button that aborts.
+            'blocked': blocked,
+            'pinned': pinned_versions(parse_apt_requirements(
+                os.path.join(PROJECT_ROOT, 'apt-requirements.txt'))),
+        })
+
+    @self.app.route('/api/system/full-upgrade', methods=['POST'])
+    @require_auth(self.auth_manager)
+    def full_upgrade_system():
+        """apt update → upgrade → full-upgrade → autoremove, then reconcile.
+
+        The sequence the maintainer would run by hand, with three things a hand
+        run does not get: a refusal if the resolver wants to remove something
+        mempaper depends on, a re-pin pass so declared versions survive the
+        upgrade, and a verification at the end that there is genuinely nothing
+        left to upgrade.
+        """
+        if getattr(self, '_apt_running', False) or getattr(self, '_update_running', False):
+            return jsonify({'success': False, 'message': 'An update is already in progress'}), 409
+
+        def _is_mount_readonly(mount_point):
+            try:
+                with open('/proc/mounts') as f:
+                    for line in f:
+                        parts = line.split()
+                        if len(parts) >= 4 and parts[1] == mount_point:
+                            return 'ro' in parts[3].split(',')
+            except Exception:
+                pass
+            return False
+
+        def _emit(event, data):
+            if self.socketio:
+                self.socketio.emit(event, data, room='authenticated')
+
+        def _run():
+            self._apt_running = True
+            readonly_targets = []
+            project_dir = PROJECT_ROOT
+            try:
+                # Both mounts, for the same reason the plain update needs them:
+                # a kernel or initramfs-tools upgrade writes to /boot/firmware,
+                # and a read-only mount there fails dpkg mid-transaction.
+                for target in ['/', '/boot/firmware']:
+                    if _is_mount_readonly(target):
+                        if subprocess.call(['sudo', 'mount', '-o', 'remount,rw', target]) != 0:
+                            _emit('apt_done', {'success': False, 'error': f'Could not remount {target} read-write'})
+                            return
+                        readonly_targets.append(target)
+
+                def _stream(cmd, phase, label):
+                    _emit('apt_output', {'line': label, 'phase': phase, 'header': True})
+                    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                                            stderr=subprocess.STDOUT, text=True, bufsize=1)
+                    for line in proc.stdout:
+                        _emit('apt_output', {'line': _clean_line(line), 'phase': phase})
+                    proc.wait()
+                    return proc.returncode
+
+                if _stream(['sudo', 'apt-get', 'update'], 'update',
+                           self.translations.get('fetching_package_list', 'Fetching package list (apt update)...')) != 0:
+                    _emit('apt_done', {'success': False, 'error': 'apt update failed'})
+                    return
+
+                # Ordinary upgrade first. It cannot remove anything, so whatever
+                # it can do is the safe part of the job — doing it before the
+                # resolver runs means a later refusal still leaves the device
+                # with its security updates applied rather than with nothing.
+                if _stream(['sudo', 'apt-get', 'upgrade', '-y'], 'upgrade',
+                           self.translations.get('installing_upgrades', 'Installing upgrades (apt upgrade)...')) != 0:
+                    _emit('apt_done', {'success': False, 'error': 'apt upgrade failed'})
+                    return
+
+                # ── The gate ────────────────────────────────────────────────
+                _emit('apt_output', {'line': self.translations.get('checking_full_upgrade', 'Checking what a full upgrade would change...'), 'phase': 'fullupgrade', 'header': True})
+                up, inst, rem, err = _simulate_dist_upgrade()
+                if err:
+                    _emit('apt_done', {'success': False, 'error': f'Could not simulate full upgrade: {err}'})
+                    return
+                if not (up or inst or rem):
+                    _emit('apt_output', {'line': self.translations.get('nothing_further', 'Nothing further to upgrade.'), 'phase': 'fullupgrade', 'header': True})
+                else:
+                    blocked = sorted(set(rem) & _protected_packages())
+                    if blocked:
+                        # Refuse rather than proceed. This is the whole point of
+                        # the gate: apt is willing to remove these to satisfy a
+                        # dependency, and mempaper does not survive it.
+                        _emit('apt_output', {'line': 'Refusing: a full upgrade would remove packages mempaper depends on: ' + ', '.join(blocked), 'phase': 'fullupgrade', 'header': True})
+                        _emit('apt_done', {
+                            'success': False,
+                            'error': 'Full upgrade refused — it would remove: ' + ', '.join(blocked)
+                                     + '. The ordinary upgrade was applied. Resolve this over SSH.'
+                        })
+                        return
+                    if rem:
+                        _emit('apt_output', {'line': 'Will remove: ' + ', '.join(sorted(rem)), 'phase': 'fullupgrade', 'header': True})
+
+                    before = _installed_versions(PILLOW_NATIVE_DEPS)
+
+                    if _stream(['sudo', 'apt-get', 'dist-upgrade', '-y'], 'fullupgrade',
+                               self.translations.get('running_full_upgrade', 'Running full upgrade (apt full-upgrade)...')) != 0:
+                        _emit('apt_done', {'success': False, 'error': 'apt full-upgrade failed'})
+                        return
+
+                    # Native libraries Pillow was compiled against. When one of
+                    # them moves, the source build on this device is linked to
+                    # the version that just went away — reuse the existing
+                    # rebuild flag rather than inventing a second mechanism.
+                    after = _installed_versions(PILLOW_NATIVE_DEPS)
+                    moved = sorted(n for n, v in after.items() if before.get(n) not in (None, v))
+                    if moved:
+                        try:
+                            with open(os.path.join(project_dir, '.pillow-rebuild-needed'), 'w') as f:
+                                f.write('native libraries changed: ' + ', '.join(moved))
+                            _emit('apt_output', {'line': 'Pillow will be rebuilt from source after restart (' + ', '.join(moved) + ' changed)', 'phase': 'fullupgrade', 'header': True})
+                        except OSError:
+                            pass
+
+                _stream(['sudo', 'apt-get', 'autoremove', '-y'], 'autoremove',
+                        self.translations.get('removing_orphans', 'Removing packages nothing needs any more (apt autoremove)...'))
+
+                # Reconcile the declared set last: autoremove above can take out
+                # something apt-requirements.txt names but nothing else depends
+                # on, and a full upgrade can move a pinned package off its pin.
+                # This puts both back, and re-applies every hold.
+                wrapper = '/usr/local/bin/mempaper-apt-install'
+                if os.path.exists(wrapper):
+                    _stream(['sudo', wrapper], 'deps',
+                            self.translations.get('installing_mempaper_deps', 'Installing mempaper dependencies...'))
+
+                postinstall = '/usr/local/bin/mempaper-postinstall'
+                if os.path.exists(postinstall):
+                    _stream(['sudo', postinstall], 'deps',
+                            self.translations.get('applying_postinstall', 'Applying post-install system configuration...'))
+
+                # ── Verification ────────────────────────────────────────────
+                # The question the user actually asked: is anything still
+                # outstanding? Answered by asking apt again rather than by
+                # assuming the commands above did what they said.
+                up2, inst2, rem2, err2 = _simulate_dist_upgrade()
+                if err2:
+                    _emit('apt_output', {'line': f'Could not verify final state: {err2}', 'phase': 'verify', 'header': True})
+                elif up2 or inst2 or rem2:
+                    _emit('apt_output', {
+                        'line': f'Still outstanding: {len(up2)} to upgrade, {len(inst2)} to install, '
+                                f'{len(rem2)} to remove. Held packages account for this when the '
+                                f'held version blocks a dependency.',
+                        'phase': 'verify', 'header': True})
+                    if up2:
+                        _emit('apt_output', {'line': 'Held back: ' + ', '.join(sorted(up2)), 'phase': 'verify'})
+                else:
+                    _emit('apt_output', {'line': self.translations.get('system_fully_upgraded', 'System fully upgraded — nothing further to install, upgrade or remove.'), 'phase': 'verify', 'header': True})
+
+                # The whole point of a full upgrade is that the resolved set
+                # moved. Capture where it landed, so a combination proven on
+                # this device can be promoted into the declared files.
+                _write_version_reports(project_dir,
+                                       lambda m: _emit('apt_output', {'line': m, 'phase': 'verify'}))
+
+                _emit('apt_done', {'success': True})
+            except Exception as e:
+                print(f"Full upgrade error: {e}")
+                traceback.print_exc()
+                _emit('apt_done', {'success': False, 'error': _safe_error(e)})
+            finally:
+                if readonly_targets:
+                    _emit('apt_output', {'line': self.translations.get('restoring_readonly', 'Restoring read-only filesystem...'), 'phase': 'cleanup', 'header': True})
+                    for target in reversed(readonly_targets):
+                        subprocess.call(['sudo', 'mount', '-o', 'remount,ro', target])
+                self._apt_running = False
+
+        threading.Thread(target=_run, daemon=True).start()
+        return jsonify({'success': True, 'message': 'Full upgrade started'})

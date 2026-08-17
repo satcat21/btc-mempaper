@@ -525,8 +525,12 @@ ok ".ssh directories and authorized_keys files created for SSH key management"
 step "Step 1/9 — Installing system packages"
 
 if [ -f apt-requirements.txt ]; then
-    # Filter out comments and blank lines
-    APT_PKGS=$(grep -v '^\s*#' apt-requirements.txt | grep -v '^\s*$' | tr '\n' ' ')
+    # Comments (whole-line and trailing), blanks and CR stripped. What survives
+    # is either 'name' or 'name=version', both of which apt-get install takes
+    # verbatim — the pin is applied here and held later, once Step 7 has
+    # installed the wrapper that manages holds.
+    APT_PKGS=$(sed -e 's/#.*//' -e 's/\r//g' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' \
+        apt-requirements.txt | grep -v '^$' | tr '\n' ' ')
     sudo apt-get install -y $APT_PKGS
     ok "System packages installed"
 else
@@ -1034,6 +1038,17 @@ step "Step 7/9 — Installing WiFi hotspot permissions"
 
 sudo bash tools/install_wifi_permissions.sh "$SERVICE_USER"
 ok "WiFi permissions installed"
+
+# Apply any version pins declared in apt-requirements.txt. Step 1 installed the
+# packages — 'name=version' is a spec apt-get install already understands — but
+# nothing has held them yet, and an unheld pin is not a pin: the first
+# `apt upgrade` moves it and the declaration quietly stops meaning anything.
+# The wrapper is the one thing that knows how to reconcile holds, and it only
+# exists once the script above has run, which is why this sits here rather than
+# in Step 1. Idempotent, and a no-op when nothing is pinned.
+if [ -x /usr/local/bin/mempaper-apt-install ]; then
+    sudo /usr/local/bin/mempaper-apt-install || warn "Could not apply package version pins"
+fi
 
 # WiFi regulatory domain: without a country set, the radio can stay
 # soft-blocked by rfkill (or hostapd can fail to select a channel) — on a
