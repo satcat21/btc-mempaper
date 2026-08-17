@@ -473,14 +473,22 @@ def register(self):
                         Used for the helper-script refresh, where _deps_differ's
                         parsed comparison makes no sense: every line of a shell
                         script matters, including its comments, because the file
-                        *is* the thing being deployed. True when either side
-                        cannot be read, so an unreadable ref refreshes rather
-                        than silently skipping.
+                        *is* the thing being deployed.
+
+                        Absent from *both* refs is not a change — it is a file
+                        this release has nothing to say about. Returning True
+                        there, as this once did, meant that a path which had been
+                        renamed away reported a difference on every update
+                        forever, re-running the permissions refresh each time.
+                        Absent from exactly one ref *is* a change: the file was
+                        added or removed, and both are worth acting on.
                         """
                         before = subprocess.run(['git', 'show', f'HEAD:{path}'],
                                                 cwd=project_dir, capture_output=True)
                         after = subprocess.run(['git', 'show', f'refs/tags/{tag}:{path}'],
                                                cwd=project_dir, capture_output=True)
+                        if before.returncode != 0 and after.returncode != 0:
+                            return False
                         if before.returncode != 0 or after.returncode != 0:
                             return True
                         return before.stdout != after.stdout
@@ -588,7 +596,7 @@ def register(self):
                         pass  # malformed file — ignore and proceed
 
                 # ── Refresh the sudo wrappers and sudoers set ───────────────
-                # tools/install_wifi_permissions.sh generates every helper this
+                # tools/install_permissions.sh generates every helper this
                 # updater calls — mempaper-apt-install above all — plus the
                 # sudoers grants that make them reachable. When a release
                 # changes it, the device keeps running the previous generation
@@ -598,13 +606,21 @@ def register(self):
                 # the apt step below so the same update uses the new wrapper
                 # rather than the next one.
                 #
-                # Only when the file actually changed: regenerating sudoers on
+                # Both names are checked. The script was called
+                # install_wifi_permissions.sh until it outgrew the name, and the
+                # release that renames it changes neither file's *content* —
+                # only its path — so watching the new name alone would miss
+                # exactly the update that matters most, the one that repoints
+                # the refresh wrapper.
+                #
+                # Only when something actually changed: regenerating sudoers on
                 # every update is a write to /etc for no reason, and this runs
                 # on devices where / is remounted read-only between updates.
                 perms_wrapper = '/usr/local/bin/mempaper-refresh-permissions'
                 perms_changed = False
                 try:
-                    perms_changed = _file_differs('tools/install_wifi_permissions.sh')
+                    perms_changed = (_file_differs('tools/install_permissions.sh')
+                                     or _file_differs('tools/install_wifi_permissions.sh'))
                 except Exception:
                     perms_changed = True
                 if perms_changed and os.path.exists(perms_wrapper):
@@ -631,7 +647,7 @@ def register(self):
                     _user = os.environ.get('USER', 'mempaper')
                     _emit('update_output', {
                         'line': f'Helper scripts changed in this release but {perms_wrapper} is not installed yet. '
-                                f'Run "sudo bash tools/install_wifi_permissions.sh {_user}" over SSH once; '
+                                f'Run "sudo bash tools/install_permissions.sh {_user}" over SSH once; '
                                 f'future releases will apply themselves.',
                         'phase': 'apt', 'header': True})
 
@@ -667,7 +683,12 @@ def register(self):
                         subprocess.run(['sudo', 'mount', '-o', 'remount,rw', '/'], timeout=10, capture_output=True)
                         wrapper = '/usr/local/bin/mempaper-apt-install'
                         if not os.path.exists(wrapper):
-                            _emit('update_output', {'line': f'{wrapper} not found — run "sudo bash tools/install_wifi_permissions.sh" over SSH to reinstall the helper scripts', 'phase': 'apt', 'header': True})
+                            # Name the account. The script derives it from the
+                            # systemd unit when the argument is omitted, but a
+                            # command someone is about to paste into a root shell
+                            # should not rely on a default to be correct.
+                            _u = os.environ.get('USER', 'mempaper')
+                            _emit('update_output', {'line': f'{wrapper} not found — run "sudo bash tools/install_permissions.sh {_u}" over SSH to reinstall the helper scripts', 'phase': 'apt', 'header': True})
                         else:
                             proc = subprocess.Popen(
                                 ['sudo', wrapper],
@@ -735,7 +756,7 @@ def register(self):
                     # Device installed before this wrapper existed. It cannot be
                     # created from here — that needs root — so name the one command
                     # that fixes it rather than failing quietly.
-                    _emit('update_output', {'line': 'Skipping post-install configuration — run "sudo bash tools/install_wifi_permissions.sh" over SSH once to enable it', 'phase': 'apt', 'header': True})
+                    _emit('update_output', {'line': 'Skipping post-install configuration — run "sudo bash tools/install_permissions.sh" over SSH once to enable it', 'phase': 'apt', 'header': True})
 
                 # Install pip dependencies (only when requirements.txt changed)
                 venv_pip = os.path.join(project_dir, '.venv', 'bin', 'pip')

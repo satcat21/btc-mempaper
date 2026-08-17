@@ -402,7 +402,7 @@ btc-mempaper/
 |   |-- generate_service_file.py Generate systemd service config
 |   |-- backup_manager.py        Backup & maintenance utility
 |   |-- reset_cache_rpi.sh       Cache reset for Raspberry Pi
-|   |-- install_wifi_permissions.sh  Polkit + sudoers rules for Wi-Fi hotspot
+|   |-- install_permissions.sh  Polkit + sudoers rules for Wi-Fi hotspot
 |   +-- 90-mempaper-wifi.rules       Polkit rule for NetworkManager
 |
 |-- display/                     Display Drivers & Config

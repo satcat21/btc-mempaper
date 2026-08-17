@@ -91,7 +91,7 @@ To **add a new OS** (e.g. Forky/Debian 14): add `forky=14` to the file and push.
 Tag and push normally. When users update via the web UI:
 
 1. The update flow reads `tools/python_version` and detects a mismatch with the running interpreter
-2. Runs `sudo /usr/local/bin/mempaper-upgrade-python` (a scoped wrapper installed by `install_wifi_permissions.sh`)
+2. Runs `sudo /usr/local/bin/mempaper-upgrade-python` (a scoped wrapper installed by `install_permissions.sh`)
 3. Output streams live to the update log in the web UI
 4. After the Python upgrade completes (including ARMv6 source builds if needed), the normal pip install and service restart follow
 5. The whole flow is hands-free — no SSH required

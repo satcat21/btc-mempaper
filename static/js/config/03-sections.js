@@ -1046,7 +1046,7 @@ async function _performUpdate(tag, updateBtn) {
         'Minification failed — app will use source files': () => window.translations?.minification_failed,
         // Emitted by the updater around the post-install step…
         'Applying post-install system configuration...': () => window.translations?.applying_postinstall,
-        'Skipping post-install configuration — run "sudo bash tools/install_wifi_permissions.sh" over SSH once to enable it':
+        'Skipping post-install configuration — run "sudo bash tools/install_permissions.sh" over SSH once to enable it':
             () => window.translations?.skipping_postinstall,
         // …and by tools/postinstall.sh itself, whose output is streamed through
         // verbatim. Keyed without the ▶ / ✅ / ⚠️ marker, which _translateUpdateLine

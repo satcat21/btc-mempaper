@@ -243,7 +243,7 @@ class RecoveryMixin:
                 else:
                     print(f'❌ Wrapper failed: {(r.stderr or r.stdout or "").strip()}')
             else:
-                print('❌ WiFi clear wrapper not installed — re-run install_wifi_permissions.sh')
+                print('❌ WiFi clear wrapper not installed — re-run install_permissions.sh')
         except Exception as e:
             print(f'⚠️ WiFi cleanup failed: {e}')
             import traceback

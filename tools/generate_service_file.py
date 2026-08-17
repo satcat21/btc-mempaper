@@ -118,7 +118,7 @@ Environment="REQUEST_TIMEOUT=30"
 # NoNewPrivileges is intentionally omitted: the service needs to call
 # 'sudo nmcli' to manage NetworkManager connections (WPA2 hotspot onboarding).
 # The sudo rule is narrowly scoped to /usr/bin/nmcli only (see
-# /etc/sudoers.d/mempaper-wifi installed by install_wifi_permissions.sh).
+# /etc/sudoers.d/mempaper installed by install_permissions.sh).
 # PrivateTmp=true is safe here: the hostapd/dnsmasq config files live under
 # cache/ (part of ReadWritePaths below), which is visible to the independent
 # mempaper-hostapd.service / mempaper-dnsmasq.service units, so this service

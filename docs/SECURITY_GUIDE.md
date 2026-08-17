@@ -88,7 +88,7 @@ the right move for almost everyone. Two are worth a moment's thought:
 
 Without asking, it also creates the `mempaper` service account and adds it to
 `gpio`/`spi`/`i2c`/`netdev`; builds the virtualenv and pins pip; installs the
-polkit rule, the scoped `/etc/sudoers.d/mempaper-wifi`, and the
+polkit rule, the scoped `/etc/sudoers.d/mempaper`, and the
 `/usr/local/bin/mempaper-apt-install` wrapper that restricts package installs to
 `apt-requirements.txt`; generates and enables the systemd unit; and disables UFW
 and `nftables` (see [Host firewall](#host-firewall-do-not-use-ufw)).
@@ -353,7 +353,7 @@ patches within the held minor still install. See the
 
 ## Sudo rules — what mempaper can do as root
 
-The scoped sudoers file (`/etc/sudoers.d/mempaper-wifi`) grants exactly:
+The scoped sudoers file (`/etc/sudoers.d/mempaper`) grants exactly:
 
 | Command | Purpose |
 |---|---|
@@ -442,7 +442,7 @@ checked with one command.
 ### Installation
 
 - [ ] Service runs as `mempaper`, not `pi` or `root` — `systemctl show -p User mempaper.service`
-- [ ] Scoped sudoers and apt wrapper present — `ls /etc/sudoers.d/mempaper-wifi /usr/local/bin/mempaper-apt-install`
+- [ ] Scoped sudoers and apt wrapper present — `ls /etc/sudoers.d/mempaper /usr/local/bin/mempaper-apt-install`
 - [ ] At least one admin account exists with a strong password — `sudo -u mempaper .venv/bin/python tools/setup_user.py --list`
 - [ ] Config not world-readable — `stat -c '%a' config/config.json` returns `640`
 

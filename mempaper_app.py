@@ -733,7 +733,7 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
             # refreshed after an update. Nothing here can install without it.
             _user = os.environ.get('USER', 'mempaper')
             print(f'⚠️ Dependency check: {wrapper} is missing — run '
-                  f'"sudo bash tools/install_wifi_permissions.sh {_user}" over SSH')
+                  f'"sudo bash tools/install_permissions.sh {_user}" over SSH')
             return
 
         result = subprocess.run(['sudo', wrapper],

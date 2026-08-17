@@ -564,7 +564,7 @@ NetworkManager connections, the hotspot, and its iptables rules without a
 password:
 
 ```bash
-sudo bash tools/install_wifi_permissions.sh mempaper
+sudo bash tools/install_permissions.sh mempaper
 ```
 
 **Set the Wi-Fi country.** Without a regulatory domain the radio can stay
@@ -711,7 +711,7 @@ no reinstall. The web updater and the startup dependency check both reconcile ag
 > had not changed since the last tag, so a package that failed to install once stayed
 > missing through every later update, and the wrapper reported success either way. Run
 > the command above to install it now, then
-> `sudo bash ~/btc-mempaper/tools/install_wifi_permissions.sh` once to pick up the
+> `sudo bash ~/btc-mempaper/tools/install_permissions.sh` once to pick up the
 > repaired helper scripts. Verify with `dpkg-query -W -f='${Status}\n' clevis`.
 
 Everything below is optional and needs a Tang server on your LAN

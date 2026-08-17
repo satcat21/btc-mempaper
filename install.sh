@@ -1036,7 +1036,7 @@ fi
 # ── Step 7: WiFi/hotspot permissions ───────────────────────────────────────
 step "Step 7/9 — Installing WiFi hotspot permissions"
 
-sudo bash tools/install_wifi_permissions.sh "$SERVICE_USER"
+sudo bash tools/install_permissions.sh "$SERVICE_USER"
 ok "WiFi permissions installed"
 
 # Apply any version pins declared in apt-requirements.txt. Step 1 installed the

@@ -337,7 +337,7 @@ def clear_saved_wifi_connections():
     wrapper = "/usr/local/bin/mempaper-clear-wifi"
     if not (shutil.which(wrapper) or os.path.exists(wrapper)):
         print("❌ WiFi clear wrapper not installed — run:")
-        print("   sudo bash tools/install_wifi_permissions.sh mempaper")
+        print("   sudo bash tools/install_permissions.sh mempaper")
         return
 
     _cmd = ([] if is_root_user() else ["sudo"]) + [wrapper, "--no-reload"]
@@ -348,7 +348,7 @@ def clear_saved_wifi_connections():
     else:
         err = (r.stderr or r.stdout or "").strip()
         print(f"❌ WiFi clear wrapper failed: {err}")
-        print("   Re-run: sudo bash tools/install_wifi_permissions.sh mempaper")
+        print("   Re-run: sudo bash tools/install_permissions.sh mempaper")
 
 
 def disable_cloudinit_network_config():

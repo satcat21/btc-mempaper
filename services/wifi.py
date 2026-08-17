@@ -573,7 +573,7 @@ class WifiHotspotMixin:
             return None
         # Use 'sudo nmcli' on Linux so the service user (non-root) can manage
         # NM connections.  The passwordless sudoers rule is installed by
-        # tools/install_wifi_permissions.sh.
+        # tools/install_permissions.sh.
         cmd = (['sudo', 'nmcli'] if os.name != 'nt' else ['nmcli']) + args
         try:
             return subprocess.run(
@@ -863,7 +863,7 @@ class WifiHotspotMixin:
                                 break
                 else:
                     print(f'⚠️ nft INPUT accept failed (rc={r.returncode}): {(r.stderr or r.stdout or "").strip()}'
-                          f' — run install_wifi_permissions.sh to add sudoers entry for nft')
+                          f' — run install_permissions.sh to add sudoers entry for nft')
             except Exception as e:
                 print(f'⚠️ nft accept rule error: {e}')
 
@@ -955,7 +955,7 @@ class WifiHotspotMixin:
     # ── Setup hotspot AP (hostapd) + captive-portal DNS/DHCP (dnsmasq) ───────
     #
     # Both run as on-demand systemd units (mempaper-hostapd.service,
-    # mempaper-dnsmasq.service — installed by install_wifi_permissions.sh),
+    # mempaper-dnsmasq.service — installed by install_permissions.sh),
     # started/stopped/restarted here via 'sudo systemctl'. systemd supervises
     # the actual processes: crash-restart, journald logging, and clean shutdown.
     #
