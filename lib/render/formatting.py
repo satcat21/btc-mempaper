@@ -6,6 +6,11 @@ import math
 from babel.dates import format_date
 from datetime import datetime
 
+# The five tiers the baseline store keeps a window for. Named there rather than
+# here because that is where they are collected; this module only needs to know
+# which ones exist, so the config page can be handed all five at once.
+from managers.fee_tier_baseline import TIERS
+
 
 # ── The three scales ──────────────────────────────────────────────────────
 # constant  the configured color, always. The fee is not consulted.
@@ -313,6 +318,16 @@ class FormattingMixin:
         values with the color order below; sending the saved ones would color
         the slider against numbers the reader had already replaced.
 
+        All five fee tiers travel, not just the configured one, for the same
+        reason: the tier dropdown now sits in the same panel, and switching it is
+        a real change of scale rather than a change of label. The fastest fee's
+        median is several times the minimum fee's, so the same sat/vB reads warm
+        against one and cool against the other - a preview that kept one tier's
+        median while the reader picked another would show a color the device
+        would never draw. `baseline`, `baseline_stats` and `current_fee` stay at
+        the top level as the saved tier's entry, which is what the panel opens
+        on.
+
         The slider ranges travel too, for the same reason the stops do - where
         "normal" sits on the track is a property of the scale, not a layout
         choice. Each is (min, anchor, max) with the anchor at the midpoint of the
@@ -326,41 +341,74 @@ class FormattingMixin:
 
         Shape: {"lighten", "deepen", "neutral_band", "baseline", "cheap_floor",
                 "current_fee", "block_height", "unknown", "baseline_stats",
+                "tiers": {tier: {"baseline", "stats", "current_fee",
+                                 "previous_fee"}, ...},
                 "relative": {"cool": [[pos, hex], ...], "warm": [...]},
                 "manual_order": [[name, hex, default_threshold], ...],
-                "slider": {mode: {"min", "anchor", "max"}}}
+                "slider": {mode: {"min", "anchor", "max"}},
+                "slider_headroom": float}
         """
-        baseline = None
-        stats = None
-        store = getattr(self, "fee_baseline", None)
-        if store is not None:
-            try:
-                tier = self.config.get("fee_parameter", "minimumFee")
-                baseline = store.baseline(tier)
-                stats = store.stats(tier)
-            except Exception:
-                baseline, stats = None, None
+        selected_tier = self.config.get("fee_parameter", "minimumFee")
+        if selected_tier not in TIERS:
+            selected_tier = "minimumFee"
 
-        # The floor and the fee the renderer is working with right now, so the
-        # slider opens on the state the panel is actually in rather than on an
-        # idealisation of it.
+        # The tip the panel is currently showing, and the floor beneath every
+        # tier. The preview drew a hardcoded 914427 before, which is a
+        # plausible-looking number and nothing more: the reader cannot tell a
+        # preview of their own device from a mock-up, and the digit count is the
+        # whole geometry of the thing being previewed.
         cheap_floor = FALLBACK_CHEAP_FLOOR
-        current_fee = None
         block_height = None
+        height = None
+        prev_height = None
         try:
-            height = self._block_fee_cache["current"]["height"]
+            cache = self._block_fee_cache
+            height = cache["current"]["height"]
             cheap_floor = self._get_fee_for_parameter(
                 height, "minimumFee") or FALLBACK_CHEAP_FLOOR
-            current_fee = self._get_fee_for_parameter(
-                height, self.config.get("fee_parameter", "minimumFee"))
-            # The tip the panel is currently showing. The preview drew a
-            # hardcoded 914427 before, which is a plausible-looking number and
-            # nothing more: the reader cannot tell a preview of their own device
-            # from a mock-up, and the digit count is the whole geometry of the
-            # thing being previewed.
             block_height = int(height)
+            # The block before it, because the gradient is a move between the
+            # two: previous fee at the top, current underneath. With one block
+            # cached the two are the same height and the preview renders flat,
+            # which is also what the panel draws in that state.
+            prev_height = cache["previous"]["height"]
         except Exception:
-            pass
+            height = None
+            prev_height = None
+
+        # One entry per tier, so the dropdown beside this panel can re-scale the
+        # whole preview without a save and a reload. Each is read independently:
+        # a tier with too little history simply has no median yet, and that must
+        # not cost the other four theirs.
+        store = getattr(self, "fee_baseline", None)
+        tiers = {}
+        for tier in TIERS:
+            tier_baseline, tier_stats = None, None
+            if store is not None:
+                try:
+                    tier_baseline = store.baseline(tier)
+                    tier_stats = store.stats(tier)
+                except Exception:
+                    tier_baseline, tier_stats = None, None
+            tier_fee = None
+            if height is not None:
+                try:
+                    tier_fee = self._get_fee_for_parameter(height, tier)
+                except Exception:
+                    tier_fee = None
+            tier_prev_fee = None
+            if prev_height is not None:
+                try:
+                    tier_prev_fee = self._get_fee_for_parameter(prev_height, tier)
+                except Exception:
+                    tier_prev_fee = None
+            tiers[tier] = {"baseline": tier_baseline, "stats": tier_stats,
+                           "current_fee": tier_fee,
+                           "previous_fee": tier_prev_fee}
+
+        baseline = tiers[selected_tier]["baseline"]
+        stats = tiers[selected_tier]["stats"]
+        current_fee = tiers[selected_tier]["current_fee"]
 
         fixed_slider = {"min": 0.0, "anchor": SLIDER_FIXED_ANCHOR,
                         "max": SLIDER_FIXED_MAX}
@@ -399,6 +447,7 @@ class FormattingMixin:
             "block_height": block_height,
             "unknown": _hex(UNKNOWN_COLOR),
             "baseline_stats": stats,
+            "tiers": tiers,
             "relative": {
                 "cool": [[pos, _hex(rgb)] for pos, rgb in RELATIVE_NEUTRAL_COOL],
                 "warm": [[pos, _hex(rgb)] for pos, rgb in RELATIVE_NEUTRAL_WARM],
@@ -409,6 +458,10 @@ class FormattingMixin:
             # being typed, rather than waiting for a save to find out where it
             # now ends.
             "manual_headroom": MANUAL_HEADROOM,
+            # Travels for the same reason: switching tier moves the median the
+            # relative track is framed around, and the page has to re-frame it
+            # from the new median rather than ask the server for a fresh span.
+            "slider_headroom": SLIDER_HEADROOM,
             "slider": {"constant": fixed_slider,
                        "relative": relative_slider,
                        "manual": manual_slider},

@@ -578,11 +578,16 @@ function _renderCategorySection(category, section) {
         }
 }
 
-// Settings whose effect is not confined to their own section. number_format
-// repunctuates every figure in every preview card, but lives under General,
-// whose section has no preview and therefore no change listener of its own —
-// so the edit would sit invisible until a save and a page reload.
-const _GLOBAL_PREVIEW_KEYS = ['number_format'];
+// Settings whose effect is not confined to their own section.
+//   number_format  repunctuates every figure in every preview card, but lives
+//                  under General, whose section has no preview and therefore no
+//                  change listener of its own — so the edit would sit invisible
+//                  until a save and a page reload.
+//   fee_parameter  picks the tier the block height is colored by, and each tier
+//                  has its own median: a different one is a different scale, not
+//                  a different caption. It sits in Theming right above the color
+//                  group, but Theming has no preview listener either.
+const _GLOBAL_PREVIEW_KEYS = ['number_format', 'fee_parameter'];
 
 function _installGlobalPreviewListener() {
     if (window._globalPreviewListenerInstalled) return;
@@ -597,11 +602,18 @@ function _installGlobalPreviewListener() {
         // refresh below has to see the new value rather than the saved one.
         window._pendingConfigOverrides = window._pendingConfigOverrides || {};
         window._pendingConfigOverrides[key] = el.getValue ? el.getValue() : el.value;
-        Object.values(window._previewRefreshers || {}).forEach(fn => {
-            try { fn(); } catch (err) { /* one bad card must not stop the rest */ }
-        });
+        // Only the punctuation reaches the info-block cards; which fee tier the
+        // block height reads is nobody else's business.
+        if (key === 'number_format') {
+            Object.values(window._previewRefreshers || {}).forEach(fn => {
+                try { fn(); } catch (err) { /* one bad card must not stop the rest */ }
+            });
+        }
         if (typeof window._refreshBlockHeightPreview === 'function') {
-            try { window._refreshBlockHeightPreview(); } catch (err) { /* as above */ }
+            // A new tier brings a new median and a new fee, so the panel re-seats
+            // its slider rather than merely regrouping the digits it already has.
+            try { window._refreshBlockHeightPreview({ reseat: key === 'fee_parameter' }); }
+            catch (err) { /* as above */ }
         }
     }, true);
 }
@@ -731,6 +743,37 @@ function _fetchPreviewData(attempt) {
         .catch(() => {
             if (attempt < 6) setTimeout(() => _fetchPreviewData(attempt + 1), 3000);
         });
+}
+
+// Reload the block-height color scale after a block. Everything in that payload
+// hangs off the tip — the fee each tier is at, the height the sample draws, the
+// medians those fees are judged against — so a page left open colors a fee
+// nobody is paying any more until it is fetched again.
+//
+// `minHeight` is the height the notification announced. The scale is read from
+// the renderer's own fee cache, which the new block only lands in once the panel
+// has been redrawn, so the first answer is often still the previous tip; rather
+// than guess at a delay, ask again until the payload has caught up.
+function _refreshBlockHeightScale(minHeight, attemptArg) {
+    const attempt = attemptArg || 1;
+    const again = () => {
+        if (attempt < 6) {
+            setTimeout(() => _refreshBlockHeightScale(minHeight, attempt + 1),
+                       Math.min(3000 * attempt, 15000));
+        }
+    };
+    fetch('/api/config/block-height-scale')
+        .then(r => r.ok ? r.json() : null)
+        .then(d => {
+            if (!d || d.error) { again(); return; }
+            window.blockHeightPreview = d;
+            if (typeof window._refreshBlockHeightPreview === 'function') {
+                // reseat: the fee on the slider belonged to the previous block.
+                window._refreshBlockHeightPreview({ reseat: true });
+            }
+            if (minHeight && !(d.block_height >= minHeight)) again();
+        })
+        .catch(again);
 }
 
 // Cache and helper for loading SVG icons with a specific fill color

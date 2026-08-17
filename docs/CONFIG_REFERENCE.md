@@ -12,7 +12,6 @@ These settings can be modified via the Web Dashboard (recommended) or by editing
 | **Language** | `language` | Select | Interface language | `en` (English), `de` (German), `es` (Spanish), `fr` (French), `it` (Italian) |
 | **Number Format** | `number_format` | Select | How every figure is punctuated — block height, fee, hashrate, balances and the SSH banner all follow it. Independent of the interface language | `eu` (62.923 · 0,51, default), `us` (62,923 · 0.51) |
 | **Prioritize Large Memes** | `prioritize_large_scaled_meme` | Switch | Maximize meme size vs info blocks | `true` (Large Memes), `false` (Balanced) |
-| **Fee Used for the Block Height** | `fee_parameter` | Select | Which fee is printed under the block height **and** compared against the rolling median to color it. Pick the priority you actually transact at — see [Block height color scale](#block-height-color-scale) | `fastestFee` (High Priority), `halfHourFee` (Standard), `hourFee` (Low Priority), `economyFee` (Economy), `minimumFee` (No Priority) |
 
 ---
 
@@ -27,6 +26,7 @@ Colors that belong to a single info block stay with that block instead.
 | **E-Ink Theme** | `eink_dark_mode` | Switch | Invert colors for E-ink | `true` (Inverted/Night), `false` (Standard) |
 | **Date & Block Hash Gradient** | `color_date_start_*`<br>`color_date_end_*` | Group | Gradient across the date line and the hash frame, per theme | `#1c82c0` → `#c040a8` (light) |
 | **Holiday & Block Hash Gradient** | `color_holiday_start_*`<br>`color_holiday_end_*` | Group | Gradient used on Bitcoin holidays, per theme | `#D17300` → `#C62828` (light) |
+| **Fee Used for the Block Height** | `fee_parameter` | Select | Which fee is printed under the block height **and** compared against the rolling median to color it. Each tier keeps its own median, so this is the scale the group below is measured in, not just a label. Pick the priority you actually transact at — see [Block height color scale](#block-height-color-scale) | `fastestFee` (High Priority), `halfHourFee` (Standard), `hourFee` (Low Priority), `economyFee` (Economy), `minimumFee` (No Priority) |
 | **Block Height Color & Scale** | `color_block_height_*`<br>`fee_color_mode` | Group | The color an ordinary block reads as, plus the scale turning a fee into a color. See [Block height color scale](#block-height-color-scale) | `#545454` / `#919191`, scale `relative` |
 
 ---
@@ -74,11 +74,13 @@ than against fixed thresholds, so "cheap" keeps meaning cheap when the whole fee
 market moves.
 
 Set the base color and pick the scale together under **Theming → Block Height
-Color & Scale**. That panel previews a steady, a still-cheap, a spiked and a
-still-dear network in both themes, and its fee colors are computed by the
-renderer itself, so what you see is what the panel draws. Which fee is measured is set by
-`fee_parameter` under **General**. The window behind "normal" (30 days) and
-the neutral band (5%) are fixed in code, not settings.
+Color & Scale**. That panel previews the digits in both themes at whatever fee
+you drag the slider to, with the track itself painted in the scale it selects
+from, and its colors are computed from the renderer's own tables, so what you see
+is what the panel draws. Which fee is measured is set by **Fee Used for the Block
+Height** (`fee_parameter`) directly above it — switching tier re-scales the whole
+preview, because each tier is judged against its own median. The window behind
+"normal" (30 days) and the neutral band (5%) are fixed in code, not settings.
 
 ![Fee color scale](diagrams/fee-color-scale.svg)
 

@@ -458,6 +458,23 @@ def register(self):
         except Exception as e:
             return jsonify({'success': False, 'error': _safe_error(e)}), 500
 
+    @self.app.route('/api/config/block-height-scale', methods=['GET'])
+    @require_auth(self.auth_manager)
+    def get_block_height_scale():
+        """The block-height color scale on its own, for reloading after a block.
+
+        Everything in it is tied to the tip: the fee each tier is at, the height
+        the sample draws, and — once a day closes — the medians those fees are
+        judged against. The config page holds the payload from whenever it was
+        opened, so a page left open overnight previews a fee nobody is paying
+        any more. Its own route rather than a slice of /api/config, which
+        rebuilds the whole schema and every wallet balance to answer.
+        """
+        try:
+            return jsonify(self.image_renderer.block_height_preview_scale())
+        except Exception as e:
+            return jsonify({'error': _safe_error(e)}), 500
+
     @self.app.route('/api/config/preview-data', methods=['GET'])
     @require_auth(self.auth_manager)
     def get_config_preview_data():

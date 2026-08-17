@@ -491,9 +491,10 @@ question it answers is not "what is the fee" — the number below already says t
 — but *"is this cheap for right now?"*, which is the one that decides whether you
 consolidate UTXOs today or wait.
 
-Which fee gets measured is up to you: **Fee Preference** (`fee_parameter`) picks
-the priority tier, and the same tier is both printed under the height and
-compared against the median. Choose the one you actually transact at. Because the
+Which fee gets measured is up to you: **Fee Used for the Block Height**
+(`fee_parameter`), in the Theming section right above the color group, picks the
+priority tier, and the same tier is both printed under the height and compared
+against the median. Choose the one you actually transact at. Because the
 baseline is what blocks really cost, a fast fee sits above it more often and
 reads warm, while a minimum fee sits below it and reads cool — which is exactly
 the answer each question deserves.

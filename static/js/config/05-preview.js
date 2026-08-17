@@ -666,13 +666,54 @@ function createBlockHeightColorGroup() {
     // can answer for the value the reader lands on. The tables themselves stay
     // defined in one place, lib/render/formatting.py, and arrive as data.
     const data = window.blockHeightPreview || {};
+    // The stop tables and the two tone amounts are properties of the scale, so
+    // they are read once. Everything downstream of the tip - the medians, the
+    // fee each tier is at, the height under the gradient - is read through
+    // live() instead, because a block landing replaces the payload wholesale and
+    // this panel outlives it.
+    const live = () => window.blockHeightPreview || data;
     const LIGHTEN = typeof data.lighten === 'number' ? data.lighten : 0.45;
     const DEEPEN  = typeof data.deepen  === 'number' ? data.deepen  : 0.85;
     const BAND    = typeof data.neutral_band === 'number' ? data.neutral_band : 0.05;
-    const BASELINE = (typeof data.baseline === 'number' && data.baseline > 0)
-        ? data.baseline : null;
-    const CHEAP_FLOOR = typeof data.cheap_floor === 'number' ? data.cheap_floor : 0;
     const UNKNOWN = data.unknown || '#787882';
+
+    // ── The tier being colored ───────────────────────────────────────────────
+    // "Fee Used for the Block Height" now sits in this same panel, one field
+    // above, and it is not a label: each tier carries its own 30-day median, and
+    // fastestFee's is several times minimumFee's. The same 3 sat/vB is therefore
+    // cool against one and warm against the other, and a preview that answered
+    // for the saved tier while the reader picked another would show a color the
+    // device will never draw. All five arrive together, so switching costs
+    // nothing and needs no save.
+    //
+    // Read from the pending overrides first: that is where the form records an
+    // edit that has not been saved, which is exactly the state being previewed.
+    const DEFAULT_TIER = 'minimumFee';
+    const currentTier = () =>
+        (window._pendingConfigOverrides || {}).fee_parameter
+        || cfg.fee_parameter || DEFAULT_TIER;
+
+    let BASELINE = null;         // the tier's 30-day median, or null when thin
+    let BASELINE_STATS = null;   // how much history that median rests on
+    let CHEAP_FLOOR = 0;         // the network minimum, shared by every tier
+    let TIER_FEE = null;         // what this tier costs at the current tip
+    let TIER_PREV_FEE = null;    // and what it cost at the block before it
+
+    function readTier() {
+        const d = live();
+        // The flat keys are the saved tier's entry, kept as the fallback for a
+        // payload from before `tiers` travelled.
+        const rec = (d.tiers || {})[currentTier()] || {
+            baseline: d.baseline, stats: d.baseline_stats, current_fee: d.current_fee,
+        };
+        BASELINE = (typeof rec.baseline === 'number' && rec.baseline > 0)
+            ? rec.baseline : null;
+        BASELINE_STATS = rec.stats || null;
+        TIER_FEE = Number.isFinite(rec.current_fee) ? rec.current_fee : null;
+        TIER_PREV_FEE = Number.isFinite(rec.previous_fee) ? rec.previous_fee : null;
+        CHEAP_FLOOR = typeof d.cheap_floor === 'number' ? d.cheap_floor : 0;
+    }
+    readTier();
 
     const parseHex = (hex) => {
         const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || '').trim());
@@ -812,6 +853,10 @@ function createBlockHeightColorGroup() {
     const SLIDER_STEPS = 1000;
     const MANUAL_HEADROOM = typeof data.manual_headroom === 'number'
         ? data.manual_headroom : 1.1;
+    // How far past the median the relative track runs. Four times it is log2 =
+    // 2.0, the last stop of the warm ramp, so the track ends where the colors do.
+    const SLIDER_HEADROOM = typeof data.slider_headroom === 'number'
+        ? data.slider_headroom : 4.0;
 
     // The manual track is framed by the thresholds themselves, read live so it
     // re-frames while they are being typed rather than after a save: a tenth
@@ -827,10 +872,17 @@ function createBlockHeightColorGroup() {
     };
 
     const sliderRange = (mode) => {
+        // The relative track is framed around the median of the tier currently
+        // selected, computed here rather than taken from the payload: the server
+        // can only frame the tier that was saved, and the dropdown beside this
+        // slider changes which one that is without a save.
+        if (mode === 'relative' && BASELINE) {
+            return { min: 0, anchor: BASELINE, max: BASELINE * SLIDER_HEADROOM };
+        }
         // Relative without a median colors from the manual table, so it takes
         // that table's frame too rather than a span around a median it does not
         // have.
-        if (mode === 'manual' || (mode === 'relative' && !BASELINE)) {
+        if (mode === 'manual' || mode === 'relative') {
             const framed = manualSliderRange();
             if (framed) return framed;
         }
@@ -959,7 +1011,7 @@ function createBlockHeightColorGroup() {
     // Read at paint time rather than captured once, so switching the setting
     // repunctuates the sample instead of leaving it on the old separator.
     const sampleHeight = () => _fmtNum(
-        data.block_height || window._previewData?.blockHeight
+        live().block_height || window._previewData?.blockHeight
         || cfg.__block_height || 914427);
 
     const wrapper = document.createElement('div');
@@ -1008,15 +1060,24 @@ function createBlockHeightColorGroup() {
     // drag's starting point at the top turns the slider into that move, and
     // letting go settles both ends together, which is what a quiet network
     // genuinely looks like.
-    let currFee = Number.isFinite(data.current_fee) ? data.current_fee
-                : (BASELINE || 1);
-    let prevFee = currFee;
+    // Where the slider opens, and where it returns to whenever the tier changes
+    // or a block lands: the two fees the device is drawing between right now.
+    // Seating both from the payload rather than flattening them means the panel
+    // opens on the gradient actually on the display, move and all.
+    const seatFee = () => Number.isFinite(TIER_FEE) ? TIER_FEE : (BASELINE || 1);
+    const seatPrevFee = () => Number.isFinite(TIER_PREV_FEE) ? TIER_PREV_FEE : seatFee();
+    let currFee = seatFee();
+    let prevFee = seatPrevFee();
 
     // The tier being colored, named as the panel names it under the digits.
-    const FEE_TIER_LABEL = {
+    // A function, not a constant: the dropdown that decides it is in this same
+    // panel, so the label has to follow it between renders.
+    const TIER_LABELS = {
         fastestFee: t.fastest, halfHourFee: t.half_hour, hourFee: t.hour,
         economyFee: t.economy, minimumFee: t.minimum,
-    }[cfg.fee_parameter || 'minimumFee'] || (t.minimum || 'Minimum');
+    };
+    const feeTierLabel = () =>
+        TIER_LABELS[currentTier()] || (t.minimum || 'Minimum');
 
     // The line under the digits: what this fee reads as on the selected scale.
     // Says why the digits look the way they do, which a color alone cannot.
@@ -1127,7 +1188,7 @@ function createBlockHeightColorGroup() {
             digits.style.background = `linear-gradient(180deg,${top},${bottom})`;
             digits.style.webkitBackgroundClip = 'text';
             digits.style.backgroundClip = 'text';
-            feeLine.textContent = `${FEE_TIER_LABEL}: ${_fmtFee(currFee)} sat/vB`;
+            feeLine.textContent = `${feeTierLabel()}: ${_fmtFee(currFee)} sat/vB`;
             feeLine.style.color = bottom;
             reading.textContent = readingFor(currFee, mode);
         }
@@ -1231,7 +1292,7 @@ function createBlockHeightColorGroup() {
     }
 
     function syncMedianLine() {
-        const stats = data.baseline_stats || {};
+        const stats = BASELINE_STATS || {};
         if (!BASELINE) {
             medianLine.textContent = t.block_height_median_pending
                 || 'No 30-day median yet — falling back to the manual thresholds';
@@ -1324,10 +1385,24 @@ function createBlockHeightColorGroup() {
     modeSelect.addEventListener('change', syncMode);
     syncMode();
 
-    // Lets a number_format change repunctuate the sample height, the slider
-    // readout and the fee figures without rebuilding the panel, which would
-    // discard color edits the user has made but not yet saved.
-    window._refreshBlockHeightPreview = () => {
+    // Refreshes without rebuilding the panel, which would discard color edits
+    // the user has made but not yet saved.
+    //
+    // Plain call: repunctuate. That is a number_format change - the sample
+    // height, the slider readout and the fee figures all regroup, nothing else
+    // moves.
+    //
+    // `{reseat: true}`: the scale itself has changed under the panel - a
+    // different fee tier was picked, or a block landed and brought new fees and
+    // possibly a new median with it. The tier is re-read and both ends of the
+    // gradient are put back on the fees that tier is now between, because the
+    // pair shown before belonged to a scale that no longer exists.
+    window._refreshBlockHeightPreview = (opts) => {
+        if (opts && opts.reseat) {
+            readTier();
+            currFee = seatFee();
+            prevFee = seatPrevFee();
+        }
         syncSliderScale();
         syncMedianLine();
         rowUpdaters.forEach(fn => fn());

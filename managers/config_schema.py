@@ -311,6 +311,10 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
             "category": "general",
             "order": 1
         },
+        # Sits with the block-height color group rather than under General: it is
+        # the tier the group's median, its slider and its whole ramp are measured
+        # in, and reading the two apart made the color panel look like it applied
+        # to a fee chosen somewhere else entirely.
         "fee_parameter": {
             "type": "select",
             "label": t.get("fee_parameter", "Fee Used for the Block Height"),
@@ -323,8 +327,8 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
                 {"value": "economyFee",  "label": t.get("economy",   "Economy (~1 day)"),        "_lk": "economy"},
                 {"value": "minimumFee",  "label": t.get("minimum",   "Minimum"),                 "_lk": "minimum"}
             ],
-            "category": "general",
-            "order": 3
+            "category": "theming",
+            "order": 5
         },
         "fee_color_mode": {
             "type": "select",
@@ -616,7 +620,7 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
                                  "The base color of the block height digits and how the current "
                                  "fee is turned into the other end of the gradient."),
             "category": "theming",
-            "order": 5
+            "order": 6
         },
         "omni_device_name": {
             "type": "select",

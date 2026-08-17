@@ -636,7 +636,18 @@ function setupConfigSocketHandlers() {
             state.lastBlockHeight = data.block_height;
             setNotificationState(state);
         }
-        
+
+        // The block-height color preview is a picture of the tip: the height it
+        // draws, the fee under it and — as days close — the median that fee is
+        // judged against all moved when this block landed. Reload the scale so
+        // the panel shows the block that just arrived rather than the one the
+        // page was opened on. Only a genuinely new height starts a reload; the
+        // enriched repeat of a block already seen carries pool and reward data,
+        // none of which the scale is made of.
+        if (isDifferentBlock && typeof _refreshBlockHeightScale === 'function') {
+            _refreshBlockHeightScale(data.block_height);
+        }
+
         showBlockToast(data);
         try {
             localStorage.setItem('mempaper_block_notification', JSON.stringify({
