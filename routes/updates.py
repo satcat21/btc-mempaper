@@ -30,6 +30,30 @@ PILLOW_NATIVE_DEPS = (
 PYTHON_PINS = ('python3', 'python3-dev', 'python3-venv')
 
 
+def _permissions_hint(translations, key, default, project_dir):
+    """The 'run this over SSH' line, translated and filled in.
+
+    Two substitutions matter and neither is guessable by whoever reads it:
+
+      {path}  install.sh *moves* the repo into the service user's home, so it
+              is not under the admin's ~ and a relative path resolves elsewhere.
+      {user}  the account the grants are for — which is not the account running
+              the command. The service user is a system account with no
+              password and no sudo-group membership, and the scoped sudoers set
+              grants named commands rather than bash, so it cannot run this at
+              all. It has to be done from an account that can sudo.
+
+    A translation missing a placeholder is fine; one with a stray brace is not,
+    so formatting failures fall back to the unformatted string rather than
+    taking the update down over a message.
+    """
+    text = (translations or {}).get(key) or default
+    try:
+        return text.format(path=project_dir, user=os.environ.get('USER', 'mempaper'))
+    except (KeyError, IndexError, ValueError):
+        return text
+
+
 def _write_version_reports(project_dir, emit_line):
     """Refresh cache/currently_installed_*.txt after a successful operation.
 
@@ -644,11 +668,18 @@ def register(self):
                     # the wrapper from here — that needs root — so this is the
                     # one remaining case that still wants an SSH session, and it
                     # happens exactly once per device.
+                    # Absolute path and a cd, because neither is guessable from
+                    # an admin shell: install.sh *moves* the repo into the
+                    # service user's home, so it is not under the admin's ~, and
+                    # the service user cannot run this at all — it is a system
+                    # account with no password and no sudo-group membership, and
+                    # the scoped sudoers set grants specific commands, not bash.
                     _user = os.environ.get('USER', 'mempaper')
                     _emit('update_output', {
                         'line': f'Helper scripts changed in this release but {perms_wrapper} is not installed yet. '
-                                f'Run "sudo bash tools/install_permissions.sh {_user}" over SSH once; '
-                                f'future releases will apply themselves.',
+                                f'Over SSH, as a user that can sudo, run once: '
+                                f'cd {project_dir} && sudo bash tools/install_permissions.sh {_user} '
+                                f'— future releases will apply themselves.',
                         'phase': 'apt', 'header': True})
 
                 # Install apt dependencies when the declared set changed, or when
@@ -683,12 +714,15 @@ def register(self):
                         subprocess.run(['sudo', 'mount', '-o', 'remount,rw', '/'], timeout=10, capture_output=True)
                         wrapper = '/usr/local/bin/mempaper-apt-install'
                         if not os.path.exists(wrapper):
-                            # Name the account. The script derives it from the
-                            # systemd unit when the argument is omitted, but a
-                            # command someone is about to paste into a root shell
-                            # should not rely on a default to be correct.
+                            # Name the account, and give the absolute path. The
+                            # script derives the account from the systemd unit
+                            # when the argument is omitted, but a command someone
+                            # is about to paste into a root shell should not rely
+                            # on a default to be right — and the repo is not
+                            # under the admin's home, so a relative path is not
+                            # merely unhelpful, it resolves somewhere else.
                             _u = os.environ.get('USER', 'mempaper')
-                            _emit('update_output', {'line': f'{wrapper} not found — run "sudo bash tools/install_permissions.sh {_u}" over SSH to reinstall the helper scripts', 'phase': 'apt', 'header': True})
+                            _emit('update_output', {'line': f'{wrapper} not found — over SSH, run: cd {project_dir} && sudo bash tools/install_permissions.sh {_u}', 'phase': 'apt', 'header': True})
                         else:
                             proc = subprocess.Popen(
                                 ['sudo', wrapper],
@@ -756,7 +790,19 @@ def register(self):
                     # Device installed before this wrapper existed. It cannot be
                     # created from here — that needs root — so name the one command
                     # that fixes it rather than failing quietly.
-                    _emit('update_output', {'line': 'Skipping post-install configuration — run "sudo bash tools/install_permissions.sh" over SSH once to enable it', 'phase': 'apt', 'header': True})
+                    #
+                    # Translated and formatted here rather than shipped as a
+                    # fixed English sentence for the page to look up by exact
+                    # match: the command carries the project path now, so no
+                    # literal key could match it, and a line the page could not
+                    # match fell through to English regardless of the configured
+                    # language.
+                    _emit('update_output', {
+                        'line': _permissions_hint(self.translations, 'skipping_postinstall',
+                                                  'Skipping post-install configuration — over SSH, run once: '
+                                                  'cd {path} && sudo bash tools/install_permissions.sh {user}',
+                                                  project_dir),
+                        'phase': 'apt', 'header': True})
 
                 # Install pip dependencies (only when requirements.txt changed)
                 venv_pip = os.path.join(project_dir, '.venv', 'bin', 'pip')

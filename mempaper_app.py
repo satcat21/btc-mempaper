@@ -731,9 +731,14 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
         if not os.path.exists(wrapper):
             # Predates the wrapper, or the sudoers/wrapper set was never
             # refreshed after an update. Nothing here can install without it.
+            # Absolute path, and a cd. Whoever reads this has to be logged in
+            # as an account that can sudo — the service user cannot, it is a
+            # system account with no password and no sudo-group membership —
+            # and install.sh *moves* the repo to the service user's home, so a
+            # relative path resolves nowhere from an admin's shell.
             _user = os.environ.get('USER', 'mempaper')
-            print(f'⚠️ Dependency check: {wrapper} is missing — run '
-                  f'"sudo bash tools/install_permissions.sh {_user}" over SSH')
+            print(f'⚠️ Dependency check: {wrapper} is missing — over SSH, run: '
+                  f'cd {project_dir} && sudo bash tools/install_permissions.sh {_user}')
             return
 
         result = subprocess.run(['sudo', wrapper],
