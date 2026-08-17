@@ -2,7 +2,12 @@
 # ============================================================================
 # mempaper one-click installer
 # ============================================================================
-# Sets up a fresh Raspberry Pi (Raspberry Pi OS Lite 32-bit, Bookworm or Trixie) as a mempaper device.
+# Sets up a fresh Raspberry Pi (Raspberry Pi OS Lite 32-bit, Trixie / Debian 13) as a mempaper device.
+#
+# Bookworm (Debian 12) is not supported or tested. It still installs: the pins in
+# apt-requirements.txt are scoped to the suite named in that file, and Step 1
+# drops them on any other one rather than failing to resolve them. What you lose
+# is the tested combination — see the Installation note in README.md.
 #
 # Usage:
 #   sudo apt install -y git
@@ -525,12 +530,31 @@ ok ".ssh directories and authorized_keys files created for SSH key management"
 step "Step 1/9 — Installing system packages"
 
 if [ -f apt-requirements.txt ]; then
+    # Pins are scoped to the suite named by '# pins-for: <codename>' in the file.
+    # Those version strings only exist in that suite's archive, and apt matches a
+    # pinned version exactly, so on any other release every spec below fails to
+    # locate a candidate and takes the whole batch down with it. Strip the
+    # versions there and install the same packages floating.
+    #
+    # The pins stand when the file names no suite, or when the codename cannot be
+    # read. An empty sed expression is a valid no-op, which is what keeps the two
+    # cases a single pipeline.
+    PINS_TARGET=$(sed -n 's/^[[:space:]]*#[[:space:]]*[Pp]ins-for:[[:space:]]*\([A-Za-z0-9_.-][A-Za-z0-9_.-]*\).*/\1/p' \
+        apt-requirements.txt | head -n1 | tr '[:upper:]' '[:lower:]')
+    OS_CODENAME=$( . /etc/os-release 2>/dev/null && printf '%s' "${VERSION_CODENAME:-}" | tr '[:upper:]' '[:lower:]' )
+    STRIP_PINS=''
+    if [ -n "$PINS_TARGET" ] && [ -n "$OS_CODENAME" ] && [ "$PINS_TARGET" != "$OS_CODENAME" ]; then
+        STRIP_PINS='s/=.*//'
+        warn "apt-requirements.txt pins versions for ${PINS_TARGET}, but this is ${OS_CODENAME}."
+        warn "Installing those packages unpinned — see the Installation note in README.md."
+    fi
+
     # Comments (whole-line and trailing), blanks and CR stripped. What survives
     # is either 'name' or 'name=version', both of which apt-get install takes
     # verbatim — the pin is applied here and held later, once Step 7 has
     # installed the wrapper that manages holds.
     APT_PKGS=$(sed -e 's/#.*//' -e 's/\r//g' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' \
-        apt-requirements.txt | grep -v '^$' | tr '\n' ' ')
+        -e "$STRIP_PINS" apt-requirements.txt | grep -v '^$' | tr '\n' ' ')
     sudo apt-get install -y $APT_PKGS
     ok "System packages installed"
 else

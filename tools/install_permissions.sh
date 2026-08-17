@@ -108,9 +108,37 @@ RM_BIN="$(which rm         2>/dev/null || echo /bin/rm)"
     echo '#!/bin/bash'
     echo "APT_REQ=\"${PROJECT_DIR}/apt-requirements.txt\""
     cat <<'WRAPPER'
+# No terminal here whether this was reached from the web updater or from cron,
+# and debconf announces all three frontends it cannot use before giving up on
+# its own. Set explicitly so it does not have to: sudo passes the variable in
+# via env_keep when the caller sets it, but this wrapper is also run directly as
+# root, and a device whose sudoers predates that grant would otherwise still get
+# the cascade.
+export DEBIAN_FRONTEND=noninteractive
+
 if [ ! -f "$APT_REQ" ]; then
     echo "❌ apt-requirements.txt not found: $APT_REQ" >&2
     exit 1
+fi
+
+# Pins are scoped to the suite they were resolved against, named by a
+# '# pins-for: <codename>' line in the file. A version from one suite's archive
+# does not exist in another's, and apt matches a pinned version exactly, so on a
+# different release every pin fails to install - and _apply_holds below would
+# then hold each package at whatever it already had, freezing it off Debian's
+# security updates while reporting the pins applied. Drop the versions instead:
+# same packages, floating and unheld.
+#
+# The pins stand when the file names no suite (it predates this, or its author
+# wants them unconditional) or when the codename cannot be read - releasing every
+# hold on a healthy device over an unreadable /etc/os-release would be worse than
+# doing nothing. Sourced in a subshell so os-release cannot clobber anything here.
+PINS_TARGET="$(sed -n 's/^[[:space:]]*#[[:space:]]*[Pp]ins-for:[[:space:]]*\([A-Za-z0-9_.-][A-Za-z0-9_.-]*\).*/\1/p' \
+    "$APT_REQ" | head -n1 | tr '[:upper:]' '[:lower:]')"
+OS_CODENAME="$( . /etc/os-release 2>/dev/null && printf '%s' "${VERSION_CODENAME:-}" | tr '[:upper:]' '[:lower:]' )"
+APPLY_PINS=1
+if [ -n "$PINS_TARGET" ] && [ -n "$OS_CODENAME" ] && [ "$PINS_TARGET" != "$OS_CODENAME" ]; then
+    APPLY_PINS=0
 fi
 
 # A declaration is 'name' or 'name=version'. The name is what dpkg-query and
@@ -120,14 +148,22 @@ fi
 # package would read as permanently missing.
 declare -a PKGS=()          # names, declaration order
 declare -A WANT_VERSION=()  # name -> pinned version, only for pinned entries
-while IFS= read -r line; do
+# '|| [ -n "$line" ]' is what makes the last line count. `read` returns non-zero
+# when it reaches EOF without finding a delimiter, so a file whose final line
+# carries no trailing newline had that line read into $line and then thrown away
+# by the loop condition - the last package in apt-requirements.txt was silently
+# invisible to this wrapper. It was never installed and never held, while every
+# Python reader of the same file saw it and reported it missing. Editors that
+# strip the final newline are common enough that guarding the read is the fix;
+# depending on the file to always end in one is not.
+while IFS= read -r line || [ -n "$line" ]; do
     line="${line%$'\r'}"
     line="${line%%#*}"
     line="${line#"${line%%[![:space:]]*}"}"
     line="${line%"${line##*[![:space:]]}"}"
     [ -z "$line" ] && continue
     name="${line%%=*}"
-    if [ "$name" != "$line" ]; then
+    if [ "$name" != "$line" ] && [ "$APPLY_PINS" -eq 1 ]; then
         WANT_VERSION["$name"]="${line#*=}"
     fi
     PKGS+=("$name")
@@ -136,6 +172,12 @@ done < "$APT_REQ"
 if [ ${#PKGS[@]} -eq 0 ]; then
     echo "No packages listed in apt-requirements.txt — nothing to install."
     exit 0
+fi
+
+if [ "$APPLY_PINS" -eq 0 ]; then
+    echo "ℹ️  Version pins are declared for ${PINS_TARGET}; this device runs ${OS_CODENAME}."
+    echo "    Installing the same ${#PKGS[@]} packages unpinned — those versions do not"
+    echo "    exist in this archive. Re-pin apt-requirements.txt for ${OS_CODENAME} to change that."
 fi
 
 # '${Status}' is "want error state". Only the state says whether the files are
@@ -179,17 +221,36 @@ PYTHON_HOLDS=(python3 python3-dev python3-venv)
 # dropping the '=version' from a line has to release the hold, or the package
 # stays frozen forever at a version nothing declares any more.
 _apply_holds() {
-    local p held to_hold=() to_release=()
+    local p want held to_hold=() to_release=() unsatisfied=()
+    local -A have=()
     held="$(apt-mark showhold 2>/dev/null || true)"
     for p in "${PKGS[@]}"; do
         if [ -n "${WANT_VERSION[$p]+x}" ]; then
+            want="${WANT_VERSION[$p]}"
+            have["$p"]="$(_installed_version "$p")"
             # Only hold what is actually on the device. apt-mark hold on an
             # uninstalled package pins it as "never install" - silently, with no
             # error - which is how a declared package becomes permanently
             # uninstallable. The block at the top of this script exists because
             # that has happened.
-            if [ -n "$(_installed_version "$p")" ]; then
+            [ -z "${have[$p]}" ] && continue
+            if [ "${have[$p]}" = "$want" ]; then
                 printf '%s\n' "$held" | grep -qxF "$p" || to_hold+=("$p")
+            else
+                # The pin was asked for and did not take - the version is not in
+                # the archive, or the install failed. Holding here would freeze
+                # the package at a version *nothing declares*, silently cutting
+                # it off from Debian's security updates while this function
+                # printed "📌 Pinned (held)" and looked like it had worked. It is
+                # the reason a device could sit for months on a version no
+                # release ever asked for. Leave it floating and say so instead:
+                # an unreachable pin is a declaration to fix, not a state to
+                # freeze. Release a hold left behind by an earlier run for the
+                # same reason - that hold is the frozen state, and this is the
+                # only place that can undo it.
+                unsatisfied+=("$p")
+                printf '%s\n' "${PYTHON_HOLDS[@]}" | grep -qxF "$p" && continue
+                printf '%s\n' "$held" | grep -qxF "$p" && to_release+=("$p")
             fi
         else
             printf '%s\n' "${PYTHON_HOLDS[@]}" | grep -qxF "$p" && continue
@@ -205,6 +266,13 @@ _apply_holds() {
         apt-mark unhold "${to_release[@]}" >/dev/null 2>&1 \
             && echo "🔓 Pin removed, now floating: ${to_release[*]}" \
             || echo "⚠️  Could not unhold: ${to_release[*]}" >&2
+    fi
+    if [ ${#unsatisfied[@]} -gt 0 ]; then
+        echo "⚠️  Declared version not installed — left floating, NOT held:" >&2
+        for p in "${unsatisfied[@]}"; do
+            echo "      $p wants ${WANT_VERSION[$p]}, has ${have[$p]}" >&2
+        done
+        echo "    Check the version exists in this suite: apt-cache madison <package>" >&2
     fi
     return 0
 }
@@ -507,6 +575,19 @@ cat > "${SUDOERS_FILE}" <<EOF
 # Scoped to ${SERVICE_USER} only — sudo used by anyone else still logs normally,
 # so this does not reduce the audit trail for administrators.
 Defaults:${SERVICE_USER} !syslog, !pam_session
+
+# Let DEBIAN_FRONTEND through to the apt commands below. There is no terminal
+# behind a web request, so debconf tried Dialog, then Readline, then Teletype,
+# reporting each failure into the update log before falling back to
+# Noninteractive on its own.
+#
+# env_keep rather than a 'sudo DEBIAN_FRONTEND=noninteractive apt-get ...'
+# command line, because every apt grant below is an exact command match: the
+# prefixed form is a different command and sudo would refuse it, so the variable
+# has to arrive as environment instead. Nothing is granted by this that was not
+# already granted — it selects a debconf frontend for commands the service user
+# may already run, and cannot name a program or a package.
+Defaults:${SERVICE_USER} env_keep += "DEBIAN_FRONTEND"
 
 # WiFi management via NetworkManager.
 # nmcli uses many subcommands so kept broad; it does not execute arbitrary code.

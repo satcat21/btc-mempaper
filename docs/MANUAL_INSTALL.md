@@ -20,10 +20,17 @@ step.
 > **`install.sh` is authoritative.** If anything here disagrees with it, the
 > script is right and this file has drifted — please open an issue.
 
-Commands assume Raspberry Pi OS Lite 32-bit (Bookworm or Trixie), run as a
+Commands assume Raspberry Pi OS Lite 32-bit (Trixie / Debian 13), run as a
 normal sudo-capable user such as `pi`. **Never run the installer or these
 commands as root** — the script refuses, and several steps depend on `sudo -u`
 dropping privileges correctly.
+
+> **Bookworm (Debian 12) is not supported or tested.** The versions pinned in
+> `apt-requirements.txt` exist only in the Trixie archive, so a device on any
+> other suite ignores them and installs those packages unpinned — the apt step
+> below still works, it just gives you whatever versions Bookworm currently
+> offers. See the note under
+> [Installation in the README](../README.md#installation).
 
 ---
 

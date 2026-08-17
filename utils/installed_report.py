@@ -52,6 +52,38 @@ def _normalise(name):
     return re.sub(r'[-_.]+', '-', name).lower()
 
 
+# The first line of a header this module generated. Recognising it is what makes
+# promoting a report idempotent - see _strip_generated_header.
+_HEADER_FIRST_RE = re.compile(
+    r'^#\s*Resolved (?:apt|pip) versions as installed on this device\.\s*$')
+
+
+def _strip_generated_header(lines):
+    """Drop a header this module wrote, if the source file begins with one.
+
+    Promoting a report means copying it over the file it was generated from, so
+    the next report is generated from a file that already carries a header. Left
+    alone, every promotion stacked another copy: a maintainer who bumps pins each
+    release would accumulate one header per release, all but the first stale, and
+    the newest claim buried under them. Strip the old one so a promoted file
+    round-trips to itself.
+
+    Only a header at the very top is removed, and only through the blank line
+    that terminates it - a '# Resolved …' line further down is somebody's comment,
+    not a header, and none of the explanatory comments the source file carries
+    below that blank line are touched.
+    """
+    first = next((i for i, l in enumerate(lines) if l.strip()), None)
+    if first is None or not _HEADER_FIRST_RE.match(lines[first]):
+        return lines
+    for i in range(first, len(lines)):
+        if not lines[i].strip():
+            return lines[i + 1:]
+        if not lines[i].lstrip().startswith('#'):
+            break        # ran into content - not a header block after all
+    return lines
+
+
 def _header(kind, source_name, total, resolved):
     return [
         f'# Resolved {kind} versions as installed on this device.',
@@ -91,7 +123,7 @@ def installed_apt_versions(names):
 def render_apt_report(source_path, versions):
     """The source file with '=version' filled in on every installed package."""
     with open(source_path, encoding='utf-8') as f:
-        source_lines = f.read().splitlines()
+        source_lines = _strip_generated_header(f.read().splitlines())
 
     entries = parse_apt_requirements(source_path)
     total = len(entries)
@@ -139,7 +171,7 @@ def installed_pip_versions(venv_pip):
 
 
 def render_pip_report(source_path, versions):
-    """The source file with every requirement pinned to the installed version.
+    """(text, pinned_count) - the source file with each requirement pinned.
 
     Extras and environment markers are preserved: 'qrcode[pil]>=7.4' becomes
     'qrcode[pil]==8.2', because the extras are part of what was asked for and
@@ -148,9 +180,14 @@ def render_pip_report(source_path, versions):
     Commented-out optional packages stay commented. They are documentation of
     what *could* be installed - hardware GPIO libraries, omni-epd - and pinning
     a version into a line nothing reads would only make it stale.
+
+    The count comes back with the text because the caller cannot derive it:
+    `versions` is every package in the virtualenv, transitive dependencies
+    included, so its length is not the number of declared requirements pinned
+    here. That is why this report logged no count while the apt one did.
     """
     with open(source_path, encoding='utf-8') as f:
-        source_lines = f.read().splitlines()
+        source_lines = _strip_generated_header(f.read().splitlines())
 
     total = 0
     resolved = 0
@@ -183,8 +220,9 @@ def render_pip_report(source_path, versions):
         trail = code[len(code.rstrip()):]
         body.append(f'{lead}{name}{extras}=={version}{marker}{trail}{comment}')
 
-    return '\n'.join(_header('pip', os.path.basename(source_path), total, resolved)
+    text = '\n'.join(_header('pip', os.path.basename(source_path), total, resolved)
                      + [''] + body) + '\n'
+    return text, resolved
 
 
 # ── the one call sites use ────────────────────────────────────────────────
@@ -234,10 +272,12 @@ def write_installed_reports(project_root, log=None):
             versions = installed_pip_versions(venv_pip)
             if versions:
                 dest = os.path.join(cache_dir, 'currently_installed_requirements.txt')
+                text, pinned = render_pip_report(pip_src, versions)
                 with open(dest, 'w', encoding='utf-8') as f:
-                    f.write(render_pip_report(pip_src, versions))
+                    f.write(text)
                 written.append(dest)
-                _say(f'Wrote {os.path.relpath(dest, project_root)}')
+                _say(f'Wrote {os.path.relpath(dest, project_root)} '
+                     f'({pinned} packages pinned)')
         except Exception as exc:
             _say(f'Could not write pip version report: {exc}')
 

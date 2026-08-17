@@ -85,14 +85,23 @@ def _simulate_dist_upgrade():
     Returns (upgrade, install, remove, error). Any failure yields empty lists
     and an error string, and the caller must treat that as "do not proceed" -
     an unreadable simulation is not permission to run the real thing.
+
+    Every error string returned here reaches a browser - the preview endpoint
+    puts it in a JSON response, and the full-upgrade run emits it over the
+    socket. So a failure to run the command at all is logged server-side and
+    reported generically: the exception text carries interpreter internals and
+    filesystem paths, which say more about the host than the person clicking
+    "upgrade" needs. apt's own stderr below is kept, being the diagnostic the
+    operator actually came for and not a view into the process.
     """
+    from mempaper_app import _safe_error
     try:
         proc = subprocess.run(
             ['apt-get', '-s', 'dist-upgrade'],
             capture_output=True, text=True, timeout=180
         )
     except (subprocess.SubprocessError, OSError) as exc:
-        return [], [], [], str(exc)
+        return [], [], [], _safe_error(exc, 'apt-get -s dist-upgrade could not be run')
     if proc.returncode != 0:
         tail = (proc.stderr or proc.stdout or '').strip().splitlines()
         return [], [], [], '; '.join(tail[-3:]) or f'apt-get -s exited {proc.returncode}'
@@ -145,6 +154,129 @@ _ANSI_RE = re.compile(r'\x1B\[[0-9;]*[A-Za-z]')
 def _clean_line(line):
     """One line of subprocess output, ready to show in the browser."""
     return _ANSI_RE.sub('', line).rstrip('\n').rstrip()
+
+
+def _line_emitter(emit, event, phase):
+    """Adapt a route's socket emit into the emit(line, header=False) callback
+    the helpers below take, so they stay free of event names and phase labels.
+
+    'header' is added only when true, keeping the payload byte-identical to the
+    ones built inline everywhere else - the page keys off its presence.
+    """
+    def _say(line, header=False):
+        payload = {'line': line, 'phase': phase}
+        if header:
+            payload['header'] = True
+        emit(event, payload)
+    return _say
+
+
+def _apt_env():
+    """The environment apt subprocesses should run with.
+
+    There is no terminal behind a web request, so debconf tried Dialog, then
+    Readline, then Teletype, and announced each failure before falling back to
+    Noninteractive - eight lines of apology in the log on every single run.
+    Naming the frontend up front skips the whole cascade.
+
+    Passed as the child's environment rather than on the command line, because
+    the sudoers set grants these invocations by exact command match
+    ('apt-get update', no wildcard): 'sudo DEBIAN_FRONTEND=noninteractive
+    apt-get update' is a *different* command and sudo refuses it outright. It
+    reaches root through the env_keep grant install_permissions.sh writes
+    instead. A device whose sudoers predates that grant simply drops the
+    variable and behaves exactly as it does today.
+
+    This settles the frontend, not dpkg's conffile question - that would need
+    -o Dpkg::Options::=--force-confold, which is again a command line the
+    grants would no longer match. dpkg with no tty on stdin keeps the installed
+    conffile and says so, which is the answer we would have given anyway.
+    """
+    env = dict(os.environ)
+    env['DEBIAN_FRONTEND'] = 'noninteractive'
+    return env
+
+
+def _flag_pillow_rebuild(project_dir, before, emit):
+    """Set the rebuild flag if any library Pillow links against has moved.
+
+    `before` is a {name: version} snapshot taken before the apt work started.
+    Pillow is compiled on this device, so when one of these moves underneath it
+    the build in the venv is linked against a version that is no longer
+    installed - it loses a codec, or refuses to import at all. Reuses the
+    existing .pillow-rebuild-needed mechanism rather than inventing a second.
+
+    A package missing from `before` was newly installed, which is not a move. A
+    package missing *now* was removed, which the protected-package gate exists
+    to prevent and which rebuilding could not repair in any case.
+
+    Returns the names whose version changed, or [] - including when the flag
+    could not be written, since a caller that cannot record the need has
+    nothing useful to report about it.
+    """
+    after = _installed_versions(PILLOW_NATIVE_DEPS)
+    moved = sorted(n for n, v in after.items() if before.get(n) not in (None, v))
+    if not moved:
+        return []
+    try:
+        with open(os.path.join(project_dir, '.pillow-rebuild-needed'), 'w') as f:
+            f.write('native libraries changed: ' + ', '.join(moved))
+    except OSError:
+        return []
+    emit('Pillow will be rebuilt from source after restart ('
+         + ', '.join(moved) + ' changed)', header=True)
+    return moved
+
+
+def _run_postinstall(wrapper, translations, emit):
+    """Run the postinstall wrapper, showing its output only if it did something.
+
+    The script reports what it did on a POSTINSTALL_RESULT= line. That line is
+    protocol between it and this function, not something to put in front of a
+    user, so it is consumed here and never emitted - it leaked into the browser
+    log verbatim for as long as one of the two call sites streamed the script
+    directly instead of going through this.
+
+    Buffered for the same reason: the script is idempotent and every check
+    announces itself even when it changed nothing, so streaming it wrote four
+    lines of 'already correct' into the log on every update forever. Its own
+    output over SSH is untouched; only the browser view is condensed.
+
+    Returns the exit code, or None if the wrapper could not be run at all.
+    """
+    t = translations or {}
+    try:
+        proc = subprocess.Popen(
+            ['sudo', wrapper], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, bufsize=1
+        )
+    except (subprocess.SubprocessError, OSError) as exc:
+        emit(f'Warning: {exc}', header=True)
+        return None
+
+    buffered = []
+    # Assume it did something: an older postinstall.sh emits no marker at all,
+    # and showing its output is the safe way to be wrong.
+    changed = True
+    for line in proc.stdout:
+        text = _clean_line(line)
+        if text.startswith('POSTINSTALL_RESULT='):
+            changed = text.split('=', 1)[1].strip() != 'unchanged'
+            continue
+        buffered.append(text)
+    proc.wait()
+
+    if changed or proc.returncode != 0:
+        emit(t.get('applying_postinstall',
+                   'Applying post-install system configuration...'), header=True)
+        for text in buffered:
+            emit(text)
+    else:
+        emit(t.get('postinstall_unchanged',
+                   'System configuration already applied — nothing to do'), header=True)
+    if proc.returncode != 0:
+        emit(f'Warning: post-install configuration exited {proc.returncode}', header=True)
+    return proc.returncode
 
 # Defined in mempaper_app; imported lazily inside register() to avoid
 # a circular import at module load time.
@@ -684,14 +816,19 @@ def register(self):
 
                 # Install apt dependencies when the declared set changed, or when
                 # anything it declares is not actually on the device.
+                #
+                # Parsed through utils.apt_requirements rather than by stripping
+                # comments here. A declaration may be 'name' or 'name=version',
+                # and the name is what dpkg-query takes: the hand-rolled read
+                # this replaces passed the whole 'tor=0.4.9.11-0+deb13u1' spec
+                # through, so dpkg reported an unknown package and *every*
+                # pinned package was announced as "declared but not installed"
+                # — immediately before the wrapper correctly reported the same
+                # packages as already present. Pinning the file turned the
+                # entire declared set into a phantom missing list.
                 apt_req_file = os.path.join(project_dir, 'apt-requirements.txt')
-                apt_pkgs = []
-                if os.path.exists(apt_req_file):
-                    with open(apt_req_file) as f:
-                        apt_pkgs = [
-                            line.strip() for line in f
-                            if line.strip() and not line.strip().startswith('#')
-                        ]
+                apt_entries = parse_apt_requirements(apt_req_file)
+                apt_pkgs = package_names(apt_entries)
 
                 # The diff above only sees what changed between these two tags. A
                 # package that was declared but never landed — a batch install that
@@ -703,9 +840,18 @@ def register(self):
                 if missing_apt:
                     _emit('update_output', {'line': 'Declared but not installed: ' + ', '.join(missing_apt), 'phase': 'apt', 'header': True})
 
+                # A pinned package sitting at some other version is installed, so
+                # the check above calls the device converged while a declaration
+                # goes unsatisfied. The startup dependency check has always looked
+                # for this; the updater did not, which meant the one operation that
+                # changes the declared pins was the one that never noticed drift.
+                drifted_apt = self._drifted_pins(pinned_versions(apt_entries)) if apt_entries else []
+                if drifted_apt:
+                    _emit('update_output', {'line': 'Pinned to another version: ' + ', '.join(drifted_apt), 'phase': 'apt', 'header': True})
+
                 if not apt_pkgs:
                     pass
-                elif not apt_deps_changed and not missing_apt:
+                elif not apt_deps_changed and not missing_apt and not drifted_apt:
                     _emit('update_output', {'line': self.translations.get('system_deps_unchanged', 'System dependencies unchanged — skipping apt install'), 'phase': 'apt', 'header': True})
                 else:
                     _emit('update_output', {'line': self.translations.get('installing_system_deps', 'Installing system dependencies...'), 'phase': 'apt', 'header': True})
@@ -736,9 +882,12 @@ def register(self):
                             # user needs to know which package is still missing, not
                             # that "some" dependency failed.
                             still_missing = self._missing_apt_packages(apt_pkgs)
+                            still_drifted = self._drifted_pins(pinned_versions(apt_entries))
                             if still_missing:
                                 _emit('update_output', {'line': 'Warning: still missing after install: ' + ', '.join(still_missing), 'phase': 'apt', 'header': True})
-                            else:
+                            if still_drifted:
+                                _emit('update_output', {'line': 'Warning: still pinned to another version after install: ' + ', '.join(still_drifted), 'phase': 'apt', 'header': True})
+                            if not still_missing and not still_drifted:
                                 _emit('update_output', {'line': self.translations.get('system_deps_installed', 'System dependencies installed'), 'phase': 'apt', 'header': True})
                     except Exception as apt_err:
                         _emit('update_output', {'line': f'Warning: {apt_err}', 'phase': 'apt'})
@@ -751,41 +900,10 @@ def register(self):
                 # shipped the release note to every device and the step to none of
                 # the updated ones. The script is idempotent, so running it on every
                 # update is cheap and converges a drifted device.
-                #
-                # Buffered rather than streamed, so a run that changed nothing
-                # can be collapsed to one line. On a converged device every
-                # check still reports itself, which put four lines of "already
-                # correct" into this log on every update forever - the same
-                # noise the pip step avoids just below. The script's own SSH
-                # output is untouched; only the browser view is condensed.
                 postinstall_wrapper = '/usr/local/bin/mempaper-postinstall'
                 if os.path.exists(postinstall_wrapper):
-                    try:
-                        proc = subprocess.Popen(
-                            ['sudo', postinstall_wrapper],
-                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                            text=True, bufsize=1
-                        )
-                        buffered = []
-                        # Assume it did something: an older postinstall.sh emits
-                        # no marker at all, and showing its output is the safe
-                        # way to be wrong.
-                        changed = True
-                        for line in proc.stdout:
-                            text = _clean_line(line)
-                            if text.startswith('POSTINSTALL_RESULT='):
-                                changed = text.split('=', 1)[1].strip() != 'unchanged'
-                                continue
-                            buffered.append(text)
-                        proc.wait()
-                        if changed or proc.returncode != 0:
-                            _emit('update_output', {'line': self.translations.get('applying_postinstall', 'Applying post-install system configuration...'), 'phase': 'apt', 'header': True})
-                            for text in buffered:
-                                _emit('update_output', {'line': text, 'phase': 'apt'})
-                        else:
-                            _emit('update_output', {'line': self.translations.get('postinstall_unchanged', 'System configuration already applied — nothing to do'), 'phase': 'apt', 'header': True})
-                    except Exception as post_err:
-                        _emit('update_output', {'line': f'Warning: {post_err}', 'phase': 'apt'})
+                    _run_postinstall(postinstall_wrapper, self.translations,
+                                     _line_emitter(_emit, 'update_output', 'apt'))
                 else:
                     # Device installed before this wrapper existed. It cannot be
                     # created from here — that needs root — so name the one command
@@ -916,9 +1034,7 @@ def register(self):
                     print(f"Service restart failed: {restart_err}")
 
             except Exception as e:
-                print(f"Update error: {e}")
-                traceback.print_exc()
-                _emit('update_done', {'success': False, 'error': str(e)})
+                _emit('update_done', {'success': False, 'error': _safe_error(e, 'Update error')})
             finally:
                 self._update_running = False
 
@@ -1093,6 +1209,28 @@ def register(self):
                             return
                         readonly_targets.append(target)
 
+                # Before any apt work: an ordinary upgrade moves the libraries a
+                # source-built Pillow is linked against just as readily as a full
+                # upgrade does — libfreetype6 and zlib1g get security updates
+                # through exactly this path — and this route never looked.
+                project_dir = PROJECT_ROOT
+                pillow_before = _installed_versions(PILLOW_NATIVE_DEPS)
+                pillow_checked = False
+
+                def _check_pillow():
+                    """As in the full-upgrade route: once, however this ends.
+
+                    'apt upgrade failed' returns below with the transaction
+                    part-applied, which is precisely a state where a native
+                    library has moved and Pillow needs rebuilding.
+                    """
+                    nonlocal pillow_checked
+                    if pillow_checked:
+                        return
+                    pillow_checked = True
+                    _flag_pillow_rebuild(project_dir, pillow_before,
+                                         _line_emitter(_emit, 'apt_output', 'deps'))
+
                 phase_labels = {
                     'update': self.translations.get('fetching_package_list', 'Fetching package list (apt update)...'),
                     'upgrade': self.translations.get('installing_upgrades', 'Installing upgrades (apt upgrade)...'),
@@ -1108,7 +1246,8 @@ def register(self):
                         stdout=subprocess.PIPE,
                         stderr=subprocess.STDOUT,
                         text=True,
-                        bufsize=1
+                        bufsize=1,
+                        env=_apt_env()
                     )
                     for line in proc.stdout:
                         _emit('apt_output', {'line': _clean_line(line), 'phase': phase})
@@ -1126,37 +1265,39 @@ def register(self):
                 # sudoers file only grants NOPASSWD for that exact wrapper path
                 # (accepts no arguments, reads apt-requirements.txt itself), not
                 # for 'apt-get install' invoked directly with a package list.
-                project_dir = PROJECT_ROOT
                 apt_req_file = os.path.join(project_dir, 'apt-requirements.txt')
-                if os.path.exists(apt_req_file):
-                    with open(apt_req_file) as f:
-                        apt_pkgs = [
-                            line.strip() for line in f
-                            if line.strip() and not line.strip().startswith('#')
-                        ]
-                    if apt_pkgs:
-                        _emit('apt_output', {'line': self.translations.get('installing_mempaper_deps', 'Installing mempaper dependencies...'), 'phase': 'deps', 'header': True})
-                        proc = subprocess.Popen(
-                            ['sudo', '/usr/local/bin/mempaper-apt-install'],
-                            stdout=subprocess.PIPE,
-                            stderr=subprocess.STDOUT,
-                            text=True,
-                            bufsize=1
-                        )
-                        for line in proc.stdout:
-                            _emit('apt_output', {'line': _clean_line(line), 'phase': 'deps'})
-                        proc.wait()
-                        if proc.returncode != 0:
-                            _emit('apt_output', {'line': self.translations.get('mempaper_deps_warning', 'Warning: some mempaper dependencies failed to install'), 'phase': 'deps', 'header': True})
+                if package_names(parse_apt_requirements(apt_req_file)):
+                    _emit('apt_output', {'line': self.translations.get('installing_mempaper_deps', 'Installing mempaper dependencies...'), 'phase': 'deps', 'header': True})
+                    proc = subprocess.Popen(
+                        ['sudo', '/usr/local/bin/mempaper-apt-install'],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                        bufsize=1,
+                        env=_apt_env()
+                    )
+                    for line in proc.stdout:
+                        _emit('apt_output', {'line': _clean_line(line), 'phase': 'deps'})
+                    proc.wait()
+                    if proc.returncode != 0:
+                        _emit('apt_output', {'line': self.translations.get('mempaper_deps_warning', 'Warning: some mempaper dependencies failed to install'), 'phase': 'deps', 'header': True})
+
+                # Everything apt was going to touch has now been touched.
+                _check_pillow()
 
                 _write_version_reports(project_dir,
                                        lambda m: _emit('apt_output', {'line': m, 'phase': 'deps'}))
 
                 _emit('apt_done', {'success': True})
             except Exception as e:
-                print(f"System update error: {e}")
-                _emit('apt_done', {'success': False, 'error': str(e)})
+                _emit('apt_done', {'success': False, 'error': _safe_error(e, 'System update error')})
             finally:
+                # Written even when the upgrade bailed out — see the note on the
+                # same call in the full-upgrade route.
+                try:
+                    _check_pillow()
+                except Exception:
+                    pass
                 # Restore read-only for whichever mounts were read-only before
                 if readonly_targets:
                     _emit('apt_output', {'line': self.translations.get('restoring_readonly', 'Restoring read-only filesystem...'), 'phase': 'cleanup', 'header': True})
@@ -1254,11 +1395,39 @@ def register(self):
                 def _stream(cmd, phase, label):
                     _emit('apt_output', {'line': label, 'phase': phase, 'header': True})
                     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
-                                            stderr=subprocess.STDOUT, text=True, bufsize=1)
+                                            stderr=subprocess.STDOUT, text=True, bufsize=1,
+                                            env=_apt_env())
                     for line in proc.stdout:
                         _emit('apt_output', {'line': _clean_line(line), 'phase': phase})
                     proc.wait()
                     return proc.returncode
+
+                # Snapshot the libraries Pillow links against *before* the first
+                # apt command, not before dist-upgrade. Taken later, the ordinary
+                # upgrade below had already moved them, so its changes were
+                # invisible to the comparison — and the snapshot sat inside the
+                # 'else' of the gate, so a run where the simulation found nothing
+                # further skipped the check entirely no matter how much the
+                # ordinary upgrade had just changed.
+                pillow_before = _installed_versions(PILLOW_NATIVE_DEPS)
+                pillow_checked = False
+
+                def _check_pillow():
+                    """Compare against the snapshot once, however this run ends.
+
+                    Every early return below — a refused full upgrade, a failed
+                    dist-upgrade, a simulation that could not be read — happens
+                    *after* the ordinary upgrade has been applied, so any of them
+                    can leave a moved native library behind. The finally block
+                    covers those; the ordinary path calls this in place, so the
+                    line reaches the log before apt_done closes the subscription.
+                    """
+                    nonlocal pillow_checked
+                    if pillow_checked:
+                        return
+                    pillow_checked = True
+                    _flag_pillow_rebuild(project_dir, pillow_before,
+                                         _line_emitter(_emit, 'apt_output', 'deps'))
 
                 if _stream(['sudo', 'apt-get', 'update'], 'update',
                            self.translations.get('fetching_package_list', 'Fetching package list (apt update)...')) != 0:
@@ -1298,29 +1467,17 @@ def register(self):
                     if rem:
                         _emit('apt_output', {'line': 'Will remove: ' + ', '.join(sorted(rem)), 'phase': 'fullupgrade', 'header': True})
 
-                    before = _installed_versions(PILLOW_NATIVE_DEPS)
-
                     if _stream(['sudo', 'apt-get', 'dist-upgrade', '-y'], 'fullupgrade',
                                self.translations.get('running_full_upgrade', 'Running full upgrade (apt full-upgrade)...')) != 0:
                         _emit('apt_done', {'success': False, 'error': 'apt full-upgrade failed'})
                         return
 
-                    # Native libraries Pillow was compiled against. When one of
-                    # them moves, the source build on this device is linked to
-                    # the version that just went away — reuse the existing
-                    # rebuild flag rather than inventing a second mechanism.
-                    after = _installed_versions(PILLOW_NATIVE_DEPS)
-                    moved = sorted(n for n, v in after.items() if before.get(n) not in (None, v))
-                    if moved:
-                        try:
-                            with open(os.path.join(project_dir, '.pillow-rebuild-needed'), 'w') as f:
-                                f.write('native libraries changed: ' + ', '.join(moved))
-                            _emit('apt_output', {'line': 'Pillow will be rebuilt from source after restart (' + ', '.join(moved) + ' changed)', 'phase': 'fullupgrade', 'header': True})
-                        except OSError:
-                            pass
-
-                _stream(['sudo', 'apt-get', 'autoremove', '-y'], 'autoremove',
-                        self.translations.get('removing_orphans', 'Removing packages nothing needs any more (apt autoremove)...'))
+                if _stream(['sudo', 'apt-get', 'autoremove', '-y'], 'autoremove',
+                           self.translations.get('removing_orphans', 'Removing packages nothing needs any more (apt autoremove)...')) != 0:
+                    # Not fatal — nothing the device needs depends on an orphan
+                    # being gone — but silence here meant a failure that leaves
+                    # the disk full looked exactly like a clean sweep.
+                    _emit('apt_output', {'line': 'Warning: apt autoremove did not complete cleanly', 'phase': 'autoremove', 'header': True})
 
                 # Reconcile the declared set last: autoremove above can take out
                 # something apt-requirements.txt names but nothing else depends
@@ -1328,13 +1485,29 @@ def register(self):
                 # This puts both back, and re-applies every hold.
                 wrapper = '/usr/local/bin/mempaper-apt-install'
                 if os.path.exists(wrapper):
-                    _stream(['sudo', wrapper], 'deps',
-                            self.translations.get('installing_mempaper_deps', 'Installing mempaper dependencies...'))
+                    if _stream(['sudo', wrapper], 'deps',
+                               self.translations.get('installing_mempaper_deps', 'Installing mempaper dependencies...')) != 0:
+                        _emit('apt_output', {'line': self.translations.get('mempaper_deps_warning', 'Warning: some mempaper dependencies failed to install'), 'phase': 'deps', 'header': True})
+                    # What the wrapper could not put back. The plain update route
+                    # has always re-queried dpkg rather than trusting an exit
+                    # code; this one reported success either way.
+                    apt_entries = parse_apt_requirements(
+                        os.path.join(project_dir, 'apt-requirements.txt'))
+                    still_missing = self._missing_apt_packages(package_names(apt_entries))
+                    still_drifted = self._drifted_pins(pinned_versions(apt_entries))
+                    if still_missing:
+                        _emit('apt_output', {'line': 'Warning: declared but not installed: ' + ', '.join(still_missing), 'phase': 'deps', 'header': True})
+                    if still_drifted:
+                        _emit('apt_output', {'line': 'Warning: pinned to another version: ' + ', '.join(still_drifted), 'phase': 'deps', 'header': True})
 
                 postinstall = '/usr/local/bin/mempaper-postinstall'
                 if os.path.exists(postinstall):
-                    _stream(['sudo', postinstall], 'deps',
-                            self.translations.get('applying_postinstall', 'Applying post-install system configuration...'))
+                    _run_postinstall(postinstall, self.translations,
+                                     _line_emitter(_emit, 'apt_output', 'deps'))
+
+                # Every apt command has now run, including the reconcile that can
+                # itself pull a native library back to a pinned version.
+                _check_pillow()
 
                 # ── Verification ────────────────────────────────────────────
                 # The question the user actually asked: is anything still
@@ -1366,6 +1539,14 @@ def register(self):
                 traceback.print_exc()
                 _emit('apt_done', {'success': False, 'error': _safe_error(e)})
             finally:
+                # The flag file is what actually schedules the rebuild, so it
+                # gets written even on the paths that bailed out early. Only the
+                # accompanying log line is lost there, the page having already
+                # stopped listening once apt_done went out.
+                try:
+                    _check_pillow()
+                except Exception:
+                    pass
                 if readonly_targets:
                     _emit('apt_output', {'line': self.translations.get('restoring_readonly', 'Restoring read-only filesystem...'), 'phase': 'cleanup', 'header': True})
                     for target in reversed(readonly_targets):

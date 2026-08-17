@@ -356,7 +356,7 @@ Everything needed to build a mempaper from scratch.
 
 #### Installation
 
-Flash **Raspberry Pi OS Lite 32-bit** (Trixie recommended), connect the Pi to your Wi-Fi, then paste this single command:
+Flash **Raspberry Pi OS Lite 32-bit (Trixie / Debian 13)**, connect the Pi to your Wi-Fi, then paste this single command:
 
 ```bash
 sudo apt install -y git \
@@ -384,9 +384,37 @@ When the installer finishes, the device goes **straight into normal operation** 
 - Optionally configures fail2ban
 - Starts the service
 
-**Supported OS:** Raspberry Pi OS Lite **32-bit**, either **Bookworm (Debian 12)** or **Trixie (Debian 13)**. Prefer Trixie — it receives OS security updates for longer.
+**Supported OS:** Raspberry Pi OS Lite **32-bit**, **Trixie (Debian 13)**.
 
 </details>
+
+> **Debian 12 (Bookworm) is not supported and not tested.** It will still
+> install — you just get less of a guarantee.
+>
+> `apt-requirements.txt` pins exact package versions, so that a device installs
+> the combination each release was tested against; several are the revisions
+> carrying Debian's security fixes (`…+deb13u1` and similar). Those version
+> strings exist only in the Trixie archive, and apt matches a pinned version
+> exactly. So the file names the suite its pins belong to, and a device running
+> anything else **ignores them and installs the same packages unpinned** — you
+> get whatever versions that archive currently offers, floating, with nothing
+> held. The installer says so when it happens.
+>
+> What you lose on Bookworm is the tested combination, not the ability to
+> install. Nothing needs editing by hand. Two caveats worth knowing:
+>
+> - **`tools/python_version`** expects Python 3.13 on Trixie against Bookworm's
+>   3.11. Bookworm's own entry (`bookworm=11`) is satisfied by what it ships, so
+>   no interpreter rebuild is triggered — but the project is exercised on 3.13.
+> - **`requirements.txt`** is not codename-bound; those pins come from PyPI and
+>   install the same on either. But one may require a newer Python than 3.11, and
+>   piwheels builds per Python minor — a package with a prebuilt armhf wheel for
+>   3.13 may have none for 3.11 and will compile from source instead (slow on a
+>   Pi Zero, not fatal).
+>
+> To pin a combination for Bookworm yourself, run it, confirm it works, then
+> promote what the device recorded — see
+> [docs/MAINTENANCE_GUIDE.md](docs/MAINTENANCE_GUIDE.md#bumping-pinned-versions-for-a-release).
 
 **Verify it came up:**
 ```bash

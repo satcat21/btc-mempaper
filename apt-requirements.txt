@@ -12,6 +12,11 @@
 # next reconcile. A pinned package installed at some other version is detected
 # at startup and corrected, downgrades included.
 #
+# A pin that cannot be met — the version is not in this suite's archive, or the
+# install failed — leaves the package floating and reports it. It is deliberately
+# not held: holding would freeze it at a version nothing here declares, cutting
+# it off from Debian's security updates while appearing to have worked.
+#
 # Before adding one, weigh what it costs:
 #   - Debian ships security fixes as new versions of the same upstream release
 #     (1.2.3-4+deb12u1 → +deb12u2). A pinned package stops receiving them.
@@ -19,6 +24,13 @@
 #     does not exist on trixie, and this same file is read on both — the pin
 #     then fails to resolve and the package is left where it is.
 # Pin what actually breaks when it moves; leave everything else floating.
+#
+# The suite every pin below was resolved against. On a device running anything
+# else, the pins are ignored and these packages install floating and unheld —
+# the versions would not exist in that archive, and pretending otherwise froze
+# the package at whatever it already had, off Debian's security updates. Bump
+# this line only together with the versions underneath it.
+# pins-for: trixie
 
 # Build tools and Python development
 libffi-dev=3.4.8-2
