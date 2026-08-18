@@ -326,9 +326,15 @@ def rebuild_argv(pip_path, name, version, source=True):
     just downloaded. `source` picks which way the package is obtained: a
     published wheel for this platform, or a build from source when the index
     carries none.
+
+    The source form names the package rather than passing :all:. :all: applies
+    to the whole resolution, so pip also compiles the build backend - ninja,
+    Cython, patchelf - from source, none of which is what we are trying to
+    replace and all of which have wheels. On a Pi Zero that cost 1h44 before
+    numpy's own build had started.
     """
     argv = [pip_path, 'install', '--force-reinstall', '--no-cache-dir']
-    argv += ['--no-binary', ':all:'] if source else ['--only-binary', ':all:']
+    argv += ['--no-binary', name] if source else ['--only-binary', ':all:']
     return argv + [f'{name}=={version}']
 
 
