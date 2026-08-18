@@ -3832,3 +3832,29 @@ body.dark-mode .preview-card-dark {
         margin-left: 0;
     }
 }
+
+/* ── Wheel rebuild progress ─────────────────────────────────────────────── */
+/* Measures packages completed, not elapsed time: the count is known up front,
+   while build times differ by an order of magnitude between packages, so a
+   time-based bar would be a guess presented as a fact. */
+.wheel-progress-bar {
+    margin: 14px 0 6px;
+    height: 8px;
+    border-radius: 4px;
+    overflow: hidden;
+    background: var(--input-bg, rgba(0, 0, 0, 0.25));
+    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
+}
+
+.wheel-progress-fill {
+    height: 100%;
+    width: 0;
+    border-radius: 4px;
+    background: var(--accent, #f7931a);
+    transition: width 0.4s ease;
+}
+
+.wheel-progress-label {
+    font-variant-numeric: tabular-nums;
+    margin-bottom: 4px;
+}

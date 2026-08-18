@@ -200,6 +200,9 @@
         _appendContent(titleEl, title);
 
         const bodyEl = document.createElement('div');
+        // Addressable so a caller holding the returned toast can update its
+        // text in place, rather than stacking a new toast per progress step.
+        bodyEl.className = 'toast-body';
         bodyEl.style.cssText = 'opacity:0.85;font-size:13px;';
         _appendBody(bodyEl, body);
 

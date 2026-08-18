@@ -452,6 +452,21 @@ def register(self):
     # downloader keeps its own status/stop files so a run survives a service
     # restart, and the status route reads what it wrote.
 
+    @self.app.route('/api/wheels/rebuild-status', methods=['GET'])
+    @require_auth(self.auth_manager)
+    def wheel_rebuild_status():
+        """Where a background wheel rebuild has got to.
+
+        The rebuild outlives the page that triggered it - it starts after the
+        restart that ends an update and then runs for hours - so a page opened
+        or reloaded meanwhile has no events to replay. This is what it reads
+        instead.
+        """
+        state = getattr(self, '_wheel_rebuild_state', None)
+        if not state:
+            return jsonify({'success': True, 'running': False, 'log': []})
+        return jsonify({'success': True, **state})
+
     @self.app.route('/api/memes/sync-status', methods=['GET'])
     @require_auth(self.auth_manager)
     def meme_sync_status():

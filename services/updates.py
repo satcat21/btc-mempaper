@@ -60,8 +60,8 @@ class UpdateSchedulerMixin:
         a transient failure is retried on the next start while one that cannot
         build here stops after MAX_ATTEMPTS instead of rebuilding every boot.
         """
-        from utils.wheel_platform import (REBUILD_FLAG, format_flag, parse_flag,
-                                          platform_tag, rebuild)
+        from utils.wheel_platform import (REBUILD_FLAG, foreign_wheels, format_flag,
+                                          parse_flag, platform_tag, rebuild)
 
         project_dir = PROJECT_ROOT
         flag_path = os.path.join(project_dir, REBUILD_FLAG)
@@ -84,29 +84,117 @@ class UpdateSchedulerMixin:
                 pass
             return
 
-        def _rebuild_all():
-            target = platform_tag()
-            remaining = []
-            for name, version, attempts in wanted:
-                print(f"Rebuilding {name}=={version} from source for {target} "
-                      f"(this can take tens of minutes)...")
-                ok, output = rebuild(venv_pip, name, version)
-                if ok:
-                    print(f"Rebuilt {name}=={version} for {target}")
-                else:
-                    remaining.append((name, version, attempts + 1))
-                    print(f"Could not rebuild {name}=={version}: "
-                          f"{output.strip()[-300:]}")
+        # Mirrored into app state as well as emitted, because a rebuild outlives
+        # any one page view: the browser reconnects after the restart that
+        # started it, and the reader may reload or come back hours later.
+        self._wheel_rebuild_state = {
+            'running': True, 'target': None, 'total': 0, 'index': 0,
+            'current': None, 'rebuilt': [], 'failed': [], 'log': [],
+        }
+
+        def _log(line):
+            state = self._wheel_rebuild_state
+            state['log'].append(line)
+            # Bounded: a 14-package run is chatty enough, and this is held for
+            # hours in a process with 512 MB to work with.
+            if len(state['log']) > 200:
+                del state['log'][:-200]
+            print(line)
+
+        def _emit(event, data):
+            """Tell any connected dashboard what the rebuild is doing.
+
+            The update itself finished minutes ago and reported success, so
+            without this the device looks idle while it is compiling for hours.
+            """
             try:
-                if remaining:
+                if getattr(self, 'socketio', None):
+                    self.socketio.emit(event, data, room='authenticated')
+            except Exception:
+                pass
+
+        def _write_queue(entries):
+            """Persist what is left, so an interruption resumes rather than restarts."""
+            try:
+                if entries:
                     with open(flag_path, 'w') as fh:
-                        fh.write(format_flag(remaining))
+                        fh.write(format_flag(entries))
                 else:
                     os.remove(flag_path)
-                    print(f"All wheels now built for {target}; "
-                          f"restart to load them")
             except OSError:
                 pass
+
+        def _rebuild_all():
+            target = platform_tag()
+            total = len(wanted)
+            queue = list(wanted)
+            rebuilt, failed = [], []
+
+            self._wheel_rebuild_state.update({'target': target, 'total': total})
+            _log(f"Rebuilding {total} package(s) for {target}. This can take "
+                 f"hours; leave the device powered on. An interruption resumes "
+                 f"on the next start, but the package building at the time has "
+                 f"to be redone.")
+            _emit('wheel_rebuild_started', {'total': total, 'target': target,
+                                            'packages': [n for n, _, _ in wanted]})
+
+            for index, (name, version, attempts) in enumerate(wanted, start=1):
+                # Rebuilding one package rebuilds its dependencies too, so a
+                # package queued earlier may already be correct by the time its
+                # turn comes. Skipping it saves tens of minutes per hit.
+                if not any(n == name for n, _, _ in foreign_wheels()):
+                    _log(f"{name}=={version} already built for {target} - skipping")
+                    queue = [e for e in queue if e[0] != name]
+                    _write_queue(queue)
+                    rebuilt.append(name)
+                    _emit('wheel_rebuild_progress', {
+                        'name': name, 'index': index, 'total': total,
+                        'ok': True, 'skipped': True})
+                    continue
+
+                self._wheel_rebuild_state.update({'index': index, 'current': name})
+                _log(f"Rebuilding {name}=={version} from source for {target} "
+                     f"(this can take tens of minutes)...")
+                _emit('wheel_rebuild_progress', {
+                    'name': name, 'index': index, 'total': total, 'building': True})
+
+                ok, output = rebuild(venv_pip, name, version)
+                if ok:
+                    _log(f"Rebuilt {name}=={version} for {target}")
+                    rebuilt.append(name)
+                    queue = [e for e in queue if e[0] != name]
+                else:
+                    _log(f"Could not rebuild {name}=={version}: "
+                         f"{output.strip()[-300:]}")
+                    failed.append(name)
+                    queue = [(n, v, a + 1) if n == name else (n, v, a)
+                             for n, v, a in queue]
+
+                # After every package, not at the end: a restart mid-run would
+                # otherwise discard the hours already spent and start over.
+                _write_queue(queue)
+                _emit('wheel_rebuild_progress', {
+                    'name': name, 'index': index, 'total': total, 'ok': ok})
+
+            _log(f"Wheel rebuild finished for {target}: "
+                 f"{len(rebuilt)} rebuilt, {len(failed)} failed")
+            self._wheel_rebuild_state.update({
+                'running': False, 'current': None,
+                'rebuilt': rebuilt, 'failed': failed})
+            _emit('wheel_rebuild_done', {
+                'rebuilt': rebuilt, 'failed': failed, 'target': target,
+                'restarting': bool(rebuilt)})
+
+            # The running process already imported the old binaries, so the
+            # rebuilt ones are only in use after a restart. Nothing else in the
+            # update flow reaches this point - the update finished hours ago.
+            if rebuilt:
+                time.sleep(3)
+                try:
+                    subprocess.run(['sudo', 'systemctl', 'restart', 'mempaper.service'],
+                                   timeout=30)
+                except Exception as restart_err:
+                    _log(f"Service restart failed: {restart_err}")
 
         threading.Thread(target=_rebuild_all, daemon=True).start()
 

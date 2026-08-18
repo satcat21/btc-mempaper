@@ -570,6 +570,225 @@ function setupConfigSocketHandlers() {
     });
 
     // Listen for network hashrate/difficulty updates
+    // Wheel rebuilds run for hours after an update reported success, so the
+    // device would otherwise look idle while it compiles. One toast when it
+    // starts, one when it ends; the per-package progress only updates the
+    // running toast's body rather than stacking a new one for each.
+    // A rebuild runs for hours, so it needs somewhere to be watched and somewhere
+    // to be ignored. The toast is the ambient signal; the log modal below opens
+    // from it, and closing the modal changes nothing about the run. Lines are
+    // buffered so opening it late still shows what already happened.
+    let _wheelToast = null;
+    let _wheelLog = [];
+    let _wheelProgress = { index: 0, total: 0, current: null };
+
+    function _renderWheelProgress() {
+        const modal = document.getElementById('wheel-rebuild-modal');
+        if (!modal) return;
+        const { index, total, current } = _wheelProgress;
+        const pct = total ? Math.round((index / total) * 100) : 0;
+        const fill = modal.querySelector('.wheel-progress-fill');
+        const label = modal.querySelector('.wheel-progress-label');
+        if (fill) fill.style.width = pct + '%';
+        if (label) {
+            const t = window.translations || {};
+            label.textContent = `${index} / ${total} (${pct}%)`
+                + (current ? ' \u2014 ' + current : '');
+        }
+    }
+
+    function _appendWheelLog(line) {
+        _wheelLog.push(line);
+        if (_wheelLog.length > 200) _wheelLog = _wheelLog.slice(-200);
+        const log = document.querySelector('#wheel-rebuild-modal .system-update-log');
+        if (!log) return;
+        // Follow the tail only while the reader has not scrolled away.
+        const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 24;
+        const el = document.createElement('div');
+        el.textContent = line;
+        log.appendChild(el);
+        if (atBottom) log.scrollTop = log.scrollHeight;
+    }
+
+    function openWheelRebuildModal() {
+        const t = window.translations || {};
+        document.getElementById('wheel-rebuild-modal')?.remove();
+
+        const overlay = document.createElement('div');
+        overlay.id = 'wheel-rebuild-modal';
+        overlay.className = 'modal';
+        overlay.style.display = 'flex';
+
+        const box = document.createElement('div');
+        box.className = 'modal-content system-update-dialog';
+
+        const title = document.createElement('h3');
+        const icon = document.createElement('img');
+        icon.src = '/static/icons/update.svg';
+        icon.alt = '';
+        icon.className = 'modal-title-icon';
+        const titleText = document.createElement('span');
+        titleText.textContent = t.wheel_rebuild_title || 'Rebuilding packages';
+        title.append(icon, ' ', titleText);
+
+        // The package count is known up front, so the bar measures something
+        // real rather than animating to look busy. Packages differ wildly in
+        // build time, so it tracks packages completed, not elapsed time.
+        const bar = document.createElement('div');
+        bar.className = 'wheel-progress-bar';
+        const fill = document.createElement('div');
+        fill.className = 'wheel-progress-fill';
+        bar.appendChild(fill);
+        const label = document.createElement('div');
+        label.className = 'wheel-progress-label system-update-hint';
+
+        const log = document.createElement('div');
+        log.className = 'system-update-log';
+        log.setAttribute('aria-live', 'polite');
+        _wheelLog.forEach(line => {
+            const el = document.createElement('div');
+            el.textContent = line;
+            log.appendChild(el);
+        });
+
+        const note = document.createElement('div');
+        note.className = 'system-update-status';
+        note.textContent = t.wheel_rebuild_close_hint
+            || 'You can close this and keep using the dashboard - the rebuild continues and you will be notified when it finishes.';
+
+        const actions = document.createElement('div');
+        actions.className = 'modal-actions';
+        const closeBtn = document.createElement('button');
+        closeBtn.type = 'button';
+        closeBtn.className = 'update-install-btn';
+        closeBtn.textContent = t.close || 'Close';
+        closeBtn.addEventListener('click', () => overlay.remove());
+        actions.appendChild(closeBtn);
+
+        box.append(title, bar, label, log, note, actions);
+        overlay.appendChild(box);
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) overlay.remove();
+        });
+        document.body.appendChild(overlay);
+        _renderWheelProgress();
+        log.scrollTop = log.scrollHeight;
+    }
+    window.openWheelRebuildModal = openWheelRebuildModal;
+
+    function _showWheelToast(total) {
+        const t = window.translations || {};
+        if (_wheelToast) _wheelToast.remove();
+
+        // Three nodes, because progress rewrites only the first. One node would
+        // wipe the power-off warning on the first update, which is exactly when
+        // it starts to matter.
+        const progressLine = document.createElement('div');
+        progressLine.className = 'wheel-progress-line';
+        progressLine.textContent = (t.wheel_rebuild_body || 'Update installed. {count} package(s) are being rebuilt for this device in the background - this can take hours. The dashboard stays available.')
+            .replace('{count}', total);
+
+        const warnLine = document.createElement('div');
+        warnLine.style.cssText = 'margin-top:6px;font-weight:600;';
+        warnLine.textContent = t.wheel_rebuild_keep_powered
+            || 'Please leave the device powered on. An interruption resumes on the next start, but whichever package was building has to be redone.';
+
+        const details = document.createElement('button');
+        details.type = 'button';
+        details.className = 'update-details-toggle';
+        details.style.cssText = 'margin-top:8px;';
+        details.textContent = t.show_details || 'Show details';
+        details.addEventListener('click', openWheelRebuildModal);
+
+        _wheelToast = _buildLiveToast(
+            [_toastIcon('update', 'accent'), ' ' + (t.wheel_rebuild_title || 'Rebuilding packages')],
+            [progressLine, warnLine, details],
+            '#f7931a',
+            0
+        );
+    }
+
+    function _setWheelProgressLine(name, index, total) {
+        const t = window.translations || {};
+        const line = _wheelToast?.querySelector('.wheel-progress-line');
+        if (!line) return;
+        line.textContent = (t.wheel_rebuild_progress || 'Rebuilding {name} ({index}/{total})...')
+            .replace('{name}', name)
+            .replace('{index}', index)
+            .replace('{total}', total);
+    }
+
+    // A rebuild that began before this page loaded has no events left to send,
+    // so ask where it got to instead of showing nothing.
+    (async () => {
+        try {
+            const r = await fetch('/api/wheels/rebuild-status');
+            if (!r.ok) return;
+            const d = await r.json();
+            if (d?.success && d.running) {
+                _wheelLog = d.log || [];
+                _wheelProgress = { index: d.index || 0, total: d.total || 0, current: d.current };
+                _showWheelToast(d.total || 0);
+                if (d.current) _setWheelProgressLine(d.current, d.index, d.total);
+            }
+        } catch (e) { /* status unavailable - the toast simply does not appear */ }
+    })();
+
+    configSocket.on('wheel_rebuild_started', (data) => {
+        if (!data) return;
+        _wheelLog = [];
+        _wheelProgress = { index: 0, total: data.total || 0, current: null };
+        _showWheelToast(data.total);
+        _renderWheelProgress();
+    });
+
+    configSocket.on('wheel_rebuild_progress', (data) => {
+        if (!data) return;
+        const t = window.translations || {};
+        // 'building' announces the start of a package; the completion event for
+        // the same package carries ok/skipped. Only the latter advances the bar.
+        if (data.building) {
+            _wheelProgress = { index: data.index - 1, total: data.total, current: data.name };
+            _appendWheelLog((t.wheel_rebuild_progress || 'Rebuilding {name} ({index}/{total})...')
+                .replace('{name}', data.name)
+                .replace('{index}', data.index)
+                .replace('{total}', data.total));
+        } else {
+            _wheelProgress = { index: data.index, total: data.total, current: null };
+            _appendWheelLog(data.name + ': '
+                + (data.skipped ? (t.wheel_rebuild_skipped || 'already built for this device')
+                   : data.ok ? (t.wheel_rebuild_ok || 'rebuilt')
+                   : (t.wheel_rebuild_fail || 'could not be built')));
+        }
+        _setWheelProgressLine(data.name, data.index, data.total);
+        _renderWheelProgress();
+    });
+
+    configSocket.on('wheel_rebuild_done', (data) => {
+        if (!data) return;
+        const t = window.translations || {};
+        if (_wheelToast) { _wheelToast.remove(); _wheelToast = null; }
+
+        const ok = (data.rebuilt || []).length;
+        const bad = (data.failed || []).length;
+        const lines = [(t.wheel_rebuild_done_body || '{count} package(s) rebuilt for this device.')
+            .replace('{count}', ok)];
+        if (bad) {
+            lines.push(' ' + (t.wheel_rebuild_failed || 'Could not build: {names}')
+                .replace('{names}', (data.failed || []).join(', ')));
+        }
+        if (data.restarting) {
+            lines.push(' ' + (t.wheel_rebuild_restarting || 'Restarting the service to load them...'));
+        }
+        _buildLiveToast(
+            [_toastIcon('update', bad ? 'accent' : 'success'), ' ' +
+                (t.wheel_rebuild_done_title || 'Packages rebuilt')],
+            lines,
+            bad ? '#f7931a' : '#28a745',
+            12000
+        );
+    });
+
     configSocket.on('network_stats_updated', (data) => {
         if (!data) return;
         window._previewData.network = { ...window._previewData.network, ...data };
