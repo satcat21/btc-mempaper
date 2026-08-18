@@ -1932,17 +1932,27 @@ function createMemeSyncSection() {
         t.tor_meme_downloads || 'Route via Tor',
         t.tor_meme_downloads_desc || ''));
 
-    // The button carries the full sentence rather than a "Sync now" verb under a
-    // separate caption: naming the host is the useful half - it says where the
-    // memes come from, which is the thing worth knowing before pressing it - and
-    // a caption repeating the button above it said the same thing twice.
+    // Captioned like the two switches beside it, so the row reads as three
+    // labelled controls rather than two plus a stray button. The caption names
+    // the host - the half worth knowing before pressing it - while the button
+    // itself stays a short verb phrase.
     const btnCell = document.createElement('div');
     btnCell.className = 'meme-sync-cell meme-sync-cell--action';
+    const btnLabel = document.createElement('label');
+    btnLabel.className = 'form-label meme-sync-cell-label';
+    btnLabel.textContent = t.meme_sync_now || 'Fetch latest memes from einundzwanzig-memes.space';
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'update-install-btn';
-    btn.textContent = t.meme_sync_now || 'Fetch latest memes';
+    btn.textContent = t.meme_sync_start || 'Download new memes';
+    // Outcome sits directly under the button that produced it. Below the whole
+    // group it read as a note about the schedule line above it instead.
+    const status = document.createElement('div');
+    status.className = 'system-update-hint meme-sync-status';
+
+    btnCell.appendChild(btnLabel);
     btnCell.appendChild(btn);
+    btnCell.appendChild(status);
     row.appendChild(btnCell);
 
     formGroup.appendChild(row);
@@ -1967,11 +1977,6 @@ function createMemeSyncSection() {
         schedule.textContent = t.meme_sync_schedule_unknown || 'No schedule recorded for this device.';
     }
     formGroup.appendChild(schedule);
-
-    const status = document.createElement('div');
-    status.className = 'system-update-hint';
-    status.style.cssText = 'margin-top:6px; white-space:pre-wrap; font-variant-numeric:tabular-nums;';
-    formGroup.appendChild(status);
 
     // A sync started before this page was opened is still running on the
     // device, so ask rather than assume idle.
@@ -2042,7 +2047,7 @@ async function runMemeSync(btn, statusEl) {
         socket.off('meme_sync_done', onDone);
         if (btn) {
             btn.disabled = false;
-            btn.textContent = t.meme_sync_now || 'Fetch latest memes';
+            btn.textContent = t.meme_sync_start || 'Download new memes';
         }
 
         if (!data?.success) {
@@ -2078,7 +2083,7 @@ async function runMemeSync(btn, statusEl) {
             socket.off('meme_sync_done', onDone);
             if (btn) {
                 btn.disabled = false;
-                btn.textContent = t.meme_sync_now || 'Fetch latest memes';
+                btn.textContent = t.meme_sync_start || 'Download new memes';
             }
             modal.finish(false, d.message || 'Failed to start', []);
         }
@@ -2087,7 +2092,7 @@ async function runMemeSync(btn, statusEl) {
         socket.off('meme_sync_done', onDone);
         if (btn) {
             btn.disabled = false;
-            btn.textContent = t.meme_sync_now || 'Fetch latest memes';
+            btn.textContent = t.meme_sync_start || 'Download new memes';
         }
         modal.finish(false, 'Request failed: ' + err, []);
     }

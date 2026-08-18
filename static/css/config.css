@@ -3768,13 +3768,27 @@ body.dark-mode .preview-card-dark {
     margin-left: auto;
 }
 
-/* The action button names the host it fetches from, so it is a sentence rather
-   than a verb. Allow it to wrap: nowrap here pushed the row wider than the
-   panel on a narrow screen instead of using the second line it already has. */
-.meme-sync-cell--action .update-install-btn {
+/* The action caption names the host, so it is a sentence where the other two
+   are two words. Let it wrap and cap its width: the nowrap the switch captions
+   use would push this row wider than the panel rather than taking the second
+   line it already has room for. */
+.meme-sync-cell--action .meme-sync-cell-label {
     white-space: normal;
-    text-align: left;
-    max-width: 100%;
+    max-width: 32ch;
+}
+
+/* Sits under the button, so it must not widen the cell as it fills: the row is
+   laid out by the caption's width, and a longer outcome reflowing the switches
+   beside it would move the controls while the reader is looking at them. */
+.meme-sync-status {
+    margin-top: 6px;
+    max-width: 32ch;
+    white-space: pre-wrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.meme-sync-status:empty {
+    display: none;
 }
 
 .meme-sync-cell-label {
