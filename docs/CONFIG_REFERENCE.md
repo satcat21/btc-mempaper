@@ -374,10 +374,21 @@ these settings.
 
 | Web Label | Config Key | Type | Description | Allowed Values / Examples |
 | :--- | :--- | :--- | :--- | :--- |
-| **Weekly Meme Sync** | `meme_sync_enabled` | Switch | Enable the scheduled download | `true`, `false` (default) |
-| **Sync Day** | `meme_sync_day` | Select | Day of the week, in cron numbering | `"0"` (Sun) … `"6"` (Sat), default `"4"` (Thu) |
-| **Sync Hour** | `meme_sync_hour` | Select | Hour of the day, 24-hour | `"0"` … `"23"`, default `"13"` |
-| **Download over Tor** | `tor_meme_downloads` | Switch | Append `--tor` so the download uses the Tor SOCKS proxy, keeping your IP off the meme host too | `true`, `false` (default) |
+| **Automatic download** | `meme_sync_enabled` | Switch | Enable the weekly scheduled download | `true`, `false` (default) |
+| **Route via Tor** | `tor_meme_downloads` | Switch | Append `--tor` so the download uses the Tor SOCKS proxy, keeping your IP off the meme host | `true` (default), `false` |
+
+These two switches and a **Sync now** button sit on one line under
+**Meme Management → Advanced**, below the meme grid — not in a section of their
+own. Tor is on by default: the download otherwise tells the meme host which IP
+runs a mempaper and when it syncs, and a weekly unattended job is exactly the
+case where a slower transport costs least.
+
+`meme_sync_day`, `meme_sync_hour` and `meme_sync_minute` have **no form
+control**. They are shown as read-only text beside the switches, because "is
+this scheduled, and when" is worth answering while editing them by hand is not:
+the installer randomises them per device for a reason (below), and a control
+over them is an invitation to undo it. `validate_config` carries all three
+across a save, along with `meme_sync_schedule_randomised`.
 
 **`install.sh` randomises the day, hour and minute per device** at install time
 and sets `meme_sync_schedule_randomised` so it never does so again. Without

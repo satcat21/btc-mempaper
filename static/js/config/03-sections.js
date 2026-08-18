@@ -1882,46 +1882,99 @@ function createSystemUpdateSection() {
 // Worth having as a button because the two moments people most want memes are
 // the two the schedule serves worst: right after a fresh install, and right
 // after a scheduled run failed.
+// ── Meme sync (one row, inside Meme Management > Advanced) ───────────────
+//
+// Two switches and a button on a single line, plus the schedule as read-only
+// text. The schedule is deliberately not editable: install.sh randomises the
+// day, hour and minute per device so the world's mempapers do not all reach
+// einundzwanzig-memes.space in the same minute, and a form control over that is
+// an invitation to undo it. It is shown because "is this thing scheduled, and
+// when" is the question the row exists to answer.
+//
+// Both switches carry data-config-key and a getValue(), which is the whole
+// contract saveConfiguration() collects on - they are saved by the ordinary
+// form pass despite not being schema fields.
 function createMemeSyncSection() {
     const t = window.translations || {};
+    const cfg = window.currentConfig || {};
 
     const formGroup = document.createElement('div');
-    formGroup.className = 'form-group system-update-section';
+    formGroup.className = 'form-group meme-sync-row-group';
 
-    const label = document.createElement('label');
-    label.className = 'form-label';
-    label.textContent = t.meme_sync_now || 'Sync Memes Now';
-    formGroup.appendChild(label);
-
-    const wrapper = document.createElement('div');
-    wrapper.className = 'update-wrapper';
-
+    // ── The row ──────────────────────────────────────────────────────────
     const row = document.createElement('div');
-    row.className = 'update-selector-row';
+    row.className = 'meme-sync-row';
 
-    const hint = document.createElement('span');
-    hint.className = 'system-update-hint';
-    hint.textContent = t.meme_sync_now_hint
-        || 'Download memes that are not already on this device. Safe to run any time — existing files are skipped.';
+    function labelledSwitch(key, labelText, hintText) {
+        const cell = document.createElement('div');
+        cell.className = 'meme-sync-cell';
 
+        const label = document.createElement('label');
+        label.className = 'form-label meme-sync-cell-label';
+        label.textContent = labelText;
+        if (hintText) label.title = hintText;
+
+        const sw = createBooleanSwitch(cfg[key]);
+        sw.dataset.configKey = key;
+
+        cell.appendChild(label);
+        cell.appendChild(sw);
+        return cell;
+    }
+
+    row.appendChild(labelledSwitch(
+        'meme_sync_enabled',
+        t.meme_sync_enabled || 'Automatic download',
+        t.meme_sync_enabled_desc || ''));
+
+    row.appendChild(labelledSwitch(
+        'tor_meme_downloads',
+        t.tor_meme_downloads || 'Route via Tor',
+        t.tor_meme_downloads_desc || ''));
+
+    const btnCell = document.createElement('div');
+    btnCell.className = 'meme-sync-cell meme-sync-cell--action';
+    const btnLabel = document.createElement('label');
+    btnLabel.className = 'form-label meme-sync-cell-label';
+    btnLabel.textContent = t.meme_sync_now || 'Sync Memes Now';
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'update-install-btn';
     btn.textContent = t.meme_sync_start || 'Sync now';
+    btnCell.appendChild(btnLabel);
+    btnCell.appendChild(btn);
+    row.appendChild(btnCell);
+
+    formGroup.appendChild(row);
+
+    // ── Schedule, read-only ──────────────────────────────────────────────
+    const DAYS = [t.day_sunday || 'Sunday', t.day_monday || 'Monday',
+                  t.day_tuesday || 'Tuesday', t.day_wednesday || 'Wednesday',
+                  t.day_thursday || 'Thursday', t.day_friday || 'Friday',
+                  t.day_saturday || 'Saturday'];
+    const _d = parseInt(cfg.meme_sync_day, 10);
+    const _h = parseInt(cfg.meme_sync_hour, 10);
+    const _m = parseInt(cfg.meme_sync_minute, 10);
+    const pad = n => String(n).padStart(2, '0');
+
+    const schedule = document.createElement('div');
+    schedule.className = 'system-update-hint meme-sync-schedule';
+    if (Number.isFinite(_d) && Number.isFinite(_h)) {
+        schedule.textContent = (t.meme_sync_schedule || 'Scheduled weekly')
+            + ': ' + (DAYS[_d] || _d) + ' '
+            + pad(_h) + ':' + pad(Number.isFinite(_m) ? _m : 0);
+    } else {
+        schedule.textContent = t.meme_sync_schedule_unknown || 'No schedule recorded for this device.';
+    }
+    formGroup.appendChild(schedule);
 
     const status = document.createElement('div');
     status.className = 'system-update-hint';
     status.style.cssText = 'margin-top:6px; white-space:pre-wrap; font-variant-numeric:tabular-nums;';
-
-    row.appendChild(hint);
-    row.appendChild(btn);
-    wrapper.appendChild(row);
-    wrapper.appendChild(status);
-    formGroup.appendChild(wrapper);
+    formGroup.appendChild(status);
 
     // A sync started before this page was opened is still running on the
-    // device, so ask rather than assume idle — the button would otherwise offer
-    // to start a second one that the server would refuse.
+    // device, so ask rather than assume idle.
     fetch('/api/memes/sync-status')
         .then(r => r.ok ? r.json() : null)
         .then(d => {
@@ -1931,58 +1984,201 @@ function createMemeSyncSection() {
         })
         .catch(() => {});
 
-    btn.addEventListener('click', async () => {
-        const socket = window.configSocket;
-        if (!socket) {
-            status.textContent = t.no_connection || 'No connection to the device.';
-            return;
-        }
-        btn.disabled = true;
-        btn.textContent = t.meme_sync_running || 'Syncing…';
-        status.textContent = '';
-
-        // Only the last line is shown. The downloader is chatty by design —
-        // it reports per-tag progress across thousands of tags — and a full
-        // log pane here would be a wall of text for an operation whose only
-        // interesting output is "how far along" and "what failed".
-        function onOut(data) {
-            if (data?.line) status.textContent = data.line;
-        }
-        function onDone(data) {
-            socket.off('meme_sync_output', onOut);
-            socket.off('meme_sync_done', onDone);
-            btn.disabled = false;
-            btn.textContent = t.meme_sync_start || 'Sync now';
-            status.textContent = data?.success
-                ? (t.meme_sync_complete || 'Meme sync complete.')
-                : ((t.meme_sync_failed || 'Meme sync failed') + ': ' + (data?.error || ''));
-            if (data?.success && typeof loadMemes === 'function') {
-                try { loadMemes(); } catch (e) { /* gallery not on screen */ }
-            }
-        }
-        socket.on('meme_sync_output', onOut);
-        socket.on('meme_sync_done', onDone);
-
-        try {
-            const r = await fetch('/api/memes/sync', { method: 'POST' });
-            const d = await r.json();
-            if (!d.success) {
-                socket.off('meme_sync_output', onOut);
-                socket.off('meme_sync_done', onDone);
-                btn.disabled = false;
-                btn.textContent = t.meme_sync_start || 'Sync now';
-                status.textContent = d.message || 'Failed to start';
-            }
-        } catch (err) {
-            socket.off('meme_sync_output', onOut);
-            socket.off('meme_sync_done', onDone);
-            btn.disabled = false;
-            btn.textContent = t.meme_sync_start || 'Sync now';
-            status.textContent = 'Request failed: ' + err;
-        }
-    });
+    btn.addEventListener('click', () => runMemeSync(btn, status));
 
     return formGroup;
+}
+
+// Snapshot of what is on disk now, so the run can be summarised by what
+// appeared rather than by parsing the downloader's output. The script's log
+// format is not a contract - it is a placeholder today and a different program
+// tomorrow - whereas "which files exist" is one either way, and it stays
+// correct when a download is skipped as already-present.
+async function _memeFilenameSnapshot() {
+    const seen = new Set();
+    try {
+        let page = 1;
+        for (;;) {
+            const r = await fetch(`/api/memes?page=${page}&per_page=200`);
+            if (!r.ok) break;
+            const d = await r.json();
+            (d.memes || []).forEach(m => seen.add(m.filename));
+            const total = d.total || 0;
+            if (page * (d.per_page || 200) >= total || !(d.memes || []).length) break;
+            page += 1;
+        }
+    } catch (e) {
+        // A failed snapshot costs the summary, not the sync.
+    }
+    return seen;
+}
+
+// Run the sync with a modal carrying the live log, then a summary of what
+// arrived. Same command the cron entry runs - `--update`, plus `--tor` when the
+// switch is on - so what is shown here is what happens unattended on schedule.
+async function runMemeSync(btn, statusEl) {
+    const t = window.translations || {};
+    const socket = window.configSocket;
+    if (!socket) {
+        if (statusEl) statusEl.textContent = t.no_connection || 'No connection to the device.';
+        return;
+    }
+
+    const modal = openMemeSyncModal();
+    const before = await _memeFilenameSnapshot();
+
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = t.meme_sync_running || 'Syncing...';
+    }
+    if (statusEl) statusEl.textContent = '';
+
+    function onOut(data) {
+        if (data?.line) modal.appendLine(data.line, data.header);
+    }
+
+    async function onDone(data) {
+        socket.off('meme_sync_output', onOut);
+        socket.off('meme_sync_done', onDone);
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = t.meme_sync_start || 'Sync now';
+        }
+
+        if (!data?.success) {
+            modal.finish(false, (t.meme_sync_failed || 'Meme sync failed')
+                + (data?.error ? ': ' + data.error : ''), []);
+            if (statusEl) statusEl.textContent = t.meme_sync_failed || 'Meme sync failed';
+            return;
+        }
+
+        // Refresh the gallery first, so the thumbnails the summary links to
+        // exist by the time anyone clicks one.
+        if (typeof clearMemeCache === 'function') { try { clearMemeCache(); } catch (e) {} }
+        if (typeof loadMemes === 'function') { try { loadMemes(); } catch (e) {} }
+
+        const after = await _memeFilenameSnapshot();
+        const added = [...after].filter(f => !before.has(f));
+        modal.finish(true, '', added);
+        if (statusEl) {
+            statusEl.textContent = added.length
+                ? (t.meme_sync_added || 'New memes downloaded') + ': ' + added.length
+                : (t.meme_sync_complete || 'Meme sync complete.');
+        }
+    }
+
+    socket.on('meme_sync_output', onOut);
+    socket.on('meme_sync_done', onDone);
+
+    try {
+        const r = await fetch('/api/memes/sync', { method: 'POST' });
+        const d = await r.json();
+        if (!d.success) {
+            socket.off('meme_sync_output', onOut);
+            socket.off('meme_sync_done', onDone);
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = t.meme_sync_start || 'Sync now';
+            }
+            modal.finish(false, d.message || 'Failed to start', []);
+        }
+    } catch (err) {
+        socket.off('meme_sync_output', onOut);
+        socket.off('meme_sync_done', onDone);
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = t.meme_sync_start || 'Sync now';
+        }
+        modal.finish(false, 'Request failed: ' + err, []);
+    }
+}
+
+// The log modal. Built rather than templated because it is transient and owns
+// no state once closed; returns the two handles the run needs.
+function openMemeSyncModal() {
+    const t = window.translations || {};
+
+    document.getElementById('meme-sync-modal')?.remove();
+
+    const overlay = document.createElement('div');
+    overlay.id = 'meme-sync-modal';
+    overlay.className = 'modal meme-sync-modal';
+    overlay.style.display = 'flex';
+
+    const box = document.createElement('div');
+    box.className = 'modal-content meme-sync-modal-content';
+
+    const title = document.createElement('h3');
+    title.textContent = t.meme_sync_now || 'Sync Memes Now';
+
+    const log = document.createElement('pre');
+    log.className = 'meme-sync-log';
+    log.setAttribute('aria-live', 'polite');
+
+    const summary = document.createElement('div');
+    summary.className = 'meme-sync-summary';
+
+    const grid = document.createElement('div');
+    grid.className = 'meme-sync-added-grid';
+
+    const actions = document.createElement('div');
+    actions.className = 'modal-actions';
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'update-install-btn';
+    closeBtn.textContent = t.close || 'Close';
+    closeBtn.disabled = true;
+    closeBtn.addEventListener('click', () => overlay.remove());
+    actions.appendChild(closeBtn);
+
+    box.append(title, log, summary, grid, actions);
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+
+    // No click-outside-to-close while the run is live: the sync keeps going on
+    // the device regardless, and dismissing the only view of it by accident
+    // loses the log for a job that takes minutes.
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay && !closeBtn.disabled) overlay.remove();
+    });
+
+    return {
+        appendLine(line, isHeader) {
+            const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 24;
+            const el = document.createElement('div');
+            el.textContent = line;
+            if (isHeader) el.className = 'meme-sync-log-header';
+            log.appendChild(el);
+            // Follow the tail only while the reader has not scrolled away.
+            if (atBottom) log.scrollTop = log.scrollHeight;
+        },
+        finish(ok, message, added) {
+            closeBtn.disabled = false;
+            summary.classList.add(ok ? 'is-ok' : 'is-error');
+            if (!ok) {
+                summary.textContent = message;
+                return;
+            }
+            summary.textContent = added.length
+                ? `${t.meme_sync_added || 'New memes downloaded'}: ${added.length}`
+                : (t.meme_sync_no_new || 'No new memes - already up to date.');
+
+            added.forEach(filename => {
+                const thumb = document.createElement('img');
+                thumb.className = 'meme-sync-added-thumb';
+                thumb.loading = 'lazy';
+                thumb.alt = filename;
+                thumb.title = filename;
+                thumb.src = `/api/thumb/${encodeURIComponent(filename)}`;
+                thumb.addEventListener('click', () => {
+                    if (typeof openMemeModal === 'function') {
+                        openMemeModal(filename, `/static/memes/${encodeURIComponent(filename)}`, [], []);
+                    }
+                });
+                grid.appendChild(thumb);
+            });
+        }
+    };
 }
 
 // ── SSH Access (admin key management) ────────────────────────

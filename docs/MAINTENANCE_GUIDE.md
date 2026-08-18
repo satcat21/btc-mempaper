@@ -144,7 +144,7 @@ wheel problem, not a bad version. Then confirm the part no command can check:
 
 ### Step 5 — Promote what the device resolved to
 
-A CLI upgrade writes no report — only the web update routes do that. Generate one:
+On the device whose resolved set you want to promote:
 
 ```bash
 .venv/bin/python -c "from utils.installed_report import write_installed_reports; write_installed_reports('.', log=print)"

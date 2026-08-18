@@ -439,7 +439,11 @@ class ConfigManager:
             "meme_sync_day": "4",
             "meme_sync_hour": "13",
             "meme_sync_minute": "0",
-            "tor_meme_downloads": False,
+            # On by default: the download reveals to the meme host that this IP
+            # runs a mempaper and when it syncs. Tor costs a slower download on
+            # a job that runs weekly and unattended, which is a much smaller
+            # price than the default leaking that.
+            "tor_meme_downloads": True,
             # --- Donation block ---
             "show_donation_block": False,
             "donation_display_mode": "latest",
@@ -627,7 +631,6 @@ class ConfigManager:
             {"id": "bitaxe_stats",     "_lk": "bitaxe_stats",      "label": t.get("bitaxe_stats",      "Bitaxe Stats"),        "icon": "/static/icons/bitaxe.svg"},
             {"id": "donation",         "_lk": "donation_settings", "label": t.get("donation_settings", "Lightning Donation"),  "icon": "/static/icons/donation.svg"},
             {"id": "meme_management",  "_lk": "meme_management",   "label": t.get("meme_management",   "Meme Management"),     "icon": "/static/icons/mood.svg"},
-            {"id": "meme_sync",        "_lk": "meme_sync_settings","label": t.get("meme_sync_settings","Meme Sync"),           "icon": "/static/icons/download.svg"},
             {"id": "opsec",            "_lk": "opsec_settings",    "label": t.get("opsec_settings",    "OPSec"),               "icon": "/static/icons/opsec.svg"},
             {"id": "wifi",             "_lk": "wifi_settings",     "label": t.get("wifi_settings",     "WiFi"),                "icon": "/static/icons/wifi.svg"},
             {"id": "updates",          "_lk": "updates_settings",  "label": t.get("updates_settings",  "Updates"),             "icon": "/static/icons/update.svg"},

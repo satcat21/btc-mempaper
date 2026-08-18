@@ -736,45 +736,19 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
             "label": t.get("opsec_management", "OPSec Images"),
             "category": "opsec"
         },
-        # --- Meme sync schedule ---
-        "meme_sync_enabled": {
-            "type": "boolean",
-            "label": t.get("meme_sync_enabled", "Auto-Sync Memes"),
-            "description": t.get("meme_sync_enabled_desc", "Schedule a weekly check for new memes on einundzwanzig-memes.space. Writes a crontab entry for the mempaper user — no manual crontab editing needed."),
-            "default": False,
-            "category": "meme_sync"
-        },
-        "meme_sync_day": {
-            "type": "select",
-            "label": t.get("meme_sync_day", "Day"),
-            "description": t.get("meme_sync_day_desc", "Day of the week to check for new memes."),
-            "options": [
-                {"value": "0", "label": t.get("day_sunday",    "Sunday")},
-                {"value": "1", "label": t.get("day_monday",    "Monday")},
-                {"value": "2", "label": t.get("day_tuesday",   "Tuesday")},
-                {"value": "3", "label": t.get("day_wednesday", "Wednesday")},
-                {"value": "4", "label": t.get("day_thursday",  "Thursday")},
-                {"value": "5", "label": t.get("day_friday",    "Friday")},
-                {"value": "6", "label": t.get("day_saturday",  "Saturday")},
-            ],
-            "default": "4",
-            "category": "meme_sync"
-        },
-        "meme_sync_hour": {
-            "type": "select",
-            "label": t.get("meme_sync_hour", "Time"),
-            "description": t.get("meme_sync_hour_desc", "Hour of day to run the sync (24-hour clock)."),
-            "options": [{"value": str(h), "label": f"{h:02d}:00"} for h in range(24)],
-            "default": "13",
-            "category": "meme_sync"
-        },
-        "tor_meme_downloads": {
-            "type": "boolean",
-            "label": t.get("tor_meme_downloads", "Route via Tor"),
-            "description": t.get("tor_meme_downloads_desc", "Hide your IP from the meme server by routing downloads through Tor (SOCKS5 127.0.0.1:9050). Requires: sudo apt install tor — the Tor daemon must be running."),
-            "default": False,
-            "category": "meme_sync"
-        },
+        # --- Meme sync ---
+        # meme_sync_enabled and tor_meme_downloads are deliberately absent from
+        # this schema. They are rendered by createMemeSyncSection() as a single
+        # row under the meme grid rather than as two standalone fields, so the
+        # generic field renderer must not also emit them. They still travel in
+        # the config and are still validated - see the bool_settings list in
+        # config_validation.py, which is what makes them persist.
+        #
+        # meme_sync_day / _hour / _minute have no schema entry either, and no
+        # form control at all: install.sh randomises them per device so every
+        # mempaper does not reach the meme host in the same minute, and letting
+        # the page edit them invites undoing that by hand. The row shows them
+        # read-only. validate_config carries them across a save.
         # --- Donation block ---
         "show_donation_block": {
             "type": "boolean",

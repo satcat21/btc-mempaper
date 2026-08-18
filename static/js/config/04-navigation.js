@@ -395,9 +395,27 @@ function _renderCategorySection(category, section) {
             fieldsAdded += 1;
         }
 
-        // Manual "Sync now" beneath the weekly schedule fields.
-        if (category.id === 'meme_sync') {
-            section.appendChild(createMemeSyncSection());
+        // Meme sync lives inside Meme Management, in an Advanced block under the
+        // grid. It is one row rather than a section of its own: the schedule is
+        // not editable, so what is left is two switches and a button.
+        if (category.id === 'meme_management') {
+            const advanced = document.createElement('div');
+            advanced.className = 'advanced-section';
+
+            const advToggle = document.createElement('div');
+            advToggle.className = 'advanced-section-toggle';
+            advToggle.innerHTML = `<span class="advanced-section-arrow"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" fill="currentColor" class="advanced-chevron-icon"><path d="M480-344 240-584l56-56 184 184 184-184 56 56-240 240Z"/></svg></span> ${window.translations?.advanced_settings || 'Advanced'}`;
+            advToggle.addEventListener('click', () => {
+                advanced.classList.toggle('advanced-section--open');
+            });
+
+            const advContent = document.createElement('div');
+            advContent.className = 'advanced-section-content';
+            advContent.appendChild(createMemeSyncSection());
+
+            advanced.appendChild(advToggle);
+            advanced.appendChild(advContent);
+            section.appendChild(advanced);
             fieldsAdded += 1;
         }
 
@@ -656,7 +674,7 @@ function renderConfigurationForm() {
         const section = document.createElement('div');
         section.className = 'config-section';
         section.id = 'section-' + category.id;
-        if (category.id === 'meme_management' || category.id === 'opsec' || category.id === 'meme_sync') {
+        if (category.id === 'meme_management' || category.id === 'opsec') {
             section.classList.add('meme-management-section');
         }
         section.dataset.lazy = 'true';

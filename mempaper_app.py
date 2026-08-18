@@ -2020,7 +2020,8 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
             self._reschedule_auto_update()
 
         # Update meme sync crontab if any of its settings changed.
-        _meme_sync_keys = {'meme_sync_enabled', 'meme_sync_day', 'meme_sync_hour', 'tor_meme_downloads'}
+        _meme_sync_keys = {'meme_sync_enabled', 'meme_sync_day', 'meme_sync_hour',
+                           'meme_sync_minute', 'tor_meme_downloads'}
         if any(old_config.get(k) != new_config.get(k) for k in _meme_sync_keys):
             self._apply_meme_sync_crontab(new_config)
 
@@ -2744,6 +2745,10 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
         """
         if not self._prerendered['lock'].acquire(blocking=False):
             return  # Another pre-render already running
+        # Defaults for the cleanup in `finally`, which runs even when this
+        # returns before either is known.
+        next_height = None
+        _fee_entry_existed = True
         try:
             current = self.current_block_height
             if current is None:
@@ -2770,6 +2775,12 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
 
             # Use a deterministic placeholder hash for the decorative frame
             placeholder_hash = "0" * 64
+
+            # Whether this height was already in the fee cache before the
+            # speculative render, so the cleanup below removes only what this
+            # render added rather than deleting a real entry.
+            _fee_entry_existed = str(next_height) in getattr(
+                self.image_renderer, 'block_fee_cache', {})
 
             # Sync donation data
             self.image_renderer._donation_data = self._get_active_donation()
@@ -2807,6 +2818,21 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
         except Exception as e:
             print(f"⚠️ Pre-render failed: {e}")
         finally:
+            # Drop the fee entry this speculative render just recorded.
+            #
+            # Rendering next_height walks the same path a real block does, and
+            # that path caches the fee reading against the height it drew — so a
+            # pre-render left an entry for a block that had not happened yet.
+            # Anything asking the cache "what is the tip?" then answered with the
+            # guess: the config page's block-height colour preview reads the
+            # highest cached height, and showed 962950 while the device drew
+            # 962949. The image itself is unaffected; it was built before this
+            # runs, and the entry is re-recorded for real when the block lands.
+            try:
+                if next_height is not None and not _fee_entry_existed:
+                    self.image_renderer.block_fee_cache.pop(str(next_height), None)
+            except Exception:
+                pass
             self._prerendered['lock'].release()
 
     def _use_prerendered_image(self, block_height, block_hash):

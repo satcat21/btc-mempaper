@@ -52,6 +52,8 @@ def validate_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
         "public_dashboard",
         "auto_update_enabled",
         "tang_enabled",
+        "meme_sync_enabled",
+        "tor_meme_downloads",
     ]
     for setting in bool_settings:
         if setting in config:
@@ -170,6 +172,26 @@ def validate_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
     # stored, and the first of them runs well before the password handling that
     # used to be the first reader.
     current_config = self.get_current_config()
+
+    # Meme-sync schedule: internal fields with no form control, so the payload
+    # never carries them and the default-based rebuild above would reset all
+    # three on the first save. install.sh randomises them per device precisely
+    # so the world's mempapers do not reach the meme host in the same minute -
+    # silently restoring Thursday 13:00 everywhere would undo that on the first
+    # visit to the config page, and nothing would report it.
+    for _k in ("meme_sync_day", "meme_sync_hour", "meme_sync_minute"):
+        if _k in config:
+            validated[_k] = str(config[_k])
+        elif _k in current_config:
+            validated[_k] = str(current_config[_k])
+
+    # Same reasoning: the installer records that it has already chosen a
+    # schedule for this device, and losing that marker makes a later install
+    # run overwrite the schedule it deliberately left alone.
+    if "meme_sync_schedule_randomised" in config:
+        validated["meme_sync_schedule_randomised"] = bool(config["meme_sync_schedule_randomised"])
+    elif "meme_sync_schedule_randomised" in current_config:
+        validated["meme_sync_schedule_randomised"] = bool(current_config["meme_sync_schedule_randomised"])
 
     # A number the form did not post means "unchanged", the same as it does for
     # the passthrough settings below. Without the fallback a save that omitted a

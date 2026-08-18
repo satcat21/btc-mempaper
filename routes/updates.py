@@ -54,23 +54,6 @@ def _permissions_hint(translations, key, default, project_dir):
         return text
 
 
-def _write_version_reports(project_dir, emit_line):
-    """Refresh cache/currently_installed_*.txt after a successful operation.
-
-    Deliberately swallows its own failures: this is a report written at the tail
-    of work that has already succeeded, and being unable to write it is not a
-    reason to tell the user their upgrade failed.
-    """
-    try:
-        from utils.installed_report import write_installed_reports
-        write_installed_reports(project_dir, log=emit_line)
-    except Exception as exc:
-        try:
-            emit_line(f'Could not write version report: {exc}')
-        except Exception:
-            pass
-
-
 def _simulate_dist_upgrade():
     """What a full upgrade would do, without doing any of it.
 
@@ -999,13 +982,6 @@ def register(self):
                     except Exception as minify_err:
                         _emit('update_output', {'line': f'JS minification skipped: {minify_err}', 'phase': 'pip'})
 
-                # Record what this release actually resolved to. Written after
-                # everything else has succeeded, so the report describes a
-                # combination that installed cleanly rather than one that was
-                # half-applied.
-                _write_version_reports(project_dir,
-                                       lambda m: _emit('update_output', {'line': m, 'phase': 'pip'}))
-
                 # Emit restart message before update_done (frontend unsubscribes from update_output on done)
                 _emit('update_output', {'line': self.translations.get('restarting_service', 'Restarting mempaper service...'), 'phase': 'restart', 'header': True})
 
@@ -1285,9 +1261,6 @@ def register(self):
                 # Everything apt was going to touch has now been touched.
                 _check_pillow()
 
-                _write_version_reports(project_dir,
-                                       lambda m: _emit('apt_output', {'line': m, 'phase': 'deps'}))
-
                 _emit('apt_done', {'success': True})
             except Exception as e:
                 _emit('apt_done', {'success': False, 'error': _safe_error(e, 'System update error')})
@@ -1526,12 +1499,6 @@ def register(self):
                         _emit('apt_output', {'line': 'Held back: ' + ', '.join(sorted(up2)), 'phase': 'verify'})
                 else:
                     _emit('apt_output', {'line': self.translations.get('system_fully_upgraded', 'System fully upgraded — nothing further to install, upgrade or remove.'), 'phase': 'verify', 'header': True})
-
-                # The whole point of a full upgrade is that the resolved set
-                # moved. Capture where it landed, so a combination proven on
-                # this device can be promoted into the declared files.
-                _write_version_reports(project_dir,
-                                       lambda m: _emit('apt_output', {'line': m, 'phase': 'verify'}))
 
                 _emit('apt_done', {'success': True})
             except Exception as e:

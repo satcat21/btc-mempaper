@@ -3746,3 +3746,99 @@ body.dark-mode .preview-card-dark {
 @media (max-width: 1199px) {
     .pepe-mole { display: none !important; }
 }
+
+/* ── Meme sync row (Meme Management > Advanced) ─────────────────────────── */
+/* Two switches and the action button on one line. Wraps rather than shrinks:
+   the switches have a fixed intrinsic width, so squeezing them on a narrow
+   screen collides the labels instead of stacking them. */
+.meme-sync-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 24px;
+}
+
+.meme-sync-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.meme-sync-cell--action {
+    margin-left: auto;
+}
+
+.meme-sync-cell-label {
+    margin: 0;
+    white-space: nowrap;
+}
+
+.meme-sync-schedule {
+    margin-top: 10px;
+    font-variant-numeric: tabular-nums;
+}
+
+/* ── Meme sync modal ────────────────────────────────────────────────────── */
+.meme-sync-modal-content {
+    max-width: 720px;
+    width: 92vw;
+}
+
+.meme-sync-log {
+    margin: 12px 0 0;
+    padding: 10px 12px;
+    max-height: 40vh;
+    overflow-y: auto;
+    /* The downloader emits long single-line paths; wrap them rather than
+       forcing the dialog to scroll sideways. */
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.85rem;
+    line-height: 1.45;
+    background: var(--input-bg, rgba(0, 0, 0, 0.25));
+    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
+    border-radius: 8px;
+}
+
+.meme-sync-log-header {
+    font-weight: 600;
+    margin-top: 4px;
+}
+
+.meme-sync-summary {
+    margin-top: 12px;
+    font-weight: 600;
+}
+
+.meme-sync-summary.is-error {
+    color: var(--error-color, #e5484d);
+}
+
+.meme-sync-added-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+    max-height: 30vh;
+    overflow-y: auto;
+}
+
+.meme-sync-added-thumb {
+    width: 84px;
+    height: 84px;
+    object-fit: cover;
+    border-radius: 6px;
+    cursor: pointer;
+    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
+}
+
+.meme-sync-added-thumb:hover {
+    border-color: var(--accent-color, #f7931a);
+}
+
+@media (max-width: 640px) {
+    .meme-sync-cell--action {
+        margin-left: 0;
+    }
+}
