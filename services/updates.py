@@ -51,6 +51,65 @@ class UpdateSchedulerMixin:
 
         threading.Thread(target=_rebuild, daemon=True).start()
 
+    def _start_wheel_rebuild_if_needed(self):
+        """Rebuild wheels the updater recorded as built for another platform.
+
+        Runs in the background: a source build takes tens of minutes per package
+        on this hardware and the dashboard has to stay up meanwhile. A package
+        that fails keeps its place in the flag with its attempt count raised, so
+        a transient failure is retried on the next start while one that cannot
+        build here stops after MAX_ATTEMPTS instead of rebuilding every boot.
+        """
+        from utils.wheel_platform import (REBUILD_FLAG, format_flag, parse_flag,
+                                          platform_tag, rebuild)
+
+        project_dir = PROJECT_ROOT
+        flag_path = os.path.join(project_dir, REBUILD_FLAG)
+        if not os.path.exists(flag_path):
+            return
+
+        venv_pip = os.path.join(project_dir, '.venv', 'bin', 'pip')
+        if not os.path.exists(venv_pip):
+            return
+
+        try:
+            with open(flag_path) as fh:
+                wanted = parse_flag(fh.read())
+        except OSError:
+            return
+        if not wanted:
+            try:
+                os.remove(flag_path)
+            except OSError:
+                pass
+            return
+
+        def _rebuild_all():
+            target = platform_tag()
+            remaining = []
+            for name, version, attempts in wanted:
+                print(f"Rebuilding {name}=={version} from source for {target} "
+                      f"(this can take tens of minutes)...")
+                ok, output = rebuild(venv_pip, name, version)
+                if ok:
+                    print(f"Rebuilt {name}=={version} for {target}")
+                else:
+                    remaining.append((name, version, attempts + 1))
+                    print(f"Could not rebuild {name}=={version}: "
+                          f"{output.strip()[-300:]}")
+            try:
+                if remaining:
+                    with open(flag_path, 'w') as fh:
+                        fh.write(format_flag(remaining))
+                else:
+                    os.remove(flag_path)
+                    print(f"All wheels now built for {target}; "
+                          f"restart to load them")
+            except OSError:
+                pass
+
+        threading.Thread(target=_rebuild_all, daemon=True).start()
+
     def _start_auto_update_scheduler(self):
         """One-shot timer scheduler for automatic updates.
 

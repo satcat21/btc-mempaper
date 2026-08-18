@@ -718,6 +718,31 @@ if [ "$ARCH" = "armv6l" ]; then
     fi
 fi
 
+# ── Wheels built for another platform ─────────────────────────────────────────
+# The checks above cover the two packages known to fail on ARMv6. This covers the
+# rest: pip resolves a wheel tagged for a neighbouring ARM platform whenever one
+# is published and the exact match is not, which leaves a build this device would
+# not have produced. Recorded rather than rebuilt here — a source build costs tens
+# of minutes per package, and the service rebuilds them in the background on first
+# boot instead of holding the installer open.
+if [ -x "$VENV_DIR/bin/python" ]; then
+    sudo -u "$SERVICE_USER" "$VENV_DIR/bin/python" - <<'PYEOF' || warn "Could not check wheel platforms (non-fatal)"
+import sys
+sys.path.insert(0, ".")
+from utils.wheel_platform import foreign_wheels, format_flag, platform_tag, REBUILD_FLAG
+
+foreign = foreign_wheels()
+if not foreign:
+    print(f"   every wheel matches {platform_tag()}")
+else:
+    with open(REBUILD_FLAG, "w") as fh:
+        fh.write(format_flag([(n, v, 0) for n, v, _ in foreign]))
+    names = ", ".join(f"{n} ({p[0]})" for n, _, p in foreign)
+    print(f"   built for another platform, queued for rebuild: {names}")
+PYEOF
+    ok "Wheel platforms checked against $(uname -m)"
+fi
+
 # ── Optional: Minify JavaScript ───────────────────────────────────────────
 if [[ "$MINIFY_CHOICE" =~ ^[Yy]$ ]]; then
     sudo -u "$SERVICE_USER" "$VENV_DIR/bin/python" tools/minify.py

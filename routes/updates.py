@@ -951,6 +951,27 @@ def register(self):
                         })
                         return
 
+                # Record wheels built for another platform. pip will resolve a
+                # wheel tagged for a neighbouring ARM platform, so a pip install
+                # can replace a source build install.sh made deliberately. A
+                # rebuild costs tens of minutes per package, so it is handed to
+                # startup rather than held open here.
+                try:
+                    from utils.wheel_platform import (foreign_wheels, format_flag,
+                                                      REBUILD_FLAG)
+                    _foreign = foreign_wheels()
+                    if _foreign:
+                        with open(os.path.join(project_dir, REBUILD_FLAG), 'w') as _f:
+                            _f.write(format_flag([(n, v, 0) for n, v, _ in _foreign]))
+                        _emit('update_output', {
+                            'line': self.translations.get(
+                                'wheel_rebuild_scheduled',
+                                'Built for another platform, will be rebuilt from source after restart')
+                                + ': ' + ', '.join(n for n, _, _ in _foreign),
+                            'phase': 'pip', 'header': True})
+                except Exception as _aw_err:
+                    _emit('update_output', {'line': f'Wheel platform check skipped: {_aw_err}', 'phase': 'pip'})
+
                 # Write flag file if Pillow version changed
                 if pillow_changed:
                     try:
