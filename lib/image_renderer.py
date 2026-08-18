@@ -767,12 +767,12 @@ class ImageRenderer(ColorMixin, MemeMixin, HashFrameMixin, TextMixin,
         Compatibility wrapper for legacy _block_fee_cache structure.
         Returns a dict with 'current' and 'previous' keys for block fee cache.
         """
-        # Numeric sort, not the default one. These keys are strings - the render
-        # path stores str(api_block_height) - so plain sorted() compares them
-        # lexicographically and "highest" stops meaning highest as soon as the
-        # digit count changes: at block 1000000, '999999' sorts last and the
-        # gradient would read a stale tip. Heights that are not numeric sort
-        # first so they can never be mistaken for the tip.
+        # Numeric sort, not the default one. These keys are strings - the
+        # render path stores str(api_block_height) - so plain sorted() compares
+        # them lexicographically, and "highest" stops meaning highest as soon as
+        # the digit count changes: at block 1000000, '999999' would sort last
+        # and the gradient would read a stale tip. Non-numeric keys sort first
+        # so they can never be mistaken for the tip.
         def _as_height(key):
             try:
                 return (1, int(key))

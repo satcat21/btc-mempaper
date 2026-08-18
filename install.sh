@@ -884,9 +884,9 @@ fi
 
 # ── Write the meme-sync crontab entry ─────────────────────────────────────────
 # Written here so the schedule exists on the device from the moment it is
-# installed, rather than only after the service has started once with the
-# toggle already on — which is what used to happen, and meant `crontab -l` on a
-# fresh device showed nothing and implied the feature did not exist.
+# installed, rather than only once the service has started with the toggle on.
+# `crontab -l` is where anyone looks to answer "is this scheduled?", so an
+# entry that appears later reads as the feature not existing.
 #
 # The block is written commented out while the feature is off, so the randomised
 # schedule is visible where anyone would look for it. The web UI toggle rewrites

@@ -2831,13 +2831,13 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
             # Drop the fee entry this speculative render just recorded.
             #
             # Rendering next_height walks the same path a real block does, and
-            # that path caches the fee reading against the height it drew — so a
-            # pre-render left an entry for a block that had not happened yet.
-            # Anything asking the cache "what is the tip?" then answered with the
-            # guess: the config page's block-height colour preview reads the
-            # highest cached height, and showed 962950 while the device drew
-            # 962949. The image itself is unaffected; it was built before this
-            # runs, and the entry is re-recorded for real when the block lands.
+            # that path caches the fee reading against the height it drew. The
+            # entry would therefore describe a block that has not happened yet,
+            # and anything asking the cache for the tip — the config page's
+            # block-height colour preview reads the highest cached height —
+            # would answer with the guess. The image is unaffected: it is built
+            # before this runs, and the entry is recorded for real when the
+            # block lands.
             try:
                 if next_height is not None and not _fee_entry_existed:
                     self.image_renderer.block_fee_cache.pop(str(next_height), None)

@@ -554,11 +554,10 @@ function setupConfigSocketHandlers() {
         if (data.countdown) {
             window._previewData.countdown = { ...window._previewData.countdown, ...data.countdown };
             if (window._refreshCountdownPreview) window._refreshCountdownPreview(window._previewData.countdown);
-            // The tip travels on this event already. The block-height colour
-            // preview reads it from a different key, so mirror it across and
-            // repaint - otherwise the sample stayed on whatever the page was
-            // opened with, and fell back to a literal when the server had no
-            // height to send at all.
+            // The tip travels on this event already, but the block-height
+            // colour preview reads it from a different key. Mirror it across
+            // and repaint, so the sample follows the chain rather than holding
+            // whatever the page was opened with.
             if (data.countdown.block_height) {
                 window._previewData.blockHeight = data.countdown.block_height;
                 if (window._refreshBlockHeightPreview) window._refreshBlockHeightPreview();

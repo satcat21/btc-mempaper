@@ -106,13 +106,12 @@ class MemeMixin:
             'erster', 'erste', 'ersten', 'erstes', 'guten', 'gute', 'guter',
             'nicht', 'oder', 'auch', 'noch', 'nur', 'wie',
         }
-        # Fold the umlauts before the a-z filter below reaches them. That filter
-        # turns anything outside a-z into a space, so it was splitting German
-        # words at their own letters: "Parität" became "parit", "Übertrifft"
-        # became "bertrifft", and "Händen" became "nden" - which was the entire
-        # German contribution for that holiday. Folding to the ASCII digraphs
-        # keeps the word in one piece and matches how these are usually typed
-        # into a filename or a tag anyway.
+        # Fold the umlauts before the a-z filter below reaches them. That
+        # filter turns anything outside a-z into a space, which would split a
+        # German word at its own letters and leave fragments as keywords -
+        # "Parität" as "parit", "Händen" as "nden". The ASCII digraphs keep the
+        # word in one piece and match how these are typically typed into a
+        # filename or a tag.
         folded = title.lower()
         for _src, _dst in (('ä', 'ae'), ('ö', 'oe'), ('ü', 'ue'), ('ß', 'ss')):
             folded = folded.replace(_src, _dst)

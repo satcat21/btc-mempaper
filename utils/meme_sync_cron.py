@@ -2,15 +2,13 @@
 
 install.sh writes this entry at install time so the schedule exists on the
 device before the app has ever run, and mempaper_app rewrites it whenever the
-Meme Sync settings change. Those two used to be one implementation and one
-absence — the installer wrote nothing at all, so a fresh device had no entry
-until the service had started at least once with the toggle already on.
+Meme Sync settings change.
 
-Putting the line in one place is what keeps them honest. The marker, the
-schedule fields, the interpreter choice and the log path all have to agree
-between installer and app, because whichever runs last rewrites the block; two
-copies of that format would drift and the drift would only show up as a job
-that silently stopped running.
+Both callers share this one implementation. The marker, the schedule fields,
+the interpreter choice and the log path all have to agree between installer and
+app, because whichever runs last rewrites the block; two copies of that format
+would drift, and the drift would only show up as a job that silently stopped
+running.
 
 Entry point for shell callers:
 
@@ -146,20 +144,14 @@ def render_block(config, project_dir=PROJECT_ROOT):
 def ensure_device_schedule(config_manager):
     """Give this device its own sync day, hour and minute if it has none yet.
 
-    install.sh randomises these at install time, and for a long while that was
-    the only place it happened - which left the schedule at its shipped default
-    for everyone who had not run the installer since the feature appeared. The
-    web update flow does not re-run install.sh, so an updating device kept
-    Thursday 13:00; and until validate_config learned to carry these keys, the
-    first save of the config page reset an already-randomised device back to it
-    as well. Either way the fleet converged on the one hour the default names,
-    which is the opposite of the point: the whole reason for randomising is that
-    every mempaper reaching einundzwanzig-memes.space in the same minute is a
-    thundering herd against someone else's server.
+    Every mempaper reaching einundzwanzig-memes.space in the same minute is a
+    thundering herd against someone else's server, so each device needs its own
+    day, hour and minute rather than the one the config ships with.
 
-    Doing it here as well as in the installer costs nothing - the marker makes
-    it a no-op once a schedule exists - and it is the only path every device
-    passes through regardless of how it was installed or updated.
+    install.sh randomises these at install time, but that is not a path every
+    device takes: the web update flow does not re-run the installer. Startup is,
+    whatever the install or update route, so the choice is made here too. The
+    marker keeps it a no-op once a schedule exists.
 
     Returns True when a schedule was written.
     """

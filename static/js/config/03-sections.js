@@ -1933,9 +1933,8 @@ function createMemeSyncSection() {
         t.tor_meme_downloads_desc || ''));
 
     // Captioned like the two switches beside it, so the row reads as three
-    // labelled controls rather than two plus a stray button. The caption names
-    // the host - the half worth knowing before pressing it - while the button
-    // itself stays a short verb phrase.
+    // labelled controls. The caption names the host - the half worth knowing
+    // before pressing it - while the button stays a short verb phrase.
     const btnCell = document.createElement('div');
     btnCell.className = 'meme-sync-cell meme-sync-cell--action';
     const btnLabel = document.createElement('label');
@@ -1945,8 +1944,8 @@ function createMemeSyncSection() {
     btn.type = 'button';
     btn.className = 'update-install-btn';
     btn.textContent = t.meme_sync_start || 'Download new memes';
-    // Outcome sits directly under the button that produced it. Below the whole
-    // group it read as a note about the schedule line above it instead.
+    // Outcome sits directly under the button that produced it, rather than
+    // below the whole group where it reads as a note about the schedule line.
     const status = document.createElement('div');
     status.className = 'system-update-hint meme-sync-status';
 
@@ -2110,11 +2109,11 @@ function openMemeSyncModal() {
     overlay.className = 'modal meme-sync-modal';
     overlay.style.display = 'flex';
 
-    // Same dialog and log treatment as the system update modal: this shows the
-    // same kind of thing - a long-running job reporting as it goes - and two
-    // different-looking log viewers in one settings page is just two things to
-    // learn. system-update-log carries the min-height, so the box opens at its
-    // full size instead of growing from a thin grey strip as lines arrive.
+    // Same dialog and log treatment as the system update modal: both show a
+    // long-running job reporting as it goes, and two different-looking log
+    // viewers in one settings page are two things to learn. system-update-log
+    // carries the min-height, so the box opens at full size rather than growing
+    // from a thin strip as lines arrive.
     const box = document.createElement('div');
     box.className = 'modal-content system-update-dialog';
 
