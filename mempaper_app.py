@@ -39,7 +39,7 @@ from managers.config_manager import ConfigManager
 from utils.technical_config import (TechnicalConfig, build_mempool_api_url,
                                     build_mempool_proxies)
 from utils.tor_recovery import tor_recovery
-from utils.meme_sync_cron import apply_meme_sync_crontab
+from utils.meme_sync_cron import apply_meme_sync_crontab, ensure_device_schedule
 from utils.security_config import SecurityConfig
 from managers.auth_manager import AuthManager
 from managers.tang_store import TangLocked
@@ -379,6 +379,16 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
             self.config_manager.set('donation_webhook_token', _secrets.token_hex(32))
             self.config_manager.save_config()
             print("✅ Generated donation webhook token")
+
+        # Pick this device's own sync schedule before writing the entry that
+        # uses it. install.sh does this too, but it is not a path every device
+        # takes: a web update never re-runs it, so devices that updated into the
+        # feature kept the shipped Thursday 13:00 and would have hit the meme
+        # host together. No-op once a schedule has been recorded.
+        try:
+            ensure_device_schedule(self.config_manager)
+        except Exception as e:
+            print(f"⚠️ Could not choose a meme sync schedule: {e}")
 
         # Sync meme-sync crontab entry with current config (no-op when disabled)
         self._apply_meme_sync_crontab()

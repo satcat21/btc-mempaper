@@ -25,6 +25,7 @@ import argparse
 import json
 import os
 import posixpath
+import random
 import subprocess
 import sys
 
@@ -140,6 +141,45 @@ def render_block(config, project_dir=PROJECT_ROOT):
         f'the app rewrites this block from config.json.',
         build_cron_line(config, project_dir, commented=True),
     ]
+
+
+def ensure_device_schedule(config_manager):
+    """Give this device its own sync day, hour and minute if it has none yet.
+
+    install.sh randomises these at install time, and for a long while that was
+    the only place it happened - which left the schedule at its shipped default
+    for everyone who had not run the installer since the feature appeared. The
+    web update flow does not re-run install.sh, so an updating device kept
+    Thursday 13:00; and until validate_config learned to carry these keys, the
+    first save of the config page reset an already-randomised device back to it
+    as well. Either way the fleet converged on the one hour the default names,
+    which is the opposite of the point: the whole reason for randomising is that
+    every mempaper reaching einundzwanzig-memes.space in the same minute is a
+    thundering herd against someone else's server.
+
+    Doing it here as well as in the installer costs nothing - the marker makes
+    it a no-op once a schedule exists - and it is the only path every device
+    passes through regardless of how it was installed or updated.
+
+    Returns True when a schedule was written.
+    """
+    if config_manager.get('meme_sync_schedule_randomised', False):
+        return False
+
+    day = random.randint(0, 6)     # cron numbering: 0 = Sunday
+    hour = random.randint(0, 23)
+    minute = random.randint(0, 59)
+
+    config_manager.set('meme_sync_day', str(day))
+    config_manager.set('meme_sync_hour', str(hour))
+    config_manager.set('meme_sync_minute', str(minute))
+    config_manager.set('meme_sync_schedule_randomised', True)
+    config_manager.save_config()
+
+    names = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+    print(f'Meme sync schedule chosen for this device: '
+          f'{names[day]} {hour:02d}:{minute:02d}')
+    return True
 
 
 def _read_crontab():
