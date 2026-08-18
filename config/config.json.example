@@ -13,7 +13,7 @@
   "tor_socks_host": "127.0.0.1",
   "tor_socks_port": 9050,
   "tor_auto_restart": false,
-  "tor_meme_downloads": false,
+  "tor_meme_downloads": true,
   "mempool_use_https_clearnet": true,
   "mempool_rest_port_clearnet": 443,
   "mempool_ws_port_clearnet": 443,
