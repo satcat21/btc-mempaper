@@ -723,6 +723,42 @@ function setupConfigSocketHandlers() {
             .replace('{total}', total);
     }
 
+    // Every log line is worded here, from the structured event, so a live
+    // listener and a page replaying a rebuild already under way produce the
+    // same text - and produce it in the reader's language, rather than showing
+    // whatever the server happened to write to its journal.
+    function _renderWheelEvent(evt) {
+        if (!evt) return;
+        const t = window.translations || {};
+        if (evt.kind === 'wheel_rebuild_started') {
+            _wheelProgress = { index: 0, total: evt.total || 0, current: null };
+            _appendWheelLog((t.wheel_rebuild_intro
+                    || 'Rebuilding {count} package(s) for {target}. This can take hours; leave the device powered on.')
+                .replace('{count}', evt.total)
+                .replace('{target}', evt.target || ''));
+        } else if (evt.kind === 'wheel_rebuild_output') {
+            // Compiler and pip output: nothing here to translate or reword.
+            if (evt.line) _appendWheelLog(evt.line);
+        } else if (evt.kind === 'wheel_rebuild_progress') {
+            // 'building' announces the start of a package; the completion event
+            // for the same package carries ok/skipped. Only the latter advances
+            // the bar.
+            if (evt.building) {
+                _wheelProgress = { index: evt.index - 1, total: evt.total, current: evt.name };
+                _appendWheelLog((t.wheel_rebuild_progress || 'Rebuilding {name} ({index}/{total})...')
+                    .replace('{name}', evt.name)
+                    .replace('{index}', evt.index)
+                    .replace('{total}', evt.total));
+            } else {
+                _wheelProgress = { index: evt.index, total: evt.total, current: null };
+                _appendWheelLog(evt.name + ': '
+                    + (evt.skipped ? (t.wheel_rebuild_skipped || 'already built for this device')
+                       : evt.ok ? (t.wheel_rebuild_ok || 'rebuilt')
+                       : (t.wheel_rebuild_fail || 'could not be built')));
+            }
+        }
+    }
+
     // A rebuild that began before this page loaded has no events left to send,
     // so ask where it got to instead of showing nothing.
     (async () => {
@@ -731,7 +767,8 @@ function setupConfigSocketHandlers() {
             if (!r.ok) return;
             const d = await r.json();
             if (d?.success && d.running) {
-                _wheelLog = d.log || [];
+                _wheelLog = [];
+                (d.events || []).forEach(_renderWheelEvent);
                 _wheelProgress = { index: d.index || 0, total: d.total || 0, current: d.current };
                 _showWheelToast(d.total || 0);
                 if (d.current) _setWheelProgressLine(d.current, d.index, d.total);
@@ -742,29 +779,21 @@ function setupConfigSocketHandlers() {
     configSocket.on('wheel_rebuild_started', (data) => {
         if (!data) return;
         _wheelLog = [];
-        _wheelProgress = { index: 0, total: data.total || 0, current: null };
+        _renderWheelEvent({ ...data, kind: 'wheel_rebuild_started' });
         _showWheelToast(data.total);
         _renderWheelProgress();
     });
 
+    // Raw build output, throttled by the server. It is the only sign of life
+    // during a package that takes an hour.
+    configSocket.on('wheel_rebuild_output', (data) => {
+        if (!data) return;
+        _renderWheelEvent({ ...data, kind: 'wheel_rebuild_output' });
+    });
+
     configSocket.on('wheel_rebuild_progress', (data) => {
         if (!data) return;
-        const t = window.translations || {};
-        // 'building' announces the start of a package; the completion event for
-        // the same package carries ok/skipped. Only the latter advances the bar.
-        if (data.building) {
-            _wheelProgress = { index: data.index - 1, total: data.total, current: data.name };
-            _appendWheelLog((t.wheel_rebuild_progress || 'Rebuilding {name} ({index}/{total})...')
-                .replace('{name}', data.name)
-                .replace('{index}', data.index)
-                .replace('{total}', data.total));
-        } else {
-            _wheelProgress = { index: data.index, total: data.total, current: null };
-            _appendWheelLog(data.name + ': '
-                + (data.skipped ? (t.wheel_rebuild_skipped || 'already built for this device')
-                   : data.ok ? (t.wheel_rebuild_ok || 'rebuilt')
-                   : (t.wheel_rebuild_fail || 'could not be built')));
-        }
+        _renderWheelEvent({ ...data, kind: 'wheel_rebuild_progress' });
         _setWheelProgressLine(data.name, data.index, data.total);
         _renderWheelProgress();
     });

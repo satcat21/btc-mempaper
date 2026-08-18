@@ -52,7 +52,7 @@ class UpdateSchedulerMixin:
         threading.Thread(target=_rebuild, daemon=True).start()
 
     def _start_wheel_rebuild_if_needed(self):
-        """Rebuild wheels the updater recorded as built for another platform.
+        """Rebuild the modules the updater recorded as unrunnable on this CPU.
 
         Runs in the background: a source build takes tens of minutes per package
         on this hardware and the dashboard has to stay up meanwhile. A package
@@ -60,8 +60,9 @@ class UpdateSchedulerMixin:
         a transient failure is retried on the next start while one that cannot
         build here stops after MAX_ATTEMPTS instead of rebuilding every boot.
         """
-        from utils.wheel_platform import (REBUILD_FLAG, foreign_wheels, format_flag,
-                                          parse_flag, platform_tag, rebuild)
+        from utils.wheel_platform import (REBUILD_FLAG, format_flag,
+                                          incompatible_dists, parse_flag,
+                                          platform_tag, queue_order, rebuild)
 
         project_dir = PROJECT_ROOT
         flag_path = os.path.join(project_dir, REBUILD_FLAG)
@@ -90,6 +91,7 @@ class UpdateSchedulerMixin:
         self._wheel_rebuild_state = {
             'running': True, 'target': None, 'total': 0, 'index': 0,
             'current': None, 'rebuilt': [], 'failed': [], 'log': [],
+            'events': [],
         }
 
         def _log(line):
@@ -107,6 +109,14 @@ class UpdateSchedulerMixin:
             The update itself finished minutes ago and reported success, so
             without this the device looks idle while it is compiling for hours.
             """
+            # Recorded as well as sent. A page that loads mid-rebuild replays
+            # these to build the log the live listeners already have, so every
+            # line is worded by the browser in the reader's language instead of
+            # arriving as English text from here.
+            state = self._wheel_rebuild_state
+            state['events'].append(dict(data, kind=event))
+            if len(state['events']) > 200:
+                del state['events'][:-200]
             try:
                 if getattr(self, 'socketio', None):
                     self.socketio.emit(event, data, room='authenticated')
@@ -126,8 +136,9 @@ class UpdateSchedulerMixin:
 
         def _rebuild_all():
             target = platform_tag()
-            total = len(wanted)
-            queue = list(wanted)
+            ordered = queue_order(wanted)
+            total = len(ordered)
+            queue = list(ordered)
             rebuilt, failed = [], []
 
             self._wheel_rebuild_state.update({'target': target, 'total': total})
@@ -136,13 +147,13 @@ class UpdateSchedulerMixin:
                  f"on the next start, but the package building at the time has "
                  f"to be redone.")
             _emit('wheel_rebuild_started', {'total': total, 'target': target,
-                                            'packages': [n for n, _, _ in wanted]})
+                                            'packages': [n for n, _, _ in ordered]})
 
-            for index, (name, version, attempts) in enumerate(wanted, start=1):
+            for index, (name, version, attempts) in enumerate(ordered, start=1):
                 # Rebuilding one package rebuilds its dependencies too, so a
                 # package queued earlier may already be correct by the time its
                 # turn comes. Skipping it saves tens of minutes per hit.
-                if not any(n == name for n, _, _ in foreign_wheels()):
+                if not any(n == name for n, _, _ in incompatible_dists()):
                     _log(f"{name}=={version} already built for {target} - skipping")
                     queue = [e for e in queue if e[0] != name]
                     _write_queue(queue)
@@ -153,22 +164,67 @@ class UpdateSchedulerMixin:
                     continue
 
                 self._wheel_rebuild_state.update({'index': index, 'current': name})
-                _log(f"Rebuilding {name}=={version} from source for {target} "
-                     f"(this can take tens of minutes)...")
+                _log(f"Reinstalling {name}=={version} for {target}...")
                 _emit('wheel_rebuild_progress', {
                     'name': name, 'index': index, 'total': total, 'building': True})
 
-                ok, output = rebuild(venv_pip, name, version)
+                # The attempt is recorded before it is made. A build heavy enough
+                # to take the whole process down never reaches the failure path,
+                # so counting afterwards leaves the package at its old count and
+                # first in the queue - retried from the top on every restart, for
+                # ever, with everything behind it never reached.
+                queue = [(n, v, a + 1) if n == name else (n, v, a)
+                         for n, v, a in queue]
+                _write_queue(queue)
+
+                # pip and the compilers under it emit thousands of lines per
+                # build. One every few seconds is enough to show the build is
+                # moving, and keeps a log bounded at 200 lines useful.
+                last_line_at = [0.0]
+
+                def _build_line(line, _name=name, _index=index):
+                    now = time.monotonic()
+                    if now - last_line_at[0] < 5:
+                        return
+                    last_line_at[0] = now
+                    _log(line)
+                    _emit('wheel_rebuild_output', {
+                        'name': _name, 'index': _index, 'total': total,
+                        'line': line})
+
+                # A published wheel for this platform is tried first. Fetching
+                # one takes seconds where building the same package takes an
+                # hour, and the index the device already uses carries armv6l
+                # builds for most of them. Source is the fallback, not the first
+                # move. pip reports success for a wheel that is still built for
+                # somewhere else, so the result is checked rather than trusted.
+                ok, output = rebuild(venv_pip, name, version, source=False,
+                                     timeout=900, on_line=_build_line)
+                if ok and any(n == name for n, _, _ in incompatible_dists()):
+                    ok = False
+                    _log(f"The published wheel for {name} still holds code "
+                         f"this CPU cannot run")
+                from_wheel = ok
+                if not ok:
+                    _log(f"Building {name}=={version} from source for {target} "
+                         f"(this can take tens of minutes)...")
+                    ok, output = rebuild(venv_pip, name, version, source=True,
+                                         on_line=_build_line)
                 if ok:
-                    _log(f"Rebuilt {name}=={version} for {target}")
+                    _log(f"{name}=={version} now built for {target} "
+                         f"({'published wheel' if from_wheel else 'built here'})")
                     rebuilt.append(name)
                     queue = [e for e in queue if e[0] != name]
                 else:
                     _log(f"Could not rebuild {name}=={version}: "
-                         f"{output.strip()[-300:]}")
+                         f"{output.strip()[-300:] or 'no output captured'}")
                     failed.append(name)
-                    queue = [(n, v, a + 1) if n == name else (n, v, a)
-                             for n, v, a in queue]
+                    # To the back of the queue: a restart should spend its time
+                    # on the packages that can build here rather than another
+                    # half hour on the one that just failed.
+                    entry = next((e for e in queue if e[0] == name), None)
+                    if entry:
+                        queue = [e for e in queue if e[0] != name] + [entry]
 
                 # After every package, not at the end: a restart mid-run would
                 # otherwise discard the hours already spent and start over.

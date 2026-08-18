@@ -719,29 +719,32 @@ if [ "$ARCH" = "armv6l" ]; then
     fi
 fi
 
-# ── Wheels built for another platform ─────────────────────────────────────────
+# ── Extension modules this CPU cannot run ─────────────────────────────────────
 # The checks above cover the two packages known to fail on ARMv6. This covers the
-# rest: pip resolves a wheel tagged for a neighbouring ARM platform whenever one
-# is published and the exact match is not, which leaves a build this device would
-# not have produced. Recorded rather than rebuilt here — a source build costs tens
-# of minutes per package, and the service rebuilds them in the background on first
-# boot instead of holding the installer open.
+# rest, by reading the ARM architecture each installed module was compiled for
+# rather than the tag its wheel claims — the two disagree routinely, because
+# piwheels builds ARMv6-compatible wheels on ARMv7 hardware. Recorded rather than
+# rebuilt here: a source build costs tens of minutes per package, and the service
+# works through them in the background on first boot instead of holding the
+# installer open.
 if [ -x "$VENV_DIR/bin/python" ]; then
-    sudo -u "$SERVICE_USER" "$VENV_DIR/bin/python" - <<'PYEOF' || warn "Could not check wheel platforms (non-fatal)"
+    sudo -u "$SERVICE_USER" "$VENV_DIR/bin/python" - <<'PYEOF' || warn "Could not check module architectures (non-fatal)"
 import sys
 sys.path.insert(0, ".")
-from utils.wheel_platform import foreign_wheels, format_flag, platform_tag, REBUILD_FLAG
+from utils.wheel_platform import cpu_profile, format_flag, incompatible_dists, REBUILD_FLAG
 
-foreign = foreign_wheels()
-if not foreign:
-    print(f"   every wheel matches {platform_tag()}")
+_, level = cpu_profile()
+bad = incompatible_dists()
+if not bad:
+    print(f"   every compiled module runs on ARMv{level}" if level
+          else "   not an ARM device, nothing to check")
 else:
     with open(REBUILD_FLAG, "w") as fh:
-        fh.write(format_flag([(n, v, 0) for n, v, _ in foreign]))
-    names = ", ".join(f"{n} ({p[0]})" for n, _, p in foreign)
-    print(f"   built for another platform, queued for rebuild: {names}")
+        fh.write(format_flag([(n, v, 0) for n, v, _ in bad]))
+    names = ", ".join(n for n, _, _ in bad)
+    print(f"   built for a CPU this one is not, queued for rebuild: {names}")
 PYEOF
-    ok "Wheel platforms checked against $(uname -m)"
+    ok "Compiled modules checked against $(uname -m)"
 fi
 
 # ── Optional: Minify JavaScript ───────────────────────────────────────────
