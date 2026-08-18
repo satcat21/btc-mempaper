@@ -459,10 +459,16 @@ def validate_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
         _prev_cfg = {}
 
     _tor = bool(validated.get("mempool_use_tor", False))
-    _slot = "tor" if _tor else "clearnet"
 
-    # No https flag for Tor: the onion address is the service's public key,
-    # so the circuit already authenticates it. Tor traffic is always http.
+    # The slot follows the host, not the transport. Scheme and port are
+    # properties of what is being reached; Tor is only how the packets get
+    # there, and it carries either kind. A hidden service is its own public
+    # key, so the circuit authenticates it and http on 80 is right. Everything
+    # else keeps https, including over Tor: the exit node terminates the
+    # connection, so TLS is what stops it reading the traffic.
+    _onion = is_onion_host(_host)
+    _slot = "tor" if _onion else "clearnet"
+
     _slot_defaults = {
         "mempool_use_https_clearnet": True, "mempool_rest_port_clearnet": 443,
         "mempool_ws_port_clearnet": 443,
@@ -484,20 +490,20 @@ def validate_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
         # leaving the other at its default.
         validated[f"mempool_rest_port_{_slot}"] = validated.get("mempool_rest_port", 443)
         validated[f"mempool_ws_port_{_slot}"] = validated.get("mempool_ws_port", 443)
-        if not _tor:
+        if not _onion:
             validated["mempool_use_https_clearnet"] = bool(validated.get("mempool_use_https", True))
 
-    # An edit belongs to whichever slot is live — except on the save that
-    # flips Tor, where the form still carries the *previous* slot's numbers.
+    # An edit belongs to whichever slot is live — except on the save that moves
+    # between them, where the form still carries the previous slot's numbers.
     # Taking them would write clearnet ports into the Tor slot.
-    _tor_flipped = _tor != bool(_prev_cfg.get("mempool_use_tor", False))
-    if not _tor_flipped:
+    _slot_changed = _onion != is_onion_host(_prev_cfg.get("mempool_host", ""))
+    if not _slot_changed:
         if "mempool_rest_port" in config:
             validated[f"mempool_rest_port_{_slot}"] = validated.get("mempool_rest_port")
         if "mempool_ws_port" in config:
             validated[f"mempool_ws_port_{_slot}"] = validated.get("mempool_ws_port")
-        # Only clearnet has a scheme to choose.
-        if not _tor and "mempool_use_https" in config:
+        # Only clearnet has a scheme to choose; a hidden service is always http.
+        if not _onion and "mempool_use_https" in config:
             validated["mempool_use_https_clearnet"] = bool(validated.get("mempool_use_https"))
 
     # A known onion service dictates its own port, so the Tor slot is not
@@ -509,14 +515,17 @@ def validate_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
         validated["mempool_ws_port_tor"] = _preset["port"]
 
     # Project the live slot onto the fields the rest of the app reads.
-    validated["mempool_use_https"] = False if _tor else bool(validated["mempool_use_https_clearnet"])
+    validated["mempool_use_https"] = False if _onion else bool(validated["mempool_use_https_clearnet"])
     validated["mempool_rest_port"] = validated[f"mempool_rest_port_{_slot}"]
     validated["mempool_ws_port"] = validated[f"mempool_ws_port_{_slot}"]
 
-    if _tor_flipped:
-        print(f"🧅 Tor {'enabled' if _tor else 'disabled'} — using the "
-              f"{_slot} transport: "
-              f"{'https' if validated['mempool_use_https'] else 'http'} on "
-              f"port {validated['mempool_rest_port']}.")
+    # Transport and scheme are reported separately because they are now chosen
+    # separately: a clearnet host over Tor is https on 443 through the SOCKS
+    # proxy, which reads as a contradiction unless both halves are named.
+    if (_tor != bool(_prev_cfg.get("mempool_use_tor", False))) or _slot_changed:
+        _scheme = 'https' if validated['mempool_use_https'] else 'http'
+        print(f"🧅 mempool transport: {'Tor' if _tor else 'direct'}, "
+              f"{_scheme} on port {validated['mempool_rest_port']}"
+              f"{' (hidden service)' if _onion else ''}.")
 
     return validated

@@ -829,3 +829,34 @@ function closeMemeModal() {
             console.error('Socket.IO client (window.io) not found. Make sure socket.io.min.js is loaded.');
         }
     }
+
+// A v3 hidden service address is 56 base32 characters. Anything else ending in
+// .onion is a typo: it cannot resolve, and the transport rules key off the
+// suffix, so it would select the Tor transport and then fail every request.
+function isValidOnionHost(host) {
+    return /^[a-z2-7]{56}\.onion$/i.test(String(host || '').trim());
+}
+
+// Tor is a transport, not a scheme. It carries a hidden service and a clearnet
+// host equally well, and both are private: the onion circuit authenticates the
+// service itself, and TLS stops a clearnet exit node reading what passes over
+// it. The one combination that is not private is a clearnet host over Tor
+// without TLS, where the exit node terminates a plaintext connection and sees
+// every request and response.
+//
+// Returns an error string to block the save on, or null when the pair is sound.
+function mempoolTransportError(cfg) {
+    const t = window.translations || {};
+    const host = String(cfg.mempool_host || '').trim();
+    const looksOnion = /\.onion$/i.test(host);
+
+    if (looksOnion && !isValidOnionHost(host)) {
+        return t.mempool_onion_invalid
+            || 'That is not a valid .onion address. A v3 hidden service is 56 characters followed by .onion.';
+    }
+    if (host && !looksOnion && cfg.mempool_use_tor && cfg.mempool_use_https === false) {
+        return t.mempool_tor_needs_https
+            || 'Reaching a clearnet host over Tor without HTTPS lets the exit node read every request. Enable HTTPS, or use an .onion address.';
+    }
+    return null;
+}

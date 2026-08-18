@@ -203,20 +203,21 @@ echo ""
 echo -e "  ${CYAN}Mempool source${NC}"
 echo "  Where mempaper reads blocks, fees, hashrate and prices from."
 echo ""
-echo -e "    ${CYAN}1${NC}. mempool.space over Tor   ${GREEN}[recommended]${NC} — mempool.space sees your IP"
-echo -e "    ${CYAN}2${NC}. mempool.space directly   — slightly faster, your IP is visible to it"
-echo -e "    ${CYAN}3${NC}. My own node on the LAN   — nothing leaves your network"
+echo -e "    ${CYAN}1${NC}. Official onion over Tor  ${GREEN}[recommended]${NC} — mempool.space never sees your IP"
+echo -e "    ${CYAN}2${NC}. mempool.space over Tor   — same privacy over HTTPS, if the onion is unreachable"
+echo -e "    ${CYAN}3${NC}. mempool.space directly   — slightly faster, your IP is visible to it"
+echo -e "    ${CYAN}4${NC}. My own node on the LAN   — nothing leaves your network"
 echo ""
 MEMPOOL_SOURCE=""
 MEMPOOL_LAN_HOST=""
 MEMPOOL_LAN_REST=""
 MEMPOOL_LAN_WS=""
 while true; do
-    read -rp "  Select mempool source [1-3, default 1]: " MEMPOOL_SOURCE
+    read -rp "  Select mempool source [1-4, default 1]: " MEMPOOL_SOURCE
     MEMPOOL_SOURCE="${MEMPOOL_SOURCE:-1}"
     case "$MEMPOOL_SOURCE" in
-        1|2) break ;;
-        3)
+        1|2|3) break ;;
+        4)
             _paste_had_https=""
             while true; do
                 read -rp "    Node host, IP or domain:      " MEMPOOL_LAN_HOST
@@ -821,6 +822,21 @@ if source == "1":
     summary = f"{preset['label']} via Tor on port {preset['port']}"
 
 elif source == "2":
+    # The clearnet host reached through the SOCKS proxy. Tor hides the device
+    # from mempool.space and TLS stops the exit node reading what passes over
+    # it, so this keeps the privacy of option 1 without depending on the hidden
+    # service being reachable.
+    cfg.update({
+        "mempool_use_tor":    True,
+        "mempool_host":       "mempool.space",
+        "mempool_use_https":  True,
+        "mempool_rest_port":  443,
+        "mempool_ws_port":    443,
+        "mempool_is_private": False,
+    })
+    summary = "mempool.space over Tor on port 443 (HTTPS)"
+
+elif source == "3":
     cfg.update({
         "mempool_use_tor":    False,
         "mempool_host":       "mempool.space",

@@ -815,6 +815,14 @@ function setupNavigationButtons() {
                         formConfig.language = pendingLanguageChange;
                     }
 
+                    // Transport gate: Tor routing and .onion hosts travel together.
+                    const _transportErr = typeof mempoolTransportError === 'function'
+                        ? mempoolTransportError(formConfig) : null;
+                    if (_transportErr) {
+                        showNotification(_transportErr, 'error');
+                        return false;
+                    }
+
                     // Privacy gate: warn when mempool host changed and private checkbox is unchecked
                     const savedHost = (currentConfig.mempool_host || '').trim().toLowerCase();
                     const newHost = (formConfig.mempool_host || '').trim().toLowerCase();
