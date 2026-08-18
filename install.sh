@@ -593,6 +593,18 @@ fi
 sudo apt-get install -y python3-venv
 ok "python3-venv available"
 
+# ── Swap for building packages ────────────────────────────────────────────────
+# Before the first pip build, because that is what needs it. The same script runs
+# from postinstall.sh, so a device installed before this existed picks it up on
+# its next update instead of only on a reinstall.
+swap_rc=0
+sudo bash tools/setup_swap.sh || swap_rc=$?
+case "$swap_rc" in
+    10) ok "Swap file created for source builds" ;;
+    0)  ok "Swap checked" ;;
+    *)  warn "Swap file could not be set up — source builds may run out of memory" ;;
+esac
+
 # ── Step 2: Python virtual environment ─────────────────────────────────────
 step "Step 2/9 — Setting up Python virtual environment"
 

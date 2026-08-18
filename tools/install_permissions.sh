@@ -656,6 +656,15 @@ ${SERVICE_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} start mempaper-dnsmasq.ser
 ${SERVICE_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} stop mempaper-dnsmasq.service
 ${SERVICE_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} restart mempaper-dnsmasq.service
 
+# Package build worker. Fixed unit name and no arguments, so there is nothing to
+# redirect; what it builds comes from a queue file the service user already owns.
+# The reach is unchanged - the service user can run pip against its own
+# virtualenv without any of this. What the unit adds is a control group of its
+# own, so a build survives the restart that ends an update.
+${SERVICE_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} start mempaper-build.service
+${SERVICE_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} stop mempaper-build.service
+${SERVICE_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} is-active mempaper-build.service
+
 # Remount root filesystem rw/ro around apt operations (read-only Pi OS root partition)
 ${SERVICE_USER} ALL=(root) NOPASSWD: ${MOUNT_BIN} -o remount\,rw /
 ${SERVICE_USER} ALL=(root) NOPASSWD: ${MOUNT_BIN} -o remount\,ro /
@@ -876,6 +885,10 @@ echo "✅  System hostapd masked (mempaper-hostapd.service owns the setup hotspo
 # private to that service, invisible to these independent units).
 sed "s|__PROJECT_DIR__|${PROJECT_DIR}|g" "${SCRIPT_DIR}/mempaper-hostapd.service" > /etc/systemd/system/mempaper-hostapd.service
 sed "s|__PROJECT_DIR__|${PROJECT_DIR}|g" "${SCRIPT_DIR}/mempaper-dnsmasq.service" > /etc/systemd/system/mempaper-dnsmasq.service
+# Package work that runs for hours lives in a unit of its own, so restarting
+# mempaper.service cannot kill it. Not enabled: mempaper writes a queue and
+# starts it on demand.
+sed -e "s|__PROJECT_DIR__|${PROJECT_DIR}|g" -e "s|__SERVICE_USER__|${SERVICE_USER}|g"     "${SCRIPT_DIR}/mempaper-build.service" > /etc/systemd/system/mempaper-build.service
 systemctl daemon-reload
 echo "✅  mempaper-hostapd.service and mempaper-dnsmasq.service installed"
 

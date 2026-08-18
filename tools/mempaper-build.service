@@ -1,0 +1,39 @@
+# /etc/systemd/system/mempaper-build.service
+# Package work that takes hours: source builds, and pip installs that turn into
+# source builds. Installed by install_permissions.sh.
+#
+# Not enabled or autostarted — mempaper writes a job queue and starts this unit
+# on demand via 'sudo systemctl start mempaper-build.service'.
+#
+# The point of it being a unit of its own is the control group. pip used to run
+# as a thread inside mempaper.service, so KillMode=control-group took it down
+# with the app — and the update flow ends by restarting the app, which meant
+# every update destroyed whatever was building. A separate unit is a separate
+# cgroup: restarting mempaper.service no longer reaches it, and the build
+# carries on across as many restarts as it takes.
+
+[Unit]
+Description=mempaper package build worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Type=simple, not oneshot: the unit is 'active' for as long as the worker runs,
+# which is what the web UI asks systemd about, and no start timeout applies to a
+# build measured in hours.
+Type=simple
+Restart=no
+User=__SERVICE_USER__
+Group=__SERVICE_USER__
+WorkingDirectory=__PROJECT_DIR__
+ExecStart=__PROJECT_DIR__/.venv/bin/python __PROJECT_DIR__/tools/build_worker.py
+
+# Stop means stop. The worker terminates its own pip child on SIGTERM and
+# records where it got to, so the Stop button in the web UI is prompt and the
+# queue survives to be resumed.
+TimeoutStopSec=30
+KillMode=control-group
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mempaper-build

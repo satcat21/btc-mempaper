@@ -39,6 +39,16 @@ from importlib.metadata import distributions
 REBUILD_FLAG = '.wheel-rebuild-needed'
 MAX_ATTEMPTS = 3
 
+# How long a source build may take before it is abandoned. numpy's meson build
+# on a Pi Zero runs for hours, and a cap set to what a fast package needs throws
+# away the whole build rather than the last part of it. Long enough that hitting
+# it means something is wrong, not merely slow.
+SOURCE_BUILD_TIMEOUT = 6 * 3600
+
+# A wheel is fetched, not built. Anything slower than this is a network problem,
+# and waiting hours for it only delays finding that out.
+WHEEL_FETCH_TIMEOUT = 900
+
 # Packages the worker doing the rebuilding is itself running on. pip replaces a
 # package by uninstalling it first, so rebuilding one of these pulls the runtime
 # out from under the process, which systemd then restarts. Queued last, that

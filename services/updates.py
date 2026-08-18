@@ -26,13 +26,15 @@ class UpdateSchedulerMixin:
         if not os.path.exists(venv_pip):
             return
 
+        from utils.wheel_platform import SOURCE_BUILD_TIMEOUT
+
         def _rebuild():
             try:
                 print("📦 Rebuilding Pillow from source for native WebP support (this may take ~15 min on Pi Zero)...")
                 subprocess.check_call(
                     [venv_pip, 'install', '--force-reinstall', '--no-cache-dir', '--no-binary', ':all:', 'Pillow'],
                     stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
-                    timeout=3600
+                    timeout=SOURCE_BUILD_TIMEOUT
                 )
                 os.remove(flag_path)
                 print("✅ Pillow rebuilt from source. Restarting service to activate...")
@@ -51,6 +53,54 @@ class UpdateSchedulerMixin:
 
         threading.Thread(target=_rebuild, daemon=True).start()
 
+    def _queue_build_unit(self, wanted, flag_path):
+        """Hand the queue to mempaper-build.service. True if it took it.
+
+        The queue file is the whole instruction: the sudoers grant covers
+        starting one fixed unit and nothing else, so what gets built is decided
+        by a file the service user already owns rather than by an argument.
+        """
+        import json
+
+        unit_file = '/etc/systemd/system/mempaper-build.service'
+        if not os.path.exists(unit_file):
+            return False
+
+        queue_path = os.path.join(PROJECT_ROOT, 'cache', 'build-queue.json')
+        try:
+            os.makedirs(os.path.dirname(queue_path), exist_ok=True)
+            with open(queue_path, 'w') as fh:
+                json.dump({'jobs': [{'kind': 'rebuild', 'spec': f'{n}=={v}',
+                                     'attempts': a} for n, v, a in wanted],
+                           'restart_when_done': True}, fh)
+        except OSError as exc:
+            print(f"Could not write the build queue: {exc}")
+            return False
+
+        try:
+            result = subprocess.run(
+                ['sudo', '-n', 'systemctl', 'start', 'mempaper-build.service'],
+                capture_output=True, text=True, timeout=30)
+        except Exception as exc:
+            print(f"Could not start the build unit: {exc}")
+            return False
+
+        if result.returncode != 0:
+            # No grant yet, most likely. Leave the flag alone so the in-process
+            # path still runs, and say why rather than failing silently.
+            print(f"Build unit refused to start: "
+                  f"{(result.stderr or '').strip() or result.returncode}")
+            return False
+
+        # The worker owns the queue now; two readers of the same work would
+        # rebuild the same package twice against one virtualenv.
+        try:
+            os.remove(flag_path)
+        except OSError:
+            pass
+        print(f"{len(wanted)} package(s) handed to mempaper-build.service")
+        return True
+
     def _start_wheel_rebuild_if_needed(self):
         """Rebuild the modules the updater recorded as unrunnable on this CPU.
 
@@ -60,7 +110,8 @@ class UpdateSchedulerMixin:
         a transient failure is retried on the next start while one that cannot
         build here stops after MAX_ATTEMPTS instead of rebuilding every boot.
         """
-        from utils.wheel_platform import (REBUILD_FLAG, format_flag,
+        from utils.wheel_platform import (REBUILD_FLAG, SOURCE_BUILD_TIMEOUT,
+                                          WHEEL_FETCH_TIMEOUT, format_flag,
                                           incompatible_dists, parse_flag,
                                           platform_tag, queue_order, rebuild)
 
@@ -83,6 +134,15 @@ class UpdateSchedulerMixin:
                 os.remove(flag_path)
             except OSError:
                 pass
+            return
+
+        # Hand it to the build unit if this device has one. That unit is a
+        # control group of its own, so the restart that ends an update cannot
+        # kill a build running inside it - which is what took down every attempt
+        # before it existed. A device whose permissions predate the unit falls
+        # through to the in-process path below: the same work, with none of the
+        # survival.
+        if self._queue_build_unit(wanted, flag_path):
             return
 
         # Mirrored into app state as well as emitted, because a rebuild outlives
@@ -199,7 +259,8 @@ class UpdateSchedulerMixin:
                 # move. pip reports success for a wheel that is still built for
                 # somewhere else, so the result is checked rather than trusted.
                 ok, output = rebuild(venv_pip, name, version, source=False,
-                                     timeout=900, on_line=_build_line)
+                                     timeout=WHEEL_FETCH_TIMEOUT,
+                                     on_line=_build_line)
                 if ok and any(n == name for n, _, _ in incompatible_dists()):
                     ok = False
                     _log(f"The published wheel for {name} still holds code "
@@ -207,8 +268,9 @@ class UpdateSchedulerMixin:
                 from_wheel = ok
                 if not ok:
                     _log(f"Building {name}=={version} from source for {target} "
-                         f"(this can take tens of minutes)...")
+                         f"(this can take hours)...")
                     ok, output = rebuild(venv_pip, name, version, source=True,
+                                         timeout=SOURCE_BUILD_TIMEOUT,
                                          on_line=_build_line)
                 if ok:
                     _log(f"{name}=={version} now built for {target} "

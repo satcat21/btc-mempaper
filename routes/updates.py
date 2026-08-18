@@ -6,6 +6,7 @@ from flask import jsonify
 from flask import request
 from managers.auth_manager import require_auth
 from utils.apt_requirements import package_names, parse_apt_requirements, pinned_versions
+import json
 import os
 import re
 import requests
@@ -452,6 +453,8 @@ def register(self):
     # downloader keeps its own status/stop files so a run survives a service
     # restart, and the status route reads what it wrote.
 
+    from utils.wheel_platform import REBUILD_FLAG
+
     @self.app.route('/api/wheels/rebuild-status', methods=['GET'])
     @require_auth(self.auth_manager)
     def wheel_rebuild_status():
@@ -462,10 +465,47 @@ def register(self):
         or reloaded meanwhile has no events to replay. This is what it reads
         instead.
         """
+        # The build unit is a separate process, so its progress arrives as a
+        # file rather than as events. It is read first: when both exist the unit
+        # is the one doing the work, and the in-process state is left over from
+        # a device that had no unit at the time.
+        status_path = os.path.join(PROJECT_ROOT, 'cache', 'build-status.json')
+        try:
+            with open(status_path) as fh:
+                status = json.load(fh)
+            status['source'] = 'unit'
+            return jsonify({'success': True, **status})
+        except (OSError, ValueError):
+            pass
+
         state = getattr(self, '_wheel_rebuild_state', None)
         if not state:
             return jsonify({'success': True, 'running': False, 'log': []})
-        return jsonify({'success': True, **state})
+        return jsonify({'success': True, 'source': 'app', **state})
+
+    @self.app.route('/api/wheels/stop', methods=['POST'])
+    @require_auth(self.auth_manager)
+    def wheel_rebuild_stop():
+        """Stop a running build and keep what it has already finished.
+
+        Without this the only way out of a rebuild measured in hours is to know
+        the queue file's name and have an SSH session, which is not a state to
+        leave anyone in.
+        """
+        try:
+            subprocess.run(['sudo', '-n', 'systemctl', 'stop',
+                            'mempaper-build.service'],
+                           capture_output=True, timeout=30)
+        except Exception:
+            pass
+        # The queue is what would restart it on the next boot, so stopping the
+        # unit without clearing it only defers the same run.
+        for name in ('cache/build-queue.json', REBUILD_FLAG):
+            try:
+                os.remove(os.path.join(PROJECT_ROOT, name))
+            except OSError:
+                pass
+        return jsonify({'success': True})
 
     @self.app.route('/api/memes/sync-status', methods=['GET'])
     @require_auth(self.auth_manager)

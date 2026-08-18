@@ -63,6 +63,24 @@ else
     warn "If it ever held wallet data in clear text, only re-flashing erases it"
 fi
 
+# ── Swap for building packages ────────────────────────────────────────────
+# A device installed before this existed has no disk-backed swap, and its owner
+# may never run install.sh again. Source builds there are killed for memory
+# rather than failing with anything that names the cause.
+SWAP_SCRIPT="$(dirname "${BASH_SOURCE[0]}")/setup_swap.sh"
+step "Swap for source builds"
+if [ ! -f "$SWAP_SCRIPT" ]; then
+    warn "setup_swap.sh not found — skipping"
+else
+    swap_rc=0
+    bash "$SWAP_SCRIPT" || swap_rc=$?
+    case "$swap_rc" in
+        10) changed; ok "Swap file created for source builds" ;;
+        0)  ok "Swap already as it should be" ;;
+        *)  warn "Swap file could not be set up — source builds may run out of memory" ;;
+    esac
+fi
+
 echo
 ok "Post-install system configuration complete"
 
