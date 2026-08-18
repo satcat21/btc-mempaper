@@ -36,6 +36,8 @@ from importlib.metadata import distributions
 # Written by the updater, read at startup. One "name==version" per line, with an
 # optional ";attempts" suffix so a package that cannot build is not retried for
 # ever on every boot.
+PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 REBUILD_FLAG = '.wheel-rebuild-needed'
 MAX_ATTEMPTS = 3
 
@@ -291,6 +293,32 @@ def format_flag(entries):
     return ''.join(f'{n}=={v};{a}\n' for n, v, a in entries)
 
 
+def build_tmpdir():
+    """A scratch directory for source builds, on disk rather than in RAM.
+
+    /tmp is tmpfs on Raspberry Pi OS, sized at half of RAM - about 210 MB on a
+    512 MB device. Compiling numpy or Cython writes far more object code than
+    that, and the assembler then fails with ENOSPC partway through, which reads
+    as a compiler error rather than as a filesystem that ran out. The card has
+    tens of gigabytes; the build only has to be pointed at it.
+    """
+    path = os.path.join(PROJECT_DIR, 'cache', 'build-tmp')
+    try:
+        os.makedirs(path, exist_ok=True)
+        return path
+    except OSError:
+        return None
+
+
+def build_env():
+    """Environment for a pip build: unbuffered output, scratch space on disk."""
+    env = dict(os.environ, PYTHONUNBUFFERED='1')
+    scratch = build_tmpdir()
+    if scratch:
+        env['TMPDIR'] = scratch
+    return env
+
+
 def rebuild_argv(pip_path, name, version, source=True):
     """pip command that reinstalls a distribution for this device's platform.
 
@@ -317,7 +345,7 @@ def rebuild(pip_path, name, version, timeout=5400, on_line=None, source=True):
     check the clock would let a stuck build run for ever.
     """
     tail = collections.deque(maxlen=60)
-    env = dict(os.environ, PYTHONUNBUFFERED='1')
+    env = build_env()
     try:
         proc = subprocess.Popen(rebuild_argv(pip_path, name, version, source),
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,

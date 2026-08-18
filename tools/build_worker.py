@@ -32,7 +32,7 @@ sys.path.insert(0, PROJECT_DIR)
 
 from utils.wheel_platform import (  # noqa: E402
     MAX_ATTEMPTS, SOURCE_BUILD_TIMEOUT, WHEEL_FETCH_TIMEOUT,
-    incompatible_dists, rebuild,
+    build_env, incompatible_dists, rebuild,
 )
 
 CACHE_DIR = os.path.join(PROJECT_DIR, 'cache')
@@ -195,7 +195,7 @@ def _do_rebuild(run, job):
 def _run_pip(run, label, argv, timeout):
     """Run a pip command, streaming its output into the log."""
     emit = _stream(run, label)
-    env = dict(os.environ, PYTHONUNBUFFERED='1')
+    env = build_env()
     try:
         proc = subprocess.Popen(argv, cwd=PROJECT_DIR, env=env,
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,

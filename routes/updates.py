@@ -977,9 +977,14 @@ def register(self):
                 elif os.path.exists(venv_pip) and os.path.exists(requirements_file):
                     _emit('update_output', {'line': self.translations.get('installing_python_deps', 'Installing Python dependencies...'), 'phase': 'pip', 'header': True})
                     try:
+                        # Scratch space on disk: a version bump with no wheel
+                        # for this platform becomes a source build, and /tmp is
+                        # a tmpfs sized from RAM.
+                        from utils.wheel_platform import build_env
                         proc = subprocess.Popen(
                             [venv_pip, 'install', '-r', requirements_file],
-                            cwd=project_dir, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            cwd=project_dir, env=build_env(),
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             text=True, bufsize=1
                         )
                         for line in proc.stdout:

@@ -38,6 +38,16 @@ build-essential=12.12
 python3-pip=25.1.1+dfsg-1+rpt1
 python3-dev=3.13.5-1
 
+# Autotools. Not used by mempaper itself: they are what a source build of numpy
+# needs on ARM. numpy builds through meson-python, which requires patchelf at
+# build time, and no armv6l wheel of patchelf is published - so pip builds that
+# from source too, and its bootstrap.sh calls autoreconf. Without these the
+# build dies at "autoreconf: not found" after downloading and compiling ninja,
+# which is a long way to travel for a missing package.
+autoconf=2.72-3.1
+automake=1:1.17-4
+libtool=2.5.4-4
+
 # Python imaging libraries (system-level)
 python3-pil=11.1.0-5+deb13u4
 python3-numpy=1:2.2.4+ds-1
