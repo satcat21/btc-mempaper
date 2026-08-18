@@ -839,8 +839,13 @@ def register(self):
                 else:
                     _emit('update_output', {'line': self.translations.get('installing_system_deps', 'Installing system dependencies...'), 'phase': 'apt', 'header': True})
                     try:
-                        # Ensure root filesystem is writable (may be read-only after unclean shutdown)
-                        subprocess.run(['sudo', 'mount', '-o', 'remount,rw', '/'], timeout=10, capture_output=True)
+                        # Ensure the filesystems a post-install hook writes to
+                        # are writable; they may be read-only after an unclean
+                        # shutdown. A hook that cannot write fails the dpkg
+                        # configure step and blocks every later apt run.
+                        for _mp in ('/', '/boot/firmware', '/run'):
+                            subprocess.run(['sudo', 'mount', '-o', 'remount,rw', _mp],
+                                           timeout=10, capture_output=True)
                         wrapper = '/usr/local/bin/mempaper-apt-install'
                         if not os.path.exists(wrapper):
                             # Name the account, and give the absolute path. The
@@ -1157,11 +1162,17 @@ def register(self):
                 pass
             return False
 
-        # /boot/firmware is a separate mount point from / on Raspberry Pi
-        # OS and is not covered by remounting / read-write. If it stays
-        # read-only, initramfs-tools' post-install hook fails to write the
-        # new initramfs there, which makes dpkg (and apt upgrade) fail.
-        _remount_targets = ['/', '/boot/firmware']
+        # Every filesystem a package's post-install hooks write to. Each is a
+        # separate mount point that remounting / does not cover. A kernel
+        # upgrade runs run-parts over /etc/kernel/postinst.d/, and a hook that
+        # cannot write exits non-zero, which fails the dpkg configure step and
+        # leaves the package unpacked but unconfigured — blocking every later
+        # apt run until it is repaired by hand.
+        #
+        #   /boot/firmware  initramfs-tools writes the new initramfs here
+        #   /run            the unattended-upgrades hook touches
+        #                   /var/run/reboot-required, which is /run via symlink
+        _remount_targets = ['/', '/boot/firmware', '/run']
 
         def _emit(event, data):
             if self.socketio:
