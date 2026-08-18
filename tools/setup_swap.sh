@@ -71,23 +71,42 @@ if [ "${DISK_FREE_MB:-0}" -lt $((SWAP_SIZE_MB + DISK_MARGIN_MB)) ]; then
     exit 0
 fi
 
-# fallocate leaves an extent-mapped file that swapon rejects on some
-# filesystems; dd writes the blocks out instead.
-created=1
-fallocate -l "${SWAP_SIZE_MB}M" "$SWAPFILE" 2>/dev/null \
-    || dd if=/dev/zero of="$SWAPFILE" bs=1M count="$SWAP_SIZE_MB" status=none 2>/dev/null \
-    || created=0
+# Allocate, then prove it works. fallocate returns instantly but leaves
+# unwritten extents on ext4, and swapon refuses those as holes - so whether the
+# cheap method is usable cannot be decided from its exit code, only from
+# swapon's. dd writes every block, which always works and costs a minute.
+LAST_ERROR=""
 
-if [ "$created" -eq 1 ] \
-    && chmod 600 "$SWAPFILE" \
-    && mkswap "$SWAPFILE" >/dev/null 2>&1 \
-    && swapon --priority 10 "$SWAPFILE" 2>/dev/null; then
-    grep -q "^${SWAPFILE}[[:space:]]" /etc/fstab \
-        || echo "${SWAPFILE} none swap sw,pri=10 0 0" >> /etc/fstab
-    echo "Swap file active: ${SWAP_SIZE_MB} MB at priority 10, below zram"
-    exit 10
+_try_swapfile() {
+    rm -f "$SWAPFILE"
+    case "$1" in
+        fallocate)
+            LAST_ERROR=$(fallocate -l "${SWAP_SIZE_MB}M" "$SWAPFILE" 2>&1) || return 1
+            ;;
+        dd)
+            LAST_ERROR=$(dd if=/dev/zero of="$SWAPFILE" bs=1M \
+                            count="$SWAP_SIZE_MB" status=none 2>&1) || return 1
+            ;;
+    esac
+    LAST_ERROR=$(chmod 600 "$SWAPFILE" 2>&1)            || return 1
+    LAST_ERROR=$(mkswap "$SWAPFILE" 2>&1 >/dev/null)    || return 1
+    LAST_ERROR=$(swapon --priority 10 "$SWAPFILE" 2>&1) || return 1
+    return 0
+}
+
+if _try_swapfile fallocate; then
+    METHOD="fallocate"
+elif _try_swapfile dd; then
+    METHOD="dd"
+else
+    rm -f "$SWAPFILE"
+    # The reason, not just the verdict: without it the only way to find out why
+    # a device has no swap is to reproduce the four commands by hand.
+    echo "Could not enable $SWAPFILE - ${LAST_ERROR:-no error reported}" >&2
+    exit 1
 fi
 
-rm -f "$SWAPFILE"
-echo "Could not enable $SWAPFILE — continuing without extra swap" >&2
-exit 1
+grep -q "^${SWAPFILE}[[:space:]]" /etc/fstab \
+    || echo "${SWAPFILE} none swap sw,pri=10 0 0" >> /etc/fstab
+echo "Swap file active: ${SWAP_SIZE_MB} MB at priority 10, below zram (${METHOD})"
+exit 10

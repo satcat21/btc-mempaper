@@ -631,6 +631,7 @@ def register(self):
                 # Check if dependency files changed between current and target
                 deps_changed = False
                 apt_deps_changed = False
+                perms_changed = False
                 pillow_changed = False
                 try:
                     def _effective_deps(ref, path):
@@ -693,6 +694,13 @@ def register(self):
                     # dragged the pip install along with it.
                     deps_changed = _deps_differ('requirements.txt')
                     apt_deps_changed = _deps_differ('apt-requirements.txt')
+                    # Asked here rather than beside the refresh that uses it.
+                    # _file_differs compares HEAD against the tag, and the
+                    # checkout below makes HEAD the tag - so asked afterwards it
+                    # compares the file with itself and never reports a change,
+                    # which is why the refresh has never run from an update.
+                    perms_changed = (_file_differs('tools/install_permissions.sh')
+                                     or _file_differs('tools/install_wifi_permissions.sh'))
                     if deps_changed:
                         diff_content = subprocess.run(
                             ['git', 'diff', 'HEAD', f'refs/tags/{tag}', '--', 'requirements.txt'],
@@ -703,6 +711,7 @@ def register(self):
                 except Exception:
                     deps_changed = True
                     apt_deps_changed = True
+                    perms_changed = True
 
                 # Git checkout
                 _emit('update_output', {'line': self.translations.get('checking_out_code', 'Checking out {tag}...').format(tag=tag), 'phase': 'git', 'header': True})
@@ -811,12 +820,6 @@ def register(self):
                 # every update is a write to /etc for no reason, and this runs
                 # on devices where / is remounted read-only between updates.
                 perms_wrapper = '/usr/local/bin/mempaper-refresh-permissions'
-                perms_changed = False
-                try:
-                    perms_changed = (_file_differs('tools/install_permissions.sh')
-                                     or _file_differs('tools/install_wifi_permissions.sh'))
-                except Exception:
-                    perms_changed = True
                 if perms_changed and os.path.exists(perms_wrapper):
                     _emit('update_output', {'line': self.translations.get('refreshing_permissions', 'Refreshing helper scripts and sudo permissions...'), 'phase': 'apt', 'header': True})
                     try:

@@ -10,6 +10,10 @@ reader outlives no part of this: the app restarts, the browser reloads, and a
 build runs for hours across both. The status file is the whole state, so a page
 opened at any point shows the same thing.
 
+Handlers return True when they changed the virtualenv, 'skipped' when the job
+turned out to be unnecessary, and False when it failed. Only a real change earns
+the restart at the end.
+
 Jobs are attempted in order. One that fails goes to the back with its attempt
 count raised, so a restart makes progress on the packages that can be fixed
 rather than spending another hour on the one that just failed; past MAX_ATTEMPTS
@@ -166,7 +170,7 @@ def _do_rebuild(run, job):
 
     if not any(n == name for n, _, _ in incompatible_dists()):
         run.log_line(f'{spec}: already runs on this CPU, skipping')
-        return True
+        return 'skipped'
 
     ok, output = rebuild(VENV_PIP, name, version, source=False,
                          timeout=WHEEL_FETCH_TIMEOUT, on_line=_stream(run, spec))
@@ -312,7 +316,11 @@ def main():
             ok = False
 
         if ok:
-            changed = True
+            # A skip leaves the virtualenv exactly as it was, so it clears the
+            # job without earning the restart at the end. A queue that turned
+            # out to be entirely stale would otherwise bounce the service for
+            # nothing.
+            changed = changed or ok != 'skipped'
             run.done.append(label)
             remaining = [j for j in remaining if j is not job]
         else:
