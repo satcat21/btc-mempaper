@@ -1152,6 +1152,17 @@ function createBlockHeightColorGroup() {
         // equivalent of draw_vertical_gradient_text.
         digits.style.cssText = "font-family:'RobotoCondensed','Roboto Condensed','Arial Narrow',sans-serif; font-weight:800; font-size:2.6em; line-height:1.02; -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; color:transparent;";
         digits.textContent = sampleHeight();
+        // Tagged so a new block can repaint the sample without rebuilding the
+        // panel. Only the digits change with height - the gradient is a function
+        // of the fee - so replacing the text is the whole repaint. Both theme
+        // rows are built in this scope and share sampleHeight, so registering
+        // from here resolves the same closure either time.
+        digits.classList.add('bh-preview-digits');
+        window._refreshBlockHeightPreview = () => {
+            const next = sampleHeight();
+            document.querySelectorAll('.bh-preview-digits')
+                .forEach(el => { el.textContent = next; });
+        };
         const feeLine = document.createElement('span');
         feeLine.style.cssText = 'font-size:0.78em; font-weight:600; line-height:1.3; text-align:center;';
         const reading = document.createElement('span');

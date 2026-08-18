@@ -1932,16 +1932,16 @@ function createMemeSyncSection() {
         t.tor_meme_downloads || 'Route via Tor',
         t.tor_meme_downloads_desc || ''));
 
+    // The button carries the full sentence rather than a "Sync now" verb under a
+    // separate caption: naming the host is the useful half - it says where the
+    // memes come from, which is the thing worth knowing before pressing it - and
+    // a caption repeating the button above it said the same thing twice.
     const btnCell = document.createElement('div');
     btnCell.className = 'meme-sync-cell meme-sync-cell--action';
-    const btnLabel = document.createElement('label');
-    btnLabel.className = 'form-label meme-sync-cell-label';
-    btnLabel.textContent = t.meme_sync_now || 'Sync Memes Now';
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'update-install-btn';
-    btn.textContent = t.meme_sync_start || 'Sync now';
-    btnCell.appendChild(btnLabel);
+    btn.textContent = t.meme_sync_now || 'Fetch latest memes';
     btnCell.appendChild(btn);
     row.appendChild(btnCell);
 
@@ -2042,7 +2042,7 @@ async function runMemeSync(btn, statusEl) {
         socket.off('meme_sync_done', onDone);
         if (btn) {
             btn.disabled = false;
-            btn.textContent = t.meme_sync_start || 'Sync now';
+            btn.textContent = t.meme_sync_now || 'Fetch latest memes';
         }
 
         if (!data?.success) {
@@ -2078,7 +2078,7 @@ async function runMemeSync(btn, statusEl) {
             socket.off('meme_sync_done', onDone);
             if (btn) {
                 btn.disabled = false;
-                btn.textContent = t.meme_sync_start || 'Sync now';
+                btn.textContent = t.meme_sync_now || 'Fetch latest memes';
             }
             modal.finish(false, d.message || 'Failed to start', []);
         }
@@ -2087,7 +2087,7 @@ async function runMemeSync(btn, statusEl) {
         socket.off('meme_sync_done', onDone);
         if (btn) {
             btn.disabled = false;
-            btn.textContent = t.meme_sync_start || 'Sync now';
+            btn.textContent = t.meme_sync_now || 'Fetch latest memes';
         }
         modal.finish(false, 'Request failed: ' + err, []);
     }
@@ -2105,18 +2105,29 @@ function openMemeSyncModal() {
     overlay.className = 'modal meme-sync-modal';
     overlay.style.display = 'flex';
 
+    // Same dialog and log treatment as the system update modal: this shows the
+    // same kind of thing - a long-running job reporting as it goes - and two
+    // different-looking log viewers in one settings page is just two things to
+    // learn. system-update-log carries the min-height, so the box opens at its
+    // full size instead of growing from a thin grey strip as lines arrive.
     const box = document.createElement('div');
-    box.className = 'modal-content meme-sync-modal-content';
+    box.className = 'modal-content system-update-dialog';
 
     const title = document.createElement('h3');
-    title.textContent = t.meme_sync_now || 'Sync Memes Now';
+    const icon = document.createElement('img');
+    icon.src = '/static/icons/download.svg';
+    icon.alt = '';
+    icon.className = 'modal-title-icon';
+    const titleText = document.createElement('span');
+    titleText.textContent = t.meme_sync_now || 'Fetch latest memes';
+    title.append(icon, ' ', titleText);
 
-    const log = document.createElement('pre');
-    log.className = 'meme-sync-log';
+    const log = document.createElement('div');
+    log.className = 'system-update-log';
     log.setAttribute('aria-live', 'polite');
 
     const summary = document.createElement('div');
-    summary.className = 'meme-sync-summary';
+    summary.className = 'system-update-status';
 
     const grid = document.createElement('div');
     grid.className = 'meme-sync-added-grid';
@@ -2145,16 +2156,16 @@ function openMemeSyncModal() {
     return {
         appendLine(line, isHeader) {
             const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 24;
-            const el = document.createElement('div');
+            const el = isHeader ? document.createElement('strong')
+                                : document.createElement('div');
             el.textContent = line;
-            if (isHeader) el.className = 'meme-sync-log-header';
             log.appendChild(el);
             // Follow the tail only while the reader has not scrolled away.
             if (atBottom) log.scrollTop = log.scrollHeight;
         },
         finish(ok, message, added) {
             closeBtn.disabled = false;
-            summary.classList.add(ok ? 'is-ok' : 'is-error');
+            summary.classList.add(ok ? 'system-update-success' : 'system-update-error');
             if (!ok) {
                 summary.textContent = message;
                 return;

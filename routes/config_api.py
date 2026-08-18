@@ -20,6 +20,28 @@ def register(self):
     """Register the config api routes."""
     from mempaper_app import _read_reboot_time, _safe_error
 
+    def _with_live_height(payload):
+        """Stamp the confirmed tip onto a preview-scale payload.
+
+        The renderer derives its height from the block-fee cache, which is
+        populated as a side effect of drawing and is empty until something has
+        been drawn - so a page opened soon after a restart got no height and the
+        panel fell back to a hardcoded sample. The app already tracks the tip the
+        websocket reported, and that is the number the preview is meant to show:
+        the digit count is the whole geometry being previewed, and a stand-in
+        cannot be told apart from the real thing.
+
+        Live blocks after page load arrive on countdown_updated, which already
+        carries block_height; this only has to be right for the first paint.
+        """
+        try:
+            height = getattr(self, 'current_block_height', None)
+            if height is not None and isinstance(payload, dict):
+                payload['block_height'] = int(height)
+        except (TypeError, ValueError):
+            pass
+        return payload
+
     @self.app.route('/api/tang/validate', methods=['GET'])
     @require_auth(self.auth_manager)
     def validate_tang_connection():
@@ -419,7 +441,8 @@ def register(self):
             # whatever fee the reader drags to without a request per step. One
             # payload covers all three scales, so the dropdown switches instantly.
             try:
-                block_height_samples = self.image_renderer.block_height_preview_scale()
+                block_height_samples = _with_live_height(
+                    self.image_renderer.block_height_preview_scale())
             except Exception as e:
                 print(f"⚠️ Block height preview scale unavailable: {e}")
                 block_height_samples = {}
@@ -471,7 +494,8 @@ def register(self):
         rebuilds the whole schema and every wallet balance to answer.
         """
         try:
-            return jsonify(self.image_renderer.block_height_preview_scale())
+            return jsonify(_with_live_height(
+                self.image_renderer.block_height_preview_scale()))
         except Exception as e:
             return jsonify({'error': _safe_error(e)}), 500
 

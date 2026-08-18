@@ -3768,6 +3768,15 @@ body.dark-mode .preview-card-dark {
     margin-left: auto;
 }
 
+/* The action button names the host it fetches from, so it is a sentence rather
+   than a verb. Allow it to wrap: nowrap here pushed the row wider than the
+   panel on a narrow screen instead of using the second line it already has. */
+.meme-sync-cell--action .update-install-btn {
+    white-space: normal;
+    text-align: left;
+    max-width: 100%;
+}
+
 .meme-sync-cell-label {
     margin: 0;
     white-space: nowrap;
@@ -3779,42 +3788,9 @@ body.dark-mode .preview-card-dark {
 }
 
 /* ── Meme sync modal ────────────────────────────────────────────────────── */
-.meme-sync-modal-content {
-    max-width: 720px;
-    width: 92vw;
-}
-
-.meme-sync-log {
-    margin: 12px 0 0;
-    padding: 10px 12px;
-    max-height: 40vh;
-    overflow-y: auto;
-    /* The downloader emits long single-line paths; wrap them rather than
-       forcing the dialog to scroll sideways. */
-    white-space: pre-wrap;
-    word-break: break-word;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 0.85rem;
-    line-height: 1.45;
-    background: var(--input-bg, rgba(0, 0, 0, 0.25));
-    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
-    border-radius: 8px;
-}
-
-.meme-sync-log-header {
-    font-weight: 600;
-    margin-top: 4px;
-}
-
-.meme-sync-summary {
-    margin-top: 12px;
-    font-weight: 600;
-}
-
-.meme-sync-summary.is-error {
-    color: var(--error-color, #e5484d);
-}
-
+/* The dialog and log reuse .system-update-dialog / .system-update-log so this
+   reads as the same kind of view as a system update. Only the thumbnail grid
+   below is particular to meme sync. */
 .meme-sync-added-grid {
     display: flex;
     flex-wrap: wrap;
