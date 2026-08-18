@@ -28,7 +28,7 @@ btc_holidays = {
                 "description": "On this day in 2019, Trace Mayer started an annual celebration of monetary sovereignty: withdraw your BTC into your own custody. Not your keys, not your coins!"
             },
             "de": {
-                "title": "Proof of Keys Tag",
+                "title": "Proof-of-Keys-Tag",
                 "description": "An diesem Tag im Jahr 2019 startete Trace Mayer eine jährliche Feier: Ziehe deine BTC in eigene Verwahrung. Not your keys, not your coins!"
             },
             "es": {
@@ -52,7 +52,7 @@ btc_holidays = {
                 "description": "On this day in 2018, the first real purchase over the Lightning Network was made for a TorGuard VPN subscription."
             },
             "de": {
-                "title": "Lightning Pay Tag",
+                "title": "Lightning-Pay-Tag",
                 "description": "An diesem Tag im Jahr 2018 wurde der erste echte Kauf über das Lightning-Netzwerk für ein TorGuard-VPN-Abo getätigt."
             },
             "es": {
@@ -76,7 +76,7 @@ btc_holidays = {
                 "description": "On this day in 2009, Hal Finney tweeted his iconic 'Running bitcoin' tweet, as he joined the network."
             },
             "de": {
-                "title": "Running Bitcoin Tag",
+                "title": "Running-Bitcoin-Tag",
                 "description": "An diesem Tag im Jahr 2009 twitterte Hal Finney seinen legendären 'Running bitcoin' Tweet, als er dem Netzwerk beitrat."
             },
             "es": {
@@ -98,7 +98,7 @@ btc_holidays = {
                 "description": "On this day in 2024, the SEC approved 11 spot Bitcoin ETFs at once, marking Bitcoin's integration into mainstream finance."
             },
             "de": {
-                "title": "Spot-Bitcoin-ETF Tag",
+                "title": "Spot-Bitcoin-ETF-Tag",
                 "description": "An diesem Tag im Jahr 2024 genehmigte die SEC 11 Spot-Bitcoin-ETFs auf einmal und markierte Bitcoins Integration in die Finanzwelt."
             },
             "es": {
@@ -122,7 +122,7 @@ btc_holidays = {
                 "description": "On this day in 2009, the first transaction ever broadcast over the Bitcoin network was sent by Satoshi Nakamoto to Hal Finney."
             },
             "de": {
-                "title": "Genesis-Transaktion Tag",
+                "title": "Genesis-Transaktionstag",
                 "description": "An diesem Tag im Jahr 2009 wurde die erste Transaktion, die jemals über das Bitcoin-Netzwerk gesendet wurde, von Satoshi Nakamoto an Hal Finney übertragen."
             },
             "es": {
@@ -146,7 +146,7 @@ btc_holidays = {
                 "description": "On this day in 2009, Satoshi transferred BTC via the first ever (non-coinbase) transaction. The recipient of that historic transaction is none other than Hal Finney."
             },
             "de": {
-                "title": "Erste Transaktion Tag",
+                "title": "Tag der ersten Transaktion",
                 "description": "An diesem Tag im Jahr 2009 übertrug Satoshi BTC über die erste (Nicht-Coinbase) Transaktion aller Zeiten an Hal Finney."
             },
             "es": {
@@ -170,7 +170,7 @@ btc_holidays = {
                 "description": "On this day in 2023, Casey Rodarmor launched the Ordinals protocol, allowing data to be inscribed directly on individual satoshis."
             },
             "de": {
-                "title": "Ordinals Launch Tag",
+                "title": "Ordinals-Launch-Tag",
                 "description": "An diesem Tag im Jahr 2023 startete Casey Rodarmor das Ordinals-Protokoll, mit dem Daten direkt auf einzelne Satoshis geschrieben werden können."
             },
             "es": {
@@ -194,7 +194,7 @@ btc_holidays = {
                 "description": "On this day in 2016, Joseph Poon and Thaddeus Dryja released the Lightning Network whitepaper proposing scalable off-chain instant payments."
             },
             "de": {
-                "title": "Lightning Whitepaper Tag",
+                "title": "Lightning-Whitepaper-Tag",
                 "description": "An diesem Tag im Jahr 2016 veröffentlichten Joseph Poon und Thaddeus Dryja das Lightning-Network-Whitepaper für skalierbare Off-Chain-Sofortzahlungen."
             },
             "es": {
@@ -218,7 +218,7 @@ btc_holidays = {
                 "description": "On this day in 2019, the Lightning Network Torch relay began, passing Bitcoin payments between prominent figures including Jack Dorsey."
             },
             "de": {
-                "title": "Lightning Torch Tag",
+                "title": "Lightning-Torch-Tag",
                 "description": "An diesem Tag im Jahr 2019 begann die Lightning-Network-Fackelstaffel, bei der Bitcoin-Zahlungen zwischen prominenten Personen wie Jack Dorsey weitergereicht wurden."
             },
             "es": {
@@ -242,7 +242,7 @@ btc_holidays = {
                 "description": "On this day in 2025, Ross Ulbricht was pardoned by President Trump after over 11 years in custody since his capture on October 1, 2013."
             },
             "de": {
-                "title": "Ross Begnadigung Tag",
+                "title": "Tag der Ross-Begnadigung",
                 "description": "An diesem Tag im Jahr 2025 wurde Ross Ulbricht von Präsident Trump begnadigt, nach über 11 Jahren Haft seit seiner Festnahme am 1. Oktober 2013."
             },
             "es": {
@@ -290,7 +290,7 @@ btc_holidays = {
                 "description": "On this day in 2011, 1 BTC reached parity with 1 USD for the first time on the Mt. Gox exchange."
             },
             "de": {
-                "title": "Dollar-Parität Tag",
+                "title": "Dollar-Paritätstag",
                 "description": "An diesem Tag im Jahr 2011 erreichte 1 BTC zum ersten Mal Parität mit 1 USD auf der Mt. Gox Börse."
             },
             "es": {
@@ -314,7 +314,7 @@ btc_holidays = {
                 "description": "On this day in 2021, the #LaserEyes meme went viral as Bitcoiners pledged not to remove laser eyes from their profile pictures until BTC hit $100K."
             },
             "de": {
-                "title": "Laser Eyes Tag",
+                "title": "Laser-Eyes-Tag",
                 "description": "An diesem Tag im Jahr 2021 ging das #LaserEyes-Meme viral, als Bitcoiner gelobten, die Laseraugen nicht zu entfernen, bis BTC 100.000 $ erreicht."
             },
             "es": {
@@ -338,7 +338,7 @@ btc_holidays = {
                 "description": "On this day in 2021, the market cap of all BTC surpassed 1 trillion USD for the first time."
             },
             "de": {
-                "title": "Billion Dollar Tag",
+                "title": "Billion-Dollar-Tag",
                 "description": "An diesem Tag im Jahr 2021 überstieg die Marktkapitalisierung aller BTC zum ersten Mal 1 Billion USD."
             },
             "es": {
@@ -362,7 +362,7 @@ btc_holidays = {
                 "description": "On this day in 2013, Mt. Gox, the largest bitcoin exchange in the world, went offline due to insolvency, after losing 640,000 BTC."
             },
             "de": {
-                "title": "Mt. Gox Tod Tag",
+                "title": "Mt.-Gox-Todestag",
                 "description": "An diesem Tag im Jahr 2013 ging Mt. Gox, die größte Bitcoin-Börse der Welt, aufgrund von Insolvenz offline, nachdem 640.000 BTC verloren wurden."
             },
             "es": {
@@ -386,7 +386,7 @@ btc_holidays = {
                 "description": "On this day in 2018, Laszlo Hanyecz returned to buy pizza over the Lightning Network."
             },
             "de": {
-                "title": "Lightning Pizza Tag",
+                "title": "Lightning-Pizza-Tag",
                 "description": "An diesem Tag im Jahr 2018 kehrte Laszlo Hanyecz zurück, um Pizza über das Lightning-Netzwerk zu kaufen."
             },
             "es": {
@@ -410,7 +410,7 @@ btc_holidays = {
                 "description": "On this day in 2017, 1 BTC surpassed the price of 1 ounce of gold for the first time."
             },
             "de": {
-                "title": "Gold-Parität Tag",
+                "title": "Gold-Paritätstag",
                 "description": "An diesem Tag im Jahr 2017 überstieg 1 BTC zum ersten Mal den Preis einer Unze Gold."
             },
             "es": {
@@ -434,7 +434,7 @@ btc_holidays = {
                 "description": "On this day in 2014, Satoshi's P2P Foundation account broke a five-year silence with a single message denying any connection to Dorian Nakamoto."
             },
             "de": {
-                "title": "'I Am Not Dorian Nakamoto' Tag",
+                "title": "'I Am Not Dorian Nakamoto'-Tag",
                 "description": "An diesem Tag im Jahr 2014 brach Satoshis P2P-Foundation-Konto ein fünfjähriges Schweigen mit einer Nachricht, die jede Verbindung zu Dorian Nakamoto bestritt."
             },
             "es": {
@@ -456,7 +456,7 @@ btc_holidays = {
                 "description": "On this day in 2025, President Trump signed an executive order establishing a Strategic Bitcoin Reserve from seized BTC."
             },
             "de": {
-                "title": "Strategische Bitcoin-Reserve Tag",
+                "title": "Tag der strategischen Bitcoin-Reserve",
                 "description": "An diesem Tag im Jahr 2025 unterzeichnete Präsident Trump eine Executive Order zur Einrichtung einer strategischen Bitcoin-Reserve aus beschlagnahmten BTC."
             },
             "es": {
@@ -480,7 +480,7 @@ btc_holidays = {
                 "description": "On this day in 2013, a bug caused the blockchain to split into two chains. Developers and miners coordinated to roll back 24 blocks, preventing a permanent fork."
             },
             "de": {
-                "title": "24-Block-Rollback Tag",
+                "title": "24-Block-Rollback-Tag",
                 "description": "An diesem Tag im Jahr 2013 verursachte ein Bug eine Blockchain-Aufspaltung. Entwickler und Miner koordinierten einen Rollback von 24 Blöcken."
             },
             "es": {
@@ -526,7 +526,7 @@ btc_holidays = {
                 "description": "On this day in 2018, Lightning Labs launched lnd 0.4-beta, the first mainnet Lightning Network implementation, enabling fast and cheap Bitcoin transactions."
             },
             "de": {
-                "title": "Lightning Mainnet Tag",
+                "title": "Lightning-Mainnet-Tag",
                 "description": "An diesem Tag im Jahr 2018 startete Lightning Labs lnd 0.4-beta, die erste Mainnet-Lightning-Network-Implementierung für schnelle und günstige Bitcoin-Transaktionen."
             },
             "es": {
@@ -550,7 +550,7 @@ btc_holidays = {
                 "description": "On this day in 2013, the market cap of all BTC surpassed 1 billion USD for the first time."
             },
             "de": {
-                "title": "Milliarde Dollar Tag",
+                "title": "Milliarden-Dollar-Tag",
                 "description": "An diesem Tag im Jahr 2013 überstieg die Marktkapitalisierung aller BTC zum ersten Mal 1 Milliarde USD."
             },
             "es": {
@@ -574,7 +574,7 @@ btc_holidays = {
                 "description": "On this day in 2013, Bitcoin crossed the $100 mark for the first time, confirming its growing legitimacy as a store of value."
             },
             "de": {
-                "title": "$100 Bitcoin Tag",
+                "title": "100-Dollar-Bitcoin-Tag",
                 "description": "An diesem Tag im Jahr 2013 überschritt Bitcoin zum ersten Mal die 100-Dollar-Marke und bestätigte seine wachsende Bedeutung als Wertaufbewahrungsmittel."
             },
             "es": {
@@ -622,7 +622,7 @@ btc_holidays = {
                 "description": "On this day in 2024, the fourth 'Halving' cut the subsidy from 6.25 BTC to 3.125 BTC."
             },
             "de": {
-                "title": "Halving #4 Tag",
+                "title": "Halving-#4-Tag",
                 "description": "An diesem Tag im Jahr 2024 reduzierte das vierte 'Halving' die Belohnung von 6,25 BTC auf 3,125 BTC."
             },
             "es": {
@@ -646,7 +646,7 @@ btc_holidays = {
                 "description": "On this day in 2011, Satoshi Nakamoto sent their last known message, saying Bitcoin was 'in good hands' before stepping away from the project."
             },
             "de": {
-                "title": "'Bitcoin in guten Händen' Tag",
+                "title": "'Bitcoin in guten Händen'-Tag",
                 "description": "An diesem Tag im Jahr 2011 sendete Satoshi Nakamoto seine letzte bekannte Nachricht, in der er sagte, Bitcoin sei 'in guten Händen', bevor er sich vom Projekt zurückzog."
             },
             "es": {
@@ -670,7 +670,7 @@ btc_holidays = {
                 "description": "On this day in 2013, the first-ever Bitcoin ATM was installed at a Vancouver coffee shop."
             },
             "de": {
-                "title": "Bitcoin ATM Tag",
+                "title": "Bitcoin-ATM-Tag",
                 "description": "An diesem Tag im Jahr 2013 wurde der allererste Bitcoin-Geldautomat in einem Kaffeehaus in Vancouver installiert."
             },
             "es": {
@@ -694,7 +694,7 @@ btc_holidays = {
                 "description": "On this day in 2020, the third 'Halving' cut the subsidy from 12.5 BTC to 6.25 BTC."
             },
             "de": {
-                "title": "Halving #3 Tag",
+                "title": "Halving-#3-Tag",
                 "description": "An diesem Tag im Jahr 2020 reduzierte das dritte 'Halving' die Belohnung von 12,5 BTC auf 6,25 BTC."
             },
             "es": {
@@ -718,7 +718,7 @@ btc_holidays = {
                 "description": "On this day in 2010, Laszlo Hanyecz paid 10,000 BTC for two pizzas."
             },
             "de": {
-                "title": "Bitcoin Pizza Tag",
+                "title": "Bitcoin-Pizza-Tag",
                 "description": "An diesem Tag im Jahr 2010 bezahlte Laszlo Hanyecz 10.000 BTC für zwei Pizzas."
             },
             "es": {
@@ -742,7 +742,7 @@ btc_holidays = {
                 "description": "On this day in 2011, WikiLeaks began accepting Bitcoin donations after traditional payment processors cut them off, proving Bitcoin's censorship resistance."
             },
             "de": {
-                "title": "WikiLeaks-Bitcoin Tag",
+                "title": "WikiLeaks-Bitcoin-Tag",
                 "description": "An diesem Tag im Jahr 2011 begann WikiLeaks Bitcoin-Spenden zu akzeptieren, nachdem traditionelle Zahlungsanbieter sie blockiert hatten."
             },
             "es": {
@@ -766,7 +766,7 @@ btc_holidays = {
                 "description": "On this day in 2017, the Bitcoin symbol was officially added to Unicode 10.0 at position U+20BF, joining major currencies like the dollar, euro and yen."
             },
             "de": {
-                "title": "Bitcoin Unicode Tag",
+                "title": "Bitcoin-Unicode-Tag",
                 "description": "An diesem Tag im Jahr 2017 wurde das Bitcoin-Symbol offiziell in Unicode 10.0 an Position U+20BF aufgenommen und gesellte sich zu Währungen wie Dollar, Euro und Yen."
             },
             "es": {
@@ -790,7 +790,7 @@ btc_holidays = {
                 "description": "On this day in 2016, the second 'Halving' cut the subsidy from 25 BTC to 12.5 BTC."
             },
             "de": {
-                "title": "Halving #2 Tag",
+                "title": "Halving-#2-Tag",
                 "description": "An diesem Tag im Jahr 2016 reduzierte das zweite 'Halving' die Belohnung von 25 BTC auf 12,5 BTC."
             },
             "es": {
@@ -838,7 +838,7 @@ btc_holidays = {
                 "description": "On this day in 2010, Satoshi Nakamoto posted: 'If you don't believe me or don't understand, I don't have time to try to convince you, sorry.'"
             },
             "de": {
-                "title": "'Believe Me' Tag",
+                "title": "'Believe Me'-Tag",
                 "description": "An diesem Tag im Jahr 2010 schrieb Satoshi Nakamoto: 'If you don't believe me or don't understand, I don't have time to try to convince you, sorry.'"
             },
             "es": {
@@ -862,7 +862,7 @@ btc_holidays = {
                 "description": "On this day in 2017, members of the community scheduled activation of a User-Activated Soft Fork (UASF)."
             },
             "de": {
-                "title": "Bitcoin Unabhängigkeitstag (UASF Tag)",
+                "title": "Bitcoin-Unabhängigkeitstag (UASF-Tag)",
                 "description": "An diesem Tag im Jahr 2017 planten Mitglieder der Community die Aktivierung einer User-Activated Soft Fork (UASF)."
             },
             "es": {
@@ -886,7 +886,7 @@ btc_holidays = {
                 "description": "On this day in 2017, the Segregated Witness upgrade was locked in."
             },
             "de": {
-                "title": "SegWit Lock-In Tag",
+                "title": "SegWit-Lock-in-Tag",
                 "description": "An diesem Tag im Jahr 2017 wurde das Segregated Witness-Upgrade endgültig beschlossen."
             },
             "es": {
@@ -910,7 +910,7 @@ btc_holidays = {
                 "description": "On this day in 2020, MicroStrategy became the first public company to adopt Bitcoin as its primary treasury reserve, purchasing 21,454 BTC for $250 million."
             },
             "de": {
-                "title": "MicroStrategy Bitcoin Tag",
+                "title": "MicroStrategy-Bitcoin-Tag",
                 "description": "An diesem Tag im Jahr 2020 wurde MicroStrategy das erste börsennotierte Unternehmen mit Bitcoin als Treasury-Reserve: 21.454 BTC für $250 Mio."
             },
             "es": {
@@ -934,7 +934,7 @@ btc_holidays = {
                 "description": "On this day in 2010, a bug generated 184 billion BTC in a single transaction. Satoshi released a patch and executed a soft fork to remove the invalid transaction."
             },
             "de": {
-                "title": "Value Overflow Tag",
+                "title": "Value-Overflow-Tag",
                 "description": "An diesem Tag im Jahr 2010 erzeugte ein Bug 184 Mrd. BTC in einer Transaktion. Satoshi behob dies mit einem Patch und einer Soft Fork."
             },
             "es": {
@@ -958,7 +958,7 @@ btc_holidays = {
                 "description": "On this day in 2008, Satoshi Nakamoto registered bitcoin.org."
             },
             "de": {
-                "title": "Bitcoin.org Registrierung Tag",
+                "title": "Bitcoin.org-Registrierungstag",
                 "description": "An diesem Tag im Jahr 2008 registrierte Satoshi Nakamoto bitcoin.org."
             },
             "es": {
@@ -982,7 +982,7 @@ btc_holidays = {
                 "description": "8/21 is playfully celebrated as ∞/21M."
             },
             "de": {
-                "title": "Bitcoin Unendlichkeit Tag",
+                "title": "Bitcoin-Unendlichkeitstag",
                 "description": "8/21 wird spielerisch als ∞/21M gefeiert."
             },
             "es": {
@@ -1006,7 +1006,7 @@ btc_holidays = {
                 "description": "On this day in 2017, SegWit activated on the Bitcoin mainnet in Block #481,824."
             },
             "de": {
-                "title": "SegWit Aktivierung Tag",
+                "title": "SegWit-Aktivierungstag",
                 "description": "An diesem Tag im Jahr 2017 wurde SegWit im Bitcoin-Mainnet in Block #481.824 aktiviert."
             },
             "es": {
@@ -1054,7 +1054,7 @@ btc_holidays = {
                 "description": "On this day in 2021, BTC became legal tender in El Salvador."
             },
             "de": {
-                "title": "Bitcoin Legal Tender Tag",
+                "title": "Bitcoin-Legal-Tender-Tag",
                 "description": "An diesem Tag im Jahr 2021 wurde BTC gesetzliches Zahlungsmittel in El Salvador."
             },
             "es": {
@@ -1078,7 +1078,7 @@ btc_holidays = {
                 "description": "On this day in 2017, the first on-chain atomic swap between Bitcoin and Litecoin was executed, proving trustless cross-chain trading is possible."
             },
             "de": {
-                "title": "Erster Atomic Swap Tag",
+                "title": "Tag des ersten Atomic Swap",
                 "description": "An diesem Tag im Jahr 2017 wurde der erste On-Chain Atomic Swap zwischen Bitcoin und Litecoin durchgeführt und bewies, dass vertrauensloser Cross-Chain-Handel möglich ist."
             },
             "es": {
@@ -1102,7 +1102,7 @@ btc_holidays = {
                 "description": "On this day in 2013, Ross Ulbricht was captured for creating The Silk Road."
             },
             "de": {
-                "title": "Free Ross Tag",
+                "title": "Free-Ross-Tag",
                 "description": "An diesem Tag im Jahr 2013 wurde Ross Ulbricht für die Erstellung der Silk Road gefasst."
             },
             "es": {
@@ -1126,7 +1126,7 @@ btc_holidays = {
                 "description": "On this day in 2009, New Liberty Standard established the first Bitcoin-to-USD exchange rate based on electricity mining costs."
             },
             "de": {
-                "title": "Erster Wechselkurs Tag",
+                "title": "Tag des ersten Wechselkurses",
                 "description": "An diesem Tag im Jahr 2009 legte New Liberty Standard den ersten Bitcoin-zu-USD-Wechselkurs basierend auf den Stromkosten des Minings fest."
             },
             "es": {
@@ -1150,7 +1150,7 @@ btc_holidays = {
                 "description": "On this day in 2014, a bitcoin whale posted a 30,000 BTC sell wall and was defeated."
             },
             "de": {
-                "title": "BearWhale Besiegung Tag",
+                "title": "Tag der BearWhale-Besiegung",
                 "description": "An diesem Tag im Jahr 2014 postete ein Bitcoin-Wal eine 30.000 BTC Verkaufsmauer und wurde besiegt."
             },
             "es": {
@@ -1174,7 +1174,7 @@ btc_holidays = {
                 "description": "On this day in 2020, PayPal announced Bitcoin support for its 346 million users, enabling them to buy, sell and hold BTC."
             },
             "de": {
-                "title": "PayPal Bitcoin Tag",
+                "title": "PayPal-Bitcoin-Tag",
                 "description": "An diesem Tag im Jahr 2020 kündigte PayPal Bitcoin-Unterstützung für seine 346 Millionen Nutzer an, die BTC kaufen, verkaufen und halten konnten."
             },
             "es": {
@@ -1198,7 +1198,7 @@ btc_holidays = {
                 "description": "On this day in 2008, Satoshi released the Bitcoin white paper."
             },
             "de": {
-                "title": "Bitcoin Whitepaper Tag",
+                "title": "Bitcoin-Whitepaper-Tag",
                 "description": "An diesem Tag im Jahr 2008 veröffentlichte Satoshi das Bitcoin-Whitepaper."
             },
             "es": {
@@ -1218,23 +1218,23 @@ btc_holidays = {
     "11-01": [
         {
             "en": {
-                "title": "Diffe-Hellman Day",
+                "title": "Diffie-Hellman Day",
                 "description": "On this day in 1976, Diffie and Hellman released their public/private key paper."
             },
             "de": {
-                "title": "Diffe-Hellman Tag",
+                "title": "Diffie-Hellman-Tag",
                 "description": "An diesem Tag im Jahr 1976 veröffentlichten Diffie und Hellman ihr Public/Private-Key-Papier."
             },
             "es": {
-                "title": "Día de Diffe-Hellman",
+                "title": "Día de Diffie-Hellman",
                 "description": "En este día de 1976, Diffie y Hellman publicaron su documento sobre claves públicas/privadas."
             },
             "fr": {
-                "title": "Jour de Diffe-Hellman",
+                "title": "Jour de Diffie-Hellman",
                 "description": "Ce jour-là en 1976, Diffie et Hellman ont publié leur article sur les clés publiques/privées."
             },
             "it": {
-                "title": "Giorno di Diffe-Hellman",
+                "title": "Giorno di Diffie-Hellman",
                 "description": "In questo giorno del 1976, Diffie e Hellman hanno pubblicato il loro articolo sulle chiavi pubbliche/private."
             }
         }
@@ -1246,7 +1246,7 @@ btc_holidays = {
                 "description": "On this day in 2010, the iconic Bitcoin logo was shared by 'bitboy' on Bitcointalk."
             },
             "de": {
-                "title": "Bitcoin Logo Tag",
+                "title": "Bitcoin-Logo-Tag",
                 "description": "An diesem Tag im Jahr 2010 wurde das ikonische Bitcoin-Logo von 'bitboy' auf Bitcointalk geteilt."
             },
             "es": {
@@ -1294,7 +1294,7 @@ btc_holidays = {
                 "description": "On this day in 2021, Bitcoin hit an all-time high of $69,044, a price point that became an iconic meme in the community."
             },
             "de": {
-                "title": "$69K Tag",
+                "title": "69K-Tag",
                 "description": "An diesem Tag im Jahr 2021 erreichte Bitcoin ein Allzeithoch von 69.044 $, ein Kursziel, das zu einem ikonischen Meme in der Community wurde."
             },
             "es": {
@@ -1318,7 +1318,7 @@ btc_holidays = {
                 "description": "On this day in 2014, an excited Reddit user coined a legendary meme."
             },
             "de": {
-                "title": "This is Gentlemen! Tag",
+                "title": "'This is Gentlemen!'-Tag",
                 "description": "An diesem Tag im Jahr 2014 prägte ein aufgeregter Reddit-Nutzer ein legendäres Meme."
             },
             "es": {
@@ -1340,7 +1340,7 @@ btc_holidays = {
                 "description": "On this day in 2022, crypto exchange FTX filed for bankruptcy after customer funds were misused. A reminder: not your keys, not your coins."
             },
             "de": {
-                "title": "FTX-Zusammenbruch Tag",
+                "title": "Tag des FTX-Zusammenbruchs",
                 "description": "An diesem Tag im Jahr 2022 meldete die Krypto-Börse FTX Insolvenz an, nachdem Kundengelder missbraucht wurden. Eine Erinnerung: Not your keys, not your coins."
             },
             "es": {
@@ -1364,7 +1364,7 @@ btc_holidays = {
                 "description": "On this day in 2021, Bitcoin's most significant upgrade since SegWit activated at block 709,632, introducing Schnorr signatures and improved smart contracts."
             },
             "de": {
-                "title": "Taproot Aktivierung Tag",
+                "title": "Taproot-Aktivierungstag",
                 "description": "An diesem Tag im Jahr 2021 wurde Bitcoins größtes Upgrade seit SegWit bei Block 709.632 aktiviert: Schnorr-Signaturen und verbesserte Smart Contracts."
             },
             "es": {
@@ -1388,7 +1388,7 @@ btc_holidays = {
                 "description": "On this day in 2017, the SegWit2X hard fork attempt failed when a critical bug prevented the S2X chain from producing any blocks."
             },
             "de": {
-                "title": "S2X-Scheitern Tag",
+                "title": "Tag des S2X-Scheiterns",
                 "description": "An diesem Tag im Jahr 2017 scheiterte der SegWit2X-Hard-Fork-Versuch, als ein kritischer Bug die S2X-Chain daran hinderte, Blöcke zu erzeugen."
             },
             "es": {
@@ -1412,7 +1412,7 @@ btc_holidays = {
                 "description": "On this day in 2013, Bitcoin crossed the $1,000 mark for the first time, a landmark moment for the still-young cryptocurrency."
             },
             "de": {
-                "title": "$1.000 Bitcoin Tag",
+                "title": "1.000-Dollar-Bitcoin-Tag",
                 "description": "An diesem Tag im Jahr 2013 überschritt Bitcoin zum ersten Mal die 1.000-Dollar-Marke, ein Meilenstein für die noch junge Kryptowährung."
             },
             "es": {
@@ -1436,7 +1436,7 @@ btc_holidays = {
                 "description": "On this day in 2012, the first 'Halving' cut the subsidy from 50 BTC to 25 BTC."
             },
             "de": {
-                "title": "Halving #1 Tag",
+                "title": "Halving-#1-Tag",
                 "description": "An diesem Tag im Jahr 2012 reduzierte das erste 'Halving' die Belohnung von 50 BTC auf 25 BTC."
             },
             "es": {
@@ -1460,7 +1460,7 @@ btc_holidays = {
                 "description": "On this day in 2024, BTC hit 100,000 USD."
             },
             "de": {
-                "title": "'Hundert K' Tag",
+                "title": "'Hundert K'-Tag",
                 "description": "An diesem Tag im Jahr 2024 erreichte BTC 100.000 USD."
             },
             "es": {
@@ -1484,7 +1484,7 @@ btc_holidays = {
                 "description": "On this day in 2014, Microsoft began accepting Bitcoin for Xbox games, apps and Windows software, one of the first major corporations to do so."
             },
             "de": {
-                "title": "Microsoft akzeptiert Bitcoin Tag",
+                "title": "Tag der Microsoft-Bitcoin-Akzeptanz",
                 "description": "An diesem Tag im Jahr 2014 begann Microsoft, Bitcoin für Xbox-Spiele, Apps und Windows-Software zu akzeptieren, als eines der ersten großen Unternehmen."
             },
             "es": {
@@ -1508,7 +1508,7 @@ btc_holidays = {
                 "description": "On this day in 2010, Satoshi made his final public post on Bitcointalk."
             },
             "de": {
-                "title": "Auf Wiedersehen Satoshi Tag",
+                "title": "Auf-Wiedersehen-Satoshi-Tag",
                 "description": "An diesem Tag im Jahr 2010 machte Satoshi seinen letzten öffentlichen Beitrag auf Bitcointalk."
             },
             "es": {
@@ -1532,7 +1532,7 @@ btc_holidays = {
                 "description": "On this day in 2017, Bitcoin hit $20,000 for the first time during the historic 2017 bull run, capturing worldwide attention."
             },
             "de": {
-                "title": "$20K Tag",
+                "title": "20K-Tag",
                 "description": "An diesem Tag im Jahr 2017 erreichte Bitcoin während des historischen Bullenmarkts 2017 erstmals 20.000 $ und erregte weltweite Aufmerksamkeit."
             },
             "es": {
@@ -1556,7 +1556,7 @@ btc_holidays = {
                 "description": "On this day in 2013, the legendary 'I AM HODLING' post was made."
             },
             "de": {
-                "title": "HODL Tag",
+                "title": "HODL-Tag",
                 "description": "An diesem Tag im Jahr 2013 wurde der legendäre 'I AM HODLING' Beitrag verfasst."
             },
             "es": {

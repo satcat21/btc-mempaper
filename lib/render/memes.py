@@ -70,6 +70,24 @@ class MemeMixin:
             self._recent_memes = self._recent_memes[-self._RECENT_MEMES_MAX:]
 
     @staticmethod
+    def _tag_stem(word: str, stopwords: set):
+        """The noun inside a German '...tag' compound, or None.
+
+        German glues the day onto the noun where English writes "... Day", so
+        the word carrying the meaning ends up fused to a stopword and survives
+        as a token nothing is tagged with. The linking -s-/-es- goes with it,
+        which is what turns "todestag" into "tod".
+        """
+        if not word.endswith('tag') or len(word) <= 6:
+            return None
+        stem = word[:-3]
+        if stem.endswith('es') and len(stem) > 4:
+            stem = stem[:-2]
+        elif stem.endswith('s') and len(stem) > 4:
+            stem = stem[:-1]
+        return stem if len(stem) >= 3 and stem not in stopwords else None
+
+    @staticmethod
     def _holiday_keywords(title: str) -> list:
         """Extract search keywords from a holiday title.
 
@@ -88,11 +106,56 @@ class MemeMixin:
             'erster', 'erste', 'ersten', 'erstes', 'guten', 'gute', 'guter',
             'nicht', 'oder', 'auch', 'noch', 'nur', 'wie',
         }
+        # Fold the umlauts before the a-z filter below reaches them. That filter
+        # turns anything outside a-z into a space, so it was splitting German
+        # words at their own letters: "Parität" became "parit", "Übertrifft"
+        # became "bertrifft", and "Händen" became "nden" - which was the entire
+        # German contribution for that holiday. Folding to the ASCII digraphs
+        # keeps the word in one piece and matches how these are usually typed
+        # into a filename or a tag anyway.
+        folded = title.lower()
+        for _src, _dst in (('ä', 'ae'), ('ö', 'oe'), ('ü', 'ue'), ('ß', 'ss')):
+            folded = folded.replace(_src, _dst)
+
         # Also filter out pure-numeric tokens (e.g. "000" from "$1,000")
-        cleaned = re.sub(r"[^a-z0-9 ]", " ", title.lower())
-        return [w for w in cleaned.split()
-                if w not in STOPWORDS and not w.startswith('#') and len(w) >= 3
-                and not w.isdigit()]
+        cleaned = re.sub(r"[^a-z0-9 ]", " ", folded)
+        words = [w for w in cleaned.split()
+                 if w not in STOPWORDS and not w.startswith('#') and len(w) >= 3
+                 and not w.isdigit()]
+
+        # Emit the compound's stem alongside the compound itself: matching is
+        # substring, so "registrierungstag" alone would never find a meme tagged
+        # "registrierung", while both together cost nothing.
+        # Then the same again for ordinary inflection, because a title reading
+        # "Tag des ersten Wechselkurses" carries the genitive and nobody tags a
+        # meme that way. Matching is substring and directional - the keyword has
+        # to appear inside the meme's text - so an inflected keyword is strictly
+        # narrower than its stem, and emitting both can only widen the net. The
+        # -en rule is kept to that ending so English words ending in -on or -an
+        # ("transaction", "hellman") are left alone.
+        def _stem(w):
+            if len(w) <= 6:
+                return None
+            if w.endswith('es'):
+                s = w[:-2]
+            elif w.endswith('s'):
+                s = w[:-1]
+            elif w.endswith('en'):
+                s = w[:-1]
+            else:
+                return None
+            return s if len(s) >= 4 and s not in STOPWORDS else None
+
+        out = []
+        for w in words:
+            for form in (w, MemeMixin._tag_stem(w, STOPWORDS)):
+                if not form:
+                    continue
+                out.append(form)
+                s = _stem(form)
+                if s:
+                    out.append(s)
+        return list(dict.fromkeys(out))
 
     # ------------------------------------------------------------------
     # Meme cache helpers
