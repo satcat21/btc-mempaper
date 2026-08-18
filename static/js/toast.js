@@ -217,8 +217,10 @@
             toast.style.transform = 'translateX(0)';
         });
 
-        const timer = setTimeout(closeToast, autoDismissMs);
-        toast.closeToast = () => { clearTimeout(timer); closeToast(); };
+        // A duration of 0 keeps the toast up until it is dismissed or its owner
+        // replaces it, for progress that outlives any fixed timeout.
+        const timer = autoDismissMs > 0 ? setTimeout(closeToast, autoDismissMs) : null;
+        toast.closeToast = () => { if (timer) clearTimeout(timer); closeToast(); };
 
         return toast;
     };

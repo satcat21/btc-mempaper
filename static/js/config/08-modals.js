@@ -698,7 +698,12 @@ function setupConfigSocketHandlers() {
         details.className = 'update-details-toggle';
         details.style.cssText = 'margin-top:8px;';
         details.textContent = t.show_details || 'Show details';
-        details.addEventListener('click', openWheelRebuildModal);
+        // A click anywhere on a toast dismisses it, so opening the log must not
+        // reach it - the toast is the only handle on a run lasting hours.
+        details.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openWheelRebuildModal();
+        });
 
         _wheelToast = _buildLiveToast(
             [_toastIcon('update', 'accent'), ' ' + (t.wheel_rebuild_title || 'Rebuilding packages')],
