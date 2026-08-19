@@ -32,7 +32,7 @@ sys.path.insert(0, PROJECT_DIR)
 
 from utils.wheel_platform import (  # noqa: E402
     MAX_ATTEMPTS, SOURCE_BUILD_TIMEOUT, WHEEL_FETCH_TIMEOUT,
-    build_env, incompatible_dists, rebuild,
+    build_env, incompatible_dists, platform_tag, rebuild,
 )
 
 CACHE_DIR = os.path.join(PROJECT_DIR, 'cache')
@@ -96,13 +96,28 @@ class Run:
         self.done = []
         self.failed = []
         self.log = []
+        self.events = []
         self.started = time.time()
 
     def log_line(self, line):
-        self.log.append(line)
+        """Raw output from a build. Nothing here to translate or reword."""
+        self.event('output', line=line, text=line)
+
+    def event(self, kind, text, **fields):
+        """Record one step, as structure for the browser and prose for the journal.
+
+        The browser composes its own wording from `kind`, so the log reads in the
+        reader's language rather than in whatever this process happened to write.
+        `text` is what the journal gets, and what the browser falls back to for a
+        kind it does not recognise.
+        """
+        self.events.append(dict(fields, kind=kind, text=text))
+        if len(self.events) > MAX_LOG_LINES:
+            del self.events[:-MAX_LOG_LINES]
+        self.log.append(text)
         if len(self.log) > MAX_LOG_LINES:
             del self.log[:-MAX_LOG_LINES]
-        print(line, flush=True)
+        print(text, flush=True)
         self.publish()
 
     def publish(self, running=True, finished=None):
@@ -110,12 +125,14 @@ class Run:
             'running': running,
             'started': self.started,
             'finished': finished,
+            'target': platform_tag(),
             'total': self.total,
             'index': self.index,
             'current': self.current,
             'done': self.done,
             'failed': self.failed,
             'log': self.log,
+            'events': self.events,
         })
 
     def save_queue(self):
@@ -127,6 +144,17 @@ class Run:
                 os.remove(QUEUE_FILE)
             except OSError:
                 pass
+
+
+def _tail_lines(output, count=3):
+    """The last few whole lines of a failure.
+
+    A fixed character count cuts mid-sentence - 'could not be built - problem
+    with pip.' was the end of 'is likely not a problem with pip.', which reads
+    as the opposite of what it said.
+    """
+    lines = [ln for ln in (output or '').splitlines() if ln.strip()]
+    return ' / '.join(lines[-count:]) or 'no output captured'
 
 
 def _job_label(job):
@@ -169,26 +197,30 @@ def _do_rebuild(run, job):
         return True
 
     if not any(n == name for n, _, _ in incompatible_dists()):
-        run.log_line(f'{spec}: already runs on this CPU, skipping')
+        run.event('skip', f'{spec}: already runs on this CPU, skipping', spec=spec)
         return 'skipped'
 
     ok, output = rebuild(VENV_PIP, name, version, source=False,
                          timeout=WHEEL_FETCH_TIMEOUT, on_line=_stream(run, spec))
     if ok and any(n == name for n, _, _ in incompatible_dists()):
         ok = False
-        run.log_line(f'{spec}: the published wheel is built for another CPU too')
+        run.event('wheel_rejected',
+                  f'{spec}: the published wheel is built for another CPU too',
+                  spec=spec)
     if ok:
-        run.log_line(f'{spec}: installed a wheel for this CPU')
+        run.event('wheel_ok', f'{spec}: installed a wheel for this CPU', spec=spec)
         return True
 
-    run.log_line(f'{spec}: building from source, this can take hours')
+    run.event('source', f'{spec}: building from source, this can take hours',
+              spec=spec)
     ok, output = rebuild(VENV_PIP, name, version, source=True,
                          timeout=SOURCE_BUILD_TIMEOUT, on_line=_stream(run, spec))
     if ok:
-        run.log_line(f'{spec}: built for this CPU')
+        run.event('built', f'{spec}: built for this CPU', spec=spec)
     else:
-        run.log_line(f'{spec}: could not be built - '
-                     f'{(output or "").strip()[-300:] or "no output captured"}')
+        detail = _tail_lines(output)
+        run.event('failed', f'{spec}: could not be built - {detail}',
+                  spec=spec, detail=detail)
     return ok
 
 
@@ -277,15 +309,18 @@ def main():
     os.makedirs(CACHE_DIR, exist_ok=True)
     run = Run(jobs, queue.get('restart_when_done', True))
     run.publish()
-    run.log_line(f'{run.total} job(s) queued. This can take hours; leave the '
-                 f'device powered on. The dashboard stays available throughout.')
+    run.event('intro',
+              f'{run.total} job(s) queued. This can take hours; leave the '
+              f'device powered on. The dashboard stays available throughout.',
+              total=run.total, target=platform_tag())
 
     remaining = list(jobs)
     changed = False
 
     for position, job in enumerate(jobs, start=1):
         if _stopping:
-            run.log_line('stopped on request; the queue is kept for next time')
+            run.event('stopped',
+                      'stopped on request; the queue is kept for next time')
             break
 
         label = _job_label(job)
@@ -333,7 +368,9 @@ def main():
 
     run.current = None
     run.publish(running=False, finished=time.time())
-    run.log_line(f'finished: {len(run.done)} done, {len(run.failed)} failed')
+    run.event('finished', f'finished: {len(run.done)} done, '
+              f'{len(run.failed)} failed',
+              done=len(run.done), failed=len(run.failed))
 
     # The app is running the packages this replaced, so it only picks them up
     # after a restart. Nothing else reaches this point - the update that queued

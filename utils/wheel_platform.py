@@ -41,11 +41,8 @@ PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REBUILD_FLAG = '.wheel-rebuild-needed'
 MAX_ATTEMPTS = 3
 
-# How long a source build may take before it is abandoned. numpy's meson build
-# on a Pi Zero runs for hours, and a cap set to what a fast package needs throws
-# away the whole build rather than the last part of it. Long enough that hitting
-# it means something is wrong, not merely slow.
-SOURCE_BUILD_TIMEOUT = 6 * 3600
+# How long a source build may take before it is abandoned.
+SOURCE_BUILD_TIMEOUT = 12 * 3600
 
 # A wheel is fetched, not built. Anything slower than this is a network problem,
 # and waiting hours for it only delays finding that out.

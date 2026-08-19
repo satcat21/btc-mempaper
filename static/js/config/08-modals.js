@@ -658,6 +658,17 @@ function setupConfigSocketHandlers() {
 
         const actions = document.createElement('div');
         actions.className = 'modal-actions';
+
+        // Closing this changes nothing about the run, so a way to actually end
+        // one belongs here: without it the only exit from a build measured in
+        // hours is an SSH session and the name of a queue file.
+        const stopBtn = document.createElement('button');
+        stopBtn.type = 'button';
+        stopBtn.className = 'update-details-toggle wheel-stop-btn';
+        stopBtn.textContent = t.wheel_rebuild_stop || 'Stop rebuilding';
+        stopBtn.addEventListener('click', () => _stopWheelRebuild(stopBtn));
+        actions.appendChild(stopBtn);
+
         const closeBtn = document.createElement('button');
         closeBtn.type = 'button';
         closeBtn.className = 'update-install-btn';
@@ -730,6 +741,46 @@ function setupConfigSocketHandlers() {
     function _renderWheelEvent(evt) {
         if (!evt) return;
         const t = window.translations || {};
+
+        // Events from the build unit. It runs as its own process and cannot
+        // reach a socket, so these arrive by polling its status file - but they
+        // are worded here exactly as the live ones are, and `text` is the
+        // server's own prose, kept as the fallback for a kind added later than
+        // this code.
+        switch (evt.kind) {
+            case 'intro':
+                _wheelProgress = { index: 0, total: evt.total || 0, current: null };
+                return _appendWheelLog((t.wheel_rebuild_intro
+                        || 'Rebuilding {count} package(s) for {target}. This can take hours; leave the device powered on.')
+                    .replace('{count}', evt.total).replace('{target}', _wheelTarget || ''));
+            case 'skip':
+                return _appendWheelLog(evt.spec + ': '
+                    + (t.wheel_rebuild_skipped || 'already built for this device'));
+            case 'wheel_ok':
+                return _appendWheelLog(evt.spec + ': '
+                    + (t.wheel_rebuild_wheel_ok || 'installed a wheel for this device'));
+            case 'wheel_rejected':
+                return _appendWheelLog(evt.spec + ': '
+                    + (t.wheel_rebuild_wheel_rejected || 'the published wheel does not suit this device either'));
+            case 'source':
+                return _appendWheelLog(evt.spec + ': '
+                    + (t.wheel_rebuild_from_source || 'building from source, this can take hours'));
+            case 'built':
+                return _appendWheelLog(evt.spec + ': '
+                    + (t.wheel_rebuild_ok || 'rebuilt'));
+            case 'failed':
+                return _appendWheelLog(evt.spec + ': '
+                    + (t.wheel_rebuild_fail || 'could not be built')
+                    + (evt.detail ? ' - ' + evt.detail : ''));
+            case 'stopped':
+                return _appendWheelLog(t.wheel_rebuild_stopped
+                    || 'Stopped. What is left is kept for next time.');
+            case 'finished':
+                return _appendWheelLog((t.wheel_rebuild_summary || '{done} done, {failed} failed')
+                    .replace('{done}', evt.done).replace('{failed}', evt.failed));
+            case 'output':
+                return _appendWheelLog(evt.line || evt.text || '');
+        }
         if (evt.kind === 'wheel_rebuild_started') {
             _wheelProgress = { index: 0, total: evt.total || 0, current: null };
             _appendWheelLog((t.wheel_rebuild_intro
@@ -756,28 +807,84 @@ function setupConfigSocketHandlers() {
                        : evt.ok ? (t.wheel_rebuild_ok || 'rebuilt')
                        : (t.wheel_rebuild_fail || 'could not be built')));
             }
+        } else if (evt.text) {
+            _appendWheelLog(evt.text);
         }
     }
 
-    // A rebuild that began before this page loaded has no events left to send,
-    // so ask where it got to instead of showing nothing.
-    (async () => {
+    // The build runs in a unit of its own, so there are no events to receive -
+    // its progress is a file, and this is what reads it. Polling also covers the
+    // page being opened hours into a run, which no socket could.
+    let _wheelPollTimer = null;
+    let _wheelSeen = 0;
+    let _wheelTarget = null;
+
+    async function _pollWheelStatus() {
+        let d;
         try {
             const r = await fetch('/api/wheels/rebuild-status');
             if (!r.ok) return;
-            const d = await r.json();
-            if (d?.success && d.running) {
-                _wheelLog = [];
-                (d.events || []).forEach(_renderWheelEvent);
-                _wheelProgress = { index: d.index || 0, total: d.total || 0, current: d.current };
-                _showWheelToast(d.total || 0);
-                if (d.current) _setWheelProgressLine(d.current, d.index, d.total);
-            }
-        } catch (e) { /* status unavailable - the toast simply does not appear */ }
-    })();
+            d = await r.json();
+        } catch (e) {
+            return;   // the dashboard is mid-restart; the next tick will do
+        }
+        if (!d?.success) return;
+
+        const events = d.events || [];
+        if (events.length < _wheelSeen) _wheelSeen = 0;   // a new run started
+        if (_wheelSeen === 0) _wheelLog = [];
+        _wheelTarget = d.target || _wheelTarget;
+        events.slice(_wheelSeen).forEach(_renderWheelEvent);
+        _wheelSeen = events.length;
+
+        _wheelProgress = { index: d.index || 0, total: d.total || 0, current: d.current };
+        if (d.running) {
+            if (!_wheelToast) _showWheelToast(d.total || 0);
+            if (d.current) _setWheelProgressLine(d.current, d.index, d.total);
+        } else if (_wheelToast) {
+            _wheelToast.remove();
+            _wheelToast = null;
+        }
+        _renderWheelProgress();
+        _setWheelStopEnabled(!!d.running);
+
+        // Once nothing is running there is nothing left to watch. A run started
+        // later re-arms this from the socket event the app still sends.
+        if (!d.running && _wheelPollTimer) {
+            clearInterval(_wheelPollTimer);
+            _wheelPollTimer = null;
+        }
+    }
+
+    function _startWheelPolling() {
+        if (_wheelPollTimer) return;
+        _pollWheelStatus();
+        _wheelPollTimer = setInterval(_pollWheelStatus, 5000);
+    }
+    window._startWheelPolling = _startWheelPolling;
+
+    function _setWheelStopEnabled(on) {
+        const btn = document.querySelector('#wheel-rebuild-modal .wheel-stop-btn');
+        if (btn) btn.disabled = !on;
+    }
+
+    async function _stopWheelRebuild(btn) {
+        const t = window.translations || {};
+        btn.disabled = true;
+        try {
+            await fetch('/api/wheels/stop', { method: 'POST' });
+            _appendWheelLog(t.wheel_rebuild_stopping || 'Stopping...');
+        } catch (e) {
+            btn.disabled = false;
+        }
+        _pollWheelStatus();
+    }
+
+    _startWheelPolling();
 
     configSocket.on('wheel_rebuild_started', (data) => {
         if (!data) return;
+        _startWheelPolling();
         _wheelLog = [];
         _renderWheelEvent({ ...data, kind: 'wheel_rebuild_started' });
         _showWheelToast(data.total);
