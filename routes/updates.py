@@ -474,6 +474,19 @@ def register(self):
         try:
             with open(status_path) as fh:
                 status = json.load(fh)
+            # The worker writes 'running' as it goes and clears it when it
+            # finishes - but a run killed by a service restart never reaches
+            # that line, so the file claims a build is in progress for ever
+            # after. systemd knows the truth, and the grant to ask it exists
+            # for exactly this.
+            if status.get('running'):
+                try:
+                    probe = subprocess.run(
+                        ['systemctl', 'is-active', 'mempaper-build.service'],
+                        capture_output=True, text=True, timeout=10)
+                    status['running'] = probe.stdout.strip() == 'active'
+                except Exception:
+                    pass
             status['source'] = 'unit'
             return jsonify({'success': True, **status})
         except (OSError, ValueError):

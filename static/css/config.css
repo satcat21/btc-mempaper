@@ -2713,6 +2713,25 @@ body.dark-mode .wifi-badge-saved {
     min-width: 0;
 }
 
+/* The rebuild dialog's secondary action, beside Close. Same box as the primary
+   button so the pair reads as one row rather than two controls of different
+   weights, with a gap so they are not touching. */
+.modal-actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.wheel-stop-btn {
+    padding: 10px 20px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    border-radius: var(--radius-md);
+    line-height: 1.2;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
 .update-install-btn {
     background: var(--accent);
     color: #fff;
