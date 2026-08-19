@@ -292,19 +292,34 @@ if [ "$MEMPOOL_TOR" = "true" ]; then
     _CURL_TIME=10
 fi
 
+_probe_tip() {
+    curl -sf "${_CURL_PROXY[@]}" --max-time "$1" \
+        "${_MURL}/api/blocks/tip/height" 2>/dev/null || true
+}
+
+# One failed request is not evidence of an offline host. A Tor circuit
+# routinely fails to build on the first attempt and succeeds a moment later, so
+# a single probe reported healthy onion instances as down. Two attempts, the
+# second on a smaller budget: a host that really is unreachable should not hold
+# the login open for twice as long as one that is merely slow.
 _BH="—"
 _MD="${_RE}"
-_TIP=$(curl -sf "${_CURL_PROXY[@]}" --max-time "${_CURL_TIME}" \
-        "${_MURL}/api/blocks/tip/height" 2>/dev/null || true)
+_TIP=$(_probe_tip "${_CURL_TIME}")
+if ! printf '%s' "${_TIP}" | grep -qE '^[0-9]+$' 2>/dev/null; then
+    _TIP=$(_probe_tip "$(( _CURL_TIME / 2 + 1 ))")
+fi
+
+# The dot already says whether it answered - red for no, green for yes - so the
+# label is the host and nothing else. "(offline)" beside a red dot said the same
+# thing twice, and said it in English on an otherwise symbol-only line.
 if printf '%s' "${_TIP}" | grep -qE '^[0-9]+$' 2>/dev/null; then
     _BH=$(_group "${_TIP}")
     _MD="${_G}"
-    _ML="$(_shorten_host "${MEMPOOL_HOST}")"
-else
-    _ML="$(_shorten_host "${MEMPOOL_HOST}") (offline)"
 fi
+_ML="$(_shorten_host "${MEMPOOL_HOST}")"
+
 # Sourced from profile.d, so anything defined here stays in the user's shell.
-unset -f _shorten_host
+unset -f _shorten_host _probe_tip
 
 # Display label
 if [ "$DISP_ON" = "true" ] || [ "$DISP_ON" = "True" ]; then

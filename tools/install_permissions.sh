@@ -9,10 +9,6 @@
 #     (apt install, Python upgrade, post-install, permissions refresh,
 #      Wi-Fi clear, saved-Wi-Fi check)
 #
-# Named install_wifi_permissions.sh until the apt and update wrappers arrived
-# and made that a third of what it does. tools/install_wifi_permissions.sh is
-# kept as a shim so wrappers already on devices keep resolving.
-#
 # Run once on the Raspberry Pi:
 #   sudo bash ~/btc-mempaper/tools/install_permissions.sh mempaper
 #
@@ -674,6 +670,15 @@ ${SERVICE_USER} ALL=(root) NOPASSWD: ${MOUNT_BIN} -o remount\,ro /
 # write there directly (not covered by remounting / above).
 ${SERVICE_USER} ALL=(root) NOPASSWD: ${MOUNT_BIN} -o remount\,rw /boot/firmware
 ${SERVICE_USER} ALL=(root) NOPASSWD: ${MOUNT_BIN} -o remount\,ro /boot/firmware
+
+# /run, for devices that mount it read-only. Package post-install scripts write
+# there - the kernel's touches /var/run/reboot-required - and a dpkg run that
+# cannot do so leaves the package unconfigured, which then blocks everything
+# depending on it. The updater already remounts /run for this reason; without
+# the grant that call fails and the upgrade breaks halfway with a message about
+# a read-only filesystem rather than about a missing permission.
+${SERVICE_USER} ALL=(root) NOPASSWD: ${MOUNT_BIN} -o remount\,rw /run
+${SERVICE_USER} ALL=(root) NOPASSWD: ${MOUNT_BIN} -o remount\,ro /run
 
 # System package updates (for SSH admin maintenance via 'ssh mempaper@<ip>')
 ${SERVICE_USER} ALL=(root) NOPASSWD: ${APT_BIN} update

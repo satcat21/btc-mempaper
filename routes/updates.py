@@ -830,13 +830,6 @@ def register(self):
                 # the apt step below so the same update uses the new wrapper
                 # rather than the next one.
                 #
-                # Both names are checked. The script was called
-                # install_wifi_permissions.sh until it outgrew the name, and the
-                # release that renames it changes neither file's *content* —
-                # only its path — so watching the new name alone would miss
-                # exactly the update that matters most, the one that repoints
-                # the refresh wrapper.
-                #
                 # Only when something actually changed: regenerating sudoers on
                 # every update is a write to /etc for no reason, and this runs
                 # on devices where / is remounted read-only between updates.

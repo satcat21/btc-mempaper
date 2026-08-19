@@ -1,6 +1,6 @@
 # /etc/systemd/system/mempaper-dnsmasq.service
 # Captive-portal DNS + DHCP for the setup hotspot (dnsmasq). Installed by
-# install_wifi_permissions.sh.
+# install_permissions.sh.
 #
 # Not enabled/autostarted — mempaper_app.py starts/stops this unit on demand
 # via 'sudo systemctl start|stop|restart mempaper-dnsmasq.service' alongside

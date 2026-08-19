@@ -1,5 +1,5 @@
 # /etc/systemd/system/mempaper-hostapd.service
-# Setup-hotspot access point (hostapd). Installed by install_wifi_permissions.sh.
+# Setup-hotspot access point (hostapd). Installed by install_permissions.sh.
 #
 # Not enabled/autostarted — mempaper_app.py starts/stops this unit on demand
 # via 'sudo systemctl start|stop|restart mempaper-hostapd.service' while the
