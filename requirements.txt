@@ -12,30 +12,45 @@ flask-compress==1.24  # gzip compression for HTML, CSS, JS responses
 pillow==12.3.0  # On Debian 13 (trixie) / Python 3.13 / Pi Zero 1 WH: build from source to avoid SIGILL: pip install --no-binary :all: pillow==12.3.0
 qrcode[pil]==8.2  # QR code generation for e-ink onboarding screens
 babel==2.18.0
-requests==2.33.1
-python-dotenv==1.2.2
+requests==2.34.2
+python-dotenv==1.2.3
 websocket-client==1.9.0
 werkzeug==3.1.8
 watchdog==6.0.0  # For dynamic configuration file monitoring
 argon2-cffi==25.1.0  # Secure password hashing with Argon2id
 schedule==1.2.2  # For daily XPUB optimization scheduling
-numpy==2.4.4  # Fast vectorized operations for e-ink image processing
+# Fast vectorized operations for e-ink image processing.
+#
+# Held at 2.2.5 deliberately. From 2.2.6 onwards piwheels builds numpy on
+# ARMv8 hardware and publishes the result under linux_armv6l and
+# linux_armv7l filenames, so the wheel a 32-bit Pi installs holds
+# instructions its CPU does not have. The device detects that and rebuilds
+# from source, which takes most of a night on a Pi Zero. 2.2.5 is the newest
+# release whose published wheel actually runs there. Debian trixie ships
+# 2.2.4 for the same reason.
+#
+# Before raising it, install the candidate on an ARMv6 device and run
+#   .venv/bin/python -m utils.wheel_platform
+# Anything reporting 'built for ARMv8' costs every 32-bit device a source
+# build; the dashboard keeps working through it, but it is not a quick
+# update on that hardware.
+numpy==2.2.5
 pilmoji==2.0.5  # Emoji rendering in PIL images
 
 # Production WSGI server
 gunicorn==26.0.0  # Production WSGI server for Flask apps
-gevent==26.5.0  # Async networking library for SocketIO (replaces eventlet)
+gevent==26.8.0  # Async networking library for SocketIO (replaces eventlet)
 gevent-websocket==0.10.1  # Required for WebSocket upgrade support with gunicorn geventwebsocket worker
 # websocket-client (above) is used for outgoing connections to mempool API
 
 # Security dependencies for configuration encryption
 cryptography==50.0.0  # Lightweight encryption for sensitive config data
-psutil==7.2.2  # System info for device fingerprinting
+psutil==6.0.0  # System info for device fingerprinting
 
 # Optional: Tor / SOCKS5 proxy support (used by tools/sync_memes.py --tor)
 # Install Tor daemon separately: sudo apt install tor
 PySocks==1.7.1  # SOCKS5 proxy for requests/urllib3 (mempool REST over Tor, meme downloads)
-python-socks==2.7.2  # SOCKS5 for websocket-client; it does NOT use PySocks
+python-socks==3.0.0  # SOCKS5 for websocket-client; it does NOT use PySocks
 
 # Optional: E-Paper display support
 # Uncomment the line below if you plan to use physical e-ink displays
@@ -51,7 +66,7 @@ python-socks==2.7.2  # SOCKS5 for websocket-client; it does NOT use PySocks
 # lgpio==0.2.2.0   # GPIO control (used by newer Waveshare drivers, e.g. epd13in3E separate programs)
 
 # Development dependencies (optional)
-rjsmin==1.2.2   # JS minifier used by tools/minify.py — generates static/js/dist/ for performance
+rjsmin==1.2.5   # JS minifier used by tools/minify.py — generates static/js/dist/ for performance
 rcssmin==1.1.2  # CSS minifier used by tools/minify.py — generates static/css/dist/ for performance
 # pytest==8.3.4
 # black==24.10.0

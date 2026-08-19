@@ -128,6 +128,10 @@ class Run:
             'target': platform_tag(),
             'total': self.total,
             'index': self.index,
+            # Jobs finished, which is what a progress bar measures. `index` is
+            # the job being worked on and is 1-based, so on a single-job queue
+            # it reads 1/1 from the moment the build starts.
+            'completed': len(self.done) + len(self.failed),
             'current': self.current,
             'done': self.done,
             'failed': self.failed,
@@ -215,6 +219,14 @@ def _do_rebuild(run, job):
               spec=spec)
     ok, output = rebuild(VENV_PIP, name, version, source=True,
                          timeout=SOURCE_BUILD_TIMEOUT, on_line=_stream(run, spec))
+    # pip exiting zero says it installed something, not that what it installed
+    # suits this CPU. Checked the same way the wheel attempt is: a build that
+    # leaves the module still unrunnable is a failure, not a success that gets
+    # re-queued by the next update as though nothing had happened.
+    if ok and any(n == name for n, _, _ in incompatible_dists()):
+        ok = False
+        output = ((output or '') + chr(10)
+                  + 'the build produced code this CPU still cannot run')
     if ok:
         run.event('built', f'{spec}: built for this CPU', spec=spec)
     else:

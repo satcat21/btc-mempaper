@@ -167,6 +167,60 @@ git diff        # reads as: which versions moved
 > them after promoting — `git diff` shows exactly which lines gained a version
 > that had none before.
 
+### Step 5b — Check every pin installs as a wheel
+
+A pinned version that has no usable wheel for the target device is not a slower
+install, it is a different one: pip falls back to building from source, and numpy
+on a Pi Zero takes most of a night. Worse, a wheel can be *named* for a platform
+it cannot run on — piwheels builds on ARMv8 hardware and publishes the result
+under `linux_armv6l` and `linux_armv7l` filenames, which is why numpy has shipped
+ARMv8 code under an ARMv6 name since 2.2.6. The filename cannot answer this.
+
+`tools/check_wheels.py` reads the wheel a device would actually download and
+looks at `Tag_CPU_arch` in its `.ARM.attributes` section — the architecture the
+compiler was targeting. Run it from a workstation before publishing; it needs no
+Pi and installs nothing.
+
+```bash
+python tools/check_wheels.py --platform linux_armv6l --python cp313 --arm-level 6 --suggest
+```
+
+```
+numpy                  2.2.5        OK       ARMv6
+psutil                 7.2.2        BUILDS   no wheel published for this platform; newest safe: 6.0.0
+```
+
+`--suggest` names the newest published version that would install as a wheel, so
+a package reported as `BUILDS` comes with its own answer. The exit status is
+non-zero when anything would compile, which makes it usable as a release gate.
+
+Run it once per platform you support. The oldest hardware decides the pins:
+
+```bash
+for plat in linux_armv6l linux_armv7l; do
+    python tools/check_wheels.py --platform "$plat" --python cp313 --suggest
+done
+```
+
+**A `BUILDS` verdict is not automatically a blocker.** Some packages publish no
+ARM wheels at all and compile in a minute or two; that is fine. What matters is
+that nothing large is in the list, and that the choice was made deliberately
+rather than discovered by a user whose device spent the night compiling.
+
+On the device itself, the same question is answered against what is installed
+rather than what is published:
+
+```bash
+.venv/bin/python -m utils.wheel_platform
+```
+
+That names the file and the architecture, so a finding can be checked with
+`readelf -A` rather than taken on trust. Anything it reports was built for a
+newer CPU than the device implements — it may run for months before reaching such
+an instruction, and then dies with SIGILL and no traceback. The device records
+the finding and waits; the rebuild is started from **Updates** in the config page,
+never on its own.
+
 ### Step 6 — Commit
 
 ```bash

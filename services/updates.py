@@ -101,8 +101,15 @@ class UpdateSchedulerMixin:
         print(f"{len(wanted)} package(s) handed to mempaper-build.service")
         return True
 
-    def _start_wheel_rebuild_if_needed(self):
-        """Rebuild the modules the updater recorded as unrunnable on this CPU.
+    def _start_wheel_rebuild_if_needed(self, start=False):
+        """Report what needs rebuilding, and with start=True begin doing it.
+
+        Boot only reports. A rebuild costs hours on this hardware and is not a
+        decision the device gets to make for its owner: the alternative to
+        rebuilding is usually pinning a version whose published wheel already
+        suits the CPU, which costs nothing and is the better answer whenever it
+        exists. So the finding is surfaced and left there until someone asks for
+        it - from the config page, or by calling this with start=True.
 
         Runs in the background: a source build takes tens of minutes per package
         on this hardware and the dashboard has to stay up meanwhile. A package
@@ -129,6 +136,27 @@ class UpdateSchedulerMixin:
                 wanted = parse_flag(fh.read())
         except OSError:
             return
+
+        if not start and wanted:
+            # Held, not hidden: the config page reads this and offers the build.
+            self._wheel_rebuild_state = {
+                'running': False, 'pending': [f'{n}=={v}' for n, v, _ in wanted],
+                'target': platform_tag(), 'total': len(wanted), 'index': 0,
+                'completed': 0, 'current': None, 'rebuilt': [], 'failed': [],
+                'log': [], 'events': [],
+            }
+            print(f"{len(wanted)} package(s) were built for a newer CPU than "
+                  f"this one; rebuild them from the config page when convenient")
+            try:
+                if getattr(self, 'socketio', None):
+                    self.socketio.emit('wheel_rebuild_pending',
+                                       {'packages': [n for n, _, _ in wanted],
+                                        'target': platform_tag()},
+                                       room='authenticated')
+            except Exception:
+                pass
+            return
+
         if not wanted:
             try:
                 os.remove(flag_path)

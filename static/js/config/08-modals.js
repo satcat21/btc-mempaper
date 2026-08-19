@@ -837,7 +837,14 @@ function setupConfigSocketHandlers() {
         events.slice(_wheelSeen).forEach(_renderWheelEvent);
         _wheelSeen = events.length;
 
-        _wheelProgress = { index: d.index || 0, total: d.total || 0, current: d.current };
+        // `completed`, not `index`: the latter names the job in flight.
+        _wheelProgress = {
+            index: d.completed !== undefined
+                ? d.completed
+                : Math.max(0, (d.index || 0) - (d.current ? 1 : 0)),
+            total: d.total || 0,
+            current: d.current,
+        };
         if (d.running) {
             if (!_wheelToast) _showWheelToast(d.total || 0);
             if (d.current) _setWheelProgressLine(d.current, d.index, d.total);

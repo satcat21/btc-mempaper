@@ -484,6 +484,22 @@ def register(self):
             return jsonify({'success': True, 'running': False, 'log': []})
         return jsonify({'success': True, 'source': 'app', **state})
 
+    @self.app.route('/api/wheels/rebuild-now', methods=['POST'])
+    @require_auth(self.auth_manager)
+    def wheel_rebuild_now():
+        """Start the rebuild the device has been holding.
+
+        Boot records what needs doing and stops there, because on this hardware
+        the work runs for hours and pinning a version whose published wheel
+        already suits the CPU is usually the better answer. This is the other
+        choice, taken deliberately.
+        """
+        try:
+            self._start_wheel_rebuild_if_needed(start=True)
+            return jsonify({'success': True})
+        except Exception as exc:
+            return jsonify({'success': False, 'error': _safe_error(exc, 'Could not start')}), 500
+
     @self.app.route('/api/wheels/stop', methods=['POST'])
     @require_auth(self.auth_manager)
     def wheel_rebuild_stop():
@@ -1049,7 +1065,7 @@ def register(self):
                         _emit('update_output', {
                             'line': self.translations.get(
                                 'wheel_rebuild_scheduled',
-                                'Holds code this CPU cannot run, will be rebuilt after restart')
+                                'Built for a newer CPU than this device; a rebuild is available')
                                 + ': ' + ', '.join(n for n, _, _ in _foreign),
                             'phase': 'pip', 'header': True})
                 except Exception as _aw_err:

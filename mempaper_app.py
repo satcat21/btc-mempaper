@@ -3411,7 +3411,7 @@ def get_app_instance():
         _app_instance = MempaperApp()
         # Start background tasks (runs under both gunicorn and direct mode)
         _app_instance._start_pillow_rebuild_if_needed()
-        _app_instance._start_wheel_rebuild_if_needed()
+        _app_instance._start_wheel_rebuild_if_needed(start=False)
         _app_instance._start_auto_update_scheduler()
     return _app_instance
 

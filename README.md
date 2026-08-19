@@ -410,7 +410,11 @@ When the installer finishes, the device goes **straight into normal operation** 
 >   install the same on either. But one may require a newer Python than 3.11, and
 >   piwheels builds per Python minor — a package with a prebuilt armhf wheel for
 >   3.13 may have none for 3.11 and will compile from source instead (slow on a
->   Pi Zero, not fatal).
+>   Pi Zero, not fatal). A wheel can also be *named* for a platform it cannot run
+>   on: piwheels builds on ARMv8 hardware and publishes the result under
+>   `linux_armv6l` names. `python tools/check_wheels.py --platform linux_armv6l
+>   --python cp313 --arm-level 6 --suggest` reads what is inside each wheel and
+>   exits non-zero if anything would be built from source.
 >
 > To pin a combination for Bookworm yourself, run it, confirm it works, then
 > promote what the device recorded — see

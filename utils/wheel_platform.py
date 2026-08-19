@@ -207,6 +207,25 @@ def cpu_profile():
     return None, None
 
 
+def _is_orphan(dist):
+    """True for a directory pip left behind rather than a package that is installed.
+
+    pip replaces a package by renaming its directory to ~name and writing the
+    new one alongside; an install that dies partway leaves the ~name behind.
+    importlib.metadata enumerates it like any other distribution, reporting the
+    same project twice - and the orphan still holds the modules the rebuild was
+    meant to replace, so the package reads as broken for ever however many times
+    it is correctly rebuilt.
+    """
+    try:
+        path = getattr(dist, '_path', None)
+        if path is None:
+            return False
+        return any(part.startswith('~') for part in str(path).split(os.sep))
+    except Exception:
+        return False
+
+
 def _extension_modules(dist):
     """Absolute paths of the compiled modules a distribution installed."""
     try:
@@ -228,12 +247,20 @@ def _extension_modules(dist):
 
 
 def incompatible_dists():
-    """[(name, version, [reasons])] for packages this CPU cannot safely run.
+    """[(name, version, [reasons])] for packages built for a newer CPU than this.
 
-    A distribution with no compiled modules is pure Python and cannot hold an
-    instruction this CPU lacks, so it is never reported. Nor is one whose
-    modules read as built for this generation or an older one - older ARM code
-    runs correctly on newer hardware.
+    What this reports is what the binary declares, not what it will do.
+    Tag_CPU_arch is the highest architecture of any object linked into the
+    module, so a single file compiled with -march=armv8-a raises it for the
+    whole library - and the rest of that library may never reach an ARMv8
+    instruction. A package reported here can run for months without faulting;
+    what is certain is that it was not built for this device, and that if such
+    an instruction is reached the interpreter dies with SIGILL and no traceback.
+
+    Treat it as a finding to act on, not a verdict already delivered. A
+    distribution with no compiled modules is never reported, nor is one built
+    for this generation or an older one - older ARM code runs correctly on
+    newer hardware.
     """
     want_machine, want_level = cpu_profile()
     if want_machine is None:
@@ -241,6 +268,8 @@ def incompatible_dists():
 
     found = []
     for dist in distributions():
+        if _is_orphan(dist):
+            continue
         try:
             name = dist.metadata['Name']
         except Exception:
