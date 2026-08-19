@@ -1,26 +1,32 @@
-"""Installed extension modules holding instructions this CPU cannot execute.
+"""Installed extension modules built for a newer CPU than this device implements.
 
-A native module built for a higher ARM generation than the hardware implements
+A native module compiled for a higher ARM generation than the hardware has
 imports, and usually runs, until a code path reaches an instruction the CPU does
-not have; then it raises SIGILL, which kills the interpreter with no traceback
-at whatever moment that path first runs.
+not implement; then it raises SIGILL, which kills the interpreter with no
+traceback at whatever moment that path first runs.
 
-The question is answered from the compiled code, not from packaging metadata.
-Wheel tags cannot settle it: piwheels builds on ARMv7 hardware and names the
-result linux_armv6l, while the WHEEL file inside keeps the build host's tag - so
-a correct, ARMv6-compatible wheel declares armv7l and comparing tags reports
-every one of them as wrong, forever. Nothing in the metadata distinguishes
-"built on armv7, targeted at armv6" from "armv7 code".
+Packaging metadata cannot settle it, and it is wrong in both directions.
+piwheels builds ARM wheels on newer hardware than the name they are published
+under, and the WHEEL file inside keeps the build host's tag - so a wheel that
+runs perfectly well here can declare a platform it was merely built on, and
+comparing tags reports every one of them as broken. The opposite also happens:
+since numpy 2.2.6, piwheels has published genuinely ARMv8 code under
+linux_armv6l and linux_armv7l filenames, so a wheel named for this platform is
+no evidence that it suits it.
 
-The ELF does. Every ARM object carries a .ARM.attributes section whose
-Tag_CPU_arch names the architecture the compiler was targeting, and e_machine
-names the instruction set. Reading those from the installed .so files says what
-the code actually requires, which is the property that decides whether it runs.
+The ELF answers what the packaging cannot. Every ARM object carries a
+.ARM.attributes section whose Tag_CPU_arch names the architecture the compiler
+was targeting, and e_machine names the instruction set. Reading those from the
+installed .so files says what the code requires rather than what its packaging
+claims.
 
-Anything that needs rebuilding is recorded and worked through in the background
-after a restart rather than holding an update open. A published wheel for this
-platform is tried first - fetched in seconds where a source build costs tens of
-minutes - and only then a build from source.
+What comes out is a finding, not a verdict. Tag_CPU_arch is the highest
+architecture of any object linked into a module, so one file compiled for ARMv8
+raises it for a library whose reached code paths never need ARMv8 - such a
+module can run for months without faulting. So this records what it found and
+stops there. Rebuilding costs hours on this hardware, while pinning a version
+whose published wheel already suits the CPU usually costs nothing, and choosing
+between those is not the device's decision to make on its owner's behalf.
 """
 
 import collections
