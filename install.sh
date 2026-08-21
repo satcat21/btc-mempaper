@@ -696,22 +696,51 @@ _pip_build_ready() {
     return 0
 }
 
+# Project names pip could not download, read out of its own error. The wheel
+# URL carries the name: .../simple/brotli/brotli-1.2.0-cp313-...whl. That
+# matters because the package that fails is rarely the one that was asked for -
+# flask-compress is pure Python and installs fine, while the 403 is on brotli,
+# which it depends on. Naming flask-compress in --no-binary changes nothing.
+_blocked_names() {
+    sed -nE 's#.*/simple/([A-Za-z0-9._-]+)/[A-Za-z0-9._-]+\.whl.*#\1#p' \
+        | tr 'A-Z' 'a-z' | sort -u | paste -sd, -
+}
+
+# A 403 or 404 on a specific file is a refusal, not a hiccup. Retrying the whole
+# batch two more times on a Pi Zero costs several minutes to arrive at the same
+# answer, so the retries are for timeouts and resets - anything that names an
+# HTTP status goes straight to the per-package pass.
+_definite_refusal() {
+    grep -qE 'HTTP error (40[0-9]|41[0-9])' "$1"
+}
+
 _pip_install_requirements() {
-    local req="$1" attempt spec name
-    local failed=() still=()
+    local req="$1" attempt spec name nb log
+    local failed=() still=() blocked=""
+
+    log=$(mktemp)
+    trap 'rm -f "$log"' RETURN
 
     for attempt in 1 2 3; do
-        if sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" install $PIP_PIWHEELS -r "$req"; then
-            return 0
+        sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" install $PIP_PIWHEELS -r "$req" 2>&1 \
+            | tee "$log"
+        [ "${PIPESTATUS[0]}" -eq 0 ] && return 0
+        if _definite_refusal "$log"; then
+            warn "The index refused a file outright — not retrying the batch"
+            break
         fi
         warn "pip install failed (attempt ${attempt}/3) — retrying in 5s"
         sleep 5
     done
 
-    warn "Batch install keeps failing — installing one package at a time"
+    warn "Installing one package at a time to find what is actually missing"
     while IFS= read -r spec; do
-        sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" install $PIP_PIWHEELS "$spec" \
-            || failed+=("$spec")
+        sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" install $PIP_PIWHEELS "$spec" 2>&1 \
+            | tee "$log"
+        if [ "${PIPESTATUS[0]}" -ne 0 ]; then
+            failed+=("$spec")
+            blocked="${blocked},$(_blocked_names < "$log")"
+        fi
     done < <(sed 's/#.*//' "$req" | sed 's/[[:space:]]*$//' | grep -E '[^[:space:]]')
 
     [ ${#failed[@]} -eq 0 ] && return 0
@@ -727,11 +756,17 @@ _pip_install_requirements() {
         return 1
     fi
 
-    warn "No wheel could be fetched for: ${failed[*]} — building from source"
+    blocked=$(printf '%s' "$blocked" | tr ',' '\n' | grep -E '[^[:space:]]' \
+              | sort -u | paste -sd, -)
+    warn "No wheel could be fetched for: ${blocked:-${failed[*]}} — building from source"
+
     for spec in "${failed[@]}"; do
         name=$(printf '%s' "$spec" | sed -E 's/[][<>=!~;].*$//')
+        # Both the requested package and whatever pip could not download. The
+        # second is usually a dependency, and it is the one that has to be built.
+        nb="$name${blocked:+,$blocked}"
         sudo -u "$SERVICE_USER" env TMPDIR="$PIP_BUILD_TMPDIR" \
-            "$VENV_DIR/bin/pip" install --no-binary "$name" "$spec" \
+            "$VENV_DIR/bin/pip" install --no-binary "$nb" "$spec" \
             || still+=("$spec")
     done
 
