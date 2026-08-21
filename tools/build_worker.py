@@ -22,6 +22,7 @@ it is dropped rather than retried for ever.
 
 import json
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -32,7 +33,7 @@ sys.path.insert(0, PROJECT_DIR)
 
 from utils.wheel_platform import (  # noqa: E402
     MAX_ATTEMPTS, SOURCE_BUILD_TIMEOUT, WHEEL_FETCH_TIMEOUT,
-    build_env, incompatible_dists, platform_tag, rebuild,
+    build_env, build_tmpdir, incompatible_dists, platform_tag, rebuild,
 )
 
 CACHE_DIR = os.path.join(PROJECT_DIR, 'cache')
@@ -148,6 +149,33 @@ class Run:
                 os.remove(QUEUE_FILE)
             except OSError:
                 pass
+
+
+def _clear_scratch():
+    """Remove what earlier builds left in the scratch directory.
+
+    pip cleans up after itself when it exits normally. A build killed partway -
+    by a restart, by the timeout, or by the machine losing power - leaves its
+    whole tree behind, and on a device where several have been interrupted that
+    is hundreds of megabytes of dead object files nothing will ever collect.
+    Only one worker runs at a time, so the start of a run is the safe moment.
+    """
+    scratch = build_tmpdir()
+    if not scratch:
+        return
+    try:
+        entries = os.listdir(scratch)
+    except OSError:
+        return
+    for entry in entries:
+        path = os.path.join(scratch, entry)
+        try:
+            if os.path.isdir(path):
+                shutil.rmtree(path)
+            else:
+                os.remove(path)
+        except OSError:
+            pass
 
 
 def _tail_lines(output, count=3):
@@ -319,6 +347,7 @@ def main():
         return 0
 
     os.makedirs(CACHE_DIR, exist_ok=True)
+    _clear_scratch()
     run = Run(jobs, queue.get('restart_when_done', True))
     run.publish()
     run.event('intro',

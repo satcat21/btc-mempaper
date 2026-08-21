@@ -653,11 +653,99 @@ PIP_PIWHEELS="--extra-index-url https://www.piwheels.org/simple"
 # ── Step 3: Python dependencies ────────────────────────────────────────────
 step "Step 3/9 — Installing Python dependencies"
 
-if [ -f requirements.txt ]; then
-    sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" install $PIP_PIWHEELS -r requirements.txt
+# piwheels is what makes an ARM install possible at all: PyPI publishes no
+# armv6l wheels, so dropping it turns numpy, cryptography and gevent into
+# multi-hour source builds. But its archive hosts intermittently refuse a single
+# file with 403 or 404, and pip treats a failed download of the candidate it
+# chose as fatal rather than trying another - so one bad file takes the whole
+# batch down, and with `set -e` it took the installer with it.
+#
+# Three passes, then one package at a time, then from source. The batch is
+# fastest and resolves shared dependencies in one go; installing individually
+# limits the damage to the package that genuinely cannot be fetched and prints
+# its name instead of burying it in a resolver trace; and a wheel that cannot be
+# downloaded can still be built, which pip will not decide to do on its own.
+# Can this account actually build a package here? Two requirements, both
+# invisible until a build is already under way:
+#
+#   somewhere to write   /tmp is a tmpfs sized at half of RAM on Raspberry Pi OS,
+#                        so a compile of any size fills it and the assembler
+#                        fails with ENOSPC - which reads as a compiler fault
+#                        rather than as a filesystem that ran out. The card has
+#                        room; the build only has to be pointed at it, and
+#                        cache/build-tmp is the same directory the background
+#                        build worker uses.
+#
+#   a virtualenv it owns pip unpacks into site-packages at the end. If the venv
+#                        belongs to another account the build succeeds and the
+#                        install fails on the last step, after all the work.
+PIP_BUILD_TMPDIR=""
+_pip_build_ready() {
+    local scratch="$SCRIPT_DIR/cache/build-tmp"
+    if ! sudo -u "$SERVICE_USER" mkdir -p "$scratch" 2>/dev/null; then
+        warn "$SERVICE_USER cannot write $scratch — a source build would fall back"
+        warn "to /tmp and run out of space part-way through."
+        return 1
+    fi
+    if ! sudo -u "$SERVICE_USER" test -w "$VENV_DIR/lib"; then
+        warn "$VENV_DIR is not writable by $SERVICE_USER. Fix it with:"
+        warn "  sudo chown -R ${SERVICE_USER}:${SERVICE_USER} $VENV_DIR"
+        return 1
+    fi
+    PIP_BUILD_TMPDIR="$scratch"
+    return 0
+}
+
+_pip_install_requirements() {
+    local req="$1" attempt spec name
+    local failed=() still=()
+
+    for attempt in 1 2 3; do
+        if sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" install $PIP_PIWHEELS -r "$req"; then
+            return 0
+        fi
+        warn "pip install failed (attempt ${attempt}/3) — retrying in 5s"
+        sleep 5
+    done
+
+    warn "Batch install keeps failing — installing one package at a time"
+    while IFS= read -r spec; do
+        sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" install $PIP_PIWHEELS "$spec" \
+            || failed+=("$spec")
+    done < <(sed 's/#.*//' "$req" | sed 's/[[:space:]]*$//' | grep -E '[^[:space:]]')
+
+    [ ${#failed[@]} -eq 0 ] && return 0
+
+    # Building needs two things a download does not: somewhere to write the
+    # object files, and a virtualenv belonging to the account doing the writing.
+    # Both are checked before starting, because a build that runs for minutes
+    # and then dies on a permission is worse than one that never began - and
+    # both failures arrive from deep inside pip, naming a path rather than the
+    # thing that is actually wrong.
+    if ! _pip_build_ready; then
+        warn "Skipping the source fallback — see above. Still missing: ${failed[*]}"
+        return 1
+    fi
+
+    warn "No wheel could be fetched for: ${failed[*]} — building from source"
+    for spec in "${failed[@]}"; do
+        name=$(printf '%s' "$spec" | sed -E 's/[][<>=!~;].*$//')
+        sudo -u "$SERVICE_USER" env TMPDIR="$PIP_BUILD_TMPDIR" \
+            "$VENV_DIR/bin/pip" install --no-binary "$name" "$spec" \
+            || still+=("$spec")
+    done
+
+    [ ${#still[@]} -eq 0 ] && return 0
+    warn "Could not install: ${still[*]}"
+    return 1
+}
+
+if [ ! -f requirements.txt ]; then
+    fail "requirements.txt not found"
+elif _pip_install_requirements requirements.txt; then
     ok "Python packages installed"
 else
-    fail "requirements.txt not found"
+    fail "Python packages could not be installed — see the errors above"
 fi
 
 # Raspberry Pi specific packages (GPIO/SPI)
