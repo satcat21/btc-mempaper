@@ -745,6 +745,24 @@ async function saveMemeTags() {
             const apiLower = new Set(apiTags.map(t => t.toLowerCase()));
             const uniqueUserTags = tags.filter(t => !apiLower.has(t.toLowerCase()));
             currentModalMeme.tags = [...apiTags, ...uniqueUserTags];
+
+            // currentModalMeme lives only while the modal is open. The grid's
+            // click handler carries its own copy of the tags, captured when the
+            // page loaded, and reopening a meme replays that copy - so a meme
+            // tagged here opens untagged the next time. Rebind that handler to
+            // what was just saved. Rebinding rather than reloading the grid:
+            // a reload returns to page one, which loses the reader's place in a
+            // library of thousands over a change to a single meme.
+            const _fn = currentModalMeme.filename;
+            const _url = currentModalMeme.url;
+            const _merged = currentModalMeme.tags;
+            const _gridImg = Array.from(
+                document.querySelectorAll('#memes-list img[data-filename]')
+            ).find(el => el.dataset.filename === _fn);
+            if (_gridImg) {
+                _gridImg.onclick = () => openMemeModal(_fn, _url, _merged, apiTags);
+            }
+
             const saveBtn = document.getElementById('meme-modal-save-tags-btn');
             if (saveBtn) { saveBtn.classList.remove('rename-dirty'); saveBtn.classList.add('rename-clean'); }
             showNotification(window.translations?.tags_saved || 'Tags saved', 'success');

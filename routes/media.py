@@ -261,11 +261,19 @@ def register(self):
             if os.path.exists(thumb_path):
                 os.remove(thumb_path)
 
+            # The record goes with the image. Left behind it describes a file
+            # that is not there: harmless to the renderer, which draws only what
+            # it finds on disk, but it is one more record per deletion for ever,
+            # and a tag the operator removed here would come back if the image
+            # were ever downloaded again.
+            forgotten = self.image_renderer.forget_meme(stem)
+
             self.image_renderer.invalidate_meme_cache()
 
             return jsonify({
                 'success': True,
-                'message': f'Meme deleted successfully: {filename}'
+                'message': f'Meme deleted successfully: {filename}',
+                'metadata_removed': forgotten
             })
 
         except Exception as e:

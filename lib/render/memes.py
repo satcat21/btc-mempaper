@@ -316,6 +316,103 @@ class MemeMixin:
         with open(renames_path, 'w', encoding='utf-8') as fh:
             _json.dump(renames, fh, ensure_ascii=False, indent=2)
 
+    def forget_meme(self, stem: str) -> dict:
+        """Drop every trace of one meme from the metadata beside the images.
+
+        The index files are append-only everywhere else: a sync adds records and
+        nothing ever takes one away. That is right for a downloader, which must
+        not discard what a previous run learned, but it leaves a record behind
+        for every image the operator deletes. Those records name a file that is
+        not there, so the renderer skips them, and they accumulate silently.
+
+        Returns a count per file, so the caller can say what it removed.
+        """
+        import json as _json
+        removed = {'index': 0, 'user_tags': 0, 'renames': 0}
+
+        renames_path = os.path.join(self.meme_dir, '_renames.json')
+        renames: dict[str, str] = {}
+        if os.path.exists(renames_path):
+            try:
+                with open(renames_path, encoding='utf-8') as fh:
+                    renames = _json.load(fh)
+            except (OSError, _json.JSONDecodeError):
+                renames = {}
+
+        # A renamed file's record is still keyed by the uuid it arrived with, so
+        # both names have to be looked for: the record under the original, the
+        # tags and the rename entry under the name on disk.
+        keys = {stem}
+        original = renames.get(stem)
+        if original:
+            keys.add(original)
+
+        for jsonl_name in ('index.jsonl', '_state_memes.jsonl'):
+            path = os.path.join(self.meme_dir, jsonl_name)
+            if not os.path.exists(path):
+                continue
+            kept: list[str] = []
+            dropped = 0
+            try:
+                with open(path, encoding='utf-8') as fh:
+                    for line in fh:
+                        stripped = line.strip()
+                        if not stripped:
+                            continue
+                        try:
+                            entry = _json.loads(stripped)
+                        except _json.JSONDecodeError:
+                            # Unreadable to us is not the same as wrong. Keep it
+                            # rather than dropping a line nothing here parsed.
+                            kept.append(stripped)
+                            continue
+                        if entry.get('id', '') in keys:
+                            dropped += 1
+                        else:
+                            kept.append(stripped)
+            except OSError:
+                continue
+            if not dropped:
+                continue
+            # Written whole and renamed into place. These files hold thousands of
+            # records and are the only description of the library there is;
+            # truncating one in place would lose all of it if the write is cut
+            # short, and a Pi loses power more often than it is shut down.
+            tmp = path + '.tmp'
+            try:
+                with open(tmp, 'w', encoding='utf-8') as fh:
+                    for line in kept:
+                        fh.write(line + '\n')
+                os.replace(tmp, path)
+                removed['index'] += dropped
+            except OSError:
+                if os.path.exists(tmp):
+                    try:
+                        os.remove(tmp)
+                    except OSError:
+                        pass
+
+        for name, key in (('_user_tags.json', 'user_tags'),
+                          ('_renames.json', 'renames')):
+            path = os.path.join(self.meme_dir, name)
+            if not os.path.exists(path):
+                continue
+            try:
+                with open(path, encoding='utf-8') as fh:
+                    data = _json.load(fh)
+                if stem not in data:
+                    continue
+                data.pop(stem)
+                tmp = path + '.tmp'
+                with open(tmp, 'w', encoding='utf-8') as fh:
+                    _json.dump(data, fh, ensure_ascii=False, indent=2)
+                os.replace(tmp, path)
+                removed[key] = 1
+            except (OSError, _json.JSONDecodeError):
+                continue
+
+        return removed
+
     def set_meme_tags(self, stem: str, tags: list[str]) -> None:
         """Save user-defined tags for a meme (persisted in _user_tags.json)."""
         import json as _json
