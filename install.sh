@@ -797,10 +797,21 @@ sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" install $PIP_PIWHEELS spidev gpiozer
 # Raspbian Trixie's system libwebp is compiled for ARMv7+ NEON and causes SIGILL
 # on ARMv6 during both encode and decode. We build libwebp from source with NEON
 # disabled and install it as a shared library so Pillow links against it at runtime.
+# Run a probe that is expected to crash. These test whether a compiled module
+# executes on this CPU, and the answer acted on is usually "it did not" - SIGILL,
+# which is what an ARMv7 instruction does on an ARM1176. The subshell is what
+# keeps that quiet: bash announces a signal-terminated child on its own stderr
+# rather than the child's, so redirecting the command alone still prints
+# "Illegal instruction" and the entire command line, which reads like a failure
+# rather than the successful detection it is.
+_probe() {
+    ( sudo -u "$SERVICE_USER" "$VENV_DIR/bin/python" -c "$1" ) >/dev/null 2>&1
+}
+
 ARCH=$(uname -m)
 if [ "$ARCH" = "armv6l" ]; then
     # gevent: test ssl C extension (SIGILL on armv7+ wheel, TypeError on Python 3.13 with ssl=False)
-    if sudo -u "$SERVICE_USER" "$VENV_DIR/bin/python" -c "import gevent.ssl; print('ok')" >/dev/null 2>&1; then
+    if _probe "import gevent.ssl"; then
         ok "gevent ssl works on armv6l — skipping source rebuild"
     else
         step "Rebuilding gevent from source (Pi Zero 1 WH — takes 10-20 minutes)"
@@ -815,11 +826,11 @@ if [ "$ARCH" = "armv6l" ]; then
     # libwebp: Raspbian Trixie's package is compiled for ARMv7+ NEON — causes SIGILL on ARMv6.
     # Build from source with NEON disabled, install as shared lib to override the system one.
     # Test by probing WebP encode in a subprocess (SIGILL kills the child, not the app).
-    if sudo -u "$SERVICE_USER" "$VENV_DIR/bin/python" -c \
-        'from PIL import Image; import io; buf=io.BytesIO(); Image.new("RGB",(1,1)).save(buf,"WEBP")' \
-        >/dev/null 2>&1; then
+    if _probe 'from PIL import Image; import io; buf=io.BytesIO(); Image.new("RGB",(1,1)).save(buf,"WEBP")'; then
         ok "Pillow WebP works on armv6l — skipping libwebp source build"
     else
+        warn "Pillow cannot encode WebP on this CPU - the system libwebp is built"
+        warn "with ARMv7 NEON. Rebuilding it without, then relinking Pillow."
         LIBWEBP_VER="1.5.0"
         LIBWEBP_URL="https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-${LIBWEBP_VER}.tar.gz"
         step "Building libwebp ${LIBWEBP_VER} from source with NEON disabled (Pi Zero 1 WH — takes ~10 minutes)"
