@@ -358,6 +358,9 @@ echo ""
 step "System update"
 sudo apt-get update -q
 sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -q
+sudo DEBIAN_FRONTEND=noninteractive apt-get full-upgrade -y -q
+sudo DEBIAN_FRONTEND=noninteractive apt-get autoremove -y -q
+
 sudo apt-get install -y locales-all -q
 ok "System updated"
 
