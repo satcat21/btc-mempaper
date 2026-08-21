@@ -3132,6 +3132,28 @@ function createMemeManagementInterface(field) {
         }, 350);
     });
     memesSection.appendChild(searchInput);
+
+    // Untagged memes are invisible to holiday and tag matching - they appear in
+    // the ordinary rotation and nowhere else. This is how you find them in a
+    // library of thousands in order to tag them by hand.
+    const untaggedRow = document.createElement('label');
+    untaggedRow.className = 'meme-untagged-filter';
+
+    const untaggedBox = document.createElement('input');
+    untaggedBox.type = 'checkbox';
+    untaggedBox.id = 'meme-untagged-only';
+    untaggedBox.checked = window.memeUntaggedOnly === true;
+    untaggedBox.addEventListener('change', () => {
+        window.memeUntaggedOnly = untaggedBox.checked;
+        loadMemes(searchInput.value.trim());
+    });
+
+    const untaggedText = document.createElement('span');
+    untaggedText.textContent = window.translations?.memes_untagged_only
+        || 'Only memes without tags';
+
+    untaggedRow.append(untaggedBox, untaggedText);
+    memesSection.appendChild(untaggedRow);
     
     const memesList = document.createElement('div');
     memesList.id = 'memes-list';

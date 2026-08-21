@@ -1704,6 +1704,10 @@ body.dark-mode .upload-icon {
     transform: scale(1.03);
 }
 
+/* The filename sat permanently across the bottom of a 100px thumbnail, over
+   the part of the meme that tells you which one it is. It appears on hover
+   instead, and the thumbnail carries a title= so the name is still reachable
+   by keyboard and by screen reader. */
 .meme-filename {
     position: absolute;
     bottom: 0;
@@ -1715,6 +1719,40 @@ body.dark-mode .upload-icon {
     font-size: 0.65rem;
     text-align: center;
     backdrop-filter: blur(4px);
+    word-break: break-all;
+    opacity: 0;
+    transition: opacity .12s ease;
+    pointer-events: none;
+}
+
+.meme-thumbnail:hover .meme-filename,
+.meme-thumbnail:focus-within .meme-filename {
+    opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .meme-filename { transition: none; }
+}
+
+/* Touch devices have no hover, so the name would never be reachable there. */
+@media (hover: none) {
+    .meme-filename { opacity: 1; }
+}
+
+.meme-untagged-filter {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+    user-select: none;
+}
+
+.meme-untagged-filter input {
+    cursor: pointer;
+    margin: 0;
 }
 
 body.dark-mode .meme-filename {

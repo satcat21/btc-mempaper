@@ -88,6 +88,7 @@ def register(self):
             page = request.args.get('page', 1, type=int)
             per_page = request.args.get('per_page', 50, type=int)  # Limit to 50 memes per request
             search = request.args.get('search', '', type=str).strip().lower()
+            untagged = request.args.get('untagged', '').lower() in ('1', 'true', 'yes')
 
             memes_dir = os.path.join('static', 'memes')
             if not os.path.exists(memes_dir):
@@ -107,6 +108,19 @@ def register(self):
                             or search in filename.lower()):
                         filtered.append(filename)
                 all_files = filtered
+
+            # Memes with nothing to match on. Filtered here rather than in the
+            # browser because the grid is paginated: hiding tagged memes from the
+            # loaded page would report "4 untagged" while thousands more sat on
+            # pages nobody had scrolled to.
+            if untagged:
+                _tags = self.image_renderer.get_cached_meme_tags()
+                _api_tags = self.image_renderer.get_cached_meme_api_tags()
+                all_files = [
+                    f for f in all_files
+                    if not _tags.get(os.path.splitext(f)[0])
+                    and not _api_tags.get(os.path.splitext(f)[0])
+                ]
 
             # Already sorted by the cache
 

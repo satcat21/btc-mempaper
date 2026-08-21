@@ -717,9 +717,14 @@ function renderMemeThumbBody(memeDiv, meme) {
             () => showDeleteModal(meme.filename))
     );
 
+    // Shown on hover rather than painted across the bottom of the picture:
+    // the thumbnail is 100px and the caption was covering the part of the meme
+    // that identifies it. title= is set as well, so the name is reachable
+    // without a pointer.
     const name = document.createElement('div');
     name.className = 'meme-filename';
     name.textContent = meme.filename;
+    memeDiv.title = meme.filename;
 
     memeDiv.replaceChildren(actions, name);
 }
@@ -1477,7 +1482,7 @@ class MemeLoader {
         imgElement.src = actualUrl;
     }
     
-    async loadMemePage(page = 1, search = '') {
+    async loadMemePage(page = 1, search = '', untagged = false) {
         // Only block if currently loading this page
         if (this.isLoading) {
             return null;
@@ -1486,11 +1491,12 @@ class MemeLoader {
         try {
             let url = `/api/memes?page=${page}&per_page=${this.perPage}`;
             if (search) url += `&search=${encodeURIComponent(search)}`;
+            if (untagged) url += '&untagged=1';
             const response = await fetch(url);
             const data = await response.json();
             this.totalMemes = data.total;
             // Only mark page as loaded if fetch succeeded and no search filter
-            if (!search && data && data.memes && data.memes.length > 0) {
+            if (!search && !untagged && data && data.memes && data.memes.length > 0) {
                 this.loadedPages.add(page);
             }
             return data;
@@ -1525,7 +1531,7 @@ async function loadMemes(search = '') {
         // Show loading indicator
         memesList.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: var(--text-secondary);">Loading memes...</div>';
         // Load first page
-        const data = await memeLoader.loadMemePage(1, search);
+        const data = await memeLoader.loadMemePage(1, search, window.memeUntaggedOnly === true);
         // Bail out if a newer search superseded this one while we were waiting
         if (thisGen !== memeLoadGeneration) return;
         if (!data) {
