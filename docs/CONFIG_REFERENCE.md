@@ -412,15 +412,30 @@ Any hand-written cron line invoking `tools/sync_memes.py` or
 predating this module carry no marker comment, so without that sweep a device
 would end up running two downloaders against the same directory.
 
-> **The sync script (`tools/sync_memes.py`) is currently a placeholder** and
-> downloads nothing. It accepts the full command line, prints why there is
-> nothing to report and exits 0, so a scheduled run shows as succeeding rather
-> than failing. The downloader it will eventually call is not part of this
-> repository, so everything around it — the schedule, the cron entry, the web
-> button — is deployed and working ahead of the implementation. When that lands,
-> no crontab needs rewriting: the entry already invokes this file with the
-> arguments the real version will take. `tor_meme_downloads` is likewise
-> accepted and recorded now, and takes effect then.
+**`tools/sync_memes.py` holds the whole implementation in one file** — a client
+for the site's API and the downloader built on it — because it is deployed as one
+thing: the crontab entry names this path, and the **Download new memes** button in
+the web UI runs the same command. Its command line is what the cron entry and the
+web route depend on:
+
+| Flag | Effect |
+| :--- | :--- |
+| `--update` | Download whatever is missing, streaming one progress line at a time. A non-zero exit is reported as a failed sync. |
+| `--deep` | With `--update`: enumerate the whole catalogue by tag instead of reading `/newest`, which only ever returns the latest fifty. |
+| `--status` | Print exactly one word as the last line — `idle`, `running`, `paused` or `done`. Anything but `idle` makes the web UI show a sync in progress. |
+| `--stop` | Ask a running sync to stop after the current page. |
+| `--tor` | Route everything through the local SOCKS proxy. This is what `tor_meme_downloads` selects. |
+
+Unknown flags are accepted and ignored, so a crontab written by an older or newer
+release does not become a weekly failure email. Output is plain ASCII on purpose:
+this runs from cron, where the locale is whatever the system defaults to, and a
+non-ASCII character raises `UnicodeEncodeError` there rather than printing a wrong
+glyph.
+
+> A sync writes the image **and** its metadata record. An image saved without one
+> is invisible to holiday and tag matching, so it appears in the ordinary rotation
+> and nowhere else. `tools/meme_index_audit.py` reports how many files are in that
+> state and, for memes that came from the API, fetches the missing records back.
 
 ---
 

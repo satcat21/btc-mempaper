@@ -397,11 +397,16 @@ btc-mempaper/
 |   |-- configure_display.py     Display configuration wizard
 |   |-- setup_user.py            Create / update / delete admin users
 |   |-- delivery_state.py        Prepare device for delivery
-|   |-- sync_memes.py            Weekly meme sync (API client, placeholder)
+|   |-- sync_memes.py            Meme sync: API client, downloader and CLI
+|   |-- meme_index_audit.py      Which memes the renderer cannot match, and why
 |   |-- diagnose_mempool_api.py  Mempool API diagnostics
 |   |-- generate_service_file.py Generate systemd service config
 |   |-- backup_manager.py        Backup & maintenance utility
 |   |-- reset_cache_rpi.sh       Cache reset for Raspberry Pi
+|   |-- check_wheels.py          Reads each published wheel's ELF for CPU fit
+|   |-- build_worker.py          Runs queued rebuilds outside the app's cgroup
+|   |-- mempaper-build.service   Systemd unit the build worker runs under
+|   |-- setup_swap.sh            Swap file sized for the device, if it has none
 |   |-- install_permissions.sh  Polkit + sudoers rules for Wi-Fi hotspot
 |   +-- 90-mempaper-wifi.rules       Polkit rule for NetworkManager
 |

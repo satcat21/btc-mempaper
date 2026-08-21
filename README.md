@@ -375,6 +375,7 @@ When the installer finishes, the device goes **straight into normal operation** 
 
 - Creates the `mempaper` service account
 - Installs all system and Python packages
+- Creates a swap file where the device has none, so a source build cannot be killed for want of memory
 - Rebuilds gevent and Pillow from source on ARMv6 (Pi Zero 1 WH) where the piwheels build is incompatible
 - Copies the example config (skipped if `config/config.json` already exists)
 - Configures the e-ink display (interactive prompt)
@@ -727,6 +728,31 @@ scp -r ~/memes/* pi@<pi-ip>:/home/mempaper/btc-mempaper/static/memes/
 ```
 
 > **Note:** You must log out and back in (or run `newgrp mempaper`) on the Pi after installation for the group membership to take effect for any already-running SSH session.
+
+#### Meme Library Health
+
+A meme is reachable by holiday and tag matching only when the image is in `static/memes/` **and** a record for it exists in `index.jsonl` or `_state_memes.jsonl` carrying tags or descriptive text. A meme without one still appears in the ordinary rotation, but is never chosen for a holiday or a keyword — and nothing on the device says so. The audit reports the state of every file in the directory:
+
+```bash
+cd /home/mempaper/btc-mempaper
+sudo -u mempaper .venv/bin/python tools/meme_index_audit.py
+sudo -u mempaper .venv/bin/python tools/meme_index_audit.py --list   # every filename, not a sample
+sudo -u mempaper .venv/bin/python tools/meme_index_audit.py --csv    # to pipe somewhere
+```
+
+Three cases are counted apart, because each has a different answer:
+
+| Reported as | What it means | What to do |
+| :--- | :--- | :--- |
+| **from the API, no record** | A uuid-named file whose metadata never got written | `--repair` fetches the records back from einundzwanzig-memes.space and appends them |
+| **added by hand, no record** | Uploaded or copied in, so nothing exists upstream to fetch | Tag it under **Meme Management**, or leave it in the ordinary rotation |
+| **record, nothing to match on** | Indexed, but carries neither tags nor text | Tag it under **Meme Management** |
+
+It also finds one meme sitting in the directory as several files — the `.webp` the API served plus a `.jpg` or `.png` converted from it. The renderer draws whatever is in the directory, so a meme with two files comes up twice as often as every other one.
+
+To find the untagged ones from the web UI instead, tick **Only memes without tags** above the gallery in **Meme Management**.
+
+The audit is read-only unless `--repair` is given, which appends to `index.jsonl` and touches nothing else.
 
 #### Private Repositories
 
