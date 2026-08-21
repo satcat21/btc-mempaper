@@ -440,20 +440,76 @@ class UpdateSchedulerMixin:
                 project_dir = PROJECT_ROOT
                 needs_restart = False
 
-                # System packages update — safe because python3/python3-dev/python3-venv
+                # System packages update - safe because python3/python3-dev/python3-venv
                 # are held via apt-mark hold, so the Python minor cannot change.
+                #
+                # full-upgrade is deliberately not here. It is the one apt
+                # operation allowed to remove packages, and the web route only
+                # runs it after simulating and refusing when the removal list
+                # touches a declared dependency or the Python the venv is built
+                # on. There is nobody at 05:00 to read that refusal.
+                from routes.updates import (PILLOW_NATIVE_DEPS, _installed_versions)
+
+                pillow_before = _installed_versions(PILLOW_NATIVE_DEPS)
                 try:
                     subprocess.run(
                         ['sudo', 'apt-get', 'update', '-qq'],
-                        timeout=120, capture_output=True, check=True
-                    )
-                    subprocess.run(
-                        ['sudo', 'apt-get', 'upgrade', '-y'],
                         timeout=300, capture_output=True, check=True
                     )
-                    print("✅ Auto-update: system packages upgraded")
+                    # Half an hour, not five minutes. An upgrade carrying a
+                    # kernel regenerates the initramfs, which on a Pi Zero runs
+                    # well past the old budget - and a timeout there leaves dpkg
+                    # mid-transaction, unattended, with the failure swallowed as
+                    # "non-fatal". A partial upgrade is worse than none.
+                    result = subprocess.run(
+                        ['sudo', 'apt-get', 'upgrade', '-y'],
+                        timeout=30 * 60, capture_output=True, text=True
+                    )
+                    if result.returncode == 0:
+                        print("✅ Auto-update: system packages upgraded")
+                    else:
+                        tail = (result.stderr or result.stdout or '').strip().splitlines()
+                        print(f"⚠️ Auto-update: apt upgrade exited {result.returncode} - "
+                              f"{' / '.join(tail[-3:]) or 'no output'}")
+                        print("   The upgrade may be half-applied. Repair with: "
+                              "sudo dpkg --configure -a && sudo apt-get -f install")
+                except subprocess.TimeoutExpired:
+                    print("⚠️ Auto-update: apt upgrade timed out after 30 minutes and "
+                          "was killed. dpkg is likely mid-transaction - repair with: "
+                          "sudo dpkg --configure -a && sudo apt-get -f install")
                 except Exception as e:
                     print(f"⚠️ Auto-update: system packages update failed (non-fatal): {e}")
+
+                # What the web route does after any apt work, and this path did
+                # not: an upgrade that moves a library Pillow was compiled
+                # against leaves it linked to something no longer installed, and
+                # an upgrade can drift a pinned package off the version
+                # apt-requirements.txt declares. Neither announces itself.
+                try:
+                    from routes.updates import _flag_pillow_rebuild
+                    moved = _flag_pillow_rebuild(
+                        project_dir, pillow_before,
+                        lambda msg, header=False: print(f"   {msg}"))
+                    if moved:
+                        needs_restart = True
+                except Exception as e:
+                    print(f"⚠️ Auto-update: Pillow dependency check skipped: {e}")
+
+                try:
+                    wrapper = '/usr/local/bin/mempaper-apt-install'
+                    if os.path.exists(wrapper):
+                        reconcile = subprocess.run(
+                            ['sudo', wrapper], timeout=30 * 60,
+                            capture_output=True, text=True
+                        )
+                        if reconcile.returncode != 0:
+                            print("⚠️ Auto-update: declared packages could not be "
+                                  "reconciled after the upgrade")
+                        for line in (reconcile.stdout or '').splitlines():
+                            if line.startswith(('📌', '🔓', '⚠️', '❌')):
+                                print(f"   {line}")
+                except Exception as e:
+                    print(f"⚠️ Auto-update: package reconcile skipped: {e}")
 
                 # mempaper software update — only if a newer release exists
                 try:
