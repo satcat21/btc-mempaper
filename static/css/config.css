@@ -3805,41 +3805,46 @@ body.dark-mode .preview-card-dark {
 }
 
 /* ── Meme sync row (Meme Management > Advanced) ─────────────────────────── */
-/* Two switches and the action button on one line. Wraps rather than shrinks:
-   the switches have a fixed intrinsic width, so squeezing them on a narrow
-   screen collides the labels instead of stacking them. */
+/* Two switches and the action button on one line. The cells are containers
+   only: their contents join this grid directly, so the three captions share a
+   row and the three controls share the next. A caption that wraps to two lines
+   then lifts the controls beside it instead of sliding out of line with them. */
 .meme-sync-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: flex-end;
-    gap: 24px;
+    display: grid;
+    grid-template-columns: auto auto 1fr minmax(0, max-content);
+    align-items: end;
+    column-gap: 24px;
+    row-gap: 6px;
 }
 
 .meme-sync-cell {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
+    display: contents;
 }
 
-.meme-sync-cell--action {
-    margin-left: auto;
-}
+/* Column 3 is an empty gutter; it holds the action against the right edge and
+   collapses first when the panel narrows. */
+.meme-sync-row > .meme-sync-cell:nth-child(1) > * { grid-column: 1; }
+.meme-sync-row > .meme-sync-cell:nth-child(2) > * { grid-column: 2; }
+.meme-sync-row > .meme-sync-cell--action > * { grid-column: 4; }
+
+.meme-sync-cell > .meme-sync-cell-label { grid-row: 1; }
+.meme-sync-cell > .meme-sync-cell-label ~ * { grid-row: 2; }
+.meme-sync-cell > .meme-sync-status { grid-row: 3; }
 
 /* The action caption names the host, so it is a sentence where the other two
-   are two words. Let it wrap and cap its width: the nowrap the switch captions
-   use would push this row wider than the panel rather than taking the second
-   line it already has room for. */
+   are two words. It sizes its column: given the room it stays on one line and
+   the whole row is one caption tall, and where the panel is narrower it wraps
+   rather than pushing the row wider than the panel. */
 .meme-sync-cell--action .meme-sync-cell-label {
     white-space: normal;
-    max-width: 32ch;
+    max-width: 48ch;
 }
 
-/* Sits under the button, so it must not widen the cell as it fills: the row is
-   laid out by the caption's width, and a longer outcome reflowing the switches
-   beside it would move the controls while the reader is looking at them. */
+/* Sits under the button, sharing the row's last line with the schedule beside
+   it. Capped at the caption's width so a longer outcome cannot widen the column
+   and reflow the switches while the reader is looking at them. */
 .meme-sync-status {
-    margin-top: 6px;
-    max-width: 32ch;
+    max-width: 48ch;
     white-space: pre-wrap;
     font-variant-numeric: tabular-nums;
 }
@@ -3853,8 +3858,11 @@ body.dark-mode .preview-card-dark {
     white-space: nowrap;
 }
 
+/* The last line of the row, under the switches it describes and level with the
+   sync outcome on the other side. */
 .meme-sync-schedule {
-    margin-top: 10px;
+    grid-row: 3;
+    grid-column: 1 / 3;
     font-variant-numeric: tabular-nums;
 }
 
@@ -3884,9 +3892,24 @@ body.dark-mode .preview-card-dark {
     border-color: var(--accent-color, #f7931a);
 }
 
+/* Too narrow to line anything up. The cells become boxes again and stack, and
+   the schedule takes a line of its own. */
 @media (max-width: 640px) {
-    .meme-sync-cell--action {
-        margin-left: 0;
+    .meme-sync-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-end;
+        gap: 16px 24px;
+    }
+
+    .meme-sync-cell {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .meme-sync-schedule {
+        flex-basis: 100%;
     }
 }
 

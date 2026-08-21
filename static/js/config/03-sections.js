@@ -1975,7 +1975,7 @@ function createMemeSyncSection() {
     } else {
         schedule.textContent = t.meme_sync_schedule_unknown || 'No schedule recorded for this device.';
     }
-    formGroup.appendChild(schedule);
+    row.appendChild(schedule);
 
     // A sync started before this page was opened is still running on the
     // device, so ask rather than assume idle.

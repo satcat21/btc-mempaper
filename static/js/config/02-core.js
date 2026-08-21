@@ -1512,12 +1512,17 @@ class MemeLoader {
 // Global meme loader instance
 const memeLoader = new MemeLoader();
 
-// Current meme search term
+// The filter the grid is currently showing, held for as long as it is shown.
+// Every page the scroll appends has to be cut from the same list as the first
+// one: a later page taken from the unfiltered list repeats memes already on
+// screen, because the filtered page 1 skipped past them.
 let currentMemeSearch = '';
+let currentMemeUntagged = false;
 let memeLoadGeneration = 0;
 
 async function loadMemes(search = '') {
     currentMemeSearch = search;
+    currentMemeUntagged = window.memeUntaggedOnly === true;
     const thisGen = ++memeLoadGeneration;
     // Cancel any in-flight scroll load so it doesn't block or corrupt the new search
     memeLoader.isLoading = false;
@@ -1531,7 +1536,7 @@ async function loadMemes(search = '') {
         // Show loading indicator
         memesList.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: var(--text-secondary);">Loading memes...</div>';
         // Load first page
-        const data = await memeLoader.loadMemePage(1, search, window.memeUntaggedOnly === true);
+        const data = await memeLoader.loadMemePage(1, search, currentMemeUntagged);
         // Bail out if a newer search superseded this one while we were waiting
         if (thisGen !== memeLoadGeneration) return;
         if (!data) {
@@ -1617,7 +1622,8 @@ async function loadMoreMemes(page, sentinel) {
     if (memeScrollLoading) return;
     memeScrollLoading = true;
     try {
-        const data = await memeLoader.loadMemePage(page, currentMemeSearch);
+        const data = await memeLoader.loadMemePage(page, currentMemeSearch,
+                                                   currentMemeUntagged);
         if (!data || !data.memes.length) {
             sentinel.remove();
             memeScrollLoading = false;
