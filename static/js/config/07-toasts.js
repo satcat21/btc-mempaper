@@ -763,6 +763,24 @@ async function saveMemeTags() {
                 _gridImg.onclick = () => openMemeModal(_fn, _url, _merged, apiTags);
             }
 
+            // The untagged filter asks the grid to show memes with nothing to
+            // match on, and this meme no longer is one - leaving it there means
+            // the list stops describing what it claims to. Removing it also
+            // gives the pass through an untagged library a visible end: the
+            // count falls with each meme tagged.
+            //
+            // Only when something was actually added. Clearing the last tag
+            // makes a meme untagged again, and it belongs on this list.
+            if (_gridImg && window.memeUntaggedOnly === true && _merged.length) {
+                const _tile = _gridImg.closest('.meme-thumbnail');
+                if (_tile) _tile.remove();
+                const _count = document.getElementById('meme-image-count');
+                const _n = parseInt((_count?.textContent || '').replace(/\D/g, ''), 10);
+                if (_count && Number.isFinite(_n) && _n > 0) {
+                    _count.textContent = `(${typeof _fmtNum === 'function' ? _fmtNum(_n - 1) : _n - 1})`;
+                }
+            }
+
             const saveBtn = document.getElementById('meme-modal-save-tags-btn');
             if (saveBtn) { saveBtn.classList.remove('rename-dirty'); saveBtn.classList.add('rename-clean'); }
             showNotification(window.translations?.tags_saved || 'Tags saved', 'success');
