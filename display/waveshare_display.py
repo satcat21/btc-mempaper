@@ -348,7 +348,8 @@ class WaveshareDisplay:
         # Convert back to RGB for display
         return quantized.convert('RGB')
 
-    def display_image(self, image_path, message=None, process_vertical=True):
+    def display_image(self, image_path, message=None, process_vertical=True,
+                      full_clear=False):
         """
         Display an image on the e-paper display.
 
@@ -454,8 +455,14 @@ class WaveshareDisplay:
                 # Initialize display
                 self._call_epd_init()
 
-                # Clear display before drawing is skipped (saves ~31s); the fast
-                # partial-refresh push is sufficient without a full clear pass
+                # A blanking pass costs ~31s and buys nothing on a healthy
+                # panel, so the ordinary path goes straight to the image. It is
+                # asked for only after a refresh that ran far outside its normal
+                # duration, where the controller may need re-initialising before
+                # it will drive pixels again.
+                if full_clear:
+                    print("🔄 Full clear pass requested — re-initialising the panel")
+                    self._call_epd_clear()
 
                 # Display the image
                 buffer_data = self.epd.getbuffer(img)

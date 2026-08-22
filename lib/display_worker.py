@@ -9,6 +9,8 @@ drivers and GPIO libraries are only initialised once, saving ~10s per block.
 Protocol (newline-delimited JSON over stdin/stdout):
   Startup:   worker writes {"status": "ready"}
   Command:   caller writes {"image_path": "cache/current_eink.png"}
+             optionally with {"full_clear": true} to re-initialise the panel
+             with a blanking pass before drawing
   Result:    worker writes {"success": true}  or  {"success": false, "error": "..."}
 """
 
@@ -78,7 +80,8 @@ def main():
             continue
 
         try:
-            success = display.display_image(image_path)
+            success = display.display_image(
+                image_path, full_clear=bool(cmd.get("full_clear")))
             if success:
                 sys.stdout.write(json.dumps({"success": True}) + "\n")
             else:

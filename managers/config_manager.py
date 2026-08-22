@@ -358,6 +358,8 @@ class ConfigManager:
             # Off by default: the last rung of the Tor recovery ladder needs a
             # sudoers rule the installer does not write. See utils/tor_recovery.
             "tor_auto_restart": True,
+            # Recovering a wedged e-ink panel: see services/display_worker.
+            "eink_auto_reboot": True,
             "mempool_username": "",
             "mempool_password": "",
             "network_outage_tolerance_minutes": 45,

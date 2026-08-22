@@ -47,6 +47,7 @@ def validate_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
         "mempool_verify_ssl",
         "mempool_use_tor",
         "tor_auto_restart",
+        "eink_auto_reboot",
         "mempool_is_private",
         "opsec_mode_enabled",
         "public_dashboard",

@@ -339,6 +339,28 @@ def register(self):
             return jsonify({'success': False, 'error': _safe_error(e)}), 500
 
     # ── Device Power Management API ────────────────────────────────────
+
+    def _wait_for_display_idle(action, timeout=120):
+        """Block until no e-ink refresh is in flight, or the wait runs out.
+
+        Cutting power part-way through a refresh leaves the waveform unfinished
+        and DC bias sitting on the pixels, which is the one thing an e-ink panel
+        must not be subjected to. A 13.3" panel takes over half a minute, and
+        these routes previously powered off two seconds after the click.
+
+        Bounded rather than an unconditional wait: the vendor driver's busy-pin
+        polling has no timeout of its own, so a panel that has stopped answering
+        would otherwise make the device impossible to turn off from the web UI.
+        """
+        lock = getattr(self, '_display_worker_lock', None)
+        if lock is None:
+            return
+        if lock.acquire(timeout=timeout):
+            lock.release()
+            print(f"✅ Display idle — safe to {action}")
+        else:
+            print(f"⚠️ Display lock timeout after {timeout}s — {action} anyway; "
+                  f"the panel may be left mid-refresh")
     @self.app.route('/api/system/restart-service', methods=['POST'])
     @require_auth(self.auth_manager)
     def restart_service():
@@ -346,6 +368,7 @@ def register(self):
         try:
             def _do_restart():
                 time.sleep(1)
+                _wait_for_display_idle('restart')
                 subprocess.run(
                     ['sudo', 'systemctl', 'restart', 'mempaper.service'],
                     timeout=30
@@ -371,6 +394,7 @@ def register(self):
                 except OSError as e:
                     print(f'⚠️ Could not write graceful-reboot marker: {e}')
                 time.sleep(2)
+                _wait_for_display_idle('reboot')
                 subprocess.run(
                     ['sudo', 'systemctl', 'reboot'],
                     timeout=30
@@ -387,6 +411,7 @@ def register(self):
         try:
             def _do_shutdown():
                 time.sleep(2)
+                _wait_for_display_idle('power off')
                 subprocess.run(
                     ['sudo', 'systemctl', 'poweroff'],
                     timeout=30

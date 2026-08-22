@@ -535,6 +535,7 @@ made while the service is running can be overwritten without warning.
 | `font_regular` | String | `static/fonts/Roboto-Regular.ttf` | Path to a `.ttf`, relative to the app directory or absolute | Path to regular font file |
 | `font_bold` | String | `static/fonts/Roboto-Bold.ttf` | Path to a `.ttf`, relative to the app directory or absolute | Path to bold font file |
 | `eink_auto_disabled` | Boolean | `false` | `true`, `false` — written by the app, not normally set by hand | Set when three consecutive refresh failures switch the display off, so startup knows the shutdown was automatic rather than the operator's choice. See [Display hardware](#display-hardware) |
+| `eink_auto_reboot` | Boolean | `true` | `true`, `false` | Last rung of the e-ink recovery ladder. A refresh that runs beyond 300 s has not reached the panel, and neither a service restart nor a fresh driver process clears that state — only a reboot does. Rate-limited to once every 6 hours and never triggered by a merely slow refresh, so a device with a healthy panel never reaches it. Set to `false` to be told in the log instead. See [Automatic disable and recovery](#automatic-disable-and-recovery) |
 | `meme_sync_schedule_randomised` | Boolean | *(set by `install.sh`)* | `true`, `false` | Marks that the installer has already picked a random day and hour for this device, so a later install run leaves your schedule alone. See [Meme sync](#meme-sync) |
 
 A value outside its accepted range is **discarded, not clamped**: the range-checked

@@ -37,6 +37,7 @@ _group() {
 _B='\033[1m'   _R='\033[0m'   _D='\033[2m'
 _O='\033[38;5;214m'   _G='\033[32m'   _RE='\033[31m'   _Y='\033[33m'
 _W='\033[1;97m'
+_GY='\033[90m'
 
 # ── Config (one Python call for all fields) ───────────────────────────────────
 MEMPOOL_HOST="mempool.space"
@@ -64,9 +65,13 @@ try:
     print(c.get('tor_socks_host', '127.0.0.1') or '127.0.0.1')
     print(c.get('tor_socks_port', 9050) or 9050)
     print(c.get('number_format', 'eu') or 'eu')
+    # Set when three consecutive refresh failures switched the panel off. It is
+    # what separates a display the operator disabled from one that broke.
+    print(str(c.get('eink_auto_disabled', False)).lower())
 except Exception:
     print('mempool.space'); print('443'); print('false'); print('none'); print('true')
     print('false'); print('127.0.0.1'); print('9050'); print('eu')
+    print('false')
 PYEOF
 )
     MEMPOOL_HOST=$(printf '%s' "$_raw"  | sed -n '1p')
@@ -78,6 +83,7 @@ PYEOF
     TOR_SOCKS_HOST=$(printf '%s' "$_raw" | sed -n '7p')
     TOR_SOCKS_PORT=$(printf '%s' "$_raw" | sed -n '8p')
     NUMBER_FORMAT=$(printf '%s' "$_raw"  | sed -n '9p')
+    DISP_AUTO_OFF=$(printf '%s' "$_raw" | sed -n '10p')
     [ "$NUMBER_FORMAT" = "us" ] || NUMBER_FORMAT="eu"
     : "${TOR_SOCKS_HOST:=127.0.0.1}" "${TOR_SOCKS_PORT:=9050}"
 fi
@@ -142,6 +148,13 @@ if [ -n "$_LATEST" ] && [ "$_LATEST" != "$_MVER" ]; then
     printf "   %b${_B}→ %s available${_R}" "${_Y}" "${_LATEST}"
 fi
 printf '\n'
+# The settings page is the reason most people log into this device at all,
+# and the address is the one thing an SSH session cannot tell them. First
+# global IPv4 rather than the hostname: .local depends on mDNS resolving
+# from whatever machine they are sitting at, and it often does not.
+_IP=$(hostname -I 2>/dev/null | tr ' ' '\n' | grep -E '^[0-9]+\.' | head -1)
+[ -n "${_IP}" ] || _IP="$(hostname 2>/dev/null).local"
+printf "  %bhttp://%s:5000%b\n" "${_O}" "${_IP}" "${_R}"
 if [ -n "$_LATEST" ] && [ "$_LATEST" != "$_MVER" ]; then
     _CU=$(id -un 2>/dev/null || echo "${USER:-unknown}")
     if [ "$_CU" = "mempaper" ]; then
@@ -227,6 +240,23 @@ fi
 # Load averages
 _LD=$(uptime 2>/dev/null | awk -F'load average:' '{print $2}' | xargs)
 
+# Swap. Worth a row on a 512 MB device: a source build that outgrows RAM is
+# killed rather than slowed, and swap in use is the warning before that happens.
+_ST=$(awk '/^SwapTotal:/{print int($2/1024)}' /proc/meminfo 2>/dev/null)
+_SF=$(awk '/^SwapFree:/{print int($2/1024)}' /proc/meminfo 2>/dev/null)
+: "${_ST:=0}" "${_SF:=0}"
+if [ "${_ST}" -eq 0 ]; then
+    _SW="none"; _SC="${_Y}"
+else
+    _SU=$(( _ST - _SF ))
+    _SP=$(( _SU * 100 / _ST ))
+    _SW="$(_group "${_SU}")/$(_group "${_ST}") MB (${_SP}%)"
+    if   [ "${_SP}" -ge 50 ]; then _SC="${_RE}"
+    elif [ "${_SP}" -ge 20 ]; then _SC="${_Y}"
+    else                           _SC="${_G}"
+    fi
+fi
+
 # Print system rows (no color in value strings — printf width works correctly)
 # Left value column is 23 display chars; temp uses 24 to compensate for the
 # 2-byte UTF-8 degree sign (° = 0xC2 0xB0) which printf counts as 2 chars.
@@ -234,8 +264,8 @@ printf "  %-9s ${_TC}%-23s${_R} %-13s %s\n" \
     "temp"   "${_T}°C"                         "uptime"  "${_UP}"
 printf "  %-9s ${_DC}%-22s${_R} %-13s %s\n" \
     "disk"   "${_DU:-?}/${_DT:-?} (${_DP:-?}%)" "memory"  "$(_group "${_MU}")/$(_group "${_MT}") MB (${_MP}%)"
-printf "  %-9s %s\n" \
-    "load"   "${_LD}"
+printf "  %-9s %-22s ${_SC}%-13s${_R} %s\n" \
+    "load"   "${_LD}"                       "swap"  "${_SW}"
 
 printf ' %b\n' "${_B}${_SEP}${_R}"
 
@@ -268,15 +298,16 @@ else
         || _MURL="http://${MEMPOOL_HOST}:${MEMPOOL_PORT}"
 fi
 
-# Onion addresses are 62 characters and would push the right-hand column off an
-# 80-column terminal, wrapping the row. Shorten to exactly the column width so
-# the padding below still lines up, keeping the readable head and the .onion
-# tail. ASCII dots rather than a single ellipsis character: printf pads by byte
-# count, so a multi-byte glyph here would silently shift the next column.
+# The mempool row is printed last and carries nothing to its right, so the host
+# gets the rest of the line. 66 characters is what fits beside the label on an
+# 80-column terminal, and a v3 onion is 62 - so the address that most needs the
+# room is shown whole. Anything longer keeps its readable head and its tail.
+# ASCII dots rather than a single ellipsis character: printf pads by byte count,
+# and a multi-byte glyph would throw the width calculation off.
 _shorten_host() {
     local h="$1"
-    [ "${#h}" -le 20 ] && { printf '%s' "$h"; return; }
-    printf '%s...%s' "${h:0:7}" "${h: -10}"
+    [ "${#h}" -le 66 ] && { printf '%s' "$h"; return; }
+    printf '%s...%s' "${h:0:30}" "${h: -30}"
 }
 
 # Block height — query mempool. An .onion host resolves only through the SOCKS
@@ -321,11 +352,19 @@ _ML="$(_shorten_host "${MEMPOOL_HOST}")"
 # Sourced from profile.d, so anything defined here stays in the user's shell.
 unset -f _shorten_host _probe_tip
 
-# Display label
+# Display state, as a dot rather than a word in brackets: the two rows above
+# already carry their state that way, and "(enabled)" beside a device name says
+# nothing the colour cannot. Three states, because "off" has two very different
+# meanings - green is on, red is a panel the app switched off after three failed
+# refreshes, grey is one the operator turned off.
+_DL="${DEVICE_NAME}"
 if [ "$DISP_ON" = "true" ] || [ "$DISP_ON" = "True" ]; then
-    _DL="${DEVICE_NAME} (enabled)"
+    _DD="${_G}"
+elif [ "$DISP_AUTO_OFF" = "true" ]; then
+    _DD="${_RE}"
 else
-    _DL="disabled"
+    _DD="${_GY}"
+    [ "${DEVICE_NAME}" = "none" ] && _DL="not configured"
 fi
 
 # ── Print mempaper rows ───────────────────────────────────────────────────────
@@ -338,9 +377,10 @@ printf "  %-9s %b● %b%-${_COL}s %b%-13s %s\n" \
     "service"  "${_SD}" "${_R}" "${_SL}"  "${_R}" "block height"  "${_BH}"
 
 printf "  %-9s %b● %b%-${_COL}s %b%-13s %s files\n" \
-    "mempool"  "${_MD}" "${_R}" "${_ML}"  "${_R}" "memes count"  "${_MC}"
+    "display"  "${_DD}" "${_R}" "${_DL}"  "${_R}" "memes count"  "${_MC}"
 
-printf "  %-9s   %-${_COL}s\n" \
-    "display"  "${_DL}"
+# Last, and alone on its line: see _shorten_host above.
+printf "  %-9s %b● %b%s\n" \
+    "mempool"  "${_MD}" "${_R}" "${_ML}"
 
 printf ' %b\n\n' "${_B}${_SEP}${_R}"
