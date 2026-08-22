@@ -16,8 +16,10 @@ Three rungs, cheapest first, each triggered by how long it has been since
      drops the cached hidden-service descriptors, which is what a stale or
      failed descriptor for the onion needs. Only available if the operator
      enabled a control endpoint.
-  3. Restart the tor service. The blunt one, off unless tor_auto_restart is
-     set, and rate-limited regardless.
+  3. Restart the tor service. The blunt one, and the only rung that clears
+     the descriptor cache without a control port. Rate-limited regardless, and
+     it cannot fire until nothing has worked for over half an hour, so a device
+     whose circuits are healthy never reaches it.
 
 Rungs that are unavailable are skipped with one explanatory line rather than
 retried, so a device without a control port does not fill its journal.

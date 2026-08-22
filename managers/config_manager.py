@@ -357,7 +357,7 @@ class ConfigManager:
             "tor_socks_port": 9050,
             # Off by default: the last rung of the Tor recovery ladder needs a
             # sudoers rule the installer does not write. See utils/tor_recovery.
-            "tor_auto_restart": False,
+            "tor_auto_restart": True,
             "mempool_username": "",
             "mempool_password": "",
             "network_outage_tolerance_minutes": 45,

@@ -903,7 +903,7 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
         mempool_password = self.config.get("mempool_password", "")
         
         mempool_proxies = build_mempool_proxies(self.config)
-        tor_recovery.set_auto_restart(self.config.get("tor_auto_restart", False))
+        tor_recovery.set_auto_restart(self.config.get("tor_auto_restart", True))
 
         if not hasattr(self, '_api_clients_initialized'):
             print(f"🌐 Mempool API: {build_mempool_api_url(mempool_host, mempool_rest_port, mempool_use_https)}")

@@ -444,6 +444,84 @@ chown root:root "${REFRESH_PERMS_WRAPPER}"
 chmod 755 "${REFRESH_PERMS_WRAPPER}"
 echo "✅  Permissions refresh wrapper installed: ${REFRESH_PERMS_WRAPPER}"
 
+# --- Tor recovery ladder: the rungs that need configuring ---------------------
+# utils/tor_recovery escalates when nothing has reached the mempool host for a
+# while. Rung 1, rotating the SOCKS identity, needs nothing. Rungs 2 and 3 are
+# inert until configured, and a device only discovers that mid-outage - an
+# unavailable rung is recorded for the life of the process, so one that first
+# needed it while unconfigured stays a single rung deep until mempaper restarts.
+#
+# Rung 2 is the one that earns its place. SIGNAL NEWNYM drops tor's cached
+# hidden-service descriptors, and a dead descriptor is what strands a device
+# whose neighbours on the same network still reach the same onion: rotating the
+# circuit cannot help, because every new circuit is built to the introduction
+# points that already stopped answering.
+if command -v tor >/dev/null 2>&1 && [ -f /etc/tor/torrc ]; then
+    TOR_RECONFIGURED=0
+
+    if grep -qE '^[[:space:]]*(ControlSocket|ControlPort)[[:space:]]' /etc/tor/torrc; then
+        echo "✅  tor already exposes a control endpoint — torrc left alone"
+    else
+        # A unix socket rather than the TCP port: guarded by file permissions
+        # rather than merely by being on loopback, where any local account
+        # could reach it. Cookie auth on top, group-readable for the service.
+        cat >> /etc/tor/torrc << 'TORRC'
+
+# Written by mempaper install_permissions.sh. Lets mempaper ask tor for a new
+# identity when the mempool host stops answering, which also clears cached
+# hidden-service descriptors. See utils/tor_recovery.py.
+ControlSocket /run/tor/control
+ControlSocketsGroupWritable 1
+CookieAuthentication 1
+CookieAuthFileGroupReadable 1
+TORRC
+        TOR_RECONFIGURED=1
+        echo "✅  tor control socket enabled (NEWNYM rung)"
+    fi
+
+    # Reading the auth cookie is what the group membership is for.
+    if getent group debian-tor >/dev/null 2>&1 \
+       && ! id -nG "${SERVICE_USER}" 2>/dev/null | tr ' ' '\n' | grep -qx debian-tor; then
+        if adduser "${SERVICE_USER}" debian-tor >/dev/null 2>&1; then
+            echo "✅  ${SERVICE_USER} added to the debian-tor group"
+            TOR_RECONFIGURED=1
+        else
+            echo "⚠️  Could not add ${SERVICE_USER} to debian-tor — NEWNYM stays unavailable"
+        fi
+    fi
+
+    # Rung 3, restarting tor. Both unit names, because restart_tor() tries
+    # tor@default.service and falls back to tor.service - a rule naming only the
+    # first leaves the fallback denied on a device packaged the other way.
+    SYSTEMCTL_BIN="$(command -v systemctl || echo /usr/bin/systemctl)"
+    TOR_SUDOERS_TMP="$(mktemp)"
+    cat > "${TOR_SUDOERS_TMP}" << SUDOERS
+# Written by mempaper install_permissions.sh. See utils/tor_recovery.py.
+${SERVICE_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} restart tor@default.service, ${SYSTEMCTL_BIN} restart tor.service
+SUDOERS
+    # Validated before installing: a malformed file in sudoers.d breaks sudo for
+    # every account on the device, including the one that would repair it.
+    if visudo -c -f "${TOR_SUDOERS_TMP}" >/dev/null 2>&1; then
+        install -m 0440 -o root -g root "${TOR_SUDOERS_TMP}" /etc/sudoers.d/mempaper-tor
+        echo "✅  tor restart permission installed (tor_auto_restart rung)"
+    else
+        echo "⚠️  Generated tor sudoers rule was rejected by visudo — not installed"
+    fi
+    rm -f "${TOR_SUDOERS_TMP}"
+
+    if [ "${TOR_RECONFIGURED}" = "1" ]; then
+        systemctl restart tor@default.service >/dev/null 2>&1 \
+            || systemctl restart tor.service >/dev/null 2>&1 \
+            || echo "⚠️  Could not restart tor — the control socket appears on its next restart"
+        # Deliberately no mempaper restart here. This script runs *inside* an
+        # update, invoked by the very process it would kill; the updater
+        # restarts the service itself once it is finished, and install.sh
+        # starts it fresh. An unavailable rung is remembered for the life of
+        # the process, so that restart is what makes the new rungs visible.
+        echo "✅  tor restarted; mempaper picks up the new rungs on its next start"
+    fi
+fi
+
 # Record which revision of this script produced the wrappers currently on disk.
 # The app compares this against the hash of the file in the repo, so it can say
 # "the helper scripts are out of date" instead of failing obscurely later, and

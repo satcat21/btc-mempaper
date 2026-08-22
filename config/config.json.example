@@ -12,7 +12,7 @@
   "mempool_use_tor": false,
   "tor_socks_host": "127.0.0.1",
   "tor_socks_port": 9050,
-  "tor_auto_restart": false,
+  "tor_auto_restart": true,
   "tor_meme_downloads": true,
   "mempool_use_https_clearnet": true,
   "mempool_rest_port_clearnet": 443,
