@@ -479,14 +479,23 @@ TORRC
         echo "✅  tor control socket enabled (NEWNYM rung)"
     fi
 
-    # Reading the auth cookie is what the group membership is for.
-    if getent group debian-tor >/dev/null 2>&1 \
-       && ! id -nG "${SERVICE_USER}" 2>/dev/null | tr ' ' '\n' | grep -qx debian-tor; then
-        if adduser "${SERVICE_USER}" debian-tor >/dev/null 2>&1; then
+    # Reading the control cookie is what the group membership is for. usermod
+    # rather than adduser, to match how netdev is handled further down: adduser
+    # is a wrapper whose behaviour has shifted between Debian releases, while
+    # usermod is the tool already proven to work on this device.
+    if ! getent group debian-tor >/dev/null 2>&1; then
+        echo "⚠️  No debian-tor group on this device — NEWNYM stays unavailable"
+    elif id -nG "${SERVICE_USER}" 2>/dev/null | grep -qw debian-tor; then
+        echo "✅  ${SERVICE_USER} is already in the debian-tor group"
+    else
+        # Reported with whatever the tool said. Swallowing it leaves an operator
+        # with a rung that is off and nothing to explain why.
+        if TOR_GROUP_ERR="$(usermod -aG debian-tor "${SERVICE_USER}" 2>&1)"; then
             echo "✅  ${SERVICE_USER} added to the debian-tor group"
             TOR_RECONFIGURED=1
         else
             echo "⚠️  Could not add ${SERVICE_USER} to debian-tor — NEWNYM stays unavailable"
+            [ -n "${TOR_GROUP_ERR}" ] && echo "    ${TOR_GROUP_ERR}"
         fi
     fi
 
