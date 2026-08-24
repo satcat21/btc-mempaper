@@ -38,6 +38,26 @@
 }
 
 /* ── Light Mode (default) ──────────────────────────────────── */
+/* Tell the browser this page themes itself.
+   Without color-scheme, Samsung Internet's built-in dark mode and Chrome for
+   Android's Auto Dark Theme rewrite the palette on their own: they darken
+   backgrounds that are already dark and dim icon fills, which is what turns
+   the nav buttons into shapes you cannot make out. Declaring support stops
+   them intervening. The per-theme values below also give native widgets -
+   scrollbars, date pickers, form controls - the right rendering, which is
+   what the narrow color-scheme rule in config.css was reaching for. */
+:root {
+    color-scheme: light dark;
+}
+
+body.dark-mode {
+    color-scheme: dark;
+}
+
+body:not(.dark-mode) {
+    color-scheme: light;
+}
+
 :root {
     --bg-primary: #f5f5f7;
     --bg-card: #ffffff;

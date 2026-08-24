@@ -119,9 +119,26 @@ def register(self):
                                     if len(aparts) >= 2 and aparts[1].strip() == uuid:
                                         return jsonify({'success': False, 'error': 'Cannot delete the currently connected WiFi'}), 400
 
-            result = self._nmcli(['connection', 'delete', uuid])
+            # --wait, because nmcli's own default is 10 seconds and it reports
+            # "Timeout expired (10 seconds)" when NetworkManager has not
+            # confirmed by then. On a single-core device it routinely has not,
+            # while the deletion itself goes through a moment later - so the
+            # operator saw an error for work that had succeeded. The subprocess
+            # budget stays above nmcli's, or Python would cut off the wait it
+            # was just asked to make.
+            result = self._nmcli(['--wait', '30', 'connection', 'delete', uuid],
+                                 timeout=40)
             if result is None or result.returncode != 0:
                 err = (result.stderr or result.stdout or '').strip() if result else 'nmcli failed'
+                # nmcli giving up waiting is not the same as the deletion
+                # failing. Ask what is actually on the device before reporting
+                # a failure for something that already happened.
+                check = self._nmcli_read(['-t', '-f', 'UUID', 'connection', 'show'])
+                if check is not None and check.returncode == 0:
+                    remaining = {l.strip() for l in check.stdout.splitlines() if l.strip()}
+                    if uuid not in remaining:
+                        print(f"ℹ️ nmcli reported '{err}' but {uuid} is gone — deletion succeeded")
+                        return jsonify({'success': True})
                 return jsonify({'success': False, 'error': err}), 500
 
             return jsonify({'success': True})

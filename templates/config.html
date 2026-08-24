@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="static/css/config.css">
     <script src="static/js/socket.io.min.js"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5">
+    <meta name="color-scheme" content="light dark">
     <link rel="preload" href="static/icons/back.svg" as="image">
     <link rel="preload" href="static/icons/save.svg" as="image">
     <link rel="preload" href="static/icons/logout.svg" as="image">
@@ -221,6 +222,7 @@
         window.translations = {{ translations | tojson }};
         window.allTranslations = {{ all_translations | tojson }};
     </script>
+    <script src="static/js/password-toggle.js"></script>
     <script src="static/js/confirm-modal.js"></script>
     <script src="static/js/number-format.js"></script>
     <script src="static/js/toast.js"></script>

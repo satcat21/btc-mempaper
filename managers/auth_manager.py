@@ -6,6 +6,9 @@ Provides protection against unauthorized access and request flooding,
 using secure Argon2 password hashing.
 """
 
+import json
+import os
+import secrets
 import time
 import logging
 from functools import wraps
@@ -13,7 +16,32 @@ from collections import defaultdict, deque
 from typing import Tuple
 from flask import request, jsonify, session, make_response
 from managers.secure_password_manager import SecurePasswordManager
+from utils.atomic_io import atomic_write_json
 from utils.security_config import SecurityConfig
+
+
+# Sessions are Flask signed cookies: the contents travel with the client and
+# the server keeps nothing, so clearing one only ever asked the browser to
+# forget it. A cookie that survived that request - captured off the LAN, where
+# this runs over plain HTTP, or restored from a backup - stayed valid until it
+# aged out, and no logout could touch it.
+#
+# Each login now mints a random id that is recorded here as well as in the
+# cookie, and a cookie whose id is not in this file is refused however well it
+# is signed. Logout removes the id, which is what makes it a revocation rather
+# than a request.
+#
+# On disk rather than in memory because gunicorn recycles this worker every
+# thousand requests or so to keep memory flat on a Pi Zero. An in-memory set
+# would take every live session with it each time, logging the operator out at
+# intervals that would look random.
+SESSION_STORE_PATH = os.path.join('cache', '.sessions.json')
+
+# Ids are dropped after this long regardless, so a device that is never logged
+# out does not accumulate them forever. Well clear of the sliding session
+# window: expiry is still decided by the cookie's own login_time, and this only
+# stops the file growing without bound.
+SESSION_ID_MAX_AGE = 30 * 24 * 3600
 
 logger = logging.getLogger(__name__)
 
@@ -162,6 +190,15 @@ class AuthManager:
         if not authenticated:
             logger.debug("Session check failed: not authenticated")
             return False
+
+        # The cookie is signed, so its contents are genuine - but genuine is
+        # not the same as current. A session the server has revoked, or one
+        # issued before this store existed, carries an id that is not on file.
+        sid = session.get('sid')
+        if not sid or sid not in self._load_session_ids():
+            logger.info("Session check failed: session id has been revoked")
+            session.clear()
+            return False
         
         # Check session timeout
         login_time = session.get('login_time', 0)
@@ -181,6 +218,58 @@ class AuthManager:
         logger.debug(f"Session valid: {session_timeout - elapsed_time} seconds remaining")
         return True
     
+    # ── Server-side session ids ────────────────────────────────────────
+    # Read on demand rather than cached in the instance: the file is small,
+    # reads are cheap next to the request they authorise, and re-reading means
+    # a session revoked in one place cannot be honoured somewhere else because
+    # a copy went stale.
+
+    def _load_session_ids(self) -> dict:
+        """{session_id: issued_at} for every session not yet revoked."""
+        try:
+            with open(SESSION_STORE_PATH, encoding='utf-8') as fh:
+                data = json.load(fh)
+            return data if isinstance(data, dict) else {}
+        except (OSError, ValueError):
+            # No file yet, or one we cannot read. Treated as "nothing is
+            # valid", which fails closed: the worst case is a login prompt.
+            return {}
+
+    def _save_session_ids(self, ids: dict) -> bool:
+        """Persist the live set, dropping anything long past use."""
+        cutoff = time.time() - SESSION_ID_MAX_AGE
+        pruned = {k: v for k, v in ids.items()
+                  if isinstance(v, (int, float)) and v > cutoff}
+        try:
+            os.makedirs(os.path.dirname(SESSION_STORE_PATH) or '.', exist_ok=True)
+            # 0600: this file is the difference between a signed cookie being
+            # honoured and refused, so nothing but the service account reads it.
+            atomic_write_json(SESSION_STORE_PATH, pruned, mode=0o600, indent=0)
+            return True
+        except OSError as e:
+            logger.error(f"Could not write the session store: {e}")
+            return False
+
+    def _issue_session_id(self) -> str:
+        """Record a new session and return its id."""
+        sid = secrets.token_urlsafe(24)
+        ids = self._load_session_ids()
+        ids[sid] = time.time()
+        self._save_session_ids(ids)
+        return sid
+
+    def _revoke_session_id(self, sid: str) -> None:
+        """Drop one session, so a cookie carrying it stops being accepted."""
+        if not sid:
+            return
+        ids = self._load_session_ids()
+        if ids.pop(sid, None) is not None:
+            self._save_session_ids(ids)
+
+    def revoke_all_sessions(self) -> None:
+        """Refuse every session currently outstanding, on any device."""
+        self._save_session_ids({})
+
     def refresh_session(self) -> bool:
         """
         Refresh the current session by updating the login time.
@@ -238,13 +327,20 @@ class AuthManager:
             session['authenticated'] = True
             session['username'] = username
             session['login_time'] = time.time()
+            session['sid'] = self._issue_session_id()
             # Make session permanent to leverage Flask's session management
             session.permanent = True
             return True
         return False
     
     def logout(self):
-        """Logout user and clear session."""
+        """Log out: revoke the session server-side, then clear the cookie.
+
+        Revoking first, and deliberately not conditioned on the clear
+        succeeding. Whether the browser drops its copy is the browser's
+        business; once the id is off the file the cookie is refused either way.
+        """
+        self._revoke_session_id(session.get('sid'))
         session.clear()
     
     def check_rate_limit(self, ip: str) -> Tuple[bool, int]:

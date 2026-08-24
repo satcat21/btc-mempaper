@@ -10,6 +10,7 @@
     <link rel="preload" href="static/fonts/Roboto-Regular.ttf" as="font" crossorigin>
     <link rel="preload" href="static/fonts/IBMPlexMono-Medium.ttf" as="font" crossorigin>
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
     <link rel="preload" href="static/icons/settings.svg" as="image">
     <link rel="preload" href="static/icons/logout.svg" as="image">
     <script defer src="static/js/socket.io.min.js"></script>
@@ -116,29 +117,16 @@
                 danger: true
             });
             if (!confirmed) return;
-            try {
-                const response = await fetch('/api/logout', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    }
-                });
-                
-                if (response.ok) {
-                    const result = await response.json();
-                    // If public dashboard is enabled, stay on dashboard; otherwise go to login
-                    if (result.public_dashboard) {
-                        window.location.href = '/';
-                    } else {
-                        window.location.href = '/login';
-                    }
-                } else {
-                    await showAlertModal({ title: 'Error', message: 'Logout failed' });
-                }
-            } catch (error) {
-                console.error('Logout error:', error);
-                await showAlertModal({ title: 'Error', message: 'Logout failed' });
-            }
+            // Navigate to the server-side logout rather than clearing the
+            // session with fetch() and then navigating. The two-step version
+            // races on mobile: the browser can begin the navigation before it
+            // has applied the Set-Cookie that clears the session, leaving the
+            // cookie alive. The dashboard then looks logged out while Settings
+            // still opens, because the server is still holding a valid session.
+            // GET /logout clears and redirects in one response, so there is no
+            // window in between. Where the redirect lands is decided there too,
+            // from public_dashboard.
+            window.location.href = '/logout';
         }
         
         // Mobile navigation toggle function

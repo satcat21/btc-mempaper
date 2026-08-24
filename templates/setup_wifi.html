@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="static/css/login.css">
     <link rel="stylesheet" href="static/css/setup.css">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
 </head>
 <body{% if dark_mode %} class="dark-mode"{% endif %}>
     <div class="login-container setup-container">
@@ -118,6 +119,7 @@
     <script>
         var SETUP_I18N = {{ setup_i18n_json|safe }};
     </script>
+    <script src="static/js/password-toggle.js"></script>
     <script src="static/js/setup_wifi.js"></script>
 </body>
 </html>

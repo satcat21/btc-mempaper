@@ -1264,20 +1264,12 @@ function setupNavigationButtons() {
                     icon: '/static/icons/logout.svg'
                 });
                 if (confirmed) {
-                    try {
-                        const response = await fetch('/api/logout', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' }
-                        });
-                        if (response.ok) {
-                            const result = await response.json();
-                            window.location.href = result.public_dashboard ? '/' : '/login';
-                        } else {
-                            window.location.href = '/login';
-                        }
-                    } catch {
-                        window.location.href = '/login';
-                    }
+                    // One navigation, not a fetch followed by one: clearing the
+                    // session and redirecting have to arrive in the same
+                    // response, or a mobile browser can start the navigation
+                    // before it applies the Set-Cookie that clears it. The
+                    // destination is chosen server-side from public_dashboard.
+                    window.location.href = '/logout';
                 }
             });
         }
