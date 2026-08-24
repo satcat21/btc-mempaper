@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" class="setup-page">
+<html lang="en" class="setup-page{% if dark_mode %} dark-mode{% endif %}">
 <head>
     <title>mempaper - WiFi Setup</title>
     <link rel="icon" type="image/svg+xml" href="static/favicon.svg">
@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="static/css/login.css">
     <link rel="stylesheet" href="static/css/setup.css">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="color-scheme" content="light dark">
+    <meta name="color-scheme" content="{% if dark_mode %}dark{% else %}light{% endif %}">
 </head>
 <body{% if dark_mode %} class="dark-mode"{% endif %}>
     <div class="login-container setup-container">

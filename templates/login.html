@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="{{ lang }}">
+<html lang="{{ lang }}"{% if dark_mode %} class="dark-mode"{% endif %}>
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="color-scheme" content="light dark">
+    <meta name="color-scheme" content="{% if dark_mode %}dark{% else %}light{% endif %}">
     <title>{{ translations.dashboard_title }} - {{ translations.login }}</title>
     <link rel="icon" type="image/svg+xml" href="static/favicon.svg">
     <link rel="icon" type="image/png" href="static/favicon.png">

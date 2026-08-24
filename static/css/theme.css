@@ -38,24 +38,26 @@
 }
 
 /* ── Light Mode (default) ──────────────────────────────────── */
-/* Tell the browser this page themes itself.
-   Without color-scheme, Samsung Internet's built-in dark mode and Chrome for
-   Android's Auto Dark Theme rewrite the palette on their own: they darken
-   backgrounds that are already dark and dim icon fills, which is what turns
-   the nav buttons into shapes you cannot make out. Declaring support stops
-   them intervening. The per-theme values below also give native widgets -
-   scrollbars, date pickers, form controls - the right rendering, which is
-   what the narrow color-scheme rule in config.css was reaching for. */
+/* Tell the browser which theme this page has already rendered in.
+   Samsung Internet's built-in dark mode and Chrome for Android's Auto Dark
+   Theme rewrite a page's colours when they believe it cannot theme itself:
+   they darken what is already dark and invert icon fills, and an icon that
+   this stylesheet inverted to white comes back out black - the fill the SVG
+   ships with. Both read color-scheme from the *root* element, so it is
+   declared there; on body it has no effect on them at all, however correct it
+   looks. It names one theme rather than "either" because either is not an
+   answer to "have you already handled this". The value also gives native
+   widgets - scrollbars, date pickers, form controls - the right rendering,
+   which is what the narrow color-scheme rule in config.css was reaching for.
+
+   The class is on <html> as well as <body>: body keeps every existing rule
+   working, html is what this needs. */
 :root {
-    color-scheme: light dark;
-}
-
-body.dark-mode {
-    color-scheme: dark;
-}
-
-body:not(.dark-mode) {
     color-scheme: light;
+}
+
+html.dark-mode {
+    color-scheme: dark;
 }
 
 :root {

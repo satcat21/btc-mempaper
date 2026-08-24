@@ -12,11 +12,13 @@ let memeToDelete = null;
 
 // Dark mode management functions
 function applyDarkMode(isDarkMode) {
-    if (isDarkMode) {
-        document.body.classList.add('dark-mode');
-    } else {
-        document.body.classList.remove('dark-mode');
-    }
+    // Both elements, and not interchangeably. Every rule in the stylesheets is
+    // written against body, while color-scheme is only honoured on the root -
+    // it is what tells a browser with its own dark mode that this page has
+    // already handled the theme, and a stale value there leaves the browser
+    // rewriting colours the page just changed.
+    document.body.classList.toggle('dark-mode', !!isDarkMode);
+    document.documentElement.classList.toggle('dark-mode', !!isDarkMode);
 }
 
 function applyDarkModeFromStorage() {
