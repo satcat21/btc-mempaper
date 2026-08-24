@@ -117,7 +117,16 @@ def register(self):
             'public_dashboard': public_dashboard
         })
 
+    # Two paths, one handler. /logout is the readable one and is what a LAN
+    # device uses; it is also the path an authenticating reverse proxy is most
+    # likely to claim for its own sign-out - traefik-oidc-auth takes it by
+    # default - and a claimed path never reaches this application, so the
+    # session it was asked to end stays open. /api/logout-redirect exists to be
+    # boring: everything under /api already has to pass through untouched for
+    # the settings page to work at all, so it is the one namespace that can be
+    # relied on. The front end navigates to that one.
     @self.app.route('/logout', methods=['GET'])
+    @self.app.route('/api/logout-redirect', methods=['GET'])
     def logout_redirect():
         """Server-side logout: clears session and redirects atomically.
         Avoids mobile browser race where fetch() Set-Cookie isn't applied

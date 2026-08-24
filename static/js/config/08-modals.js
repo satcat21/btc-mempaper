@@ -1269,7 +1269,7 @@ function setupNavigationButtons() {
                     // response, or a mobile browser can start the navigation
                     // before it applies the Set-Cookie that clears it. The
                     // destination is chosen server-side from public_dashboard.
-                    window.location.href = '/logout';
+                    window.location.href = '/api/logout-redirect';
                 }
             });
         }

@@ -1678,7 +1678,7 @@ function clearMemeCache() {
 const logoutButton = document.getElementById('logout-button');
 if (logoutButton) {
     logoutButton.addEventListener('click', () => {
-        window.location.href = '/logout';
+        window.location.href = '/api/logout-redirect';
     });
 }
 
