@@ -2,7 +2,7 @@
 loop for price/fee/network data, and prerender invalidation.
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from utils.atomic_io import atomic_write_json
 import json
 import os
@@ -186,10 +186,32 @@ class CachingMixin:
             update_interval = self._interval('precache_update_interval_seconds')
             last_date = datetime.now().date()
 
+            def _sleep_until_next_tick():
+                """Wait for the update interval, or for midnight, whichever is sooner.
+
+                The date is drawn on the image, so it goes stale the instant it
+                changes - but the rollover below is only tested once per pass of
+                this loop. Sleeping the full interval regardless meant the new
+                date was noticed on the first tick after midnight, anywhere from
+                a moment to a whole interval late, decided by nothing more than
+                what time the service happened to start. Waking at the boundary
+                instead makes the delay the render itself and no more.
+
+                One second past, not exactly on: at exactly midnight the clock
+                may not have crossed yet, and a pass that finds the same date
+                would sleep another full interval - the very wait being removed.
+                """
+                now = datetime.now()
+                midnight = datetime.combine(now.date() + timedelta(days=1),
+                                            datetime.min.time())
+                to_midnight = (midnight - now).total_seconds() + 1
+                # Never zero, so a clock that jumps cannot spin this loop.
+                return max(1, min(update_interval, to_midnight))
+
             while True:
                 try:
-                    # Update every N seconds (default 5 minutes)
-                    time.sleep(update_interval)
+                    # Update every N seconds, or at midnight if that comes first
+                    time.sleep(_sleep_until_next_tick())
                     self._update_precache_data()
                     # Flush any pending cache metadata to disk
                     if self._disk_save_pending:

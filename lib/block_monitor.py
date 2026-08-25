@@ -60,6 +60,13 @@ class BlockRewardMonitor:
         self.blocks_by_address = {}  # Track found blocks per address
         self.ws = None
         self._ws_opened_at = None  # When the current connection opened; drives the backoff reset
+        # Set when this connection was dropped on purpose, so the loop retries
+        # at once rather than serving out a backoff meant for a failing host.
+        self._reconnect_now = False
+        # Called after every connection opens, to ask whether the chain moved
+        # while it was down. Assigned by the app, which owns the answer.
+        self.on_reconnect = None
+        tor_recovery.on_rotation(self._on_circuit_rotated)
         self.monitoring_thread = None
         self.running = False
         
@@ -503,10 +510,35 @@ class BlockRewardMonitor:
     # outage actively slowed recovery.
     RECONNECT_DELAYS = (30, 60, 120, 300)
 
+    # Used instead of the ladder when the previous connection was healthy or was
+    # closed deliberately. Not zero: a server that hangs up the instant it
+    # accepts would otherwise be reconnected to in a tight loop.
+    RECONNECT_IMMEDIATE = 2
+
     # How long a connection has to survive before the backoff resets. A socket
     # that opens and dies immediately is still a failure, so resetting on open
     # would turn the ceiling back into a 30 s loop.
     RECONNECT_RESET_AFTER = 60
+
+    def _on_circuit_rotated(self, generation):
+        """Drop the connection when the circuit beneath it is replaced.
+
+        run_forever() is blocked on a read and the proxy credentials it was
+        given are fixed for the life of the connection, so a rotation reaches
+        the next connection and never this one. Closing here is what turns a
+        rotation into something the block feed actually benefits from: without
+        it the socket stays on the path just declared bad, and if that path
+        still answers pings the wait is not bounded by anything at all.
+        """
+        ws = self.ws
+        if ws is None or not self.running:
+            return
+        self._reconnect_now = True
+        print("🧅 Circuit rotated — dropping the block WebSocket to rebuild it")
+        try:
+            ws.close()
+        except Exception as e:
+            print(f"⚠️ Could not close the block WebSocket after rotation: {e}")
 
     def _reconnect_delay(self, consecutive_failures):
         """Next backoff step, jittered.
@@ -597,8 +629,10 @@ class BlockRewardMonitor:
                 tor_recovery.record_failure("block WebSocket", bool(_proxy_kwargs))
 
             # A connection that held is not a failure, whatever ended it.
-            if (self._ws_opened_at
-                    and time.time() - self._ws_opened_at >= self.RECONNECT_RESET_AFTER):
+            was_healthy = bool(
+                self._ws_opened_at
+                and time.time() - self._ws_opened_at >= self.RECONNECT_RESET_AFTER)
+            if was_healthy:
                 consecutive_failures = 0
 
             # run_forever() returns normally on an ordinary connection failure
@@ -609,8 +643,23 @@ class BlockRewardMonitor:
             # doing a fresh synchronous DNS lookup hundreds of times a minute,
             # starving the single CPU core other startup threads need.
             if self.running:
-                delay = self._reconnect_delay(consecutive_failures)
-                consecutive_failures += 1
+                # Two cases deserve the next attempt straight away rather than a
+                # delay sized for a host that is failing. A connection dropped on
+                # purpose - a rotation - is not evidence of anything being wrong,
+                # and the whole point of dropping it was to get onto the new
+                # circuit now. A connection that ran healthily and then ended is
+                # a single lost socket far more often than a broken transport,
+                # and the first retry is the one most likely to succeed. Neither
+                # can loop hotly: a reconnect that fails to open leaves
+                # _ws_opened_at unset, so the next pass takes the ladder.
+                deliberate = self._reconnect_now
+                self._reconnect_now = False
+                if deliberate or was_healthy:
+                    delay = self.RECONNECT_IMMEDIATE
+                    consecutive_failures = 0
+                else:
+                    delay = self._reconnect_delay(consecutive_failures)
+                    consecutive_failures += 1
                 print(f"⚙️ Reconnecting in {delay} seconds...")
                 time.sleep(delay)
     
@@ -621,6 +670,27 @@ class BlockRewardMonitor:
         # socket clears an outage even if no block arrives for ten minutes.
         tor_recovery.record_success()
         ws.send(json.dumps({"action": "want", "data": ["blocks"]}))
+
+        # A subscription delivers what happens next, not what already happened.
+        # A block found while the socket was down is simply never sent, so the
+        # device would show a height the chain has moved past until the block
+        # after it arrives - ten minutes on average, and unbounded when blocks
+        # are slow. Ask the chain directly instead, once per connection.
+        #
+        # On its own thread because this one is the reader: a REST call here
+        # blocks every message behind it, and over Tor that call can take a
+        # circuit build to complete.
+        callback = self.on_reconnect
+        if callback:
+            threading.Thread(target=self._run_reconnect_catch_up,
+                             args=(callback,), daemon=True).start()
+
+    def _run_reconnect_catch_up(self, callback):
+        """Run the app's catch-up, without letting it disturb the connection."""
+        try:
+            callback()
+        except Exception as e:
+            print(f"⚠️ Reconnect catch-up failed: {e}")
     
     def _on_message(self, ws, message):
         """Handle WebSocket message."""

@@ -66,6 +66,19 @@ _lock = threading.RLock()
 _generation = 0
 _auto_restart = False
 
+# Called when the circuit identity changes. A long-lived connection cannot
+# notice a rotation on its own: the credentials that select a circuit are read
+# when a connection is made, so anything already established keeps using the
+# path this module has just decided is bad - and a path that carries keepalives
+# but no data is one it can keep using indefinitely.
+_rotation_listeners = []
+
+
+def on_rotation(callback):
+    """Run `callback(generation)` whenever the circuit is rotated."""
+    with _lock:
+        _rotation_listeners.append(callback)
+
 
 def current_identity():
     """SOCKS credentials naming the current circuit generation.
@@ -85,7 +98,15 @@ def rotate_identity(reason=""):
     with _lock:
         _generation += 1
         generation = _generation
+        listeners = list(_rotation_listeners)
     print(f"🧅 Asking Tor for a new circuit ({reason}) — SOCKS identity mempaper{generation}")
+    # Outside the lock: a listener closes a socket, and a socket close can end
+    # up back in this module. Holding the lock across that is a deadlock.
+    for callback in listeners:
+        try:
+            callback(generation)
+        except Exception as e:
+            print(f"⚠️ Rotation listener failed: {e}")
     return generation
 
 

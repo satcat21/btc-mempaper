@@ -369,6 +369,11 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
             self.on_new_block_received,  # Use same callback as WebSocket for consistency
             self.on_new_block_notification if hasattr(self, 'on_new_block_notification') else None
         )
+        # Asked on every reconnect: the monitor knows the socket is back,
+        # and this side knows what height was last rendered. Without it a
+        # block found during the gap waits for the pre-cache loop to notice,
+        # which is up to precache_update_interval_seconds later.
+        self.block_monitor.on_reconnect = self._catch_up_after_reconnect
         
         # Summary: Cache loading complete
         print("💾 Secure caches loaded")
@@ -1202,6 +1207,23 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
             print(f"❌ [ASYNC-REFRESH] Error during async wallet refresh: {e}")
             traceback.print_exc()
     
+    def _catch_up_after_reconnect(self):
+        """Ask the chain what it is at, now that the block socket is back.
+
+        The comparison and the recovery are the ones the pre-cache loop already
+        uses when it notices a stall; this only brings the question forward to
+        the moment the connection returns, instead of waiting for the next
+        cycle. Nothing happens when the height is unchanged, which is the
+        ordinary case for a reconnect that took a couple of seconds.
+        """
+        try:
+            tip = self.mempool_api.get_tip_height()
+        except Exception as e:
+            print(f"⚠️ Reconnect catch-up skipped: {e}")
+            return
+        if tip:
+            self._check_for_missed_block(tip)
+
     def _check_async_wallet_cache_status(self, xpub: str, current_block_height: int) -> str:
         """
         Check the status of async wallet address cache for an extended key.
