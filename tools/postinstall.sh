@@ -37,6 +37,34 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
+# ── Somewhere to write ────────────────────────────────────────────────────
+# Steps below write to /etc, and this script is usually reached from the web
+# updater - which runs it as a child of mempaper.service. That unit carries
+# ProtectSystem=strict, so the whole hierarchy is read-only inside its mount
+# namespace apart from the paths named in ReadWritePaths, and sudo does not
+# leave that namespace. The updater remounts / before the permissions refresh
+# and before apt, but an update that needs neither reaches this script with
+# /etc still read-only, and every write here fails.
+#
+# Probed by writing rather than by reading /proc/mounts: the restriction is a
+# read-only bind inside the namespace, and the underlying mount can be listed
+# as rw while nothing here can write to it.
+#
+# Deliberately not put back afterwards. In the namespace it is undone when the
+# service restarts at the end of the update, and the pip install that follows
+# this script writes to the same filesystem - handing it back read-only would
+# break the install this is meant to prepare for. The updater's own remounts do
+# not restore it either, for the same reason.
+_root_probe="/etc/.mempaper-write-probe.$$"
+if ! ( : > "$_root_probe" ) 2>/dev/null; then
+    mount -o remount,rw / 2>/dev/null || true
+fi
+if ( : > "$_root_probe" ) 2>/dev/null; then
+    rm -f "$_root_probe"
+else
+    echo "⚠️  / is read-only and could not be remounted — steps that write to /etc will be skipped" >&2
+fi
+
 # ── Periodic TRIM ─────────────────────────────────────────────────────────
 # Deleting a file on flash does not erase it. The controller marks the old
 # cells free and writes the update elsewhere, so the previous contents stay
