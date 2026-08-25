@@ -74,12 +74,6 @@ _auto_restart = False
 _rotation_listeners = []
 
 
-def on_rotation(callback):
-    """Run `callback(generation)` whenever the circuit is rotated."""
-    with _lock:
-        _rotation_listeners.append(callback)
-
-
 def current_identity():
     """SOCKS credentials naming the current circuit generation.
 
@@ -214,6 +208,18 @@ class TorRecovery:
         self._unavailable = set()   # rungs this device cannot use at all
         self._last_restart = None
         self._pass_started = None   # when the current pass through the ladder began
+
+    def on_rotation(self, callback):
+        """Run `callback(generation)` whenever the circuit is rotated.
+
+        A method for the same reason set_auto_restart is one: every consumer
+        reaches this module through the `tor_recovery` singleton, so a
+        module-level function here is not reachable from the object they hold -
+        it raises AttributeError in the caller's constructor and takes the
+        service down before it can serve a page.
+        """
+        with _lock:
+            _rotation_listeners.append(callback)
 
     def set_auto_restart(self, enabled):
         """Allow or forbid the third rung. Off unless the operator opted in.
