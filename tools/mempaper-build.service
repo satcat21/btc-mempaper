@@ -28,6 +28,27 @@ Group=__SERVICE_USER__
 WorkingDirectory=__PROJECT_DIR__
 ExecStart=__PROJECT_DIR__/.venv/bin/python __PROJECT_DIR__/tools/build_worker.py
 
+# Let the kernel use swap freely while a build is running, and only then.
+#
+# postinstall.sh sets vm.swappiness=1 as the standing value, so a running
+# service stays in RAM and nothing is written to the card for no reason. That
+# is the right default and the wrong one for a compile: at 1 the kernel
+# reclaims page cache in preference to swapping, so an hours-long build drops
+# the headers and sources it is about to read again and fetches them back off
+# the SD card, over and over. Parking cold anonymous pages instead is both
+# faster and easier on the card.
+#
+# The unit is the only thing that knows when a build is happening, which is why
+# this lives here rather than around the code that starts one. ExecStopPost runs
+# on success, on failure, and when the Stop button in the web UI stops the unit,
+# so the standing value cannot be left raised.
+#
+# '+' runs these two as root despite User= below, so they need no sudoers grant
+# of their own. Both are '-' prefixed as well: a kernel that will not take the
+# setting is a reason to build without it, not a reason to refuse to build.
+ExecStartPre=+-/usr/sbin/sysctl -q -w vm.swappiness=60
+ExecStopPost=+-/usr/sbin/sysctl -q -w vm.swappiness=1
+
 # Stop means stop. The worker terminates its own pip child on SIGTERM and
 # records where it got to, so the Stop button in the web UI is prompt and the
 # queue survives to be resumed.

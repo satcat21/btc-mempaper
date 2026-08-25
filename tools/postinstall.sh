@@ -81,6 +81,48 @@ else
     esac
 fi
 
+# ── How eagerly the kernel swaps ──────────────────────────────────────────
+# The swap file above is a backstop for building a package from source, where
+# the peak briefly exceeds what a 512 MB device has. It is not meant to be used
+# in ordinary operation, and at the distribution default of 60 it is: the kernel
+# moves cold anonymous pages out to grow the page cache long before there is any
+# pressure, so a device sitting at 61% of its RAM still accumulates tens of
+# megabytes of swap over a day. On a Pi that swap file lives on the SD card, and
+# every one of those writes is card wear paid for nothing.
+#
+# 1, not 0. Zero tells the kernel to avoid swap until an allocation is about to
+# fail, which on a small device means reaching for the OOM killer where it could
+# have swapped - and a build killed for memory is the failure the swap file was
+# added to prevent. 1 keeps the file available under genuine pressure while
+# leaving a running service entirely in RAM.
+SYSCTL_FILE="/etc/sysctl.d/60-mempaper-swappiness.conf"
+step "Swap only under pressure"
+if [ "$(cat /proc/sys/vm/swappiness 2>/dev/null)" = "1" ]    && [ -f "$SYSCTL_FILE" ]; then
+    ok "Swappiness already 1 — swap is a backstop, not everyday storage"
+else
+    # Written for the next boot and applied to this one: a device that is not
+    # rebooted after an update would otherwise keep the old behaviour
+    # indefinitely, which for this setting is the whole of its service life.
+    if cat > "$SYSCTL_FILE" << 'SYSCTL'
+# Written by mempaper postinstall.sh.
+# The swap file exists so a source build is not killed for memory. It is not
+# meant to carry a running service, and the default of 60 puts it there.
+vm.swappiness = 1
+SYSCTL
+    then
+        chmod 644 "$SYSCTL_FILE"
+        if sysctl -q -w vm.swappiness=1 2>/dev/null; then
+            changed
+            ok "Swappiness set to 1, now and on every boot"
+        else
+            changed
+            warn "Swappiness will apply on the next boot — could not set it live"
+        fi
+    else
+        warn "Could not write ${SYSCTL_FILE} — swappiness stays at the default"
+    fi
+fi
+
 echo
 ok "Post-install system configuration complete"
 
