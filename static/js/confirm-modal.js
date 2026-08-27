@@ -84,7 +84,13 @@
             // confirmation that needs more than a sentence - a list of what is
             // about to change, which belongs to the caller because only the
             // caller knows how to lay its own subject out. Placed, not built.
-            if (detail) dialog.appendChild(detail);
+            // The class widens the dialog: a sentence reads best narrow, a
+            // table of names against versions needs the room to stay on one
+            // line per row.
+            if (detail) {
+                dialog.classList.add('has-detail');
+                dialog.appendChild(detail);
+            }
             dialog.appendChild(buttons);
             overlay.appendChild(dialog);
             document.body.appendChild(overlay);

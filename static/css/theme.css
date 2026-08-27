@@ -456,6 +456,15 @@ body.modal-open {
     max-height: calc(100dvh - 40px);
 }
 
+/* Wider than a dialog that only asks a question. The detail block lays names
+   against versions in a row each, and at the narrow width a package name of
+   any length pushes its versions onto a second line - which is exactly the
+   comparison the row exists to make. Still bounded by the 90% above, so a
+   phone is unaffected. */
+.confirm-modal-dialog.has-detail {
+    max-width: 620px;
+}
+
 .confirm-modal-overlay.visible .confirm-modal-dialog {
     transform: scale(1);
 }
