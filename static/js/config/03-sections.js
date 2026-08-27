@@ -1787,6 +1787,79 @@ function createSystemUpdateSection() {
     fullRow.appendChild(fullBtn);
     wrapper.appendChild(fullRow);
 
+    // Every package the simulation named, grouped by what happens to it and
+    // folded away behind a summary. The counts answer "how much"; this answers
+    // "what", which is the half that decides whether the button should be
+    // pressed at all - an upgrade of three fonts and one that replaces the
+    // kernel are the same sentence until the names are on screen. Collapsed by
+    // default because the usual answer is "fine, go ahead", and a dialog that
+    // opens with eighty package names is one nobody reads.
+    function _buildPackageDetail(groups, note) {
+        const t = window.translations || {};
+        const wrap = document.createElement('div');
+        wrap.className = 'modal-detail';
+
+        const box = document.createElement('details');
+        box.className = 'pkg-changes';
+
+        const summary = document.createElement('summary');
+        summary.textContent = t.further_details || 'Further details';
+        box.appendChild(summary);
+
+        // The scroll lives inside the fold rather than around it, so a long
+        // list caps its own height instead of pushing the buttons off-screen.
+        const scroll = document.createElement('div');
+        scroll.className = 'pkg-changes-scroll';
+
+        groups.forEach(([label, packages, kind]) => {
+            if (!packages.length) return;
+            const group = document.createElement('div');
+            group.className = 'pkg-group';
+
+            const title = document.createElement('div');
+            title.className = 'pkg-group-title ' + kind;
+            title.textContent = label + ' (' + packages.length + ')';
+            group.appendChild(title);
+
+            const list = document.createElement('ul');
+            list.className = 'pkg-list';
+            packages.forEach(pkg => {
+                const row = document.createElement('li');
+
+                const name = document.createElement('span');
+                name.className = 'pkg-name';
+                name.textContent = pkg.name;
+                row.appendChild(name);
+
+                const version = document.createElement('span');
+                version.className = 'pkg-version';
+                // An upgrade is a move between two versions; an install and a
+                // removal each have only the one version that exists.
+                version.textContent = (pkg.from && pkg.to)
+                    ? pkg.from + ' \u2192 ' + pkg.to
+                    : (pkg.to || pkg.from || '');
+                row.appendChild(version);
+
+                list.appendChild(row);
+            });
+            group.appendChild(list);
+            scroll.appendChild(group);
+        });
+
+        box.appendChild(scroll);
+        wrap.appendChild(box);
+
+        // Outside the fold: a caveat about how long this takes is no use to
+        // someone who never opened the list.
+        if (note) {
+            const hint = document.createElement('p');
+            hint.className = 'modal-detail-note';
+            hint.textContent = note;
+            wrap.appendChild(hint);
+        }
+        return wrap;
+    }
+
     fullBtn.addEventListener('click', async () => {
         const t = window.translations || {};
         // Ask apt what it would do before asking the user to approve it. The
@@ -1817,10 +1890,14 @@ function createSystemUpdateSection() {
             return;
         }
 
-        const nUp = (preview.upgrade || []).length;
-        const nNew = (preview.install || []).length;
+        // Each entry is {name, from, to}; blocked is names, being a set the
+        // server intersected against its own list of protected packages.
+        const up = preview.upgrade || [];
+        const ins = preview.install || [];
         const rem = preview.remove || [];
         const blocked = preview.blocked || [];
+        const nUp = up.length;
+        const nNew = ins.length;
 
         if (!nUp && !nNew && !rem.length) {
             await showConfirmModal({
@@ -1850,21 +1927,20 @@ function createSystemUpdateSection() {
             return;
         }
 
-        let msg = (t.full_upgrade_confirm || 'Run a full system upgrade?')
+        const msg = (t.full_upgrade_confirm || 'Run a full system upgrade?')
                 + `\n\n${nUp} ${t.to_upgrade || 'to upgrade'}`
                 + `, ${nNew} ${t.to_install || 'to install'}`
                 + `, ${rem.length} ${t.to_remove || 'to remove'}.`;
-        // Always spell the removals out. Counts are enough for the safe half of
-        // the operation; the removals are the half worth reading by name.
-        if (rem.length) {
-            msg += '\n\n' + (t.will_be_removed || 'Will be removed') + ':\n' + rem.join(', ');
-        }
-        msg += '\n\n' + (t.full_upgrade_time_hint
-                         || 'This can take a long time on a Pi Zero, and may install a new kernel.');
 
         const go = await showConfirmModal({
             title: t.full_upgrade || 'Update',
             message: msg,
+            detail: _buildPackageDetail([
+                [t.will_be_upgraded || 'Will be upgraded', up, 'upgrade'],
+                [t.will_be_installed || 'Will be installed', ins, 'install'],
+                [t.will_be_removed || 'Will be removed', rem, 'remove'],
+            ], t.full_upgrade_time_hint
+               || 'This can take a long time on a Pi Zero, and may install a new kernel.'),
             confirmText: t.full_upgrade || 'Update',
             cancelText: t.cancel || 'Cancel',
             icon: '/static/icons/update.svg'

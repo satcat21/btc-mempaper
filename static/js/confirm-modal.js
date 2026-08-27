@@ -47,7 +47,7 @@
     }
 
     // ── Confirm Modal ──────────────────────────────────────────
-    window.showConfirmModal = function ({ title, message, confirmText, cancelText, danger, icon } = {}) {
+    window.showConfirmModal = function ({ title, message, confirmText, cancelText, danger, icon, detail } = {}) {
         return new Promise(resolve => {
             const overlay = createOverlay();
             const dialog = createDialog();
@@ -80,6 +80,11 @@
 
             dialog.appendChild(heading);
             dialog.appendChild(body);
+            // An optional element between the message and the buttons, for a
+            // confirmation that needs more than a sentence - a list of what is
+            // about to change, which belongs to the caller because only the
+            // caller knows how to lay its own subject out. Placed, not built.
+            if (detail) dialog.appendChild(detail);
             dialog.appendChild(buttons);
             overlay.appendChild(dialog);
             document.body.appendChild(overlay);

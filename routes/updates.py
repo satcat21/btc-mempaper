@@ -56,7 +56,19 @@ def _permissions_hint(translations, key, default, project_dir):
         return text
 
 
-def _simulate_dist_upgrade():
+# One action per line: 'Inst name [old] (new archive [arch])' for an upgrade,
+# the same without the bracketed old version for a package that was not
+# installed before, and 'Remv name [version]' for a removal. A Debian version
+# never contains a space, so the first token inside each bracket or parenthesis
+# is the whole of it.
+_APT_SIM_ACTION = re.compile(
+    r'^(?P<verb>Inst|Remv)\s+(?P<name>\S+)'
+    r'(?:\s+\[(?P<old>[^\]\s]+)\])?'
+    r'(?:\s+\((?P<new>[^\s)]+))?'
+)
+
+
+def _simulate_dist_upgrade_detailed():
     """What a full upgrade would do, without doing any of it.
 
     `apt-get -s` prints one machine-readable verb per action - Inst, Conf,
@@ -67,9 +79,16 @@ def _simulate_dist_upgrade():
     Runs unprivileged on purpose: simulation needs no root, so the preview a
     user is shown before approving costs no grant at all.
 
-    Returns (upgrade, install, remove, error). Any failure yields empty lists
-    and an error string, and the caller must treat that as "do not proceed" -
-    an unreadable simulation is not permission to run the real thing.
+    Returns (upgrade, install, remove, error), each package a dict of name and
+    the versions it moves between: 'from' is empty for a package that was not
+    installed, 'to' is empty for one being removed. The versions are on the same
+    lines the verbs are, so reporting them costs nothing beyond keeping them -
+    and they are what turns "3 to upgrade" into something a person can check
+    against what they believe is installed.
+
+    Any failure yields empty lists and an error string, and the caller must
+    treat that as "do not proceed" - an unreadable simulation is not permission
+    to run the real thing.
 
     Every error string returned here reaches a browser - the preview endpoint
     puts it in a JSON response, and the full-upgrade run emits it over the
@@ -93,20 +112,33 @@ def _simulate_dist_upgrade():
 
     upgrade, install, remove = [], [], []
     for line in proc.stdout.splitlines():
-        parts = line.split()
-        if len(parts) < 2:
+        match = _APT_SIM_ACTION.match(line)
+        if not match:
             continue
-        verb, name = parts[0], parts[1]
-        if verb == 'Inst':
-            # 'Inst name [old-version] (new-version …)' is an upgrade;
-            # 'Inst name (new-version …)' is a package that was not there before.
-            if len(parts) >= 3 and parts[2].startswith('['):
-                upgrade.append(name)
-            else:
-                install.append(name)
-        elif verb == 'Remv':
-            remove.append(name)
+        name = match.group('name')
+        old, new = match.group('old') or '', match.group('new') or ''
+        if match.group('verb') == 'Remv':
+            remove.append({'name': name, 'from': old, 'to': ''})
+        elif old:
+            upgrade.append({'name': name, 'from': old, 'to': new})
+        else:
+            # No old version to move from: not installed before this run.
+            install.append({'name': name, 'from': '', 'to': new})
     return upgrade, install, remove, None
+
+
+def _simulate_dist_upgrade():
+    """The same three sets, as bare package names.
+
+    What the gate and the closing verification ask of the simulation is
+    membership and counts - is anything protected in the removal list, is
+    anything still outstanding - and neither has a version in the question.
+    """
+    upgrade, install, remove, error = _simulate_dist_upgrade_detailed()
+    return ([p['name'] for p in upgrade],
+            [p['name'] for p in install],
+            [p['name'] for p in remove],
+            error)
 
 
 def _installed_versions(names):
@@ -1440,17 +1472,26 @@ def register(self):
         anything, so the existing System Update button needs no preview; a full
         upgrade resolves dependency changes by removing packages, and the user
         approving it deserves to see which ones before rather than after.
+
+        Every package is named and versioned, not counted. Three counts say how
+        much is about to change but nothing about what: an upgrade that moves a
+        font and one that moves the kernel read identically, and the dialog is
+        the last point at which the difference can still be acted on.
         """
-        upgrade, install, remove, error = _simulate_dist_upgrade()
+        upgrade, install, remove, error = _simulate_dist_upgrade_detailed()
         if error:
             return jsonify({'success': False, 'message': error}), 500
         protected = _protected_packages()
-        blocked = sorted(set(remove) & protected)
+        blocked = sorted({p['name'] for p in remove} & protected)
+
+        def _by_name(packages):
+            return sorted(packages, key=lambda p: p['name'])
+
         return jsonify({
             'success': True,
-            'upgrade': sorted(upgrade),
-            'install': sorted(install),
-            'remove': sorted(remove),
+            'upgrade': _by_name(upgrade),
+            'install': _by_name(install),
+            'remove': _by_name(remove),
             # Non-empty means the run will refuse. Surfaced here so the dialog
             # can say so up front instead of offering a button that aborts.
             'blocked': blocked,

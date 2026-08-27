@@ -445,6 +445,15 @@ body.modal-open {
     box-shadow: var(--shadow-elevated);
     transform: scale(0.95);
     transition: transform 0.2s ease;
+    /* A dialog whose body is a list is as tall as the list, and a list of what
+       apt is about to change is as long as apt says it is. Capped to the
+       viewport with the long parts scrolling inside, so the title and the
+       buttons stay reachable however much there is to read. dvh where it is
+       understood: on a phone the browser chrome is part of the height. */
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100vh - 40px);
+    max-height: calc(100dvh - 40px);
 }
 
 .confirm-modal-overlay.visible .confirm-modal-dialog {
@@ -459,11 +468,119 @@ body.modal-open {
 }
 
 .confirm-modal-message {
-    margin: 0 0 24px;
+    margin: 0 0 20px;
     color: var(--text-secondary);
     font-size: 0.92rem;
     line-height: 1.55;
     white-space: pre-line;
+    /* Shrinks and scrolls before the block below it does: a message long
+       enough to fill the dialog on its own should not push the buttons out. */
+    flex: 0 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+.confirm-modal-title,
+.confirm-modal-buttons {
+    flex: 0 0 auto;
+}
+
+/* ── Modal detail: what the caller adds under the message ───── */
+.modal-detail {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    margin: 0 0 20px;
+    text-align: left;
+}
+
+.modal-detail-note {
+    margin: 12px 0 0;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    line-height: 1.5;
+    text-align: center;
+}
+
+/* Folded away by default. The summary is the whole control, so it gets the
+   pointer and the focus ring rather than relying on the marker. */
+.pkg-changes {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.pkg-changes > summary {
+    cursor: pointer;
+    list-style-position: inside;
+    padding: 6px 0;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-align: center;
+    border-radius: var(--radius-sm);
+    transition: color var(--transition);
+}
+
+.pkg-changes > summary:hover {
+    color: var(--accent);
+}
+
+.pkg-changes-scroll {
+    overflow-y: auto;
+    min-height: 0;
+    max-height: 38vh;
+    margin-top: 8px;
+    padding: 10px 12px;
+    background: var(--bg-input);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    -webkit-overflow-scrolling: touch;
+}
+
+.pkg-group + .pkg-group {
+    margin-top: 14px;
+}
+
+.pkg-group-title {
+    margin-bottom: 4px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+
+.pkg-group-title.remove {
+    color: var(--danger);
+}
+
+.pkg-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.pkg-list li {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 12px;
+    padding: 3px 0;
+    font-size: 0.82rem;
+    color: var(--text-primary);
+}
+
+.pkg-name {
+    word-break: break-word;
+}
+
+/* Pushed right on a line wide enough for both, and onto its own line when the
+   package name has taken the width - which on a phone it often has. */
+.pkg-version {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--text-secondary);
 }
 
 .confirm-modal-buttons {
