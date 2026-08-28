@@ -8,6 +8,7 @@ from datetime import datetime
 from lib.btc_holidays import btc_holidays
 import os
 import random
+import re
 
 
 # Roughly how many blocks Bitcoin produces per day -- the number of memes the
@@ -27,6 +28,25 @@ _BLOCKS_PER_DAY = 144
 # Often enough that the theme of the day is unmistakable, rare enough that the
 # panel never looks stuck on one image.
 _HOLIDAY_SHOWS_PER_MEME = 24
+
+# Keyword length at which a holiday keyword may be matched as a bare substring.
+#
+# Substring matching is what lets a stem find its own inflections - "gedenk"
+# reaching "gedenken", "finney" reaching "finney's" - and that is worth having.
+# But a title also yields short words, and a short string is a substring of
+# ordinary prose rather than of a related word: "hal", from Hal Finney, is
+# inside "halving", "half", "shall", and the German "halten" and "behalten",
+# which between them appear in a large fraction of the library. The same for
+# "tod" (Todestag) inside "today", and "len" (Len Sassaman) inside "wollen"
+# and "Millionen". Each of those turns the day's pool from a handful of
+# on-theme memes into a thousand unrelated ones - and a pool that large
+# saturates the share below, so it takes over every block of the day.
+#
+# Below this length the keyword must instead appear as a whole word. Six is
+# where the short words in the holiday titles stop: "pizza", "uasf", "lock",
+# "etf" and the rest still match as words, while nothing shorter can match
+# from inside another one.
+_KEYWORD_SUBSTRING_MIN = 6
 
 
 class MemeMixin:
@@ -431,25 +451,52 @@ class MemeMixin:
 
     # ------------------------------------------------------------------
 
-    def _pick_local_meme_by_keywords(self, keywords: list) -> str | None:
-        """Return a random local meme whose tags contain any of the keywords.
+    @staticmethod
+    def _keyword_matcher(keywords: list):
+        """A predicate over one searchable string, given the day's keywords.
 
-        Uses the cached metadata from index.jsonl and filters to memes whose
-        tag list contains at least one keyword as a substring.
-        Only returns memes whose file is actually on disk.
-        Avoids recently shown memes when possible.
-        Falls back to None if no metadata or no matches found.
+        Long keywords match anywhere, short ones only as whole words - see
+        _KEYWORD_SUBSTRING_MIN for why the two are not treated alike.
+
+        The word boundary is spelled out rather than written \\b because a tag
+        is written "asset_comparison" and an underscore counts as a word
+        character to \\b, which would put "asset" and "comparison" out of reach
+        of each other's boundaries. Letters and digits separate words here;
+        every other character, underscore included, is a gap between them.
+        """
+        loose = [k for k in keywords if len(k) >= _KEYWORD_SUBSTRING_MIN]
+        strict = [k for k in keywords if len(k) < _KEYWORD_SUBSTRING_MIN]
+        strict_re = re.compile(
+            r"(?<![a-z0-9])(?:" + "|".join(re.escape(k) for k in strict)
+            + r")(?![a-z0-9])") if strict else None
+
+        def matches(text: str) -> bool:
+            if any(kw in text for kw in loose):
+                return True
+            return bool(strict_re and strict_re.search(text))
+
+        return matches
+
+    def _pick_local_meme_by_keywords(self, keywords: list) -> str | None:
+        """Return a random local meme whose metadata carries any of the keywords.
+
+        Searches everything the cache holds per meme - its tags, both
+        descriptions and its OCR text - because a meme is often on-theme
+        without anyone having tagged it so. Only returns memes whose file is
+        actually on disk. Avoids recently shown memes when possible. Falls back
+        to None if no metadata or no matches found.
         """
         self._refresh_meme_cache()
         if not self._meme_cache_meta:
             return None
         try:
             on_disk = self._meme_cache_stems
+            is_match = self._keyword_matcher(keywords)
             matches = []
             for mid, searchable in self._meme_cache_meta.items():
                 if mid not in on_disk:
                     continue
-                if any(kw in s for kw in keywords for s in searchable):
+                if any(is_match(s) for s in searchable):
                     matches.append(mid)
 
             if not matches:
