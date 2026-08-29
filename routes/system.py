@@ -439,6 +439,41 @@ def register(self):
         except Exception as e:
             return jsonify({'success': False, 'error': _safe_error(e)}), 500
 
+    @self.app.route('/api/system/factory-reset', methods=['POST'])
+    @require_auth(self.auth_manager)
+    def factory_reset_device():
+        """Wipe the device back to delivery state, then power it off.
+
+        The same reset three rapid power cycles trigger, reachable from the
+        settings page so recovering a device does not require SSH and the
+        delivery_state.py script. Powering off at the end is deliberate: the
+        panel then holds the delivery image, and the next power-up finds no
+        Wi-Fi and comes back in setup mode.
+        """
+        try:
+            def _do_factory_reset():
+                try:
+                    self._execute_factory_reset()
+                except Exception as e:
+                    print(f'❌ Factory reset failed: {e}')
+                    # Fall through to the power off regardless: a half-cleared
+                    # device left running is worse than one that is off and
+                    # can be reset again from the setup portal.
+
+                # _execute_factory_reset queues the delivery image rather than
+                # drawing it, so the worker has not necessarily taken the lock
+                # yet. Give it a moment to, then wait the refresh out - cutting
+                # power mid-waveform is the one thing an e-ink panel must not
+                # be subjected to, and this is a full-screen redraw.
+                time.sleep(5)
+                _wait_for_display_idle('power off', timeout=180)
+                subprocess.run(['sudo', 'systemctl', 'poweroff'], timeout=30)
+
+            threading.Thread(target=_do_factory_reset, daemon=True).start()
+            return jsonify({'success': True})
+        except Exception as e:
+            return jsonify({'success': False, 'error': _safe_error(e)}), 500
+
     # ── SSH Key Management API ─────────────────────────────────────────────
     # Marker lines that delimit the mempaper-managed section inside authorized_keys.
     # All lines outside this block are never touched by the app.

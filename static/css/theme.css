@@ -511,6 +511,28 @@ body.modal-open {
     text-align: center;
 }
 
+/* ── Factory reset: the list of what a reset takes with it ───── */
+/* Not folded away like the package list: this one is short, and it is the
+   whole reason the dialog exists. */
+.factory-reset-list {
+    margin: 0;
+    padding: 0 0 0 20px;
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    line-height: 1.6;
+}
+
+.factory-reset-list li {
+    margin: 2px 0;
+}
+
+.factory-reset-note {
+    margin: 14px 0 0;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    line-height: 1.5;
+}
+
 /* Folded away by default. The summary is the whole control, so it gets the
    pointer and the focus ring rather than relying on the marker. */
 .pkg-changes {

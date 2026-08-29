@@ -259,9 +259,22 @@ After 60 seconds the display switches to normal operation and renders its first 
 
 #### Resetting a Device
 
-Forgotten admin password, or you want to start fresh? There are two ways.
+Forgotten admin password, or you want to start fresh? There are three ways.
 
-##### Option A -- Reset button on the setup page
+##### Option A -- Factory Reset in the settings page
+
+When you can still log in, this is the complete one: **Settings > General > Advanced > Factory Reset**, at the bottom. A confirmation lists exactly what goes, and the device then erases everything, returns the panel to the delivery screen, and powers itself off.
+
+- All saved Wi-Fi networks
+- All admin accounts and their passwords
+- Wallet addresses, Bitaxe miners, donation history and every cache
+- The SSH keys the device manages
+
+It powers off rather than rebooting, so the panel keeps the delivery image. Reconnect the power when you want it back: finding no Wi-Fi, it starts the setup hotspot and shows the network and passphrase to join.
+
+Allow around two to three minutes before pulling the plug -- the delivery image has to be rendered and written to the panel first, and interrupting an e-ink refresh is the one thing the display must not suffer. The dialog counts that time down and tells you when it is safe.
+
+##### Option B -- Reset button on the setup page
 
 If the device is already in hotspot/setup mode (for example its stored Wi-Fi is unavailable), the setup page has a **Reset Device** button at the bottom. It clears:
 
@@ -273,14 +286,14 @@ If the device is already in hotspot/setup mode (for example its stored Wi-Fi is 
 
 The device stays in setup mode so you can reconfigure Wi-Fi and create a new admin account.
 
-##### Option B -- Power-cycle factory reset
+##### Option C -- Power-cycle factory reset
 
 For a full reset **including saved Wi-Fi profiles**, power-cycle the device three times:
 
 1. **Power on** and wait for the e-ink display to refresh — on a Pi Zero this can take up to about **3 minutes 30 seconds**. Only then power off.
 2. **Repeat twice more.** On the third boot the reset triggers automatically; nothing else to press.
 
-The device recognises 3 boot timestamps inside a 15-minute window and then clears all user data (as in Option A), deletes every saved Wi-Fi profile, renders the delivery-state image, and restarts the setup hotspot.
+The device recognises 3 boot timestamps inside a 15-minute window and then clears all user data, deletes every saved Wi-Fi profile, renders the delivery-state image, and restarts the setup hotspot.
 
 > **Important:** Wait for the e-ink refresh each time before cutting power. That refresh is the device's own confirmation that it finished booting, recorded the timestamp, and flushed writes to the SD card — pulling power earlier risks corrupting the filesystem. Three cycles of ~3:30 still fit comfortably inside the 15-minute window.
 

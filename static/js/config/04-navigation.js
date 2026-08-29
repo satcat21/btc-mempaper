@@ -392,7 +392,11 @@ function _renderCategorySection(category, section) {
                 fieldsAdded += 2;
             }
             advancedContent.appendChild(createSshAccessSection());
-            fieldsAdded += 1;
+            // Last in the section, and the section is behind a fold: the one
+            // control here that destroys the device's contents should take
+            // some deliberate scrolling to reach.
+            advancedContent.appendChild(createFactoryResetSection());
+            fieldsAdded += 2;
         }
 
         // Meme sync lives inside Meme Management, in an Advanced block under the

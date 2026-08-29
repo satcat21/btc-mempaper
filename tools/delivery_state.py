@@ -17,7 +17,6 @@ import os
 import sys
 import time
 import argparse
-import hashlib
 import shutil
 import json
 import importlib.util
@@ -620,8 +619,7 @@ def main():
     cache_dir = os.path.join(ROOT_DIR, "cache")
     setup_mode_flag = os.path.join(cache_dir, "setup_mode.json")
     try:
-        # Detect WiFi interface for the flag (informational only — the app
-        # re-derives the SSID from the MAC address when it brings up the hotspot).
+        # Detect WiFi interface for the flag (informational only).
         wifi_iface = "wlan0"
         net_root = "/sys/class/net"
         if os.path.isdir(net_root):
@@ -629,25 +627,13 @@ def main():
                 if os.path.isdir(os.path.join(net_root, iface, "wireless")):
                     wifi_iface = iface
                     break
-        # Derive SSID using the same MAC digest logic as the app.
-        try:
-            mac = ""
-            for _mac_path in (f"/sys/class/net/{wifi_iface}/perm_address",
-                               f"/sys/class/net/{wifi_iface}/address"):
-                try:
-                    _v = open(_mac_path).read().strip().lower()
-                    if _v and _v != "00:00:00:00:00:00":
-                        mac = _v
-                        break
-                except OSError:
-                    continue
-            digest = hashlib.sha256(mac.replace(":", "").encode()).hexdigest()
-            ssid = f"mempaper-{int(digest[:8], 16) % 10000:04d}"
-        except Exception:
-            ssid = "mempaper-0000"
+        # No SSID or passphrase here. They used to be derived from the MAC, so
+        # this could name the network before it existed; they are random per
+        # setup session now, and the app fills both in when it raises the AP.
+        # Naming one here would only be a name nothing is broadcasting.
         with open(setup_mode_flag, "w", encoding="utf-8") as f:
-            json.dump({"enabled": True, "ssid": ssid, "interface": wifi_iface}, f)
-        print(f"✅ Setup mode flag pre-written → recovery monitor starts hotspot immediately on boot ({ssid} on {wifi_iface})")
+            json.dump({"enabled": True, "interface": wifi_iface}, f)
+        print(f"✅ Setup mode flag pre-written → recovery monitor starts hotspot immediately on boot ({wifi_iface})")
     except OSError as e:
         print(f"⚠️  Could not write setup mode flag: {e}")
 

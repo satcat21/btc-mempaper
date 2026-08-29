@@ -2538,6 +2538,163 @@ function createSshAccessSection() {
 
 // ── Device Control (Restart / Reboot) ────────────────────────
 
+function createFactoryResetSection() {
+    const t = window.translations || {};
+    const formGroup = document.createElement('div');
+    formGroup.className = 'form-group device-control-section';
+
+    const label = document.createElement('label');
+    label.className = 'form-label';
+    label.textContent = t.factory_reset || 'Factory Reset';
+    formGroup.appendChild(label);
+
+    const description = document.createElement('div');
+    description.className = 'form-description';
+    description.textContent = t.factory_reset_desc ||
+        'Erase everything on this device and return it to delivery state. Use it before ' +
+        'passing the device on, or to recover one you are locked out of.';
+    formGroup.appendChild(description);
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'update-wrapper device-control-wrapper';
+
+    const resetBtn = document.createElement('button');
+    resetBtn.type = 'button';
+    resetBtn.className = 'device-control-btn device-control-btn-danger';
+    resetBtn.innerHTML = '<span class="device-control-icon"><svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960" width="18px" fill="currentColor"><path d="M280-120q-33 0-56.5-23.5T200-200v-520h-40v-80h200v-40h240v40h200v80h-40v520q0 33-23.5 56.5T680-120H280Zm400-600H280v520h400v-520ZM360-280h80v-360h-80v360Zm160 0h80v-360h-80v360ZM280-720v520-520Z"/></svg></span> ' +
+        (t.factory_reset || 'Factory Reset');
+
+    resetBtn.addEventListener('click', async () => {
+        const ok = await showConfirmModal({
+            title: t.factory_reset || 'Factory Reset',
+            message: t.factory_reset_confirm ||
+                'This cannot be undone. Everything below is erased, and the device powers off when it is done.',
+            detail: _buildFactoryResetDetail(),
+            confirmText: t.factory_reset_do || 'Erase and power off',
+            cancelText: t.cancel || 'Cancel',
+            danger: true,
+        });
+        if (!ok) return;
+        _performFactoryReset();
+    });
+
+    wrapper.appendChild(resetBtn);
+    formGroup.appendChild(wrapper);
+    return formGroup;
+}
+
+// What the reset takes with it, spelled out. A destructive action confirmed by
+// a sentence alone asks the operator to remember what it covers; this is the
+// list, so the answer is on screen at the moment of deciding.
+function _buildFactoryResetDetail() {
+    const t = window.translations || {};
+    const wrap = document.createElement('div');
+    wrap.className = 'modal-detail';
+
+    const list = document.createElement('ul');
+    list.className = 'factory-reset-list';
+    [
+        t.factory_reset_item_wifi || 'All saved Wi-Fi networks',
+        t.factory_reset_item_admins || 'All admin accounts and their passwords',
+        t.factory_reset_item_data || 'Wallet addresses, Bitaxe miners, donation history and every cache',
+        t.factory_reset_item_ssh || 'The SSH keys this device manages',
+        t.factory_reset_item_screen || 'The panel returns to the delivery screen',
+        t.factory_reset_item_power || 'The device powers itself off at the end',
+    ].forEach(text => {
+        const li = document.createElement('li');
+        li.textContent = text;
+        list.appendChild(li);
+    });
+    wrap.appendChild(list);
+
+    const note = document.createElement('p');
+    note.className = 'factory-reset-note';
+    note.textContent = t.factory_reset_note ||
+        'Afterwards, disconnect and reconnect the power. The device starts its setup hotspot ' +
+        'again, and the panel shows the network and passphrase for joining it.';
+    wrap.appendChild(note);
+
+    return wrap;
+}
+
+// Like _performShutdown, with a longer clock: the delivery image has to be
+// rendered and pushed to the panel before the power goes, and a full-screen
+// e-ink refresh on the 13.3 inch panel is most of a minute by itself.
+function _performFactoryReset() {
+    const t = window.translations || {};
+
+    window._shuttingDown = true;
+    if (window.configSocket) {
+        window.configSocket.disconnect();
+    }
+
+    fetch('/api/system/factory-reset', { method: 'POST', credentials: 'same-origin' })
+        .catch(() => { /* the connection drops with the device */ });
+
+    const overlay = document.createElement('div');
+    overlay.className = 'confirm-modal-overlay';
+    document.documentElement.style.setProperty('--scroll-y', '-' + window.scrollY + 'px');
+    document.body.classList.add('modal-open');
+
+    const dialog = document.createElement('div');
+    dialog.className = 'confirm-modal-dialog';
+
+    const heading = document.createElement('h3');
+    heading.className = 'confirm-modal-title';
+    heading.textContent = t.factory_reset || 'Factory Reset';
+
+    const countdown = document.createElement('div');
+    countdown.className = 'restart-countdown';
+
+    // Clearing and rendering runs 40-60s, the panel refresh adds up to another
+    // 40s on the large display, then the shutdown itself. Generous on purpose:
+    // a clock that reaches zero early invites pulling the plug mid-refresh.
+    const resetSeconds = 180;
+
+    const countdownNumber = document.createElement('div');
+    countdownNumber.className = 'restart-countdown-number';
+    countdownNumber.textContent = _fmtCountdown(resetSeconds);
+
+    const countdownLabel = document.createElement('div');
+    countdownLabel.className = 'restart-countdown-label';
+    countdownLabel.textContent = t.factory_reset_running ||
+        'Erasing, updating the panel, then powering off. Leave the power connected.';
+
+    const progressBar = document.createElement('div');
+    progressBar.className = 'restart-progress-bar';
+    const progressFill = document.createElement('div');
+    progressFill.className = 'restart-progress-fill';
+    progressBar.appendChild(progressFill);
+
+    countdown.appendChild(countdownNumber);
+    countdown.appendChild(countdownLabel);
+
+    dialog.appendChild(heading);
+    dialog.appendChild(countdown);
+    dialog.appendChild(progressBar);
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+
+    requestAnimationFrame(() => overlay.classList.add('visible'));
+
+    let remaining = resetSeconds;
+    const interval = setInterval(() => {
+        remaining--;
+        if (remaining >= 0) {
+            countdownNumber.textContent = _fmtCountdown(remaining);
+            progressFill.style.transform = 'scaleX(' + (1 - remaining / resetSeconds) + ')';
+        }
+        if (remaining <= 0) {
+            clearInterval(interval);
+            countdownNumber.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="restart-check-icon" viewBox="0 -960 960 960" fill="#28a745"><path d="M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z"/></svg>';
+            countdownNumber.classList.add('restart-countdown-success');
+            countdownLabel.textContent = t.factory_reset_done ||
+                'Safe to disconnect the power. Reconnect it to start setup mode.';
+            progressFill.style.transform = 'scaleX(1)';
+        }
+    }, 1000);
+}
+
 function createDeviceControlSection() {
     const t = window.translations || {};
     const formGroup = document.createElement('div');

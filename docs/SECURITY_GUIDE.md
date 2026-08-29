@@ -244,7 +244,7 @@ Requests to the bare `/api/donation-webhook` URL (without a valid token) return 
 UFW's `ufw-after-input` chain unconditionally drops UDP port 67 (DHCP
 broadcasts) *before* any allow-rule you add can accept them. The setup hotspot
 runs its own DHCP server, so while UFW is active that server can never reply —
-a phone connecting to `mempaper-XXXX` gets no address and the setup page is
+a phone connecting to the setup hotspot gets no address and the setup page is
 unreachable. `nftables` on Trixie causes the same failure.
 
 The trap is that this stays invisible. A device already on Wi-Fi keeps working
