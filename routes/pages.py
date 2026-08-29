@@ -154,7 +154,7 @@ def register(self):
                              show_wallet=self.config.get('show_wallet_balances_block', False),
                              show_bitaxe=self.config.get('show_bitaxe_block', False),
                              show_donations=self.config.get('show_donation_block', False),
-                             dark_mode=self.config.get('color_mode_dark', True),
+                             dark_mode=self.config.get('color_mode_dark', False),
                              # The dashboard has no config object of its own, so
                              # the one setting its toasts need is handed over.
                              number_format=self.config.get('number_format', 'eu'),
@@ -173,7 +173,7 @@ def register(self):
                              translations=current_translations,
                              all_translations=translations,
                              lang=lang,
-                             dark_mode=self.config.get('color_mode_dark', True))
+                             dark_mode=self.config.get('color_mode_dark', False))
 
     @self.app.route('/login')
     def login_page():
@@ -188,5 +188,5 @@ def register(self):
 
         return render_template('login.html', translations=current_translations,
                              lang=lang,
-                             dark_mode=self.config.get('color_mode_dark', True),
+                             dark_mode=self.config.get('color_mode_dark', False),
                              public_dashboard=self.config.get('public_dashboard', False))

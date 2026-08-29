@@ -148,17 +148,50 @@ class RecoveryMixin:
         and e-ink display update take ~40-60 seconds.
         """
         try:
-            # 1. Clear admin + sensitive user data
+            # 1. Clear the credentials and the data blocks, while they are
+            #    still sealed. Every write below this point is what the
+            #    sealed store would normally do with it.
             print('🧹 Factory reset: clearing user data...')
             self._perform_user_data_reset()
 
-            # 2. Clear saved WiFi profiles using the app's own nmcli wrapper
+            # 2. The rendered dashboards go before Tang does, because step 3
+            #    unseals whatever is still sealed - and these are a picture
+            #    of the balances just cleared above. Unsealing them would
+            #    write that picture to the card in the clear, moments before
+            #    it was overwritten anyway. They are replaced in step 6.
+            self._remove_files([self.current_image_path,
+                                self.current_webp_image_path,
+                                self.current_eink_image_path])
+
+            # 3. Now sealing can go. disable() rewrites every sealed file in
+            #    the clear when the server answers, so it has to come after
+            #    everything worth sealing is gone rather than before it -
+            #    otherwise a reset's first act is to write the wallet
+            #    addresses and admin hashes onto the card unencrypted.
+            #    discard=True covers the other case: with the server away
+            #    the remaining sealed files are deleted rather than left as
+            #    ciphertext nothing can open.
+            self._factory_reset_disable_tang()
+
+            # 4. And the settings themselves. After the Tang disable, not
+            #    before: is_enabled() reads tang_enabled out of this config,
+            #    so resetting it first would make step 3 a no-op and strand
+            #    both the key and anything still sealed.
+            #
+            #    _perform_user_data_reset clears credentials and the data
+            #    blocks, which is what the setup-page reset wants, but leaves
+            #    theming, the mempool host and the schedules of a configured
+            #    device in place. A device going to someone else should
+            #    arrive as one that was never set up.
+            self._factory_reset_config()
+
+            # 5. Clear saved WiFi profiles using the app's own nmcli wrapper
             #    (delivery_state's nmcli_cmd has different sudo handling that
             #    may silently fail inside the running service)
             print('🧹 Factory reset: clearing saved WiFi profiles...')
             self._factory_reset_clear_wifi()
 
-            # 3. The images, if they were asked for. OPSec covers are family
+            # 6. The images, if they were asked for. OPSec covers are family
             #    photos; the meme library is thousands of shipped files that
             #    would have to come back over Tor. Neither is guessed at.
             if delete_opsec:
@@ -168,7 +201,7 @@ class RecoveryMixin:
                 print('🧹 Factory reset: removing meme images...')
                 self._factory_reset_clear_memes()
 
-            # 4. Render the delivery-state image and push via the app's display worker
+            # 7. Render the delivery-state image and push via the app's display worker
             print('🎨 Factory reset: rendering delivery state image...')
             try:
                 import tools.delivery_state as ds
@@ -248,6 +281,47 @@ class RecoveryMixin:
 
         removed = self._remove_files(paths)
         print(f'🧹 Removed {removed} meme file(s), kept {self._DELIVERY_MEME}')
+
+    # What the installer worked out about the hardware, which a reset has no
+    # business forgetting: tools/configure_display.py writes exactly these,
+    # and the defaults name a 7.3" panel. Restoring those onto a 13.3" device
+    # would hand it back with the wrong driver and its display switched off.
+    _HARDWARE_KEYS = ('omni_device_name', 'display_width', 'display_height',
+                      'e-ink-display-connected')
+
+    def _factory_reset_config(self):
+        """Rebuild config.json from the defaults, keeping the hardware facts."""
+        try:
+            current = self.config_manager.get_current_config()
+            fresh = self.config_manager.get_default_config()
+            for key in self._HARDWARE_KEYS:
+                if key in current:
+                    fresh[key] = current[key]
+
+            with self.config_manager.config_lock:
+                self.config_manager.config = fresh
+            self.config_manager.save_config(fresh)
+            self.config.clear()
+            self.config.update(fresh)
+            print('⚙️ Factory reset: configuration back to defaults')
+        except Exception as e:
+            print('⚠️ Could not reset the configuration: ' + str(e))
+
+    def _factory_reset_disable_tang(self):
+        """Unseal everything and turn sealing off, before the config forgets it."""
+        store = getattr(self, 'tang_store', None)
+        if store is None or not store.is_enabled():
+            return
+        try:
+            result = store.disable(discard=True)
+            if result.get('unsealed'):
+                print('🔓 Factory reset: unsealed '
+                      + str(len(result['unsealed'])) + ' file(s)')
+            if result.get('deleted'):
+                print('🧹 Factory reset: deleted '
+                      + str(len(result['deleted'])) + ' sealed file(s) that could not be opened')
+        except Exception as e:
+            print('⚠️ Could not disable Tang during the reset: ' + str(e))
 
     def _replace_cached_dashboard(self, web_path, eink_path):
         """Put the delivery screen where the cached dashboard images were.

@@ -658,7 +658,7 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
                 {"value": False, "label": t.get("theme_light", "Light"), "_lk": "theme_light", "_tk": "theme_light_tooltip", "icon": "/static/icons/light.svg"},
                 {"value": True,  "label": t.get("theme_dark",  "Dark"),  "_lk": "theme_dark",  "_tk": "theme_dark_tooltip",  "icon": "/static/icons/dark.svg"},
             ],
-            "default": True,
+            "default": False,
             "category": "theming",
             "order": 1
         },

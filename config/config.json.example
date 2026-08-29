@@ -33,7 +33,7 @@
   "display_width": 800,
   "display_height": 480,
   "eink_dark_mode": false,
-  "color_mode_dark": true,
+  "color_mode_dark": false,
   "prioritize_large_scaled_meme": true,
   "color_date_start_light": "#1c82c0",
   "color_date_end_light": "#c040a8",

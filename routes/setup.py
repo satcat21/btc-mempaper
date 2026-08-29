@@ -310,7 +310,7 @@ def register(self):
         return render_template(
             'setup_wifi.html',
             ssid=setup_data.get('ssid', ''),
-            dark_mode=self.config.get('color_mode_dark', True),
+            dark_mode=self.config.get('color_mode_dark', False),
             setup_i18n_json=json.dumps(setup_i18n, ensure_ascii=False),
         )
 

@@ -29,7 +29,7 @@ class ColorMixin:
         """
         # Use self.color_sets for web images
         if web_quality and isinstance(color_name, str) and color_name in self.color_sets["light"]:
-            mode = "dark" if self.config.get("color_mode_dark", True) else "light"
+            mode = "dark" if self.config.get("color_mode_dark", False) else "light"
             hex_color = self.color_sets[mode].get(color_name, "#ffffff")
             hex_color = hex_color.lstrip("#")
             rgb = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))

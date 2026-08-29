@@ -268,10 +268,12 @@ When you can still log in, this is the complete one: **Settings > General > Adva
 - All saved Wi-Fi networks
 - All admin accounts and their passwords
 - Wallet addresses, Bitaxe miners, donation history and every cache
+- Every setting, back to its default -- theming, mempool host, schedules
+- Network-bound encryption (Tang): the sealed data is removed before the encryption is turned off, so nothing sensitive is written back in the clear
 - Your uploaded OPSec cover photos, and the meme tags you edited
 - The SSH keys the device manages
 
-The meme library itself is kept, along with the installed software and its settings -- it is shipped content rather than yours, and re-downloading a few thousand files over Tor is not something a reset should commit you to silently.
+The installed software stays, and so does the meme library -- it is shipped content rather than yours, and re-downloading a few thousand files over Tor is not something a reset should commit you to silently.
 
 It powers off rather than rebooting, so the panel keeps the delivery image. Reconnect the power when you want it back: finding no Wi-Fi, it starts the setup hotspot and shows the network and password to join.
 

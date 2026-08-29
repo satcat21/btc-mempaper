@@ -539,7 +539,7 @@ class FormattingMixin:
         glyphs, which at this size reads as shading rather than noise.
         """
         if web_quality:
-            is_dark = self.config.get("color_mode_dark", True)
+            is_dark = self.config.get("color_mode_dark", False)
         else:
             is_dark = self.config.get("eink_dark_mode", False)
 

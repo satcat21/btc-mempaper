@@ -2594,14 +2594,24 @@ function _buildFactoryResetDetail() {
 
     const list = document.createElement('ul');
     list.className = 'factory-reset-list';
-    [
+    const items = [
         t.factory_reset_item_wifi || 'All saved Wi-Fi networks',
         t.factory_reset_item_admins || 'All admin accounts and their passwords',
         t.factory_reset_item_data || 'Wallet addresses, Bitaxe miners, donation history and every cache',
+        t.factory_reset_item_settings || 'Every setting, back to its default - theming, mempool host, schedules',
+    ];
+    // Only where it is actually on. Naming a feature nobody switched on says
+    // nothing about what this reset will do to their device.
+    if ((window.currentConfig || {}).tang_enabled) {
+        items.push(t.factory_reset_item_tang ||
+            'The sealed data is removed before network encryption is turned off');
+    }
+    items.push(
         t.factory_reset_item_ssh || 'The SSH keys this device manages',
         t.factory_reset_item_screen || 'The panel returns to the delivery screen',
         t.factory_reset_item_power || 'The device powers itself off at the end',
-    ].forEach(text => {
+    );
+    items.forEach(text => {
         const li = document.createElement('li');
         li.textContent = text;
         list.appendChild(li);
