@@ -227,11 +227,12 @@ The device ships with the delivery-state image on the e-ink display.
 
 #### Step 2 -- Setup Hotspot (E-Ink)
 
-On first boot the device detects that no Wi-Fi is configured and starts an open setup hotspot. **This takes between 90 seconds and 2 minutes 21 seconds** — the Pi has to boot, initialise the Wi-Fi radio, and switch to AP mode. Once ready, the e-ink display refreshes and shows the hotspot name and a QR code.
+On first boot the device detects that no Wi-Fi is configured and starts a WPA2-protected setup hotspot. **This takes between 90 seconds and 2 minutes 21 seconds** — the Pi has to boot, initialise the Wi-Fi radio, and switch to AP mode. Once ready, the e-ink display refreshes and shows the network name, its passphrase and a QR code.
 
-- **SSID:** `mempaper-XXXX` (4-digit suffix derived from the device MAC)
-- **Security:** Open access point — there is no Wi-Fi password. A portal password shown on the e-ink display gates the setup page itself.
-- Scan the QR code with your phone to connect automatically
+- **SSID:** `setup-xxxxxxxxxx`, random for each setup session. It carries no brand, so a network scan does not advertise what the device is.
+- **Security:** WPA2-PSK with a random 24-character passphrase, generated per session and shown only on the panel. Everything the setup page then carries — your home Wi-Fi passphrase, the admin account you create — is encrypted over the air.
+- Scan the first QR code with your phone: it carries the network and its passphrase, so the phone joins without anything being typed. The passphrase is printed underneath for cameras that will not scan.
+- There is no separate portal password. Being on the network is what grants access to the setup page.
 
 > **Tip:** Wait for the display to change from the delivery-state image to the hotspot screen before trying to connect. If nothing has changed after 2 minutes, the hotspot failed to start — power-cycle the device and try again.
 
@@ -239,7 +240,7 @@ On first boot the device detects that no Wi-Fi is configured and starts an open 
 
 #### Step 3 -- Wi-Fi Setup Page
 
-Once connected to the hotspot, open `http://10.42.0.1:5000/setup` — the QR code on the right of the e-ink screen goes to the same address. The page asks you to:
+Once connected to the hotspot, open `http://10.42.0.1:5000/setup` — the QR code on the right of the e-ink screen goes to the same address, and captive-portal detection usually opens it by itself. The page asks you to:
 
 1. **Select a language** (English, German, Spanish, French, Italian)
 2. **Choose your home Wi-Fi** from the scanned list, or enter a hidden SSID
@@ -469,7 +470,7 @@ What this does:
 **What the recipient then experiences** is the [First-Time Setup](#first-time-setup-delivered-device) flow above — worth reading once, since it is what you are handing over:
 
 - `mempaper.service` starts on boot and first attempts a normal Wi-Fi connection
-- Finding none after the startup grace period, it brings up the `mempaper-XXXX` setup hotspot
+- Finding none after the startup grace period, it brings up the `setup-xxxxxxxxxx` hotspot
 - The recipient connects, opens `http://10.42.0.1:5000`, and enters their Wi-Fi credentials
 - On success the hotspot shuts down and normal operation resumes automatically
 

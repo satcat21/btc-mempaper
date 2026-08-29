@@ -243,7 +243,8 @@ def register(self):
                     profile_ssids[name] = ssid
             saved_ssids = set(profile_ssids.values())
 
-            own_ssid = self._setup_ssid_from_mac(iface) if hasattr(self, '_setup_ssid_from_mac') else None
+            own_ssid = (self._setup_mode_payload().get('ssid') or None
+                        if hasattr(self, '_setup_mode_payload') else None)
 
             # Parse 'iw scan' output directly rather than reading results
             # back via nmcli: nmcli reports zero networks for devices it

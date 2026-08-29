@@ -124,6 +124,25 @@ def _brand_title(draw, cx, y, f_title, sz_title, fg, accent):
 
 # ── Public render functions ───────────────────────────────────────────────────
 
+def _wifi_qr_uri(ssid, password):
+    """The WIFI: URI a phone camera turns into a join prompt.
+
+    T:WPA covers WPA2-PSK - the spec has no separate WPA2 token, and every
+    scanner reads it as the PSK case. Semicolons, commas, colons, backslashes
+    and quotes have to be escaped inside the fields; the generated credentials
+    never contain any, but a hand-set SSID could.
+    """
+    def esc(value):
+        out = str(value or '')
+        for ch in ('\\', ';', ',', ':', '\"'):
+            out = out.replace(ch, '\\' + ch)
+        return out
+
+    if not password:
+        return f'WIFI:T:nopass;S:{esc(ssid)};;'
+    return f'WIFI:T:WPA;S:{esc(ssid)};P:{esc(password)};;'
+
+
 def render_hotspot_screen(ssid, password, portal_url, config):
     """
     Build and save the hotspot onboarding image with two QR codes stacked vertically.
@@ -173,20 +192,21 @@ def render_hotspot_screen(ssid, password, portal_url, config):
     y += SZ_SUB + PAD
 
     # ── Two vertically-stacked QR sections ────────────────────────────────
-    # Hotspot is open (no WPA2).  QR1 connects; QR2 opens setup with portal
-    # Password pre-filled so no manual entry is needed when scanning.  The password is
-    # shown as text for users who cannot scan QR2.
+    # QR1 joins the WPA2 hotspot, passphrase and all, so nobody has to type a
+    # 24-character random string. It is printed underneath for anyone whose
+    # camera will not scan. QR2 is then just the setup address - being on the
+    # network is what grants access to it.
     clean_url = portal_url.split('?')[0]   # e.g. http://10.42.0.1:5000/setup
     sections = [
         {
-            'qr_data': f'WIFI:T:nopass;S:{ssid};;',
+            'qr_data': _wifi_qr_uri(ssid, password),
             'step':    '[1] Join WiFi',
-            'lines':   [(ssid, f_data, FG)],
+            'lines':   [(ssid, f_data, FG), (f'Key: {password}', f_mono, MUTED)],
         },
         {
             'qr_data': portal_url,
             'step':    '[2] Open setup page',
-            'lines':   [(clean_url, f_mono, FG), (f'Password: {password}', f_data, FG)],
+            'lines':   [(clean_url, f_mono, FG)],
         },
     ]
 
@@ -300,17 +320,17 @@ def stamp_qr_codes_on_image(base_img, ssid, password, portal_url, config,
 
     clean_url = portal_url.split('?')[0]   # e.g. http://10.42.0.1:5000/setup
 
-    # ── Left: WiFi QR (open network — no WPA2 password) ──
+    # ── Left: WiFi QR (WPA2 — carries the passphrase) ──
     _centered(draw, left_cx, label_y, '1. Connect to WiFi', f_label, FG)
-    wifi_uri = f'WIFI:T:nopass;S:{ssid};;'
-    img.paste(_qr_image(wifi_uri, qr_size, False, ec), (left_cx - qr_size // 2, qr_y))
+    img.paste(_qr_image(_wifi_qr_uri(ssid, password), qr_size, False, ec),
+              (left_cx - qr_size // 2, qr_y))
     _centered(draw, left_cx, info_y, f'WiFi: {ssid}', f_mono, FG)
+    _centered(draw, left_cx, info_y + info_line_h + 2, f'Key: {password}', f_mono, MUTED)
 
-    # ── Right: Setup page QR (URL includes portal key for direct access) ──
+    # ── Right: Setup page QR (no key needed — the network is the gate) ──
     _centered(draw, right_cx, label_y, '2. Open setup page', f_label, FG)
     img.paste(_qr_image(portal_url, qr_size, False, ec), (right_cx - qr_size // 2, qr_y))
     _centered(draw, right_cx, info_y, clean_url, f_mono, FG)
-    _centered(draw, right_cx, info_y + info_line_h + 2, f'Password: {password}', f_mono, FG)
 
     os.makedirs(_CACHE_DIR, exist_ok=True)
     path = os.path.join(_CACHE_DIR, 'onboarding_hotspot.png')

@@ -55,7 +55,9 @@ def register(self):
         import time as _time
 
         # Get our own hotspot SSID so we can exclude it from the list
-        own_ssid = self._setup_ssid_from_mac(interface) if self._is_setup_mode_enabled() else None
+        # Our own hotspot, so it can be left out of the list. Read from the
+        # setup-mode file: the SSID is random per run and nothing derives it.
+        own_ssid = self._setup_mode_payload().get('ssid') or None
 
         # Parse 'iw scan' output directly rather than reading results back
         # via nmcli: the interface is unmanaged ('managed no') while the
@@ -291,18 +293,14 @@ def register(self):
             return redirect(url_for('dashboard'))
 
         setup_data = setup_mode_payload()
-        interface  = setup_data.get('interface', 'wlan0')
 
-        url_key = request.args.get('key', '')
-        key_valid = bool(url_key) and url_key == self._setup_password_from_mac(interface)
-
-        # Show password gate until the correct key has been submitted.
-        if not session.get('portal_authenticated'):
-            return render_template(
-                'setup_portal_gate.html',
-                dark_mode=self.config.get('color_mode_dark', True),
-                prefill_key=(url_key if key_valid else ''),
-            )
+        # No page password. There used to be one, derived from the interface
+        # MAC - which the AP broadcasts as its BSSID, so every client in range
+        # could compute it - and it guarded a page reached over an open
+        # network, where the Wi-Fi and admin credentials being typed into it
+        # travelled in the clear anyway. The hotspot is WPA2 now, with a random
+        # passphrase shown only on the panel: joining the network is the
+        # authentication, and it protects the packets as well as the page.
 
         # Collect setup_* keys from all languages for client-side i18n
         setup_i18n = {}
@@ -311,7 +309,7 @@ def register(self):
                                      if k.startswith('setup_') or k == 'onboarding_select_language'}
         return render_template(
             'setup_wifi.html',
-            ssid=setup_data.get('ssid', 'mempaper-0000'),
+            ssid=setup_data.get('ssid', ''),
             dark_mode=self.config.get('color_mode_dark', True),
             setup_i18n_json=json.dumps(setup_i18n, ensure_ascii=False),
         )
@@ -392,20 +390,6 @@ def register(self):
         resp = redirect(_absolute_setup_url(), code=302)
         resp.headers['Cache-Control'] = 'no-store, must-revalidate'
         return resp
-
-    @self.app.route('/api/setup/portal-auth', methods=['POST'])
-    def setup_portal_auth():
-        """Validate the captive-portal password and mark the session as authenticated."""
-        if not setup_mode_enabled():
-            return jsonify({'success': False, 'message': 'Setup mode not active'}), 403
-        data      = request.json or {}
-        key       = data.get('key', '')
-        setup_data = setup_mode_payload()
-        interface  = setup_data.get('interface', 'wlan0')
-        if key == self._setup_password_from_mac(interface):
-            session['portal_authenticated'] = True
-            return jsonify({'success': True})
-        return jsonify({'success': False, 'message': 'Incorrect password'}), 401
 
     @self.app.route('/api/setup/wifi/scan', methods=['GET'])
     def setup_wifi_scan():

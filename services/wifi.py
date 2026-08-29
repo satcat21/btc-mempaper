@@ -6,6 +6,7 @@ monitor that brings the radio back after a dropout.
 import hashlib
 import json
 import os
+import secrets
 import shutil
 import subprocess
 import threading
@@ -130,7 +131,7 @@ class WifiHotspotMixin:
             if no_saved_confirmed:
                 print('📶 No saved Wi-Fi networks on disk — starting setup hotspot without waiting for NetworkManager')
                 if not self._bring_up_setup_hotspot_with_retry(fs_interface):
-                    self._write_setup_mode_flag(True, ssid=self._setup_ssid_from_mac(fs_interface), interface=fs_interface)
+                    self._write_setup_mode_flag(True, interface=fs_interface)
                     print('⚠️ Hotspot failed at startup — recovery monitor will retry')
                 return
 
@@ -157,7 +158,7 @@ class WifiHotspotMixin:
             # No saved Wi-Fi at all: factory / freshly-flashed device.
             print('📶 No saved Wi-Fi networks — starting setup hotspot for first-time provisioning')
             if not self._bring_up_setup_hotspot_with_retry(interface):
-                self._write_setup_mode_flag(True, ssid=self._setup_ssid_from_mac(interface), interface=interface)
+                self._write_setup_mode_flag(True, interface=interface)
                 print('⚠️ Hotspot failed at startup — recovery monitor will retry')
             return
 
@@ -186,7 +187,7 @@ class WifiHotspotMixin:
 
         print('📶 Startup grace expired without Wi-Fi — enabling setup hotspot')
         if not self._bring_up_setup_hotspot_with_retry(interface):
-            self._write_setup_mode_flag(True, ssid=self._setup_ssid_from_mac(interface), interface=interface)
+            self._write_setup_mode_flag(True, interface=interface)
             print('⚠️ Hotspot failed at startup — recovery monitor will retry')
 
     def _bring_up_setup_hotspot_with_retry(self, interface, max_attempts=4):
@@ -218,7 +219,8 @@ class WifiHotspotMixin:
     def _setup_mode_payload(self):
         payload = {
             'enabled': False,
-            'ssid': 'mempaper-0000',
+            'ssid': '',
+            'password': '',
             'interface': 'wlan0',
         }
         if not os.path.exists(self.setup_mode_flag_path):
@@ -414,7 +416,7 @@ class WifiHotspotMixin:
         except Exception as e:
             print(f'⚠️ Could not clear SSH keys from {pi_path}: {e}')
 
-    def _write_setup_mode_flag(self, enabled, ssid=None, interface=None):
+    def _write_setup_mode_flag(self, enabled, ssid=None, interface=None, password=None):
         try:
             os.makedirs(os.path.dirname(self.setup_mode_flag_path), exist_ok=True)
         except Exception:
@@ -431,12 +433,16 @@ class WifiHotspotMixin:
         payload = {
             'enabled': True,
             'ssid': ssid,
+            'password': password,
             'interface': interface,
             'timestamp': int(time.time()),
         }
         try:
             with open(self.setup_mode_flag_path, 'w', encoding='utf-8') as f:
                 json.dump(payload, f, indent=2)
+            # Contains the hotspot passphrase, so it is not for every account
+            # on the device to read.
+            os.chmod(self.setup_mode_flag_path, 0o600)
         except OSError as e:
             print(f"⚠️ Could not write setup mode flag: {e}")
 
@@ -673,39 +679,42 @@ class WifiHotspotMixin:
 
         return {'connected': False, 'connection': '', 'status_known': True}
 
-    def _mac_digest(self, interface):
-        """Return the hex SHA-256 digest of the interface permanent MAC address.
+    # Alphabets without the characters people mistake for one another, since
+    # both of these are read off a panel by anyone whose camera will not scan.
+    _SSID_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789'
+    _PSK_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789'
 
-        Uses perm_address (the hardware-burned-in MAC) so the derived SSID and
-        password are stable regardless of NM MAC randomization on the client
-        connection that was active when install.sh ran.
+    def _generate_setup_credentials(self):
+        """A fresh SSID and WPA2 passphrase for one run of the setup hotspot.
+
+        Both were derived from the interface MAC before. The MAC is the BSSID
+        in every beacon frame the AP sends, so the passphrase was published
+        alongside the network it was meant to protect - and the SSID named the
+        product, which told anyone scanning what the device on the other end
+        was worth attacking. Random values fix both: nothing about the network
+        says what it belongs to, and the passphrase exists only on the panel.
+
+        Length over memorability - the QR code on the panel is how anyone is
+        expected to join, so there is no reason to make this typeable.
         """
-        mac_address = '00:00:00:00:00:00'
-        for candidate in (f'/sys/class/net/{interface}/perm_address',
-                          f'/sys/class/net/{interface}/address'):
-            try:
-                with open(candidate, 'r', encoding='utf-8') as f:
-                    val = f.read().strip().lower()
-                if val and val != '00:00:00:00:00:00':
-                    mac_address = val
-                    break
-            except OSError:
-                continue
-        return hashlib.sha256(mac_address.replace(':', '').encode('utf-8')).hexdigest()
+        ssid = 'setup-' + ''.join(secrets.choice(self._SSID_ALPHABET) for _ in range(10))
+        password = ''.join(secrets.choice(self._PSK_ALPHABET) for _ in range(24))
+        return ssid, password
 
-    def _setup_ssid_from_mac(self, interface):
-        digest = self._mac_digest(interface)
-        suffix = f"{int(digest[:8], 16) % 10000:04d}"
-        return f"mempaper-{suffix}"
+    def _setup_credentials(self):
+        """The credentials this setup session is using, generating them once.
 
-    def _setup_password_from_mac(self, interface):
-        """Derive a deterministic 8-char hex WPA2 password from the MAC address.
-
-        Uses bytes 8-16 of the SHA-256 digest so the password is independent
-        of the SSID suffix (bytes 0-8) and not guessable from the visible SSID.
+        Kept in the setup-mode file so everything agrees on them - hostapd, the
+        panel, the captive portal - and so they outlive the teardown and
+        re-arm that a failed connection attempt performs: a phone that joined
+        from the QR code would otherwise be locked out by the retry. A real
+        teardown deletes that file, so the next setup session starts fresh.
         """
-        digest = self._mac_digest(interface)
-        return digest[8:16]   # 8 lowercase hex chars, always valid WPA2
+        payload = self._setup_mode_payload()
+        ssid, password = payload.get('ssid'), payload.get('password')
+        if ssid and password:
+            return ssid, password
+        return self._generate_setup_credentials()
 
     # Fixed static address for the setup hotspot — assigned directly via 'ip addr
     # add' (not NM), so it's always known up front rather than detected after
@@ -718,9 +727,8 @@ class WifiHotspotMixin:
     _WLAN0_UNMANAGED_CONF = '/etc/NetworkManager/conf.d/99-mempaper-wlan0-unmanaged.conf'
 
     def _bring_up_setup_hotspot(self, interface):
-        ssid     = self._setup_ssid_from_mac(interface)
-        password = self._setup_password_from_mac(interface)
-        print(f'📶 Setup hotspot: open AP "{ssid}" — portal password required for setup access')
+        ssid, password = self._setup_credentials()
+        print(f'📶 Setup hotspot: WPA2 AP "{ssid}" — passphrase shown on the panel')
 
         # Remove any stale NM AP-mode profile for this SSID before hostapd binds it.
         self._cleanup_legacy_setup_hotspots(ssid=ssid)
@@ -746,10 +754,14 @@ class WifiHotspotMixin:
             self._nmcli(['device', 'set', interface, 'managed', 'yes'])
             return False
 
-        # Open AP — no WPA2. A derived password gates access to the /setup page
-        # instead. hostapd (not NM's own AP-mode) creates the AP for reliability
-        # across driver/kernel combinations.
-        if not self._start_hostapd(interface, ssid):
+        # WPA2-protected AP. Everything the setup page carries - the Wi-Fi
+        # passphrase for the house network, the admin account being created -
+        # crossed an open network in the clear before, in radio range of
+        # anyone. The link now carries the encryption instead of a page
+        # password doing nothing for the packets around it. hostapd (not NM's
+        # own AP-mode) creates the AP for reliability across driver/kernel
+        # combinations.
+        if not self._start_hostapd(interface, ssid, password):
             self._nmcli(['device', 'set', interface, 'managed', 'yes'])
             return False
 
@@ -759,7 +771,7 @@ class WifiHotspotMixin:
 
         self._start_captive_dns(interface, self._HOTSPOT_IP)
 
-        self._write_setup_mode_flag(True, ssid=ssid, interface=interface)
+        self._write_setup_mode_flag(True, ssid=ssid, interface=interface, password=password)
         print(f"📶 Wi-Fi recovery: setup hotspot enabled ({ssid})")
         if self.e_ink_enabled and not self._onboarding_hotspot_screen_shown:
             self._onboarding_hotspot_screen_shown = True
@@ -1015,7 +1027,7 @@ class WifiHotspotMixin:
                 pass
         return 'US'
 
-    def _start_hostapd(self, interface, ssid):
+    def _start_hostapd(self, interface, ssid, password):
         """Write the hostapd config and (re)start mempaper-hostapd.service."""
         if not shutil.which('hostapd'):
             print('⚠️ hostapd not installed — setup hotspot unavailable')
@@ -1031,13 +1043,21 @@ class WifiHotspotMixin:
             f'ieee80211d=1\n'  # advertise the country IE so clients honor the regulatory limits
             f'ieee80211n=1\n'
             f'wmm_enabled=1\n'
-            f'auth_algs=1\n'
-            f'wpa=0\n'  # open AP — captive-portal password gates /setup instead
+            f'auth_algs=1\n'  # open system auth, as WPA2 requires
+            # WPA2-PSK with CCMP only. TKIP is not offered: it is broken,
+            # and advertising it lets a client negotiate onto it.
+            f'wpa=2\n'
+            f'wpa_key_mgmt=WPA-PSK\n'
+            f'rsn_pairwise=CCMP\n'
+            f'wpa_passphrase={password}\n'
             f'ignore_broadcast_ssid=0\n'
         )
         try:
             with open(self._HOSTAPD_CONF, 'w', encoding='utf-8') as f:
                 f.write(conf)
+            # The file now carries the passphrase in the clear, as hostapd
+            # needs it to. hostapd runs as root and reads it as root.
+            os.chmod(self._HOSTAPD_CONF, 0o600)
         except OSError as e:
             print(f'❌ Setup hotspot: could not write hostapd config — {e}')
             return False
@@ -1196,10 +1216,9 @@ class WifiHotspotMixin:
         time.sleep(2)
         port       = self._get_web_port()
         hotspot_ip = self._get_hotspot_ip(interface)
-        # Include the portal password as a URL key so scanning QR2 grants immediate
-        # access without manual password entry.  The password is still shown in text so
-        # users without a QR scanner can type it in the captive portal page.
-        portal_url = f'http://{hotspot_ip}:{port}/setup?key={password}'
+        # No key in the URL any more: joining the WPA2 network is what grants
+        # access to the portal, so the second QR is just the address.
+        portal_url = f'http://{hotspot_ip}:{port}/setup'
         try:
             delivery_eink = os.path.join('cache', 'delivery_eink.png')
             if os.path.exists(delivery_eink):
