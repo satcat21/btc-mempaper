@@ -6,7 +6,9 @@ from flask import redirect
 from flask import request
 from flask import session
 from managers.auth_manager import require_auth
+from managers.auth_manager import require_not_locked
 from managers.auth_manager import require_rate_limit
+import hmac
 import traceback
 
 # Defined in mempaper_app; imported lazily inside register() to avoid
@@ -19,6 +21,7 @@ def register(self):
 
     @self.app.route('/api/login', methods=['POST', 'OPTIONS'])
     @require_rate_limit(self.auth_manager)
+    @require_not_locked(self.auth_manager)
     def login():
         """Handle login requests."""
 
@@ -240,7 +243,9 @@ def register(self):
         The URL must include the per-installation secret token (shown in Settings > Lightning Donations).
         """
         expected = self.config_manager.get('donation_webhook_token', '')
-        if not expected or webhook_token != expected:
+        # compare_digest: the token is the whole authentication for this route,
+        # so it should not leak its prefix through how long the check takes.
+        if not expected or not hmac.compare_digest(str(webhook_token), str(expected)):
             return jsonify({'success': False}), 403
         # force=True parses JSON regardless of Content-Type header, which LNbits sometimes omits.
         data = request.get_json(force=True, silent=True) or {}

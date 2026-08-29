@@ -21,6 +21,7 @@ translations = {
         "configuration_saved": "Configuration saved successfully!",
         "configuration_save_error": "Error saving configuration!",
         "login_failed": "Invalid credentials",
+        "login_locked": "Too many failed login attempts. The device stays locked for {hours} h, or unlocks straight away if you power-cycle it.",
         "login_sealed_store": "Configuration is sealed — the Tang server cannot be reached, so credentials cannot be verified. Retrying in the background.",
  
         # Configuration Categories
@@ -915,6 +916,7 @@ translations = {
         "configuration_saved": "Konfiguration erfolgreich gespeichert!",
         "configuration_save_error": "Fehler beim Speichern der Konfiguration!",
         "login_failed": "Ungültige Anmeldedaten",
+        "login_locked": "Zu viele fehlgeschlagene Anmeldeversuche. Das Gerät bleibt für {hours} Std. gesperrt oder wird durch Aus- und Einschalten sofort wieder freigegeben.",
         "login_sealed_store": "Konfiguration ist versiegelt — der Tang-Server ist nicht erreichbar, daher können die Anmeldedaten nicht geprüft werden. Es wird im Hintergrund erneut versucht.",
 
         # Configuration Categories
@@ -1809,6 +1811,7 @@ translations = {
         "configuration_saved": "¡Configuración guardada exitosamente!",
         "configuration_save_error": "Error al guardar la configuración.",
         "login_failed": "Credenciales inválidas",
+        "login_locked": "Demasiados intentos de inicio de sesión fallidos. El dispositivo permanece bloqueado {hours} h, o se desbloquea de inmediato si lo apagas y lo enciendes.",
         "login_sealed_store": "La configuración está sellada: no se puede acceder al servidor Tang, por lo que no se pueden verificar las credenciales. Reintentando en segundo plano.",
 
         # Configuration Categories
@@ -2687,6 +2690,7 @@ translations = {
         "configuration_saved": "Configuration sauvegardée avec succès !",
         "configuration_save_error": "Erreur lors de la sauvegarde de la configuration.",
         "login_failed": "Identifiants invalides",
+        "login_locked": "Trop de tentatives de connexion échouées. L'appareil reste verrouillé pendant {hours} h, ou se déverrouille immédiatement si vous le redémarrez.",
         "login_sealed_store": "La configuration est scellée : le serveur Tang est injoignable, les identifiants ne peuvent donc pas être vérifiés. Nouvelle tentative en arrière-plan.",
 
         # Configuration Categories
@@ -3566,6 +3570,7 @@ translations = {
         "configuration_saved": "Configurazione salvata con successo!",
         "configuration_save_error": "Errore nel salvataggio della configurazione!",
         "login_failed": "Credenziali non valide",
+        "login_locked": "Troppi tentativi di accesso falliti. Il dispositivo resta bloccato per {hours} h, oppure si sblocca subito spegnendolo e riaccendendolo.",
         "login_sealed_store": "La configurazione è sigillata: il server Tang non è raggiungibile, quindi le credenziali non possono essere verificate. Nuovo tentativo in background.",
 
         # Configuration Categories

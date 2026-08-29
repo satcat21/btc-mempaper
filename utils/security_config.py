@@ -20,6 +20,32 @@ class SecurityConfig:
     # Rate limiting settings (balanced for usability vs security)
     RATE_LIMIT_REQUESTS = 10  # Max failed login attempts per window
     RATE_LIMIT_WINDOW = 300   # 5 minutes window (300 seconds)
+
+    # Failed logins since the last boot after which the door closes until the
+    # device is power-cycled. The sliding window above only ever costs an
+    # attacker time; this ends the attempt. Generous enough that a person
+    # mistyping a password never reaches it - twenty wrong passwords in one
+    # boot is not someone who knows the password.
+    #
+    # The trade is availability: anyone who can reach /api/login can force the
+    # lockout, and clearing it needs physical access. That is the right way
+    # round for a device whose panel is in the room, and it is why the count
+    # is high rather than tight.
+    LOGIN_LOCKOUT_ATTEMPTS = 20
+
+    # ...and how long it stands without one. A power cycle clears it at once,
+    # which is the quick way back in for whoever is standing next to the
+    # device; anyone else waits this out. Twenty guesses a day against Argon2id
+    # is not an attack, so the wait costs an attacker everything and the owner
+    # at most a day - and unlike a lockout that only a reboot clears, nobody
+    # can use it to keep a remote operator out for good.
+    LOGIN_LOCKOUT_SECONDS = 24 * 3600
+
+    # Failed-login state, kept across the gunicorn worker recycling that would
+    # otherwise wipe an in-memory counter every thousand requests. Holds the
+    # boot id it was written under, so a real reboot clears the lockout and a
+    # service restart does not.
+    LOGIN_STATE_PATH = os.path.join('cache', '.login_state.json')
     
     # Session timeout (balanced for usability vs security)
     SESSION_TIMEOUT = 1800  # 30 minutes (1800 seconds)

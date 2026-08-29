@@ -9,6 +9,9 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
     button.disabled = true;
     button.textContent = 'Logging in...';
     errorDiv.style.display = 'none';
+    // Set when the device refuses further attempts until a power cycle; the
+    // button then stays disabled, since there is nothing to retry.
+    let locked = false;
     
     try {
         const response = await fetch('/api/login', {
@@ -20,7 +23,9 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
         });
         
         const result = await response.json();
-        
+
+        locked = response.status === 423;
+
         if (result.success) {
             window.location.href = result.redirect || '/';
         } else {
@@ -31,7 +36,7 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
         errorDiv.textContent = 'Network error. Please try again.';
         errorDiv.style.display = 'block';
     } finally {
-        button.disabled = false;
+        button.disabled = locked;
         button.textContent = 'Login';
     }
 });

@@ -8,6 +8,11 @@ This guide covers the full security posture of a mempaper installation and how t
 
 mempaper is designed for **trusted local networks**. It is not designed to be directly exposed to the internet without additional protection (reverse proxy + authentication layer).
 
+Publishing it through a reverse proxy needs no configuration: mempaper works out where a request came from and whether the browser's connection was encrypted, per request.
+
+- **Client address.** `X-Forwarded-For` is written by whoever sends the request, so it is read only when the request's immediate peer is on your own network — loopback, RFC1918, IPv6 ULA, link-local, or shared address space. The chain is then walked from the near end, dropping hops for as long as they are local, and the first address outside is the client the login rate limit counts against. A public client that sends the header directly is not believed at all. This covers a proxy on the same host, in a container, or elsewhere on the LAN, without being told which.
+- **Scheme.** The session cookie is marked `Secure` and HSTS is sent on exactly the requests that arrived over TLS — terminated locally, or by a proxy on your own network that says so in `X-Forwarded-Proto`. So the same install can serve plain http on the LAN and https through a proxy: the LAN browser gets a cookie it can actually send back, and the published one never sends its session in the clear.
+
 | Scenario | Risk level | Required hardening |
 |---|---|---|
 | Home LAN, no port forwarding | Low | Strong password, default setup is sufficient |
@@ -21,14 +26,16 @@ mempaper is designed for **trusted local networks**. It is not designed to be di
 | Protection | Detail |
 |---|---|
 | **Password hashing** | Argon2id with memory/iteration hardening |
-| **Login rate limiting** | 10 failed attempts per 5-minute window before lockout |
+| **Login rate limiting** | 10 attempts per 5-minute window, counted per client address |
+| **Login lockout** | 20 failed attempts closes login for 24 hours, or until the device is power-cycled - whichever comes first. The count is kept in a file stamped with the kernel boot id, so a service restart does not clear it and a reboot does |
 | **Session timeout** | 30-minute idle timeout |
-| **Session cookies** | `HttpOnly`, `SameSite=Strict` |
-| **Security headers** | `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `X-XSS-Protection` |
+| **Session cookies** | `HttpOnly`, `SameSite=Strict`, and `Secure` on every request that arrived over TLS |
+| **Security headers** | `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `X-XSS-Protection`, plus HSTS on TLS requests |
+| **Setup hotspot** | WPA2-PSK with a random 24-character passphrase and a random, unbranded SSID, both new for each setup session and shown only on the panel |
 | **Service isolation** | App runs as dedicated `mempaper` user, not `pi` or `root` |
 | **Scoped sudo** | Only the exact commands mempaper needs; no wildcard `NOPASSWD: ALL` |
 | **Upload limit** | Rejects files larger than 15 MB at the HTTP layer |
-| **Webhook token** | Donation webhook requires a per-installation secret in the URL |
+| **Webhook token** | Donation webhook requires a per-installation secret in the URL, compared in constant time |
 
 ---
 

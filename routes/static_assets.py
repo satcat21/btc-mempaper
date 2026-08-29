@@ -2,6 +2,7 @@
 """
 
 import os
+from managers.auth_manager import request_is_https
 from flask import request
 from flask import send_file
 from werkzeug.utils import safe_join
@@ -41,6 +42,13 @@ def register(self):
         response.headers.setdefault('X-Frame-Options', 'DENY')
         response.headers.setdefault('X-Content-Type-Options', 'nosniff')
         response.headers.setdefault('X-XSS-Protection', '1; mode=block')
+
+        # Only on requests that arrived over TLS. Sent from a plain-http LAN
+        # response it would pin that address to https for a year in every
+        # browser that saw it, with nothing there to answer.
+        if request_is_https():
+            response.headers.setdefault(
+                'Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
 
         return response
 

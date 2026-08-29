@@ -42,6 +42,7 @@ from utils.tor_recovery import tor_recovery
 from utils.meme_sync_cron import apply_meme_sync_crontab, ensure_device_schedule
 from utils.security_config import SecurityConfig
 from managers.auth_manager import AuthManager
+from managers.auth_manager import SchemeAwareSessionInterface
 from managers.tang_store import TangLocked
 from utils.webp_probe_cache import cached_probe
 from services.wifi import WifiHotspotMixin
@@ -257,8 +258,12 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
         
         # Configure session settings
         self.app.config['PERMANENT_SESSION_LIFETIME'] = SecurityConfig.SESSION_TIMEOUT
-        # No SESSION_COOKIE_SECURE: LAN access is plain HTTP, and a Secure
-        # cookie is never sent over HTTP.
+        # Secure is decided per request instead of here - see
+        # SchemeAwareSessionInterface below. The same device is reached both
+        # ways: http://<ip> on the LAN, and https://<domain> through a reverse
+        # proxy. One fixed answer is wrong for one of them, and wrong in a way
+        # nobody would notice - either the session cookie never arrives, or it
+        # travels in the clear.
         self.app.config['SESSION_COOKIE_HTTPONLY'] = True
         self.app.config['SESSION_COOKIE_SAMESITE'] = 'Strict'
         # Enforce upload size limit — rejects oversized requests before they hit the handler
@@ -268,6 +273,11 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
         self.app.config['SESSION_COOKIE_DOMAIN'] = None
         self.app.config['SESSION_COOKIE_PATH'] = '/'
         
+        # Mark the session cookie Secure exactly on the requests that arrived
+        # over TLS, so the same install can serve plain http on the LAN and
+        # https through a proxy without a setting to say which it is today.
+        self.app.session_interface = SchemeAwareSessionInterface()
+
         # Ensure JSON responses are properly formatted
         self.app.config['JSONIFY_PRETTYPRINT_REGULAR'] = False
         self.app.config['JSON_SORT_KEYS'] = False
