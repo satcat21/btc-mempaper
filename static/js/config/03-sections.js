@@ -2699,10 +2699,14 @@ function _performFactoryReset(options) {
     const countdown = document.createElement('div');
     countdown.className = 'restart-countdown';
 
-    // Clearing and rendering runs 40-60s, the panel refresh adds up to another
-    // 40s on the large display, then the shutdown itself. Generous on purpose:
-    // a clock that reaches zero early invites pulling the plug mid-refresh.
-    const resetSeconds = 180;
+    // An upper bound, not a wait. The device powers itself off as soon as the
+    // panel has finished - about five seconds after the last waveform, plus
+    // systemd's own shutdown - so on a 7.3" panel it is usually gone with
+    // ~40s still showing here. Measured at ~110s end to end there; the budget
+    // covers a 13.3" panel's slower full refresh and a cold first render.
+    // Reaching zero early is the one thing it must not do: that would invite
+    // pulling the plug mid-refresh.
+    const resetSeconds = 150;
 
     const countdownNumber = document.createElement('div');
     countdownNumber.className = 'restart-countdown-number';
@@ -2711,7 +2715,8 @@ function _performFactoryReset(options) {
     const countdownLabel = document.createElement('div');
     countdownLabel.className = 'restart-countdown-label';
     countdownLabel.textContent = t.factory_reset_running ||
-        'Erasing, updating the panel, then powering off. Leave the power connected.';
+        'Erasing, updating the panel, then powering off by itself. Leave the power ' +
+        'connected until the panel stops changing.';
 
     const progressBar = document.createElement('div');
     progressBar.className = 'restart-progress-bar';

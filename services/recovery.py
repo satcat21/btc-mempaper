@@ -174,11 +174,20 @@ class RecoveryMixin:
                 import tools.delivery_state as ds
                 config = self.config_manager.get_current_config()
                 image_path = ds.render_delivery_image(config)
+                # The panel is not the only place the old dashboard lives.
+                # cache/current_eink.png is what the boot refresh pushes to
+                # the e-ink, and cache/current.png/.webp are what the web
+                # dashboard serves - all three a picture of the previous
+                # owner's balances. Left behind, a reset device comes back up
+                # showing them; replaced, it comes back up on the delivery
+                # screen, which is what a reset device should be showing.
+                self._replace_cached_dashboard(ds.OUTPUT_WEB_PATH,
+                                               ds.OUTPUT_EINK_PATH)
                 # Use the app's own display worker (not ds.show_on_eink) to avoid
                 # GPIO conflicts with the already-running display subprocess.
                 if self.e_ink_enabled:
                     print('🖥️ Factory reset: pushing delivery image to e-ink...')
-                    self._display_on_epaper_async(image_path, None, None)
+                    self._display_on_epaper_async(image_path, None, None, priority=True)
             except Exception as e:
                 print(f'⚠️ Could not render delivery image: {e}')
 
@@ -239,6 +248,33 @@ class RecoveryMixin:
 
         removed = self._remove_files(paths)
         print(f'🧹 Removed {removed} meme file(s), kept {self._DELIVERY_MEME}')
+
+    def _replace_cached_dashboard(self, web_path, eink_path):
+        """Put the delivery screen where the cached dashboard images were.
+
+        Written through _write_rendered_image so they are sealed if Tang is
+        on, exactly as a normal render would leave them. If anything here
+        fails the old images are removed instead: showing nothing is
+        recoverable, showing the last owner's balances is not.
+        """
+        from PIL import Image
+        targets = [self.current_image_path, self.current_webp_image_path,
+                   self.current_eink_image_path]
+        try:
+            with Image.open(eink_path) as img:
+                self._write_rendered_image(img.convert('RGB'),
+                                           self.current_eink_image_path,
+                                           format='PNG', compress_level=1)
+            with Image.open(web_path) as img:
+                web = img.convert('RGB')
+                self._write_rendered_image(web, self.current_image_path,
+                                           format='PNG', compress_level=1)
+                self._write_rendered_image(web, self.current_webp_image_path,
+                                           format='WEBP', quality=82, method=4)
+            print('🖼️ Cached dashboard replaced with the delivery screen')
+        except Exception as e:
+            print(f'⚠️ Could not replace the cached dashboard: {e}')
+            self._remove_files(targets)
 
     def _factory_reset_clear_wifi(self):
         """Delete all saved client WiFi profiles.

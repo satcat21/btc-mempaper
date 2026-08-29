@@ -14,14 +14,33 @@ import time
 class DisplayWorkerMixin:
     """The persistent e-ink worker subprocess: starting it, streaming its stdout"""
 
-    def _display_on_epaper_async(self, image_path, block_height=None, block_hash=None):
-        """Display image on e-Paper via persistent worker process."""
+    def _display_on_epaper_async(self, image_path, block_height=None, block_hash=None,
+                                 priority=False):
+        """Display image on e-Paper via persistent worker process.
+
+        priority: this frame matters more than whatever else wants the panel.
+        Ordinary refreshes give up when one is already running - two full
+        refreshes back to back can wedge the BUSY line - and are content to
+        be retried later. The factory reset's delivery image has no later:
+        the device powers off straight after, so it waits its turn instead,
+        and blocks any ordinary refresh from taking the panel before it.
+        """
+
+        if priority:
+            self._priority_display_pending = True
+        elif getattr(self, '_priority_display_pending', False):
+            # A frame that must reach the panel is on its way; anything
+            # ordinary would only be overwritten by it moments later.
+            print('📌 Display reserved for a priority refresh - skipping this one')
+            return
 
         # Skip immediately if this block is already superseded
         if block_height:
             current_block = getattr(self, 'current_block_height', 0) or 0
             if int(block_height) < int(current_block):
                 print(f"⏭️ Skipping e-paper display for old block {block_height} (current: {current_block})")
+                # Nothing will reach the finally below to lift the reservation.
+                self._priority_display_pending = False
                 return
 
         def display_in_worker():
@@ -31,7 +50,14 @@ class DisplayWorkerMixin:
             # can leave the panel's BUSY line stuck, hanging the driver indefinitely —
             # that's what caused a 120s timeout that required a service restart to
             # clear on 2026-07-16. Just remember to refresh once more when free.
-            if not self._display_worker_lock.acquire(blocking=False):
+            if priority:
+                # Waits, where an ordinary refresh would have given up. The
+                # timeout is the same 120s the worker itself is given.
+                if not self._display_worker_lock.acquire(timeout=120):
+                    print('⚠️ Priority refresh gave up waiting for the panel')
+                    self._priority_display_pending = False
+                    return
+            elif not self._display_worker_lock.acquire(blocking=False):
                 self._pending_eink_refresh = True
                 print(f"📌 Display busy — queued refresh for block {block_height}")
                 return
@@ -141,6 +167,8 @@ class DisplayWorkerMixin:
                             print(f"   {line}")
                     self._emit_display_error(error)
             finally:
+                if priority:
+                    self._priority_display_pending = False
                 self._display_worker_lock.release()
                 # Run any refresh that came in while we were busy, now that we're free.
                 if getattr(self, '_pending_eink_refresh', False):
@@ -152,7 +180,13 @@ class DisplayWorkerMixin:
                         daemon=True
                     ).start()
 
-        threading.Thread(target=display_in_worker, daemon=True).start()
+        try:
+            threading.Thread(target=display_in_worker, daemon=True).start()
+        except Exception:
+            # A reservation nothing is coming to honour would block every
+            # later refresh for the life of the process.
+            self._priority_display_pending = False
+            raise
 
     def _kill_display_worker(self, proc):
         """Terminate a stuck/failed display worker and clear the reference.
