@@ -533,6 +533,26 @@ body.modal-open {
     line-height: 1.5;
 }
 
+/* The two image choices. .boolean-switch spaces the switch from its label but
+   says nothing about the rows themselves, so without these they sit flush
+   against each other and against the list above. */
+.factory-reset-choice {
+    margin-top: 10px;
+    font-size: 0.9rem;
+}
+
+/* Clear of the last bullet, which is a tighter line than these rows. */
+.factory-reset-list + .factory-reset-choice {
+    margin-top: 16px;
+}
+
+/* A switch moved to the destructive side should be readable as such from the
+   label, not only from the position of the thumb. */
+.factory-reset-choice--destructive > span {
+    color: var(--danger);
+    font-weight: 600;
+}
+
 /* Folded away by default. The summary is the whole control, so it gets the
    pointer and the focus ring rather than relying on the marker. */
 .pkg-changes {
