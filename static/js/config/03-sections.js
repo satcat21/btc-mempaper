@@ -2551,8 +2551,8 @@ function createFactoryResetSection() {
     const description = document.createElement('div');
     description.className = 'form-description';
     description.textContent = t.factory_reset_desc ||
-        'Erase everything on this device and return it to delivery state. Use it before ' +
-        'passing the device on, or to recover one you are locked out of.';
+        'Erase everything on this device and return it to delivery state. ' +
+        'For passing the device on, or starting again from scratch.';
     formGroup.appendChild(description);
 
     const wrapper = document.createElement('div');
@@ -2565,17 +2565,18 @@ function createFactoryResetSection() {
         (t.factory_reset || 'Factory Reset');
 
     resetBtn.addEventListener('click', async () => {
+        const detail = _buildFactoryResetDetail();
         const ok = await showConfirmModal({
             title: t.factory_reset || 'Factory Reset',
             message: t.factory_reset_confirm ||
                 'This cannot be undone. Everything below is erased, and the device powers off when it is done.',
-            detail: _buildFactoryResetDetail(),
+            detail: detail,
             confirmText: t.factory_reset_do || 'Erase and power off',
             cancelText: t.cancel || 'Cancel',
             danger: true,
         });
         if (!ok) return;
-        _performFactoryReset();
+        _performFactoryReset(detail.getOptions());
     });
 
     wrapper.appendChild(resetBtn);
@@ -2607,20 +2608,68 @@ function _buildFactoryResetDetail() {
     });
     wrap.appendChild(list);
 
+    // The pictures are the one part that is a choice. Both default to keeping:
+    // the meme library is thousands of files that would have to come back over
+    // Tor, and someone resetting to hand the device on can say so here rather
+    // than have the decision made for them. Each switch is labelled with what
+    // it will do, so the state is readable without reading the position.
+    const memes = _buildResetChoice(
+        t.factory_reset_keep_memes || 'Keep meme images',
+        t.factory_reset_delete_memes || 'Delete all meme images');
+    const opsec = _buildResetChoice(
+        t.factory_reset_keep_opsec || 'Keep OPSec images',
+        t.factory_reset_delete_opsec || 'Delete all OPSec images');
+    wrap.appendChild(memes);
+    wrap.appendChild(opsec);
+
     const note = document.createElement('p');
     note.className = 'factory-reset-note';
     note.textContent = t.factory_reset_note ||
         'Afterwards, disconnect and reconnect the power. The device starts its setup hotspot ' +
-        'again, and the panel shows the network and passphrase for joining it.';
+        'again, and the panel shows the network and password for joining it.';
     wrap.appendChild(note);
 
+    // Read after the dialog resolves: the element outlives the modal in the
+    // caller's closure, so the switch positions are still there to be asked.
+    wrap.getOptions = () => ({
+        delete_memes: memes.getValue(),
+        delete_opsec: opsec.getValue(),
+    });
+
     return wrap;
+}
+
+// A switch whose own label says what it is about to do. Same classes as the
+// settings form's switches so it reads as the same control.
+function _buildResetChoice(offLabel, onLabel) {
+    const row = document.createElement('div');
+    row.className = 'boolean-switch factory-reset-choice';
+
+    const switchEl = document.createElement('div');
+    switchEl.className = 'switch';
+    const thumb = document.createElement('div');
+    thumb.className = 'switch-thumb';
+    switchEl.appendChild(thumb);
+
+    const label = document.createElement('span');
+    label.textContent = offLabel;
+
+    switchEl.addEventListener('click', () => {
+        const on = switchEl.classList.toggle('active');
+        label.textContent = on ? onLabel : offLabel;
+        row.classList.toggle('factory-reset-choice--destructive', on);
+    });
+
+    row.appendChild(switchEl);
+    row.appendChild(label);
+    row.getValue = () => switchEl.classList.contains('active');
+    return row;
 }
 
 // Like _performShutdown, with a longer clock: the delivery image has to be
 // rendered and pushed to the panel before the power goes, and a full-screen
 // e-ink refresh on the 13.3 inch panel is most of a minute by itself.
-function _performFactoryReset() {
+function _performFactoryReset(options) {
     const t = window.translations || {};
 
     window._shuttingDown = true;
@@ -2628,8 +2677,12 @@ function _performFactoryReset() {
         window.configSocket.disconnect();
     }
 
-    fetch('/api/system/factory-reset', { method: 'POST', credentials: 'same-origin' })
-        .catch(() => { /* the connection drops with the device */ });
+    fetch('/api/system/factory-reset', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(options || {}),
+    }).catch(() => { /* the connection drops with the device */ });
 
     const overlay = document.createElement('div');
     overlay.className = 'confirm-modal-overlay';

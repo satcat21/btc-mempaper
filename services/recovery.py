@@ -136,8 +136,13 @@ class RecoveryMixin:
             self._pending_boot_refresh = True
             print('🔄 Boot-refresh marker found — will push a fast e-ink refresh after startup')
 
-    def _execute_factory_reset(self):
+    def _execute_factory_reset(self, delete_memes=False, delete_opsec=False):
         """Full factory reset: clear data, delete WiFi, render delivery image.
+
+        The pictures are optional and default to staying. Everything else
+        here is configuration the device can rebuild; the images are content
+        nobody can get back, so removing them is asked for rather than
+        assumed.
 
         Runs in a background thread because the delivery-state image render
         and e-ink display update take ~40-60 seconds.
@@ -153,7 +158,17 @@ class RecoveryMixin:
             print('🧹 Factory reset: clearing saved WiFi profiles...')
             self._factory_reset_clear_wifi()
 
-            # 3. Render the delivery-state image and push via the app's display worker
+            # 3. The images, if they were asked for. OPSec covers are family
+            #    photos; the meme library is thousands of shipped files that
+            #    would have to come back over Tor. Neither is guessed at.
+            if delete_opsec:
+                print('🧹 Factory reset: removing OPSec images...')
+                self._factory_reset_clear_opsec()
+            if delete_memes:
+                print('🧹 Factory reset: removing meme images...')
+                self._factory_reset_clear_memes()
+
+            # 4. Render the delivery-state image and push via the app's display worker
             print('🎨 Factory reset: rendering delivery state image...')
             try:
                 import tools.delivery_state as ds
@@ -173,6 +188,57 @@ class RecoveryMixin:
             print(f'❌ Factory reset failed: {e}')
             import traceback
             traceback.print_exc()
+
+    # The one meme the project ships and the reset itself depends on:
+    # delivery_state renders the delivery image from it, in the step straight
+    # after this one. Deleting it would break the reset that deleted it.
+    _DELIVERY_MEME = '0.jpg'
+
+    @staticmethod
+    def _remove_files(paths):
+        """Delete each path that exists, reporting what could not go."""
+        removed = 0
+        for path in paths:
+            try:
+                if os.path.isfile(path):
+                    os.remove(path)
+                    removed += 1
+            except OSError as e:
+                print(f'⚠️ Could not remove {path}: {e}')
+        return removed
+
+    def _factory_reset_clear_opsec(self):
+        """Delete the uploaded OPSec cover photos and their thumbnails."""
+        opsec_dir = os.path.join('static', 'opsec')
+        paths = []
+        for root in (os.path.join(opsec_dir, 'thumbs'), opsec_dir):
+            if os.path.isdir(root):
+                paths.extend(os.path.join(root, n) for n in os.listdir(root))
+        print(f'🧹 Removed {self._remove_files(paths)} OPSec file(s)')
+
+    def _factory_reset_clear_memes(self):
+        """Delete the meme library, its thumbnails and all of its sidecars.
+
+        The sidecars go with the images: _user_tags.json and _renames.json
+        are the operator's own edits, and index.jsonl / _state_memes.jsonl
+        are the sync's record of what has already been downloaded - left
+        behind, they would tell the next sync there was nothing to fetch.
+
+        Everything except the delivery meme, which the next step needs.
+        """
+        memes_dir = os.path.join('static', 'memes')
+        paths = []
+
+        thumbs = os.path.join(memes_dir, 'thumbs')
+        if os.path.isdir(thumbs):
+            paths.extend(os.path.join(thumbs, n) for n in os.listdir(thumbs))
+
+        if os.path.isdir(memes_dir):
+            paths.extend(os.path.join(memes_dir, n) for n in os.listdir(memes_dir)
+                         if n != self._DELIVERY_MEME)
+
+        removed = self._remove_files(paths)
+        print(f'🧹 Removed {removed} meme file(s), kept {self._DELIVERY_MEME}')
 
     def _factory_reset_clear_wifi(self):
         """Delete all saved client WiFi profiles.

@@ -451,9 +451,17 @@ def register(self):
         Wi-Fi and comes back in setup mode.
         """
         try:
+            # Both default to keeping: a request that says nothing erases the
+            # device's configuration but leaves its pictures, which is the
+            # conservative half of every pair of outcomes here.
+            payload = request.get_json(silent=True) or {}
+            delete_memes = bool(payload.get('delete_memes'))
+            delete_opsec = bool(payload.get('delete_opsec'))
+
             def _do_factory_reset():
                 try:
-                    self._execute_factory_reset()
+                    self._execute_factory_reset(delete_memes=delete_memes,
+                                                delete_opsec=delete_opsec)
                 except Exception as e:
                     print(f'❌ Factory reset failed: {e}')
                     # Fall through to the power off regardless: a half-cleared

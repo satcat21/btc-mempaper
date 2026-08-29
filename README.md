@@ -227,11 +227,11 @@ The device ships with the delivery-state image on the e-ink display.
 
 #### Step 2 -- Setup Hotspot (E-Ink)
 
-On first boot the device detects that no Wi-Fi is configured and starts a WPA2-protected setup hotspot. **This takes between 90 seconds and 2 minutes 21 seconds** — the Pi has to boot, initialise the Wi-Fi radio, and switch to AP mode. Once ready, the e-ink display refreshes and shows the network name, its passphrase and a QR code.
+On first boot the device detects that no Wi-Fi is configured and starts a WPA2-protected setup hotspot. **This takes between 90 seconds and 2 minutes 21 seconds** — the Pi has to boot, initialise the Wi-Fi radio, and switch to AP mode. Once ready, the e-ink display refreshes and shows the network name, its password and a QR code.
 
 - **SSID:** `setup-xxxxxxxxxx`, random for each setup session. It carries no brand, so a network scan does not advertise what the device is.
-- **Security:** WPA2-PSK with a random 24-character passphrase, generated per session and shown only on the panel. Everything the setup page then carries — your home Wi-Fi passphrase, the admin account you create — is encrypted over the air.
-- Scan the first QR code with your phone: it carries the network and its passphrase, so the phone joins without anything being typed. The passphrase is printed underneath for cameras that will not scan.
+- **Security:** WPA2-PSK with a random 24-character password, generated per session and shown only on the panel. Everything the setup page then carries — your home Wi-Fi password, the admin account you create — is encrypted over the air.
+- Scan the first QR code with your phone: it carries the network and its password, so the phone joins without anything being typed. The password is printed underneath for cameras that will not scan.
 - There is no separate portal password. Being on the network is what grants access to the setup page.
 
 > **Tip:** Wait for the display to change from the delivery-state image to the hotspot screen before trying to connect. If nothing has changed after 2 minutes, the hotspot failed to start — power-cycle the device and try again.
@@ -268,9 +268,12 @@ When you can still log in, this is the complete one: **Settings > General > Adva
 - All saved Wi-Fi networks
 - All admin accounts and their passwords
 - Wallet addresses, Bitaxe miners, donation history and every cache
+- Your uploaded OPSec cover photos, and the meme tags you edited
 - The SSH keys the device manages
 
-It powers off rather than rebooting, so the panel keeps the delivery image. Reconnect the power when you want it back: finding no Wi-Fi, it starts the setup hotspot and shows the network and passphrase to join.
+The meme library itself is kept, along with the installed software and its settings -- it is shipped content rather than yours, and re-downloading a few thousand files over Tor is not something a reset should commit you to silently.
+
+It powers off rather than rebooting, so the panel keeps the delivery image. Reconnect the power when you want it back: finding no Wi-Fi, it starts the setup hotspot and shows the network and password to join.
 
 Allow around two to three minutes before pulling the plug -- the delivery image has to be rendered and written to the panel first, and interrupting an e-ink refresh is the one thing the display must not suffer. The dialog counts that time down and tells you when it is safe.
 
