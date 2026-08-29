@@ -311,7 +311,8 @@ class ConfigManager:
                 else:
                     sensitive_fields = {'wallet_balance_addresses_with_comments',
                                         'block_reward_addresses_table', 'admin_password_hash',
-                                        'admin_users', 'secret_key', 'mempool_password'}
+                                        'admin_users', 'secret_key',
+                                        'mempool_username', 'mempool_password'}
                 for key, value in secure_config.items():
                     if key in sensitive_fields:
                         merged_config[key] = value
@@ -466,6 +467,7 @@ class ConfigManager:
         'admin_users': 'Admin users',
         'admin_password_hash': 'Admin password',
         'secret_key': 'Session signing key',
+        'mempool_username': 'Mempool username',
         'mempool_password': 'Mempool password',
     }
 

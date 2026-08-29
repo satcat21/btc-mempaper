@@ -105,6 +105,10 @@ class SecureConfigManager:
             'admin_password_hash',
             'admin_users',
             'secret_key',
+            # Both halves of the mempool login. Basic auth is a pair, so a
+            # username kept in the clear beside a sealed password protects
+            # half a credential and names the account the other half opens.
+            'mempool_username',
             'mempool_password'
         }
         
