@@ -965,10 +965,6 @@ function createFormField(key, field, value) {
             // targets the actual <input>, not the wrapper div.
             _trimOnBlur(input);
 
-            // Disable autocomplete for admin_username field
-            if (key === 'admin_username') {
-                input.setAttribute('autocomplete', 'off');
-            }
             // Inline "private instance" checkbox for mempool_host
             if (key === 'mempool_host') {
                 const hostInput = input; // keep reference to the actual text input

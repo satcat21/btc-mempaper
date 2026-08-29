@@ -22,8 +22,32 @@ function createCurrentUserUsernameField() {
     input.setAttribute('data-1p-ignore', '');
     input.setAttribute('data-lpignore', 'true');
     input.setAttribute('data-form-type', 'other');
-    input.setAttribute('data-config-key', 'admin_username');
     formGroup.appendChild(input);
+
+    // No data-config-key: a username is not a setting. It names an entry in
+    // admin_users, so it is renamed through the users API like the password
+    // beside it, and the Save button drives that through these hooks - the
+    // same arrangement the SSH key list uses.
+    const typedName = () => input.value.trim();
+
+    window._usernameIsDirty = () => !!typedName() && typedName() !== configCurrentUser;
+
+    window._usernameSaveHook = async () => {
+        const newName = typedName();
+        if (!newName || newName === configCurrentUser) return;
+        const resp = await fetch(`/api/users/${encodeURIComponent(configCurrentUser)}/rename`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({new_username: newName})
+        });
+        const result = await resp.json();
+        if (!result.success) {
+            input.value = configCurrentUser;
+            showNotification(result.message || 'Failed to rename user', 'error');
+            throw new Error(result.message || 'Failed to rename user');
+        }
+        configCurrentUser = newName;
+    };
 
     return formGroup;
 }

@@ -206,6 +206,11 @@ def register(self):
                 u[new_username] = u.pop(username)
                 self.config_manager.config['admin_users'] = u
             self.config_manager.save_config()
+            # Renaming yourself would otherwise leave the session pointing at a
+            # user that no longer exists, and every later call naming it - a
+            # password change, say - would answer 404.
+            if session.get('username') == username:
+                session['username'] = new_username
             return jsonify({'success': True})
         except Exception as e:
             return jsonify({'success': False, 'message': _safe_error(e)}), 400

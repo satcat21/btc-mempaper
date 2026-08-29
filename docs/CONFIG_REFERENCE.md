@@ -455,7 +455,7 @@ Upload OPSec images via the **Meme Management** section of the config page, in t
 
 | Web Label | Config Key | Type | Description | Allowed Values / Examples |
 | :--- | :--- | :--- | :--- | :--- |
-| **Admin Username** | `admin_username` | String | Dashboard login username | default: `admin` |
+| **Admin Username** | none | String | Dashboard login username. Not a config key: every account lives in the sealed `admin_users` map, and the settings field renames the logged-in one through `POST /api/users/<name>/rename` |
 | **Password** | `admin_password_hash` | String | *Hashed managed field* | *Managed by `setup_secure_password.py`* |
 | **Public Dashboard** | `public_dashboard` | Switch | Allow unauthenticated users to view the dashboard (settings still require login) | `true`, `false` (default: `false`) |
 

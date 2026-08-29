@@ -1232,6 +1232,12 @@ function setupNavigationButtons() {
                             try { await window._sshSaveHook(); } catch (_) { /* error shown in SSH section */ }
                         }
 
+                        // Same for a renamed user: configCurrentUser has to be
+                        // updated before _markClean() or the form stays dirty.
+                        if (typeof window._usernameSaveHook === 'function') {
+                            try { await window._usernameSaveHook(); } catch (_) { /* error shown by the hook */ }
+                        }
+
                         showNotification(window.translations?.configuration_saved || 'Configuration saved successfully!', 'success');
                         _markClean();
                     } else {

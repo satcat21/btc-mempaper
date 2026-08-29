@@ -140,8 +140,6 @@ def validate_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
         "mempool_username",
         "mempool_password",
         "omni_device_name",
-        "admin_username",
-        "admin_password",
         "tang_url",
         "tang_thumbprint",
     ]
@@ -279,7 +277,6 @@ def validate_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
     # String settings
     string_settings = [
         "omni_device_name", 
-        "admin_username",
         "font_regular",
         "font_bold"
     ]
@@ -331,10 +328,10 @@ def validate_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
         if "admin_password" in validated:
             del validated["admin_password"]
     
-    # Handle cleartext admin_password only if no hash exists anywhere
-    elif "admin_password" in config:
-        if isinstance(config["admin_password"], str):
-            validated["admin_password"] = config["admin_password"].strip()
+    # A cleartext password is an input, never a stored value: every path that
+    # reads one hashes it and calls remove(). Copying it into validated was the
+    # one route by which it survived a save, and since the form posts the whole
+    # config back, it then survived every save after that.
 
     # Preserve admin_users dict (multi-user format: {username: argon2_hash})
     if "admin_users" in config and isinstance(config["admin_users"], dict):

@@ -714,35 +714,6 @@ def register(self):
             if not isinstance(new_config, dict):
                 return jsonify({'success': False, 'message': 'Invalid configuration payload'}), 400
 
-            # Handle admin username rename server-side so the admin_users mapping and
-            # the current session stay in sync even for legacy sessions missing username.
-            old_admin_username = str((old_config or {}).get('admin_username') or '').strip()
-            requested_admin_username = str(new_config.get('admin_username') or '').strip()
-            session_username = str(session.get('username') or '').strip()
-
-            if requested_admin_username:
-                new_config['admin_username'] = requested_admin_username
-
-            if old_admin_username and requested_admin_username and requested_admin_username != old_admin_username:
-                with self.config_manager.config_lock:
-                    admin_users = dict(self.config_manager.config.get('admin_users') or {})
-
-                if admin_users:
-                    if not session_username:
-                        return jsonify({'success': False, 'message': 'Session username is missing'}), 401
-
-                    if session_username not in admin_users:
-                        return jsonify({'success': False, 'message': 'Authenticated user not found'}), 403
-
-                    rename_source = session_username
-
-                    if requested_admin_username in admin_users and requested_admin_username != rename_source:
-                        return jsonify({'success': False, 'message': 'Username already taken'}), 409
-
-                    if requested_admin_username != rename_source:
-                        admin_users[requested_admin_username] = admin_users.pop(rename_source)
-                    new_config['admin_users'] = admin_users
-
             # Provision the sealed key before the save, not after it. save_config
             # writes the plain half first, which lands tang_enabled=True on disk;
             # the sensitive half that follows is then refused, because the store
@@ -767,11 +738,6 @@ def register(self):
                     }), 503
 
             if self.config_manager.save_config(new_config):
-                if requested_admin_username and (
-                    requested_admin_username != old_admin_username or not session_username
-                ):
-                    session['username'] = requested_admin_username
-
                 # Get validated new config from manager
                 validated_new_config = self.config_manager.get_current_config()
 

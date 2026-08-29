@@ -220,7 +220,8 @@ function _collectFormSnapshot() {
 
 function _checkDirty() {
     const sshDirty = typeof window._sshIsDirty === 'function' && window._sshIsDirty();
-    const dirty = _collectFormSnapshot() !== _savedSnapshot || sshDirty;
+    const nameDirty = typeof window._usernameIsDirty === 'function' && window._usernameIsDirty();
+    const dirty = _collectFormSnapshot() !== _savedSnapshot || sshDirty || nameDirty;
     document.querySelectorAll('#desktop-save-button, #mobile-save-button').forEach(btn => {
         btn.classList.toggle('unsaved-changes', dirty);
     });
@@ -407,6 +408,11 @@ async function saveConfiguration() {
             // Save SSH keys if the section added/removed any
             if (typeof window._sshSaveHook === 'function') {
                 try { await window._sshSaveHook(); } catch (_) { /* error shown in SSH section */ }
+            }
+
+            // Rename the logged-in user if the username field was edited
+            if (typeof window._usernameSaveHook === 'function') {
+                try { await window._usernameSaveHook(); } catch (_) { /* error shown by the hook */ }
             }
 
             // Block notifications are always enabled - no need to update subscription
