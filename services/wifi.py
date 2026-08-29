@@ -438,11 +438,10 @@ class WifiHotspotMixin:
             'timestamp': int(time.time()),
         }
         try:
-            with open(self.setup_mode_flag_path, 'w', encoding='utf-8') as f:
-                json.dump(payload, f, indent=2)
-            # Contains the hotspot passphrase, so it is not for every account
-            # on the device to read.
-            os.chmod(self.setup_mode_flag_path, 0o600)
+            # Carries the hotspot passphrase, so it is not for every account on
+            # the device to read. See _write_private_file.
+            self._write_private_file(self.setup_mode_flag_path,
+                                     json.dumps(payload, indent=2))
         except OSError as e:
             print(f"⚠️ Could not write setup mode flag: {e}")
 
@@ -683,6 +682,33 @@ class WifiHotspotMixin:
     # both of these are read off a panel by anyone whose camera will not scan.
     _SSID_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789'
     _PSK_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789'
+
+    @staticmethod
+    def _write_private_file(path, text):
+        """Write text that only this user and root may read.
+
+        Created 0600 by the open() itself. Writing first and chmod'ing after
+        leaves the file at the umask's permissions - 0644 on a default Pi - for
+        as long as the write takes, which is a window in which any local
+        account can read a live Wi-Fi passphrase.
+
+        Clear text is not avoidable for either caller: hostapd reads its
+        passphrase from a file it opens itself, and the setup-mode file has to
+        survive the process that wrote it. Neither outlives the hotspot - both
+        are deleted when it comes down - and the credentials are single-use and
+        regenerated for the next setup session.
+        """
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            # The mode above applies only when open() creates the file, so a
+            # rewrite would otherwise keep whatever an earlier version left.
+            # Before the write, not after: the secret goes in once nobody else
+            # can open it. No-op on Windows, which has no such bits.
+            try:
+                os.fchmod(f.fileno(), 0o600)
+            except (AttributeError, OSError):
+                pass
+            f.write(text)
 
     def _generate_setup_credentials(self):
         """A fresh SSID and WPA2 passphrase for one run of the setup hotspot.
@@ -1053,11 +1079,11 @@ class WifiHotspotMixin:
             f'ignore_broadcast_ssid=0\n'
         )
         try:
-            with open(self._HOSTAPD_CONF, 'w', encoding='utf-8') as f:
-                f.write(conf)
-            # The file now carries the passphrase in the clear, as hostapd
-            # needs it to. hostapd runs as root and reads it as root.
-            os.chmod(self._HOSTAPD_CONF, 0o600)
+            # hostapd has no way to take a passphrase but from the file it
+            # reads, so this is written in the clear by necessity - kept to
+            # this user and root, and removed in _stop_hostapd when the
+            # hotspot comes down. See _write_private_file.
+            self._write_private_file(self._HOSTAPD_CONF, conf)
         except OSError as e:
             print(f'❌ Setup hotspot: could not write hostapd config — {e}')
             return False
