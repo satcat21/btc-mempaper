@@ -452,7 +452,13 @@ def render_delivery_image(config):
     lang         = config.get("language", "en")
     translations_dict = translations.get(lang, translations["en"])
 
-    renderer = ImageRenderer(config, translations_dict)
+    # The e-ink half of this is the base the onboarding QR band is stamped onto,
+    # and that band is always light (see _ONBOARDING_DARK in onboarding_renderer).
+    # Rendering it to the configured theme instead is how a device set to dark
+    # mode ended up showing a light dashboard with a dark strip across the
+    # bottom - or the reverse. The web preview keeps the configured theme; it is
+    # looked at in a browser, not scanned with a phone.
+    renderer = ImageRenderer(dict(config, eink_dark_mode=False), translations_dict)
 
     # Zero-out all data so no stale API values appear
     renderer._donation_data = None

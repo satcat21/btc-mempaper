@@ -57,6 +57,15 @@ def _display_wh(config):
     return h, w
 
 
+# Every onboarding screen is drawn light, whatever the dashboard's theme.
+# These are the screens somebody reads with a phone in their hand - a QR code
+# to scan, an SSID and a passphrase to copy - and on e-ink black on white is
+# both the sharpest the panel gets and what QR scanners expect. It also keeps
+# the QR band consistent with the delivery image it is stamped onto, which
+# delivery_state.py renders light for the same reason.
+_ONBOARDING_DARK = False
+
+
 def _qr_image(data, size, dark, error_correction=None):
     """Return a PIL RGB Image of a QR code scaled to `size`×`size`."""
     fill = (255, 255, 255) if dark else (20,  20,  20)
@@ -143,6 +152,30 @@ def _wifi_qr_uri(ssid, password):
     return f'WIFI:T:WPA;S:{esc(ssid)};P:{esc(password)};;'
 
 
+def _labelled_line(font, labels, value, max_width):
+    """`value` behind the longest of `labels` that still fits on one line.
+
+    The labels name the two boxes in a phone's Wi-Fi dialog, so they should
+    read as those boxes do. The full words do not always fit beside a
+    24-character passphrase on a 480px panel, so the label is what shortens -
+    never the value, which has to be transcribable character for character.
+    """
+    for label in labels:
+        text = f'{label}: {value}'
+        bbox = font.getbbox(text)
+        if (bbox[2] - bbox[0]) <= max_width:
+            return text
+    return f'{labels[-1]}: {value}'
+
+
+def _ssid_line(font, ssid, max_width):
+    return _labelled_line(font, ('SSID',), ssid, max_width)
+
+
+def _password_line(font, password, max_width):
+    return _labelled_line(font, ('Password', 'Pwd'), password, max_width)
+
+
 def render_hotspot_screen(ssid, password, portal_url, config):
     """
     Build and save the hotspot onboarding image with two QR codes stacked vertically.
@@ -155,7 +188,7 @@ def render_hotspot_screen(ssid, password, portal_url, config):
     if not _PIL_OK:
         return None, None
 
-    dark   = bool(config.get('color_mode_dark', True))
+    dark   = _ONBOARDING_DARK
     W, H   = _display_wh(config)
     cx     = W // 2
 
@@ -201,7 +234,8 @@ def render_hotspot_screen(ssid, password, portal_url, config):
         {
             'qr_data': _wifi_qr_uri(ssid, password),
             'step':    '[1] Join WiFi',
-            'lines':   [(ssid, f_data, FG), (f'Key: {password}', f_mono, MUTED)],
+            'lines':   [(_ssid_line(f_data, ssid, W - PAD * 2), f_data, FG),
+                        (_password_line(f_mono, password, W - PAD * 2), f_mono, MUTED)],
         },
         {
             'qr_data': portal_url,
@@ -254,8 +288,8 @@ def stamp_qr_codes_on_image(base_img, ssid, password, portal_url, config,
     two side-by-side QR codes (WiFi + setup page).
 
     Args:
-        eink: If True, use e-ink color settings (eink_dark_mode, default light).
-              If False, use web color settings (color_mode_dark, default dark).
+        eink: Kept for the callers that name which panel they are drawing for.
+              It no longer selects a theme - see _ONBOARDING_DARK.
 
     The base image (e.g. delivery-state) is modified in-place and also saved
     to cache/onboarding_hotspot.png.
@@ -269,10 +303,7 @@ def stamp_qr_codes_on_image(base_img, ssid, password, portal_url, config,
     W, H = img.size
     draw = ImageDraw.Draw(img)
 
-    if eink:
-        dark = bool(config.get('eink_dark_mode', False))
-    else:
-        dark = bool(config.get('color_mode_dark', True))
+    dark = _ONBOARDING_DARK
     block_height_area = int(config.get('block_height_area', 180))
 
     BG     = (0, 0, 0) if dark else (255, 255, 255)
@@ -324,8 +355,11 @@ def stamp_qr_codes_on_image(base_img, ssid, password, portal_url, config,
     _centered(draw, left_cx, label_y, '1. Connect to WiFi', f_label, FG)
     img.paste(_qr_image(_wifi_qr_uri(ssid, password), qr_size, False, ec),
               (left_cx - qr_size // 2, qr_y))
-    _centered(draw, left_cx, info_y, f'WiFi: {ssid}', f_mono, FG)
-    _centered(draw, left_cx, info_y + info_line_h + 2, f'Key: {password}', f_mono, MUTED)
+    _centered(draw, left_cx, info_y,
+              _ssid_line(f_mono, ssid, W // 2 - pad * 2), f_mono, FG)
+    # Half the panel, less the gutter: the right-hand column starts there.
+    _centered(draw, left_cx, info_y + info_line_h + 2,
+              _password_line(f_mono, password, W // 2 - pad * 2), f_mono, MUTED)
 
     # ── Right: Setup page QR (no key needed — the network is the gate) ──
     _centered(draw, right_cx, label_y, '2. Open setup page', f_label, FG)
@@ -344,8 +378,8 @@ def render_connected_screen(access_url, config, timeout_seconds=180, eink=True,
     Build and save the post-connection dashboard-access image (1 QR code).
 
     Args:
-        eink: If True, use e-ink color settings (eink_dark_mode, default light).
-              If False, use web color settings (color_mode_dark, default dark).
+        eink: Kept for the callers that name which panel they are drawing for.
+              It no longer selects a theme - see _ONBOARDING_DARK.
         translations: Optional dict of translation strings for the current language.
 
     Returns (PIL Image, path) or (None, None) if PIL is unavailable.
@@ -353,10 +387,7 @@ def render_connected_screen(access_url, config, timeout_seconds=180, eink=True,
     if not _PIL_OK:
         return None, None
 
-    if eink:
-        dark = bool(config.get('eink_dark_mode', False))
-    else:
-        dark = bool(config.get('color_mode_dark', True))
+    dark = _ONBOARDING_DARK
     W, H  = _display_wh(config)
     cx    = W // 2
 
