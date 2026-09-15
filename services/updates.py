@@ -448,9 +448,14 @@ class UpdateSchedulerMixin:
                 # runs it after simulating and refusing when the removal list
                 # touches a declared dependency or the Python the venv is built
                 # on. There is nobody at 05:00 to read that refusal.
-                from routes.updates import (PILLOW_NATIVE_DEPS, _installed_versions)
+                from routes.updates import (PILLOW_NATIVE_DEPS, _installed_versions,
+                                            remount_for_apt, restore_mounts)
 
                 pillow_before = _installed_versions(PILLOW_NATIVE_DEPS)
+                # The service runs under ProtectSystem=strict and sudo inherits
+                # its read-only namespace, so apt cannot write until these are
+                # remounted - the same as the web routes do.
+                apt_mounts = remount_for_apt()
                 try:
                     subprocess.run(
                         ['sudo', 'apt-get', 'update', '-qq'],
@@ -510,6 +515,8 @@ class UpdateSchedulerMixin:
                                 print(f"   {line}")
                 except Exception as e:
                     print(f"⚠️ Auto-update: package reconcile skipped: {e}")
+                finally:
+                    restore_mounts(apt_mounts)
 
                 # mempaper software update — only if a newer release exists
                 try:
@@ -571,8 +578,12 @@ class UpdateSchedulerMixin:
                             if apt_deps_changed:
                                 apt_req_file = os.path.join(project_dir, 'apt-requirements.txt')
                                 if os.path.exists(apt_req_file):
-                                    subprocess.run(['sudo', '/usr/local/bin/mempaper-apt-install'],
-                                                    capture_output=True, timeout=300)
+                                    wrapper_mounts = remount_for_apt()
+                                    try:
+                                        subprocess.run(['sudo', '/usr/local/bin/mempaper-apt-install'],
+                                                       capture_output=True, timeout=300)
+                                    finally:
+                                        restore_mounts(wrapper_mounts)
 
                             venv_pip = os.path.join(project_dir, '.venv', 'bin', 'pip')
                             requirements_file = os.path.join(project_dir, 'requirements.txt')

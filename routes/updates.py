@@ -17,6 +17,46 @@ import threading
 import time
 import traceback
 
+# Mounts apt's post-install hooks write to, remounted read-write for an apt run:
+# mempaper.service runs under ProtectSystem=strict, and 'sudo apt' inherits that
+# read-only namespace. /boot/firmware takes the initramfs; /run takes a kernel
+# hook's /var/run/reboot-required. If a hook cannot write, dpkg leaves the
+# package unconfigured and every later apt run fails. Shared by both apt routes.
+APT_WRITABLE_MOUNTS = ('/', '/boot/firmware', '/run')
+
+
+def mount_is_readonly(mount_point):
+    """True when this process sees mount_point mounted read-only."""
+    try:
+        with open('/proc/mounts') as f:
+            for line in f:
+                parts = line.split()
+                if len(parts) >= 4 and parts[1] == mount_point:
+                    return 'ro' in parts[3].split(',')
+    except OSError:
+        pass
+    return False
+
+
+def remount_for_apt():
+    """Remount APT_WRITABLE_MOUNTS read-write; return those to restore after."""
+    remounted = []
+    for target in APT_WRITABLE_MOUNTS:
+        if mount_is_readonly(target):
+            if subprocess.call(['sudo', 'mount', '-o', 'remount,rw', target],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) == 0:
+                remounted.append(target)
+            else:
+                print(f"⚠️ Could not remount {target} read-write")
+    return remounted
+
+
+def restore_mounts(remounted):
+    """Put back read-only what remount_for_apt() opened."""
+    for target in reversed(remounted):
+        subprocess.call(['sudo', 'mount', '-o', 'remount,ro', target],
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
 # Packages a source-built Pillow links against. Pillow is compiled on this
 # device rather than installed as a wheel - that is what the .pillow-rebuild-
 # needed mechanism exists for - so when one of these moves underneath it the
@@ -1320,17 +1360,7 @@ def register(self):
                 pass
             return False
 
-        # Every filesystem a package's post-install hooks write to. Each is a
-        # separate mount point that remounting / does not cover. A kernel
-        # upgrade runs run-parts over /etc/kernel/postinst.d/, and a hook that
-        # cannot write exits non-zero, which fails the dpkg configure step and
-        # leaves the package unpacked but unconfigured — blocking every later
-        # apt run until it is repaired by hand.
-        #
-        #   /boot/firmware  initramfs-tools writes the new initramfs here
-        #   /run            the unattended-upgrades hook touches
-        #                   /var/run/reboot-required, which is /run via symlink
-        _remount_targets = ['/', '/boot/firmware', '/run']
+        _remount_targets = list(APT_WRITABLE_MOUNTS)
 
         def _emit(event, data):
             if self.socketio:
@@ -1533,10 +1563,7 @@ def register(self):
             readonly_targets = []
             project_dir = PROJECT_ROOT
             try:
-                # Both mounts, for the same reason the plain update needs them:
-                # a kernel or initramfs-tools upgrade writes to /boot/firmware,
-                # and a read-only mount there fails dpkg mid-transaction.
-                for target in ['/', '/boot/firmware']:
+                for target in APT_WRITABLE_MOUNTS:
                     if _is_mount_readonly(target):
                         if subprocess.call(['sudo', 'mount', '-o', 'remount,rw', target]) != 0:
                             _emit('apt_done', {'success': False, 'error': f'Could not remount {target} read-write'})
