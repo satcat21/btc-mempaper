@@ -1487,9 +1487,9 @@ def register(self):
                 'success': True,
                 'error': err['message'],
                 'timestamp': err['timestamp'],
-                'display_disabled': True,
+                'display_disabled': not self.e_ink_enabled,
             })
-        return jsonify({'success': True, 'error': None, 'display_disabled': False})
+        return jsonify({'success': True, 'error': None, 'display_disabled': not self.e_ink_enabled})
 
     @self.app.route('/api/system/dependency-status', methods=['GET'])
     @require_auth(self.auth_manager)

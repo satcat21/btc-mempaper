@@ -1844,7 +1844,16 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
         self.translations = translations.get(lang, translations["en"])
 
         # Update e-ink display status
+        was_enabled = self.e_ink_enabled
         self.e_ink_enabled = self.config.get("e-ink-display-connected", True)
+
+        # Switched back on: start from a clean slate. The error that got it
+        # auto-disabled belongs to the attempt before, and left in place the
+        # settings page reported it as current straight after Save, while the
+        # next refresh went on to work.
+        if self.e_ink_enabled and not was_enabled:
+            self._last_display_error = None
+            self._consecutive_display_failures = 0
 
         # Restart the persistent display worker if the display type changed - the
         # worker reads config once at its startup (see lib/display_worker.py) and

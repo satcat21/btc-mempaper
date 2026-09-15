@@ -1742,12 +1742,19 @@ function _initTorToggleWatch() {
 }
 
 // ── Display Select Hint ────────────────────────────────────────
-function _setDisplayHint(hint, state) {
+// Any display failure lands here - a timeout under load, an SPI error, a worker
+// that died - so it says what failed rather than blaming the driver, which is
+// only one of the possible causes.
+function _displayErrorText(message) {
+    const template = window.translations?.display_error_detail || 'E-ink display error: {message}';
+    return template.replace('{message}', message || 'unknown error');
+}
+
+function _setDisplayHint(hint, state, message) {
     // state: 'ok' | 'error'
     if (state === 'error') {
         hint.style.color = 'var(--danger,#ef4444)';
-        hint.textContent = window.translations?.wrong_display_driver_detected ||
-            'Wrong display driver detected — run sudo -u mempaper .venv/bin/python tools/configure_display.py to configure the correct display.';
+        hint.textContent = _displayErrorText(message);
     } else {
         hint.style.color = 'var(--text-muted,#888)';
         hint.textContent = window.translations?.display_change_via_install || 'To change display type, run sudo -u mempaper .venv/bin/python tools/configure_display.py on the Pi.';
@@ -1769,7 +1776,7 @@ async function _enhanceDisplaySelect() {
     }
 
     const statusData = await fetch('/api/display/status').then(r => r.ok ? r.json() : null).catch(() => null);
-    _setDisplayHint(hint, statusData?.error ? 'error' : 'ok');
+    _setDisplayHint(hint, statusData?.error ? 'error' : 'ok', statusData?.error);
 }
 
 // ── System Package Update ────────────────────────────────────

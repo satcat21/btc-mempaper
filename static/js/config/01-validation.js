@@ -791,16 +791,21 @@ function closeMemeModal() {
                 );
             });
 
-            // Display error — update hint below the display selector and show notification
+            // Display status - keep the hint below the display selector current
+            // and report an error with what actually failed. A successful refresh
+            // clears the hint; it used to stay red until the page was reloaded.
             socket.on('display_update', function(data) {
+                const hint = document.getElementById('display-driver-hint');
+                if (data.status === 'success') {
+                    if (hint) _setDisplayHint(hint, 'ok');
+                    return;
+                }
                 if (data.status !== 'error') return;
                 const t = window.translations || {};
-                const hint = document.getElementById('display-driver-hint');
-                if (hint) _setDisplayHint(hint, 'error');
+                if (hint) _setDisplayHint(hint, 'error', data.message);
                 _buildLiveToast(
                     [_toastIcon('error'), ' ' + (t.toast_error || 'Error')],
-                    [t.wrong_display_driver_detected ||
-                        'Wrong display driver detected — run sudo -u mempaper .venv/bin/python tools/configure_display.py to configure the correct display.'],
+                    [_displayErrorText(data.message)],
                     '#dc3545',
                     12000
                 );
