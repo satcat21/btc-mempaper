@@ -478,7 +478,8 @@ class RecoveryMixin:
             capture_output=True, text=True, timeout=10,
         )
         if was_readonly:
-            subprocess.run(['sudo', 'mount', '-o', 'remount,ro', '/'], capture_output=True, timeout=10)
+            from utils.mounts import remount_readonly
+            remount_readonly('/')
         if r.returncode == 0:
             print('🧹 wlan0 pre-declared unmanaged for next boot (hotspot won\'t wait on NetworkManager)')
         else:
@@ -495,7 +496,8 @@ class RecoveryMixin:
         r = subprocess.run(['sudo', 'rm', '-f', self._WLAN0_UNMANAGED_CONF],
                             capture_output=True, text=True, timeout=10)
         if was_readonly:
-            subprocess.run(['sudo', 'mount', '-o', 'remount,ro', '/'], capture_output=True, timeout=10)
+            from utils.mounts import remount_readonly
+            remount_readonly('/')
         if r.returncode != 0:
             err = (r.stderr or r.stdout or '').strip()
             print(f'⚠️ Could not remove wlan0 unmanaged override: {err}')

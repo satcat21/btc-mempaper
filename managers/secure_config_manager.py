@@ -725,7 +725,8 @@ class SecureConfigManager:
             return False
         finally:
             if was_readonly:
-                subprocess.run(['sudo', 'mount', '-o', 'remount,ro', '/'], capture_output=True, timeout=10)
+                from utils.mounts import remount_readonly
+                remount_readonly('/')
     
     def load_secure_config(self) -> Optional[Dict[str, Any]]:
         """

@@ -433,6 +433,11 @@ chmod 644 "$LOG" "$STATUS"
 # undo each other.
 exec 9> "${STATE}/lock"
 flock 9
+# The runner's PID, for mempaper to check it is still alive. systemctl cannot
+# answer that reliably mid-upgrade: a package trigger that reloads or re-executes
+# systemd makes 'systemctl is-active' fail for a moment while the step runs on.
+echo $$ > "${STATE}/${STEP}.pid"
+chmod 644 "${STATE}/${STEP}.pid"
 echo running > "$STATUS"
 
 REMOUNTED=()

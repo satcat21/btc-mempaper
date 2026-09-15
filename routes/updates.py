@@ -6,6 +6,7 @@ from flask import jsonify
 from flask import request
 from managers.auth_manager import require_auth
 from utils.apt_requirements import package_names, parse_apt_requirements, pinned_versions
+from utils.mounts import remount_readonly
 import hashlib
 import json
 import os
@@ -54,8 +55,7 @@ def remount_for_apt():
 def restore_mounts(remounted):
     """Put back read-only what remount_for_apt() opened."""
     for target in reversed(remounted):
-        subprocess.call(['sudo', 'mount', '-o', 'remount,ro', target],
-                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        remount_readonly(target)
 
 
 # apt steps run in mempaper-apt@<step>.service, not as children of this process.
@@ -84,6 +84,27 @@ def _apt_unit_active(step):
             timeout=15).returncode == 0
     except (subprocess.SubprocessError, OSError):
         return False
+
+
+def _apt_step_alive(step):
+    """Whether mempaper-apt@<step> may still be running.
+
+    Errs towards yes. The runner's PID in /proc is the direct answer. systemctl
+    is only a fallback, and only a clear 'inactive' or 'failed' counts as gone:
+    while dpkg's systemd trigger reloads or re-executes systemd, is-active fails
+    for a moment, and reading that as gone abandoned steps that were still
+    running and finished fine.
+    """
+    pid = _read_text(os.path.join(APT_STATE_DIR, f'{step}.pid'))
+    if pid.isdigit() and os.path.exists(f'/proc/{pid}'):
+        return True
+    try:
+        state = subprocess.run(
+            ['systemctl', 'is-active', f'mempaper-apt@{step}.service'],
+            capture_output=True, text=True, timeout=15).stdout.strip()
+    except (subprocess.SubprocessError, OSError):
+        return True
+    return state not in ('inactive', 'failed')
 
 
 def _read_text(path):
@@ -154,7 +175,7 @@ def run_apt_step(step, say=None):
             say(f'{unit} did not report in; see journalctl -u {unit}', header=True)
             return 1
 
-    pos, partial, last_check = 0, '', time.time()
+    pos, partial, last_check, gone_checks = 0, '', time.time(), 0
     while True:
         status = _read_text(status_path)
         try:
@@ -180,13 +201,16 @@ def run_apt_step(step, say=None):
             except ValueError:
                 return 1
         # The runner writes exit=N from its EXIT trap, so a unit that stopped
-        # without one was killed outright. Re-read the status first: it may
-        # have finished between the read above and this check.
+        # without one was killed outright. Only concluded after three checks
+        # ten seconds apart all find it gone, since giving up on a step that is
+        # still running is worse than waiting half a minute longer.
         if time.time() - last_check >= 10:
             last_check = time.time()
-            if not _apt_unit_active(step) and not _read_text(status_path).startswith('exit='):
-                time.sleep(1)
-                if not _read_text(status_path).startswith('exit='):
+            if _apt_step_alive(step) or _read_text(status_path).startswith('exit='):
+                gone_checks = 0
+            else:
+                gone_checks += 1
+                if gone_checks >= 3:
                     if partial:
                         say(_clean_line(partial))
                     say(f'{unit} stopped without reporting a result', header=True)
@@ -1584,7 +1608,7 @@ def register(self):
                 if readonly_targets:
                     _emit('apt_output', {'line': self.translations.get('restoring_readonly', 'Restoring read-only filesystem...'), 'phase': 'cleanup', 'header': True})
                     for target in reversed(readonly_targets):
-                        subprocess.call(['sudo', 'mount', '-o', 'remount,ro', target])
+                        remount_readonly(target)
                 self._apt_running = False
 
         threading.Thread(target=_run_apt, daemon=True).start()
@@ -1826,7 +1850,7 @@ def register(self):
                 if readonly_targets:
                     _emit('apt_output', {'line': self.translations.get('restoring_readonly', 'Restoring read-only filesystem...'), 'phase': 'cleanup', 'header': True})
                     for target in reversed(readonly_targets):
-                        subprocess.call(['sudo', 'mount', '-o', 'remount,ro', target])
+                        remount_readonly(target)
                 self._apt_running = False
 
         threading.Thread(target=_run, daemon=True).start()
