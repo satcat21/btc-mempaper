@@ -796,12 +796,19 @@ def register(self):
                     deps_changed = _deps_differ('requirements.txt')
                     apt_deps_changed = _deps_differ('apt-requirements.txt')
                     if deps_changed:
-                        diff_content = subprocess.run(
-                            ['git', 'diff', 'HEAD', f'refs/tags/{tag}', '--', 'requirements.txt'],
-                            cwd=project_dir, capture_output=True, text=True
-                        )
-                        import re
-                        pillow_changed = bool(re.search(r'^\+.*pillow==', diff_content.stdout, re.IGNORECASE | re.MULTILINE))
+                        # The pinned version, not the line: a rewritten comment
+                        # on an unchanged pin used to match, and every device
+                        # rebuilt Pillow from source for nothing.
+                        def _pillow_pin(ref):
+                            out = subprocess.run(
+                                ['git', 'show', f'{ref}:requirements.txt'],
+                                cwd=project_dir, capture_output=True, text=True
+                            )
+                            m = re.search(r'^\s*pillow\s*==\s*([^\s#;]+)',
+                                          out.stdout or '', re.IGNORECASE | re.MULTILINE)
+                            return m.group(1) if m else None
+
+                        pillow_changed = _pillow_pin('HEAD') != _pillow_pin(f'refs/tags/{tag}')
                 except Exception:
                     deps_changed = True
                     apt_deps_changed = True
