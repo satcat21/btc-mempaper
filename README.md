@@ -699,6 +699,40 @@ mempaper can be updated directly from the web UI. Navigate to **Settings > Updat
 5. If the e-ink display is currently refreshing, the restart waits until the display is idle
 6. The page refreshes automatically once the service is back online
 
+#### System Packages Update
+
+The operating system underneath mempaper (Raspberry Pi OS: kernel, security fixes, system libraries) is updated from the same page, in the **System Packages** row below the software update. This does not change the mempaper version.
+
+1. Open **Settings > Updates** and click **Update** next to **System Packages**
+2. A preview shows what would change before anything is done: how many packages will be upgraded, newly installed or removed. Open **Further details** for every package with its current and new version
+
+   <p align="center">
+     <img src="images/screenshots/system-update.png" alt="System update preview" width="600"/>
+     <br/>
+     <em>Preview of a system update, before anything is installed</em>
+   </p>
+
+3. Click **Update** to start. The progress bar shows the current step: fetching package lists, installing upgrades, the full upgrade, removing packages nothing needs any more, and restoring mempaper's own dependencies. Open **Show details** for apt's live output
+
+   <p align="center">
+     <img src="images/screenshots/installing-system-updates.png" alt="System update in progress" width="600"/>
+     <br/>
+     <em>System update in progress, with apt's output shown</em>
+   </p>
+
+4. When the update reports that the system is fully upgraded, reboot the device if a new kernel was installed: **Device Control > Reboot Device**, at the bottom of the same page
+
+> **Allow time.** On a Pi Zero a system update can take 30 minutes or more, especially with a new kernel. The e-ink display may refresh slowly or skip refreshes while it runs.
+
+**What it protects you from:**
+
+- **Removing what mempaper needs.** The preview is a dry run. If the upgrade would remove a package mempaper depends on, it refuses to run and says which one. Packages pinned in `apt-requirements.txt` stay at their pinned version, and the Python version the app is built on is never changed.
+- **Being cut off halfway.** The update runs as a separate system task, not inside the web app. Closing the browser, reloading the page or restarting mempaper does not stop it; opening the page again follows the update that is still running.
+- **An earlier update that was interrupted**, for example by a power cut. Before each step mempaper checks for a half-finished package installation and completes it first, so the device does not need SSH to recover.
+- **A broken image library.** If a system library that Pillow (the image library) is built against changes, mempaper rebuilds Pillow automatically after the next restart.
+
+Automatic updates (below) install security updates for system packages too. The full upgrade, which may install new packages or remove old ones, runs only from this page, where you see the preview first.
+
 #### Automatic Updates
 
 Enable scheduled updates to keep mempaper up to date without manual intervention:
