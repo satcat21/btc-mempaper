@@ -1,74 +1,39 @@
-# Build tooling — pinned so every device resolves wheels identically.
-# Matters most on armv6l (Pi Zero 1), where almost nothing has a prebuilt wheel
-# and a pip change to platform-tag or wheel-selection behaviour is the
-# difference between a fast install and a 40-minute source build (or a failure).
-# Bump deliberately; the updater applies it via `pip install -r requirements.txt`.
-pip==26.2.1
+# Pinned so every device resolves the same wheels; the web updater runs
+# `pip install -r requirements.txt`. Bumping: docs/MAINTENANCE_GUIDE.md.
 
-# Core dependencies for mempaper Bitcoin Dashboard
+pip==26.2.1  # wheel selection on armv6l changes between pip releases
+
 flask==3.1.3
 flask-socketio==5.6.1
-flask-compress==1.24  # gzip compression for HTML, CSS, JS responses
-brotli==1.1.0
-pillow==12.3.0  # On Debian 13 (trixie) / Python 3.13 / Pi Zero 1 WH: build from source to avoid SIGILL: pip install --no-binary :all: pillow==12.3.0
-qrcode[pil]==8.2  # QR code generation for e-ink onboarding screens
+flask-compress==1.25
+brotli==1.2.0
+pillow==12.3.0  # Pi Zero (ARMv6): build from source, prebuilt wheels crash with SIGILL
+qrcode[pil]==8.2
 babel==2.18.0
 requests==2.34.2
+urllib3==2.7.0  # transitive via requests; pinned so updates actually move it
 python-dotenv==1.2.3
-websocket-client==1.9.0
+websocket-client==1.9.2
 werkzeug==3.1.8
-watchdog==6.0.0  # For dynamic configuration file monitoring
-argon2-cffi==25.1.0  # Secure password hashing with Argon2id
-schedule==1.2.2  # For daily XPUB optimization scheduling
-# Fast vectorized operations for e-ink image processing.
-#
-# Held at 2.2.5 deliberately. From 2.2.6 onwards piwheels builds numpy on
-# ARMv8 hardware and publishes the result under linux_armv6l and
-# linux_armv7l filenames, so the wheel a 32-bit Pi installs holds
-# instructions its CPU does not have. The device detects that and rebuilds
-# from source, which takes most of a night on a Pi Zero. 2.2.5 is the newest
-# release whose published wheel actually runs there. Debian trixie ships
-# 2.2.4 for the same reason.
-#
-# Before raising it, install the candidate on an ARMv6 device and run
-#   .venv/bin/python -m utils.wheel_platform
-# Anything reporting 'built for ARMv8' costs every 32-bit device a source
-# build; the dashboard keeps working through it, but it is not a quick
-# update on that hardware.
+watchdog==6.0.0
+argon2-cffi==25.1.0
+schedule==1.2.2
+# Held: piwheels builds newer releases for ARMv8 under armv6l/armv7l names,
+# forcing a long source build on 32-bit Pis. Before raising, run
+# `python -m utils.wheel_platform` on an ARMv6 device.
 numpy==2.2.5
-pilmoji==2.0.5  # Emoji rendering in PIL images
+pilmoji==2.0.5
 
-# Production WSGI server
-gunicorn==26.0.0  # Production WSGI server for Flask apps
-gevent==26.8.0  # Async networking library for SocketIO (replaces eventlet)
-gevent-websocket==0.10.1  # Required for WebSocket upgrade support with gunicorn geventwebsocket worker
-# websocket-client (above) is used for outgoing connections to mempool API
+gunicorn==26.2.0
+gevent==26.8.0
+gevent-websocket==0.10.1
 
-# Security dependencies for configuration encryption
-cryptography==50.0.0  # Lightweight encryption for sensitive config data
-psutil==6.0.0  # System info for device fingerprinting
+cryptography==50.0.1
+psutil==6.0.0
 
-# Optional: Tor / SOCKS5 proxy support (used by tools/sync_memes.py --tor)
-# Install Tor daemon separately: sudo apt install tor
-PySocks==1.7.1  # SOCKS5 proxy for requests/urllib3 (mempool REST over Tor, meme downloads)
-python-socks==3.0.0  # SOCKS5 for websocket-client; it does NOT use PySocks
+PySocks==1.7.1  # SOCKS5 for requests (Tor)
+python-socks==3.1.1  # SOCKS5 for websocket-client, which does not use PySocks
 
-# Optional: E-Paper display support
-# Uncomment the line below if you plan to use physical e-ink displays
-# Note: omni-epd requires manual installation from source on some systems
-# Install with: pip install git+https://github.com/robweber/omni-epd.git
-# omni-epd
-
-# Hardware dependencies (Raspberry Pi only)
-# Uncomment these when deploying to Raspberry Pi
-# spidev==3.8      # SPI communication (used by epd7in3f / unified Waveshare repo)
-# gpiozero==2.0.1  # GPIO control (high-level interface)
-# RPi.GPIO         # GPIO control (used by older Waveshare drivers)
-# lgpio==0.2.2.0   # GPIO control (used by newer Waveshare drivers, e.g. epd13in3E separate programs)
-
-# Development dependencies (optional)
-rjsmin==1.2.5   # JS minifier used by tools/minify.py — generates static/js/dist/ for performance
-rcssmin==1.1.2  # CSS minifier used by tools/minify.py — generates static/css/dist/ for performance
-# pytest==8.3.4
-# black==24.10.0
-# flake8==7.1.1
+# Asset minifiers for tools/minify.py
+rjsmin==1.2.5
+rcssmin==1.2.2
