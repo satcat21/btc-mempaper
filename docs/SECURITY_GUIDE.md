@@ -373,12 +373,15 @@ The scoped sudoers file (`/etc/sudoers.d/mempaper`) grants exactly:
 | `mount -o remount,rw/ro /boot/firmware` | Remount boot partition for apt (initramfs-tools writes here) |
 | `apt update / upgrade -y / autoremove -y` | System package maintenance (SSH admin use) |
 | `/usr/local/bin/mempaper-apt-install` | Install packages from `apt-requirements.txt` only |
+| `systemctl start mempaper-apt@{update,upgrade,full-upgrade,autoremove,reconcile}.service` | Run one apt step outside mempaper's cgroup |
 | `/usr/local/bin/mempaper-postinstall` | Apply post-install system configuration (`tools/postinstall.sh`) |
 | `systemctl restart mempaper.service` | Restart after software update |
 | `systemctl reboot` | Reboot via web UI |
 | `mkdir/tee/chmod/cat` on `/home/pi/.ssh/` | SSH key provisioning for admin access |
 
 The apt install wrapper (`/usr/local/bin/mempaper-apt-install`) is root-owned and accepts no arguments — it reads the package list from `apt-requirements.txt` and cannot be used to install arbitrary packages even if the web process is compromised. It installs only what is actually missing, and exits non-zero naming any package that is still absent afterwards, so a failed install cannot be mistaken for a successful one.
+
+The apt step units (`mempaper-apt@.service`, running `/usr/local/bin/mempaper-apt-run`) add no reach beyond the apt grants above. The instance name is the only input, each of the five allowed names is granted individually, and the root-owned runner maps each one to a fixed command — `reconcile` is the install wrapper. What they change is where apt runs: in a unit of its own, so replacing the web worker cannot kill dpkg halfway. The runner writes its log and status to `/run/mempaper-apt/`, which it creates root-owned; the service user can read there but not write. There is no stop grant.
 
 The post-install wrapper (`/usr/local/bin/mempaper-postinstall`) is scoped the same way: root-owned, no arguments, and it executes one fixed path inside the repository. It exists because the web updater can replace code but cannot change system configuration, so steps such as enabling `fstrim.timer` would otherwise only ever apply to fresh installs.
 

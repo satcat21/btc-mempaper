@@ -57,6 +57,142 @@ def restore_mounts(remounted):
         subprocess.call(['sudo', 'mount', '-o', 'remount,ro', target],
                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
+
+# apt steps run in mempaper-apt@<step>.service, not as children of this process.
+# As a child, apt wrote into a pipe this worker read; when gunicorn replaced the
+# worker mid-upgrade the pipe closed and dpkg died half-way, blocking every later
+# apt run. The unit is its own cgroup, so nothing here can kill it, and its
+# runner repairs an interrupted dpkg before each step. Installed by
+# install_permissions.sh; until a device has it, the old direct path is used.
+APT_RUNNER = '/usr/local/bin/mempaper-apt-run'
+APT_UNIT_FILE = '/etc/systemd/system/mempaper-apt@.service'
+APT_STATE_DIR = '/run/mempaper-apt'
+APT_STEPS = {
+    'update': ['apt-get', 'update'],
+    'upgrade': ['apt-get', 'upgrade', '-y'],
+    'full-upgrade': ['apt-get', 'dist-upgrade', '-y'],
+    'autoremove': ['apt-get', 'autoremove', '-y'],
+    'reconcile': ['/usr/local/bin/mempaper-apt-install'],
+}
+
+
+def _apt_unit_active(step):
+    """True while mempaper-apt@<step> runs. is-active needs no privileges."""
+    try:
+        return subprocess.run(
+            ['systemctl', 'is-active', '--quiet', f'mempaper-apt@{step}.service'],
+            timeout=15).returncode == 0
+    except (subprocess.SubprocessError, OSError):
+        return False
+
+
+def _read_text(path):
+    try:
+        with open(path) as f:
+            return f.read().strip()
+    except OSError:
+        return ''
+
+
+def _run_apt_direct(step, say):
+    """The pre-unit path: sudo the command and stream it. Killable, as before."""
+    proc = subprocess.Popen(['sudo'] + APT_STEPS[step], stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, text=True, bufsize=1,
+                            env=_apt_env())
+    for line in proc.stdout:
+        say(_clean_line(line))
+    proc.wait()
+    return proc.returncode
+
+
+def run_apt_step(step, say=None):
+    """Run one apt step to completion and return its exit code.
+
+    `say(line, header=False)` receives each output line. If the step is already
+    running - started by a worker that has since been replaced - this attaches
+    to it rather than starting another, and returns that run's result.
+
+    The unit writes its output to /run/mempaper-apt/<step>.log and ends by
+    writing exit=N to <step>.status; this follows both. A worker replaced while
+    it waits here loses only the view, never the step.
+    """
+    say = say or (lambda line, header=False: None)
+    if not (os.path.exists(APT_RUNNER) and os.path.exists(APT_UNIT_FILE)):
+        return _run_apt_direct(step, say)
+
+    unit = f'mempaper-apt@{step}.service'
+    log_path = os.path.join(APT_STATE_DIR, f'{step}.log')
+    status_path = os.path.join(APT_STATE_DIR, f'{step}.status')
+
+    if _apt_unit_active(step):
+        say(f'{unit} is already running; following it', header=True)
+    else:
+        # A second of slack for filesystems that store whole-second mtimes.
+        started = time.time() - 1
+        try:
+            proc = subprocess.run(['sudo', 'systemctl', 'start', unit],
+                                  capture_output=True, text=True, timeout=60)
+        except (subprocess.SubprocessError, OSError) as exc:
+            proc = None
+            print(f'⚠️ Could not start {unit}: {exc}')
+        if proc is None or proc.returncode != 0:
+            # Most likely a device whose sudoers predates the grant.
+            if proc is not None:
+                print(f'⚠️ Could not start {unit}: {(proc.stderr or "").strip()}')
+            return _run_apt_direct(step, say)
+        # Wait for this run's status, so a stale exit=N from the last run of
+        # the same step is never mistaken for the result of this one.
+        deadline = time.time() + 30
+        while time.time() < deadline:
+            try:
+                if os.path.getmtime(status_path) >= started:
+                    break
+            except OSError:
+                pass
+            time.sleep(0.5)
+        else:
+            say(f'{unit} did not report in; see journalctl -u {unit}', header=True)
+            return 1
+
+    pos, partial, last_check = 0, '', time.time()
+    while True:
+        status = _read_text(status_path)
+        try:
+            with open(log_path, errors='replace') as f:
+                f.seek(0, os.SEEK_END)
+                if f.tell() < pos:
+                    pos, partial = 0, ''
+                f.seek(pos)
+                chunk = f.read()
+                pos = f.tell()
+        except OSError:
+            chunk = ''
+        if chunk:
+            lines = (partial + chunk).split('\n')
+            partial = lines.pop()
+            for line in lines:
+                say(_clean_line(line))
+        if status.startswith('exit='):
+            if partial:
+                say(_clean_line(partial))
+            try:
+                return int(status.split('=', 1)[1])
+            except ValueError:
+                return 1
+        # The runner writes exit=N from its EXIT trap, so a unit that stopped
+        # without one was killed outright. Re-read the status first: it may
+        # have finished between the read above and this check.
+        if time.time() - last_check >= 10:
+            last_check = time.time()
+            if not _apt_unit_active(step) and not _read_text(status_path).startswith('exit='):
+                time.sleep(1)
+                if not _read_text(status_path).startswith('exit='):
+                    if partial:
+                        say(_clean_line(partial))
+                    say(f'{unit} stopped without reporting a result', header=True)
+                    return 1
+        time.sleep(1)
+
 # Packages a source-built Pillow links against. Pillow is compiled on this
 # device rather than installed as a wheel - that is what the .pillow-rebuild-
 # needed mechanism exists for - so when one of these moves underneath it the
@@ -1036,14 +1172,7 @@ def register(self):
                             _u = os.environ.get('USER', 'mempaper')
                             _emit('update_output', {'line': f'{wrapper} not found — over SSH, run: cd {project_dir} && sudo bash tools/install_permissions.sh {_u}', 'phase': 'apt', 'header': True})
                         else:
-                            proc = subprocess.Popen(
-                                ['sudo', wrapper],
-                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                text=True, bufsize=1
-                            )
-                            for line in proc.stdout:
-                                _emit('update_output', {'line': _clean_line(line), 'phase': 'apt'})
-                            proc.wait()
+                            run_apt_step('reconcile', _line_emitter(_emit, 'update_output', 'apt'))
                             # Report on what dpkg holds now, not on the exit code — the
                             # user needs to know which package is still missing, not
                             # that "some" dependency failed.
@@ -1417,28 +1546,13 @@ def register(self):
                     'update': self.translations.get('fetching_package_list', 'Fetching package list (apt update)...'),
                     'upgrade': self.translations.get('installing_upgrades', 'Installing upgrades (apt upgrade)...'),
                 }
-                for phase, cmd in [
-                    ('update', ['sudo', 'apt-get', 'update']),
-                    ('upgrade', ['sudo', 'apt-get', 'upgrade', '-y']),
-                ]:
+                for phase in ('update', 'upgrade'):
                     _emit('apt_output', {'line': phase_labels.get(phase, f'apt {phase}'), 'phase': phase, 'header': True})
-
-                    proc = subprocess.Popen(
-                        cmd,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.STDOUT,
-                        text=True,
-                        bufsize=1,
-                        env=_apt_env()
-                    )
-                    for line in proc.stdout:
-                        _emit('apt_output', {'line': _clean_line(line), 'phase': phase})
-
-                    proc.wait()
-                    if proc.returncode != 0:
+                    rc = run_apt_step(phase, _line_emitter(_emit, 'apt_output', phase))
+                    if rc != 0:
                         _emit('apt_done', {
                             'success': False,
-                            'error': f'apt {phase} failed (exit code {proc.returncode})'
+                            'error': f'apt {phase} failed (exit code {rc})'
                         })
                         return
 
@@ -1450,18 +1564,7 @@ def register(self):
                 apt_req_file = os.path.join(project_dir, 'apt-requirements.txt')
                 if package_names(parse_apt_requirements(apt_req_file)):
                     _emit('apt_output', {'line': self.translations.get('installing_mempaper_deps', 'Installing mempaper dependencies...'), 'phase': 'deps', 'header': True})
-                    proc = subprocess.Popen(
-                        ['sudo', '/usr/local/bin/mempaper-apt-install'],
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.STDOUT,
-                        text=True,
-                        bufsize=1,
-                        env=_apt_env()
-                    )
-                    for line in proc.stdout:
-                        _emit('apt_output', {'line': _clean_line(line), 'phase': 'deps'})
-                    proc.wait()
-                    if proc.returncode != 0:
+                    if run_apt_step('reconcile', _line_emitter(_emit, 'apt_output', 'deps')) != 0:
                         _emit('apt_output', {'line': self.translations.get('mempaper_deps_warning', 'Warning: some mempaper dependencies failed to install'), 'phase': 'deps', 'header': True})
 
                 # Everything apt was going to touch has now been touched.
@@ -1577,15 +1680,9 @@ def register(self):
                             return
                         readonly_targets.append(target)
 
-                def _stream(cmd, phase, label):
+                def _stream(step, phase, label):
                     _emit('apt_output', {'line': label, 'phase': phase, 'header': True})
-                    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
-                                            stderr=subprocess.STDOUT, text=True, bufsize=1,
-                                            env=_apt_env())
-                    for line in proc.stdout:
-                        _emit('apt_output', {'line': _clean_line(line), 'phase': phase})
-                    proc.wait()
-                    return proc.returncode
+                    return run_apt_step(step, _line_emitter(_emit, 'apt_output', phase))
 
                 # Snapshot the libraries Pillow links against *before* the first
                 # apt command, not before dist-upgrade. Taken later, the ordinary
@@ -1614,7 +1711,7 @@ def register(self):
                     _flag_pillow_rebuild(project_dir, pillow_before,
                                          _line_emitter(_emit, 'apt_output', 'deps'))
 
-                if _stream(['sudo', 'apt-get', 'update'], 'update',
+                if _stream('update', 'update',
                            self.translations.get('fetching_package_list', 'Fetching package list (apt update)...')) != 0:
                     _emit('apt_done', {'success': False, 'error': 'apt update failed'})
                     return
@@ -1623,7 +1720,7 @@ def register(self):
                 # it can do is the safe part of the job — doing it before the
                 # resolver runs means a later refusal still leaves the device
                 # with its security updates applied rather than with nothing.
-                if _stream(['sudo', 'apt-get', 'upgrade', '-y'], 'upgrade',
+                if _stream('upgrade', 'upgrade',
                            self.translations.get('installing_upgrades', 'Installing upgrades (apt upgrade)...')) != 0:
                     _emit('apt_done', {'success': False, 'error': 'apt upgrade failed'})
                     return
@@ -1652,12 +1749,12 @@ def register(self):
                     if rem:
                         _emit('apt_output', {'line': 'Will remove: ' + ', '.join(sorted(rem)), 'phase': 'fullupgrade', 'header': True})
 
-                    if _stream(['sudo', 'apt-get', 'dist-upgrade', '-y'], 'fullupgrade',
+                    if _stream('full-upgrade', 'fullupgrade',
                                self.translations.get('running_full_upgrade', 'Running full upgrade (apt full-upgrade)...')) != 0:
                         _emit('apt_done', {'success': False, 'error': 'apt full-upgrade failed'})
                         return
 
-                if _stream(['sudo', 'apt-get', 'autoremove', '-y'], 'autoremove',
+                if _stream('autoremove', 'autoremove',
                            self.translations.get('removing_orphans', 'Removing packages nothing needs any more (apt autoremove)...')) != 0:
                     # Not fatal — nothing the device needs depends on an orphan
                     # being gone — but silence here meant a failure that leaves
@@ -1670,7 +1767,7 @@ def register(self):
                 # This puts both back, and re-applies every hold.
                 wrapper = '/usr/local/bin/mempaper-apt-install'
                 if os.path.exists(wrapper):
-                    if _stream(['sudo', wrapper], 'deps',
+                    if _stream('reconcile', 'deps',
                                self.translations.get('installing_mempaper_deps', 'Installing mempaper dependencies...')) != 0:
                         _emit('apt_output', {'line': self.translations.get('mempaper_deps_warning', 'Warning: some mempaper dependencies failed to install'), 'phase': 'deps', 'header': True})
                     # What the wrapper could not put back. The plain update route

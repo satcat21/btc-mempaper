@@ -390,6 +390,104 @@ chown root:root "${APT_INSTALL_WRAPPER}"
 chmod 755 "${APT_INSTALL_WRAPPER}"
 echo "✅  apt install wrapper installed: ${APT_INSTALL_WRAPPER}"
 
+# Install the apt step runner - what mempaper-apt@<step>.service executes. It
+# takes one argument, and only a fixed step name is accepted, each mapped to a
+# fixed command here. The instance name is the only thing a caller controls, and
+# the sudoers grants below name each instance exactly.
+#
+# Everything it writes goes to /run/mempaper-apt, which it creates root-owned:
+# the service user can read the log and status there, and cannot plant anything.
+APT_RUNNER="/usr/local/bin/mempaper-apt-run"
+cat > "${APT_RUNNER}" <<'RUNNER'
+#!/bin/bash
+# mempaper-apt-run <step> - one apt step, run by mempaper-apt@<step>.service.
+set -u
+
+# Wait for a lock held by apt-daily or an SSH session instead of failing on it.
+APT_GET=(apt-get -o DPkg::Lock::Timeout=600)
+STEP="${1:-}"
+case "$STEP" in
+    update)       CMD=("${APT_GET[@]}" update) ;;
+    upgrade)      CMD=("${APT_GET[@]}" upgrade -y) ;;
+    full-upgrade) CMD=("${APT_GET[@]}" dist-upgrade -y) ;;
+    autoremove)   CMD=("${APT_GET[@]}" autoremove -y) ;;
+    reconcile)    CMD=(/usr/local/bin/mempaper-apt-install) ;;
+    *) echo "unknown step: ${STEP}" >&2; exit 2 ;;
+esac
+
+export DEBIAN_FRONTEND=noninteractive
+STATE=/run/mempaper-apt
+LOG="${STATE}/${STEP}.log"
+STATUS="${STATE}/${STEP}.status"
+install -d -m 755 -o root -g root "$STATE"
+
+# mempaper follows these two files. The status goes from 'waiting' to 'running'
+# to 'exit=N', and the log is emptied first so a caller never replays the
+# output of an earlier run of the same step.
+: > "$LOG"
+echo waiting > "$STATUS"
+chmod 644 "$LOG" "$STATUS"
+
+# One step at a time across all instances: two dpkg runs would only fight over
+# its lock, and two runners remounting and restoring the same filesystems would
+# undo each other.
+exec 9> "${STATE}/lock"
+flock 9
+echo running > "$STATUS"
+
+REMOUNTED=()
+RC=1
+finish() {
+    local i
+    for (( i=${#REMOUNTED[@]}-1; i>=0; i-- )); do
+        mount -o remount,ro "${REMOUNTED[$i]}" 2>/dev/null \
+            || echo "could not restore ${REMOUNTED[$i]} read-only" >> "$LOG"
+    done
+    echo "exit=${RC}" > "$STATUS"
+}
+trap finish EXIT
+
+# Outside mempaper.service the filesystems are as the host has them. On a
+# read-only root they still have to be opened for the length of the step.
+for target in / /boot/firmware /run; do
+    opts="$(findmnt -n -o OPTIONS --mountpoint "$target" 2>/dev/null)"
+    case ",${opts}," in
+        *,ro,*)
+            if mount -o remount,rw "$target" >> "$LOG" 2>&1; then
+                REMOUNTED+=("$target")
+            fi ;;
+    esac
+done
+
+# Self-repair. dpkg that was interrupted - killed, or the power cut - leaves
+# journal files in updates/ or packages half-way through, and refuses every
+# later apt run until 'dpkg --configure -a' finishes the job. Done here so no
+# device ever needs SSH for it again.
+if [ -n "$(ls -A /var/lib/dpkg/updates 2>/dev/null)" ] || [ -n "$(dpkg --audit 2>/dev/null)" ]; then
+    echo "Repairing an interrupted package installation (dpkg --configure -a)..." >> "$LOG"
+    dpkg --configure -a < /dev/null >> "$LOG" 2>&1 \
+        || echo "dpkg --configure -a did not complete; continuing with ${STEP}" >> "$LOG"
+fi
+
+# The step's output goes to the log file only, never through a pipe: a pipe
+# whose reader goes away is what used to kill dpkg. Run in the background so a
+# SIGTERM at shutdown reaches only this script, which keeps waiting - with
+# KillMode=mixed systemd signals the main process alone, and dpkg is left to
+# finish within TimeoutStopSec.
+trap 'echo "stop requested; waiting for ${STEP} to finish" >> "$LOG"' TERM INT
+"${CMD[@]}" < /dev/null >> "$LOG" 2>&1 &
+CHILD=$!
+while kill -0 "$CHILD" 2>/dev/null; do
+    wait "$CHILD"
+done
+wait "$CHILD"
+RC=$?
+exit "$RC"
+RUNNER
+chown root:root "${APT_RUNNER}"
+chmod 755 "${APT_RUNNER}"
+echo "✅  apt step runner installed: ${APT_RUNNER}"
+
 # Install Python upgrade wrapper — runs tools/upgrade_python.sh --force --no-restart
 # Scoped: no arguments, executes a single known script path, cannot be used arbitrarily.
 UPGRADE_PYTHON_WRAPPER="/usr/local/bin/mempaper-upgrade-python"
@@ -748,6 +846,16 @@ ${SERVICE_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} start mempaper-build.servi
 ${SERVICE_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} stop mempaper-build.service
 ${SERVICE_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} is-active mempaper-build.service
 
+# apt steps, each in a unit of its own so a worker restart cannot kill dpkg
+# mid-transaction. Each instance runs one fixed command (see mempaper-apt-run),
+# so these grant nothing the apt grants below do not already - the reconcile
+# instance is the scoped install wrapper. Deliberately no stop grant.
+${SERVICE_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} start mempaper-apt@update.service
+${SERVICE_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} start mempaper-apt@upgrade.service
+${SERVICE_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} start mempaper-apt@full-upgrade.service
+${SERVICE_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} start mempaper-apt@autoremove.service
+${SERVICE_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} start mempaper-apt@reconcile.service
+
 # Remount root filesystem rw/ro around apt operations (read-only Pi OS root partition)
 ${SERVICE_USER} ALL=(root) NOPASSWD: ${MOUNT_BIN} -o remount\,rw /
 ${SERVICE_USER} ALL=(root) NOPASSWD: ${MOUNT_BIN} -o remount\,ro /
@@ -981,6 +1089,9 @@ sed "s|__PROJECT_DIR__|${PROJECT_DIR}|g" "${SCRIPT_DIR}/mempaper-dnsmasq.service
 # mempaper.service cannot kill it. Not enabled: mempaper writes a queue and
 # starts it on demand.
 sed -e "s|__PROJECT_DIR__|${PROJECT_DIR}|g" -e "s|__SERVICE_USER__|${SERVICE_USER}|g"     "${SCRIPT_DIR}/mempaper-build.service" > /etc/systemd/system/mempaper-build.service
+# apt steps likewise, so dpkg never runs inside mempaper.service's cgroup. A
+# template with nothing to substitute; mempaper starts one instance per step.
+install -m 644 "${SCRIPT_DIR}/mempaper-apt@.service" /etc/systemd/system/mempaper-apt@.service
 systemctl daemon-reload
 echo "✅  mempaper-hostapd.service and mempaper-dnsmasq.service installed"
 

@@ -406,6 +406,7 @@ btc-mempaper/
 |   |-- check_wheels.py          Reads each published wheel's ELF for CPU fit
 |   |-- build_worker.py          Runs queued rebuilds outside the app's cgroup
 |   |-- mempaper-build.service   Systemd unit the build worker runs under
+|   |-- mempaper-apt@.service    Systemd unit each apt step runs under
 |   |-- setup_swap.sh            Swap file sized for the device, if it has none
 |   |-- install_permissions.sh  Polkit + sudoers rules for Wi-Fi hotspot
 |   +-- 90-mempaper-wifi.rules       Polkit rule for NetworkManager

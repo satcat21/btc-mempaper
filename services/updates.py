@@ -449,39 +449,33 @@ class UpdateSchedulerMixin:
                 # touches a declared dependency or the Python the venv is built
                 # on. There is nobody at 05:00 to read that refusal.
                 from routes.updates import (PILLOW_NATIVE_DEPS, _installed_versions,
-                                            remount_for_apt, restore_mounts)
+                                            remount_for_apt, restore_mounts, run_apt_step)
+
+                def _collect(into):
+                    return lambda line, header=False: into.append(line)
 
                 pillow_before = _installed_versions(PILLOW_NATIVE_DEPS)
                 # The service runs under ProtectSystem=strict and sudo inherits
                 # its read-only namespace, so apt cannot write until these are
-                # remounted - the same as the web routes do.
+                # remounted - the same as the web routes do. Only needed where
+                # the device has no mempaper-apt unit yet.
                 apt_mounts = remount_for_apt()
                 try:
-                    subprocess.run(
-                        ['sudo', 'apt-get', 'update', '-qq'],
-                        timeout=300, capture_output=True, check=True
-                    )
-                    # Half an hour, not five minutes. An upgrade carrying a
-                    # kernel regenerates the initramfs, which on a Pi Zero runs
-                    # well past the old budget - and a timeout there leaves dpkg
-                    # mid-transaction, unattended, with the failure swallowed as
-                    # "non-fatal". A partial upgrade is worse than none.
-                    result = subprocess.run(
-                        ['sudo', 'apt-get', 'upgrade', '-y'],
-                        timeout=30 * 60, capture_output=True, text=True
-                    )
-                    if result.returncode == 0:
+                    # No timeout on either step. Killing apt is what leaves dpkg
+                    # mid-transaction; the unit runs each step to the end on its
+                    # own, and repairs an earlier interrupted one first.
+                    out = []
+                    rc = run_apt_step('update', _collect(out))
+                    if rc != 0:
+                        raise RuntimeError(f"apt update exited {rc} - "
+                                           f"{' / '.join(out[-3:]) or 'no output'}")
+                    out = []
+                    rc = run_apt_step('upgrade', _collect(out))
+                    if rc == 0:
                         print("✅ Auto-update: system packages upgraded")
                     else:
-                        tail = (result.stderr or result.stdout or '').strip().splitlines()
-                        print(f"⚠️ Auto-update: apt upgrade exited {result.returncode} - "
-                              f"{' / '.join(tail[-3:]) or 'no output'}")
-                        print("   The upgrade may be half-applied. Repair with: "
-                              "sudo dpkg --configure -a && sudo apt-get -f install")
-                except subprocess.TimeoutExpired:
-                    print("⚠️ Auto-update: apt upgrade timed out after 30 minutes and "
-                          "was killed. dpkg is likely mid-transaction - repair with: "
-                          "sudo dpkg --configure -a && sudo apt-get -f install")
+                        print(f"⚠️ Auto-update: apt upgrade exited {rc} - "
+                              f"{' / '.join(out[-3:]) or 'no output'}")
                 except Exception as e:
                     print(f"⚠️ Auto-update: system packages update failed (non-fatal): {e}")
 
@@ -503,14 +497,11 @@ class UpdateSchedulerMixin:
                 try:
                     wrapper = '/usr/local/bin/mempaper-apt-install'
                     if os.path.exists(wrapper):
-                        reconcile = subprocess.run(
-                            ['sudo', wrapper], timeout=30 * 60,
-                            capture_output=True, text=True
-                        )
-                        if reconcile.returncode != 0:
+                        out = []
+                        if run_apt_step('reconcile', _collect(out)) != 0:
                             print("⚠️ Auto-update: declared packages could not be "
                                   "reconciled after the upgrade")
-                        for line in (reconcile.stdout or '').splitlines():
+                        for line in out:
                             if line.startswith(('📌', '🔓', '⚠️', '❌')):
                                 print(f"   {line}")
                 except Exception as e:
@@ -580,8 +571,7 @@ class UpdateSchedulerMixin:
                                 if os.path.exists(apt_req_file):
                                     wrapper_mounts = remount_for_apt()
                                     try:
-                                        subprocess.run(['sudo', '/usr/local/bin/mempaper-apt-install'],
-                                                       capture_output=True, timeout=300)
+                                        run_apt_step('reconcile')
                                     finally:
                                         restore_mounts(wrapper_mounts)
 

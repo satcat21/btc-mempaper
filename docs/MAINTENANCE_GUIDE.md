@@ -41,6 +41,28 @@ sudo apt update && sudo apt upgrade -y
 
 The `python3` hold blocks the metapackage from switching to a new minor. Individual `python3.13` security updates are not blocked.
 
+### How mempaper runs apt
+
+The web updater, automatic updates and the startup dependency check never run apt
+themselves. Each step — `update`, `upgrade`, `full-upgrade`, `autoremove`,
+`reconcile` — runs in its own systemd unit, `mempaper-apt@<step>.service`, so a
+restart of `mempaper.service` or a replaced gunicorn worker cannot kill dpkg
+mid-transaction. Before every step the runner checks for an interrupted dpkg and
+runs `dpkg --configure -a` if it finds one, so a device no longer needs SSH to
+recover from a power cut during an upgrade.
+
+```bash
+systemctl list-units 'mempaper-apt@*'          # what is running now
+cat /run/mempaper-apt/upgrade.log              # output of the last upgrade step
+cat /run/mempaper-apt/upgrade.status           # waiting, running or exit=N
+journalctl -u 'mempaper-apt@*' --since today   # start and stop of each step
+```
+
+Closing the browser or restarting mempaper while a step runs is safe: the step
+finishes, and the next update that starts the same step follows it instead of
+starting a second one. The units come with `install_permissions.sh`; a device
+without them falls back to running apt directly, as before.
+
 ---
 
 ## Bumping pinned versions for a release

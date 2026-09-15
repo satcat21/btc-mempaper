@@ -767,8 +767,11 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
                   f'cd {project_dir} && sudo bash tools/install_permissions.sh {_user}')
             return
 
-        result = subprocess.run(['sudo', wrapper],
-                                capture_output=True, text=True, timeout=600)
+        # Through the mempaper-apt unit, and without a timeout: a reconcile
+        # killed at ten minutes left dpkg mid-transaction on a slow Pi.
+        from routes.updates import run_apt_step
+        output = []
+        run_apt_step('reconcile', lambda line, header=False: output.append(line))
         # Re-query rather than trusting the exit code: this used to print
         # success unconditionally, so a failed install (stale package index,
         # one unavailable package aborting the whole batch, no sudoers entry)
@@ -790,8 +793,7 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
             print('❌ Dependency check: could not pin: '
                   f'{", ".join(still_drifted)} '
                   '(is that version still in the archive?)')
-        tail = (result.stderr or result.stdout or '').strip().splitlines()
-        for line in tail[-5:]:
+        for line in [l for l in output if l.strip()][-5:]:
             print(f'   apt: {line}')
 
     def _check_pip_packages(self, project_dir):

@@ -1,0 +1,45 @@
+# /etc/systemd/system/mempaper-apt@.service
+# One apt step - update, upgrade, full-upgrade, autoremove or reconcile - run in
+# a unit of its own. Installed by install_permissions.sh.
+#
+# Not enabled or autostarted. mempaper starts an instance per step, e.g.
+# 'sudo systemctl start mempaper-apt@upgrade.service', and follows its log in
+# /run/mempaper-apt/.
+#
+# The point is the control group, exactly as for mempaper-build.service. apt
+# used to run as a child of the gunicorn worker, reading its output through a
+# pipe. Whenever that worker was replaced - after max_requests, or on a restart
+# of mempaper.service - the pipe closed and dpkg died mid-transaction, leaving
+# every later apt run refusing to start. A separate unit is a separate cgroup:
+# nothing that happens to mempaper can reach it, and a step always finishes.
+#
+# It also runs outside mempaper.service's ProtectSystem=strict namespace, so apt
+# no longer depends on mempaper remembering every mount it must reopen.
+
+[Unit]
+Description=mempaper system package step: %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Type=simple, not oneshot: the unit is 'active' for as long as the step runs,
+# which is what mempaper asks systemd about, and no start timeout applies.
+Type=simple
+Restart=no
+ExecStart=/usr/local/bin/mempaper-apt-run %i
+
+# No stop grant exists for this unit, and nothing in mempaper stops it: killing
+# dpkg is the failure this unit exists to prevent. At shutdown, mixed sends
+# SIGTERM to the runner alone, which waits for dpkg rather than passing it on,
+# and only what is still running after the timeout is killed. Whatever still
+# gets interrupted - a power cut - the runner repairs before the next step.
+TimeoutStopSec=30min
+KillMode=mixed
+
+# Package installs are not urgent; the dashboard and the panel are.
+Nice=10
+IOSchedulingClass=idle
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mempaper-apt
