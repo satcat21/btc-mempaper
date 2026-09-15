@@ -172,6 +172,29 @@ The memes on this display come from **[einundzwanzig-memes.space](https://einund
   </tr>
 </table>
 
+#### A Look Around the Settings
+
+Everything is configured in the browser. The settings page is one tab per topic, in the row of icons across the top:
+
+**General** · **Mempool** · **E-Ink Display** · **Theming** · **Price Stats** · **Countdown** · **Halving** · **Network** · **Wallet Monitoring** · **Bitaxe Stats** · **Lightning Donation** · **Meme Management** · **OPSec** · **WiFi** · **Updates**
+
+Each information block on the dashboard has its own tab with a switch to turn it on or off. Its options sit underneath, with a live preview in light and dark theme next to the color settings. Nothing needs to be edited over SSH.
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="images/screenshots/settings-price-stats.png" alt="Price Stats settings" width="100%"/>
+      <p align="center"><em><b>Price Stats</b>: switch the block on or off, pick the fiat currency, and show Moscow Time as a clock (e.g. 13:00) or in satoshis per unit of fiat</em></p>
+    </td>
+    <td width="50%" valign="top">
+      <img src="images/screenshots/settings-meme-management.png" alt="Meme Management settings" width="100%"/>
+      <p align="center"><em><b>Meme Management</b>: upload your own memes by drag &amp; drop, and search the library by tag or filename</em></p>
+    </td>
+  </tr>
+</table>
+
+**Adding your own memes.** Drop a PNG, JPG, GIF or WebP onto the upload area and it joins the meme rotation. Click any meme to open its preview, where you can add or remove **tags**. Tags decide when a meme is picked on a special day: on a Bitcoin holiday, memes tagged with words from its title get priority, e.g. `pizza` on Bitcoin Pizza Day. **Only memes without tags** lists the ones that are still waiting for tags.
+
 <details>
 <summary><b>System Logs</b> (Click to expand)</summary>
 
