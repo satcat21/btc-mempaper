@@ -127,6 +127,26 @@ function buildSectionNav(grid) {
     });
     nav.appendChild(toggle);
 
+    // A plain mouse wheel over the nav scrolls it sideways. A vertical wheel
+    // otherwise does nothing here, so the row could only be reached with
+    // shift+wheel or by dragging - on a narrow window that hid half the tabs.
+    //
+    // Only while there is somewhere to go: at either end, and when the tabs
+    // are wrapped or all fit, the event is left alone so the page scrolls as
+    // usual and the nav never traps the wheel.
+    nav.addEventListener('wheel', (e) => {
+        if (e.ctrlKey) return;                                   // zoom gesture
+        if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;     // already horizontal
+        const max = track.scrollWidth - track.clientWidth;
+        if (max <= 1) return;
+        // deltaMode 1 is lines, not pixels - a step of one there is tiny.
+        const step = e.deltaY * (e.deltaMode === 1 ? 16 : 1);
+        const next = Math.max(0, Math.min(max, track.scrollLeft + step));
+        if (Math.abs(next - track.scrollLeft) < 1) return;       // at the end
+        track.scrollLeft = next;
+        e.preventDefault();
+    }, { passive: false });
+
     // Forward horizontal touch drags on the non-scrollable parts of the nav
     // (e.g. the toggle button row) to the scrollable track.
     let _ntX = null, _ntY = null, _ntRelaying = false;

@@ -110,6 +110,29 @@
     transition: box-shadow 0.2s ease;
 }
 
+/* The nav is the one row that has to hold every section at once, and there
+   are more sections than fit in a 900px column. From the breakpoint where the
+   window is wider than the column, it breaks out to the full display width:
+   left edge still lined up with the header above it, right edge free to run on
+   to the display edge. html has overflow-x hidden, so the 100vw width cannot
+   raise a horizontal scrollbar of its own when a vertical one is present.
+
+   The content column keeps its width - a settings form reads badly at 1900px
+   - so this rule deliberately applies to the nav alone. */
+@media (min-width: 1000px) {
+    .section-nav {
+        width: 100vw;
+        margin-left: calc(50% - 50vw);
+        margin-right: calc(50% - 50vw);
+        /* Percentages here resolve against the same box the negative margin
+           above does, so 50vw - 50% is exactly the gap the full-bleed opened
+           on the left: the first pill lands under the 'm' of mempaper without
+           this rule having to know how wide the column is. */
+        padding-left: max(24px, calc(50vw - 50%));
+        padding-right: 24px;
+    }
+}
+
 .section-nav-track {
     display: flex;
     gap: 6px;
