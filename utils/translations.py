@@ -674,7 +674,7 @@ translations = {
         # Difficulty adjustment block (blocks to retarget + change)
         "show_difficulty_block": "Show Difficulty Block",
         "show_difficulty_block_desc": "Show how many blocks remain until the next difficulty retarget, and the change it is heading for.",
-        "difficulty_settings": "Difficulty",
+        "difficulty_settings": "Retarget",
         "difficulty_retarget": "Retarget In",
         "difficulty_change": "Difficulty Change",
         "blocks_unit": "blocks",
@@ -1600,7 +1600,7 @@ translations = {
         # Schwierigkeitsanpassung (Blöcke bis zum Retarget + Änderung)
         "show_difficulty_block": "Schwierigkeits-Block anzeigen",
         "show_difficulty_block_desc": "Zeigt, wie viele Blöcke bis zur nächsten Schwierigkeitsanpassung fehlen und welche Änderung sich abzeichnet.",
-        "difficulty_settings": "Schwierigkeit",
+        "difficulty_settings": "Anpassung",
         "difficulty_retarget": "Anpassung in",
         "difficulty_change": "Änderung",
         "blocks_unit": "Blöcke",
@@ -2507,7 +2507,7 @@ translations = {
         # Ajuste de dificultad (bloques hasta el reajuste + cambio)
         "show_difficulty_block": "Mostrar bloque de dificultad",
         "show_difficulty_block_desc": "Muestra cuántos bloques faltan para el próximo reajuste de dificultad y el cambio previsto.",
-        "difficulty_settings": "Dificultad",
+        "difficulty_settings": "Reajuste",
         "difficulty_retarget": "Reajuste en",
         "difficulty_change": "Cambio de dificultad",
         "blocks_unit": "bloques",
@@ -3415,7 +3415,7 @@ translations = {
         # Ajustement de difficulté (blocs avant le recalcul + variation)
         "show_difficulty_block": "Afficher le bloc de difficulté",
         "show_difficulty_block_desc": "Affiche combien de blocs restent avant le prochain ajustement de difficulté, et la variation attendue.",
-        "difficulty_settings": "Difficulté",
+        "difficulty_settings": "Ajustement",
         "difficulty_retarget": "Ajustement dans",
         "difficulty_change": "Variation de difficulté",
         "blocks_unit": "blocs",
@@ -4305,7 +4305,7 @@ translations = {
         # Aggiustamento della difficoltà (blocchi al ricalcolo + variazione)
         "show_difficulty_block": "Mostra blocco difficoltà",
         "show_difficulty_block_desc": "Mostra quanti blocchi mancano al prossimo aggiustamento della difficoltà e la variazione prevista.",
-        "difficulty_settings": "Difficoltà",
+        "difficulty_settings": "Ricalcolo",
         "difficulty_retarget": "Ricalcolo tra",
         "difficulty_change": "Variazione difficoltà",
         "blocks_unit": "blocchi",
