@@ -810,10 +810,14 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
                 return
 
             print(f'📦 Dependency check: missing pip packages: {", ".join(missing_pip)}')
-            result = subprocess.run(
-                [venv_pip, 'install', '--disable-pip-version-check'] + missing_pip,
-                capture_output=True, timeout=600
-            )
+            # A missing package with no wheel for this platform is a source
+            # build, which is what the swap file is kept for.
+            from utils.mounts import swap_for_build
+            with swap_for_build():
+                result = subprocess.run(
+                    [venv_pip, 'install', '--disable-pip-version-check'] + missing_pip,
+                    capture_output=True, timeout=600
+                )
             if result.returncode == 0:
                 print('📦 Dependency check: pip packages installed — restart recommended')
             else:

@@ -31,11 +31,13 @@ class UpdateSchedulerMixin:
         def _rebuild():
             try:
                 print("📦 Rebuilding Pillow from source for native WebP support (this may take ~15 min on Pi Zero)...")
-                subprocess.check_call(
-                    [venv_pip, 'install', '--force-reinstall', '--no-cache-dir', '--no-binary', ':all:', 'Pillow'],
-                    stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
-                    timeout=SOURCE_BUILD_TIMEOUT
-                )
+                from utils.mounts import swap_for_build
+                with swap_for_build():
+                    subprocess.check_call(
+                        [venv_pip, 'install', '--force-reinstall', '--no-cache-dir', '--no-binary', ':all:', 'Pillow'],
+                        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                        timeout=SOURCE_BUILD_TIMEOUT
+                    )
                 os.remove(flag_path)
                 print("✅ Pillow rebuilt from source. Restarting service to activate...")
                 subprocess.run(
@@ -578,10 +580,12 @@ class UpdateSchedulerMixin:
                             venv_pip = os.path.join(project_dir, '.venv', 'bin', 'pip')
                             requirements_file = os.path.join(project_dir, 'requirements.txt')
                             if deps_changed and os.path.exists(venv_pip) and os.path.exists(requirements_file):
-                                result = subprocess.run(
-                                    [venv_pip, 'install', '-r', requirements_file],
-                                    cwd=project_dir, capture_output=True, timeout=600
-                                )
+                                from utils.mounts import swap_for_build
+                                with swap_for_build():
+                                    result = subprocess.run(
+                                        [venv_pip, 'install', '-r', requirements_file],
+                                        cwd=project_dir, capture_output=True, timeout=600
+                                    )
                                 if result.returncode != 0:
                                     print("⚠️ Auto-update: pip install failed, rolling back...")
                                     subprocess.run(

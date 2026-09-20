@@ -107,6 +107,17 @@ else
         0)  ok "Swap already as it should be" ;;
         *)  warn "Swap file could not be set up — source builds may run out of memory" ;;
     esac
+    # The file is for builds, not for running a dashboard, and it is registered
+    # noauto so a reboot leaves it off. This is what gets a device that has had
+    # it on since install back to off without waiting for one - and it does
+    # nothing while a build or an apt step still holds it.
+    if [ -x /usr/local/bin/mempaper-swap ]; then
+        swap_state="$(/usr/local/bin/mempaper-swap settle 2>&1)"
+        case "$swap_state" in
+            "swap off") changed; ok "Swap switched off — builds switch it back on when needed" ;;
+            *)          ok "Swap: ${swap_state}" ;;
+        esac
+    fi
 fi
 
 # ── How eagerly the kernel swaps ──────────────────────────────────────────

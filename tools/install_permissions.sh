@@ -444,6 +444,8 @@ REMOUNTED=()
 RC=1
 finish() {
     local i
+    # Before the mounts: unpacking is done by now, so the pages can go back.
+    /usr/local/bin/mempaper-swap release apt >> "$LOG" 2>&1 || true
     for (( i=${#REMOUNTED[@]}-1; i>=0; i-- )); do
         mount -o remount,ro "${REMOUNTED[$i]}" 2>/dev/null \
             || echo "could not restore ${REMOUNTED[$i]} read-only" >> "$LOG"
@@ -451,6 +453,11 @@ finish() {
     echo "exit=${RC}" > "$STATUS"
 }
 trap finish EXIT
+
+# dpkg unpacking several hundred MB is the other job that can exhaust a
+# 512 MB device, so the step holds swap for its duration. Harmless where there
+# is no swap file: the helper says so and carries on.
+/usr/local/bin/mempaper-swap acquire apt >> "$LOG" 2>&1 || true
 
 # Outside mempaper.service the filesystems are as the host has them. On a
 # read-only root they still have to be opened for the length of the step.
@@ -492,6 +499,113 @@ RUNNER
 chown root:root "${APT_RUNNER}"
 chmod 755 "${APT_RUNNER}"
 echo "✅  apt step runner installed: ${APT_RUNNER}"
+
+# Install the swap switch. The disk-backed swap file is registered noauto (see
+# tools/setup_swap.sh), so nothing mounts it at boot: a dashboard that is only
+# serving pages should not be writing anonymous pages to an SD card, and at
+# 512 MB it slowly does. The work that genuinely needs the capacity - a source
+# build, a long apt run - switches it on for its own duration through this.
+#
+# Holders are counted, because a build and an apt step can overlap and the one
+# that finishes first must not pull the file out from under the other.
+SWAP_HELPER="/usr/local/bin/mempaper-swap"
+cat > "${SWAP_HELPER}" <<'SWAPPER'
+#!/bin/bash
+# mempaper-swap acquire|release <holder> | settle | status
+set -u
+
+SWAPFILE="${SWAPFILE:-/swapfile}"
+STATE=/run/mempaper-swap
+
+ACTION="${1:-}"
+TAG="${2:-}"
+case "$ACTION" in
+    acquire|release|settle|status) ;;
+    *) echo "usage: mempaper-swap acquire|release <holder> | settle | status" >&2
+       exit 2 ;;
+esac
+# A fixed set, so the sudoers grants below can name each call exactly and a
+# stray argument cannot litter the state directory.
+if [ "$ACTION" = "acquire" ] || [ "$ACTION" = "release" ]; then
+    case "$TAG" in
+        build|apt|pip|install) ;;
+        *) echo "unknown holder: ${TAG:-<none>}" >&2; exit 2 ;;
+    esac
+fi
+
+install -d -m 755 -o root -g root "$STATE"
+# One at a time: two holders arriving together must not both decide the file is
+# off, and a release must not race the acquire that follows it.
+exec 9> "${STATE}/.lock"
+flock 9
+
+_swap_is_on() {
+    swapon --show=NAME --noheadings 2>/dev/null | grep -qx "$SWAPFILE"
+}
+
+_holders() {
+    find "$STATE" -maxdepth 1 -type f ! -name '.lock' -printf '%f ' 2>/dev/null
+}
+
+_swap_off() {
+    # Everything currently in swap has to fit back into RAM. Refusing here
+    # costs a little card wear until the next release; getting it wrong costs
+    # the OOM killer, on a device whose whole job is to stay up.
+    local used avail
+    used=$(awk '/^SwapTotal:/ {t=$2} /^SwapFree:/ {f=$2} END {print int((t-f)/1024)}' /proc/meminfo)
+    avail=$(awk '/^MemAvailable:/ {print int($2/1024)}' /proc/meminfo)
+    if [ "${used:-0}" -gt $(( ${avail:-0} - 64 )) ]; then
+        echo "swap left on: ${used} MB in use, only ${avail} MB free to take it back"
+        return 0
+    fi
+    if swapoff "$SWAPFILE" 2>/dev/null; then
+        echo "swap off"
+    else
+        echo "could not switch swap off - leaving it on" >&2
+    fi
+}
+
+case "$ACTION" in
+    acquire)
+        : > "${STATE}/${TAG}"
+        if [ ! -f "$SWAPFILE" ]; then
+            echo "no swap file at ${SWAPFILE} - nothing to switch on"
+            exit 0
+        fi
+        if _swap_is_on; then
+            echo "swap already on (holders: $(_holders))"
+            exit 0
+        fi
+        if swapon --priority 10 "$SWAPFILE" 2>/dev/null; then
+            echo "swap on for ${TAG}"
+        else
+            # Not fatal: the work is better attempted without swap than not at
+            # all, and that is exactly how a device with no swap file runs.
+            echo "could not switch swap on - continuing without it" >&2
+        fi
+        ;;
+    release|settle)
+        [ "$ACTION" = "release" ] && rm -f "${STATE}/${TAG}"
+        remaining="$(_holders)"
+        if [ -n "$remaining" ]; then
+            echo "swap still held by: ${remaining}"
+            exit 0
+        fi
+        _swap_is_on || exit 0
+        _swap_off
+        ;;
+    status)
+        if _swap_is_on; then
+            echo "on (holders: $(_holders))"
+        else
+            echo "off"
+        fi
+        ;;
+esac
+SWAPPER
+chown root:root "${SWAP_HELPER}"
+chmod 755 "${SWAP_HELPER}"
+echo "✅  swap switch installed: ${SWAP_HELPER}"
 
 # Install Python upgrade wrapper — runs tools/upgrade_python.sh --force --no-restart
 # Scoped: no arguments, executes a single known script path, cannot be used arbitrarily.
@@ -860,6 +974,12 @@ ${SERVICE_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} start mempaper-apt@upgrade
 ${SERVICE_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} start mempaper-apt@full-upgrade.service
 ${SERVICE_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} start mempaper-apt@autoremove.service
 ${SERVICE_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} start mempaper-apt@reconcile.service
+
+# Swap for a pip build that runs inside mempaper itself. The build unit and the
+# apt units take their own holds as root, so only this one needs a grant, and
+# the helper accepts nothing but a known holder name.
+${SERVICE_USER} ALL=(root) NOPASSWD: /usr/local/bin/mempaper-swap acquire pip
+${SERVICE_USER} ALL=(root) NOPASSWD: /usr/local/bin/mempaper-swap release pip
 
 # Remount root filesystem rw/ro around apt operations (read-only Pi OS root partition)
 ${SERVICE_USER} ALL=(root) NOPASSWD: ${MOUNT_BIN} -o remount\,rw /

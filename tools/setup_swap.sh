@@ -12,6 +12,13 @@
 # the overflow. It is SD-card wear, so it is sized once and skipped entirely on a
 # device with memory to spare.
 #
+# It is also not switched on in ordinary operation. The fstab entry is noauto, so
+# a reboot leaves the file cold, and /usr/local/bin/mempaper-swap switches it on
+# for the length of a build or an apt run and off again afterwards. A dashboard
+# that is only serving pages has no business writing anonymous pages to an SD
+# card; a source build on a 512 MB Pi Zero cannot finish without somewhere to put
+# them. zram stays on either way - it costs the card nothing.
+#
 # Run from install.sh before the first pip build, and from postinstall.sh so it
 # also reaches a device that was installed before this existed and only ever
 # updates through the web UI.
@@ -58,10 +65,28 @@ if swapon --show=NAME --noheadings 2>/dev/null | grep -qv '^/dev/zram'; then
     exit 0
 fi
 
+# Registered, but never mounted at boot: 'noauto' is what keeps swap off in
+# ordinary operation. An older install wrote 'sw', which does mount at boot, so
+# that line is rewritten rather than left alone.
+_fstab_noauto() {
+    local line="${SWAPFILE} none swap noauto,pri=10 0 0"
+    if ! grep -q "^${SWAPFILE}[[:space:]]" /etc/fstab 2>/dev/null; then
+        echo "$line" >> /etc/fstab
+        return
+    fi
+    if grep -q "^${SWAPFILE}[[:space:]].*noauto" /etc/fstab 2>/dev/null; then
+        return
+    fi
+    if sed -i "s|^${SWAPFILE}[[:space:]].*|${line}|" /etc/fstab; then
+        echo "fstab entry for ${SWAPFILE} set to noauto (was on at boot)"
+    fi
+}
+
 if [ -f "$SWAPFILE" ]; then
-    # Present but not swapped on: an earlier run got this far, or a reboot has
-    # not applied the fstab entry yet. Either way it is not ours to resize.
-    swapon --priority 10 "$SWAPFILE" 2>/dev/null || true
+    # Present already: not ours to resize. Only the fstab entry is brought up
+    # to date, so a device set up before on-demand swap stops enabling it at
+    # boot; switching it on is mempaper-swap's job now.
+    _fstab_noauto
     echo "Swap file already present: $SWAPFILE"
     exit 0
 fi
@@ -106,7 +131,8 @@ else
     exit 1
 fi
 
-grep -q "^${SWAPFILE}[[:space:]]" /etc/fstab \
-    || echo "${SWAPFILE} none swap sw,pri=10 0 0" >> /etc/fstab
-echo "Swap file active: ${SWAP_SIZE_MB} MB at priority 10, below zram (${METHOD})"
+_fstab_noauto
+# Left switched on for the caller, which is install.sh or postinstall.sh with a
+# build about to run. mempaper-swap switches it off once nothing holds it.
+echo "Swap file ready: ${SWAP_SIZE_MB} MB at priority 10, below zram (${METHOD})"
 exit 10

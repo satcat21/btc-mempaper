@@ -1254,15 +1254,17 @@ def register(self):
                         # for this platform becomes a source build, and /tmp is
                         # a tmpfs sized from RAM.
                         from utils.wheel_platform import build_env
-                        proc = subprocess.Popen(
-                            [venv_pip, 'install', '-r', requirements_file],
-                            cwd=project_dir, env=build_env(),
-                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                            text=True, bufsize=1
-                        )
-                        for line in proc.stdout:
-                            _emit('update_output', {'line': _clean_line(line), 'phase': 'pip'})
-                        proc.wait()
+                        from utils.mounts import swap_for_build
+                        with swap_for_build():
+                            proc = subprocess.Popen(
+                                [venv_pip, 'install', '-r', requirements_file],
+                                cwd=project_dir, env=build_env(),
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                text=True, bufsize=1
+                            )
+                            for line in proc.stdout:
+                                _emit('update_output', {'line': _clean_line(line), 'phase': 'pip'})
+                            proc.wait()
                         if proc.returncode != 0:
                             # Rollback on pip failure
                             _emit('update_output', {'line': self.translations.get('pip_install_failed_rollback', 'pip install failed, rolling back...'), 'phase': 'pip', 'header': True})

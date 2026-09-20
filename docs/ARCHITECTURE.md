@@ -408,6 +408,7 @@ btc-mempaper/
 |   |-- mempaper-build.service   Systemd unit the build worker runs under
 |   |-- mempaper-apt@.service    Systemd unit each apt step runs under
 |   |-- setup_swap.sh            Swap file sized for the device, if it has none
+|                                (noauto: mempaper-swap switches it on per build)
 |   |-- install_permissions.sh  Polkit + sudoers rules for Wi-Fi hotspot
 |   +-- 90-mempaper-wifi.rules       Polkit rule for NetworkManager
 |

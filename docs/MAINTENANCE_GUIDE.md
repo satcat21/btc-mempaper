@@ -41,6 +41,38 @@ sudo apt update && sudo apt upgrade -y
 
 The `python3` hold blocks the metapackage from switching to a new minor. Individual `python3.13` security updates are not blocked.
 
+### Swap is only on while something is building
+
+The disk-backed swap file exists for source builds: on a 512 MB Pi Zero a pip
+build of Pillow or cryptography is killed for memory without it. It is not for
+running the dashboard, where it only wears the SD card, so it is registered
+`noauto` in `/etc/fstab` and nothing mounts it at boot.
+
+`/usr/local/bin/mempaper-swap` switches it on for the length of the work that
+needs it and off again afterwards. Holders are counted, so a build and an apt
+step running together each keep their own hold and neither release switches the
+file off under the other.
+
+| Holder | Taken by |
+|---|---|
+| `build` | `mempaper-build.service`, for queued source builds |
+| `apt` | each `mempaper-apt@<step>.service`, for the duration of a step |
+| `pip` | a pip install mempaper runs itself: software update, auto-update, startup dependency check, Pillow rebuild |
+
+```bash
+/usr/local/bin/mempaper-swap status     # off, or on with the current holders
+swapon --show                           # zram stays on; /swapfile only during work
+sudo /usr/local/bin/mempaper-swap settle  # switch off if nothing holds it
+```
+
+zram is untouched. It is compressed pages in RAM, costs the card nothing, and
+stays available at all times.
+
+Switching off is skipped when what is currently in swap would not fit back into
+free RAM — `swap left on: N MB in use, only M MB free to take it back`. The next
+release tries again. `vm.swappiness` stays at 1, so even while the file is on it
+takes only genuine pressure, and the build unit raises it to 60 for a build.
+
 ### How mempaper runs apt
 
 The web updater, automatic updates and the startup dependency check never run apt

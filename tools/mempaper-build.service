@@ -49,6 +49,14 @@ ExecStart=__PROJECT_DIR__/.venv/bin/python __PROJECT_DIR__/tools/build_worker.py
 ExecStartPre=+-/usr/sbin/sysctl -q -w vm.swappiness=60
 ExecStopPost=+-/usr/sbin/sysctl -q -w vm.swappiness=1
 
+# And the swap file itself, which is registered noauto and off the rest of the
+# time - see tools/setup_swap.sh. A source build on a 512 MB Pi Zero is the
+# reason it exists; a dashboard serving pages only wears the card with it.
+# Holders are counted by the helper, so an apt step running alongside this
+# keeps its own hold and neither release switches the file off too early.
+ExecStartPre=+-/usr/local/bin/mempaper-swap acquire build
+ExecStopPost=+-/usr/local/bin/mempaper-swap release build
+
 # Stop means stop. The worker terminates its own pip child on SIGTERM and
 # records where it got to, so the Stop button in the web UI is prompt and the
 # queue survives to be resumed.
