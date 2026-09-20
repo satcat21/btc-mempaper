@@ -520,6 +520,7 @@ function _renderCategorySection(category, section) {
                     countdown:         [pd.countdown, window._refreshCountdownPreview],
                     halving:           [pd.halving,   window._refreshHalvingPreview],
                     network_stats:     [pd.network,   window._refreshNetworkPreview],
+                    difficulty:        [pd.difficulty, window._refreshDifficultyPreview],
                 };
                 const entry = refreshMap[category.id];
                 if (entry && entry[0] && entry[1]) entry[1](entry[0]);
@@ -740,7 +741,7 @@ function _fetchPreviewData(attempt) {
         .then(r => r.ok ? r.json() : null)
         .then(d => {
             if (!d) return;
-            const fields = ['price','bitaxe','wallet','donation','countdown','halving','network'];
+            const fields = ['price','bitaxe','wallet','donation','countdown','halving','network','difficulty'];
             fields.forEach(k => { if (d[k]) window._previewData[k] = d[k]; });
             if (d.block_hash) {
                 window._previewData.latestBlockHash = d.block_hash;
@@ -754,6 +755,7 @@ function _fetchPreviewData(attempt) {
             if (d.countdown  && window._refreshCountdownPreview)  window._refreshCountdownPreview(d.countdown);
             if (d.halving    && window._refreshHalvingPreview)    window._refreshHalvingPreview(d.halving);
             if (d.network    && window._refreshNetworkPreview)    window._refreshNetworkPreview(d.network);
+            if (d.difficulty && window._refreshDifficultyPreview) window._refreshDifficultyPreview(d.difficulty);
 
             const pd = window._previewData;
             const cfg = window.currentConfig || {};

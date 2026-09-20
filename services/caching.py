@@ -498,10 +498,11 @@ class CachingMixin:
                     print(f"⚠️ Failed to pre-cache Bitaxe: {e}")
             
             # Update network stats when at least one network-dependent block is enabled.
-            _need_network = self._need_block_type('countdown', 'halving', 'network') and (
+            _need_network = self._need_block_type('countdown', 'halving', 'network', 'difficulty') and (
                 self.config.get("show_countdown_block", True)
                 or self.config.get("show_halving_block", True)
                 or self.config.get("show_network_block", True)
+                or self.config.get("show_difficulty_block", True)
             )
             if _need_network and now - self._precache['network_last_update'] > update_interval:
                 try:
@@ -521,6 +522,9 @@ class CachingMixin:
                                 self.socketio.emit('network_stats_updated', {
                                     'hashrate': network_data['currentHashrate'],
                                     'difficulty': network_data['currentDifficulty'],
+                                    # From the same fetch, for the difficulty card.
+                                    'remaining_blocks': network_data.get('epochRemainingBlocks'),
+                                    'change_percent': network_data.get('difficultyChange'),
                                 }, room='authenticated')
                 except Exception as e:
                     print(f"⚠️ Failed to pre-cache network stats: {e}")
@@ -637,10 +641,11 @@ class CachingMixin:
                     block_height = None
 
             # Network stats — only when at least one network-dependent block is selected
-            _need_network = self._need_block_type('countdown', 'halving', 'network') and (
+            _need_network = self._need_block_type('countdown', 'halving', 'network', 'difficulty') and (
                 self.config.get("show_countdown_block", True)
                 or self.config.get("show_halving_block", True)
                 or self.config.get("show_network_block", True)
+                or self.config.get("show_difficulty_block", True)
             )
             if _need_network:
                 if self._precache_fresh('network', _render_age, now):

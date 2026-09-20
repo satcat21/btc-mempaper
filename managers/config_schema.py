@@ -189,6 +189,30 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
             "category": "network_stats",
             "order": 1001
         },
+        # --- Difficulty adjustment block ---
+        "show_difficulty_block": {
+            "type": "boolean",
+            "label": t.get("show_difficulty_block", "Show Difficulty Block"),
+            "description": t.get("show_difficulty_block_desc", "Show how many blocks remain until the next difficulty retarget, and the change it is heading for."),
+            "default": True,
+            "category": "difficulty"
+        },
+        "color_difficulty_light": {
+            "type": "color",
+            "label": t.get("color_difficulty_light", "Difficulty Adjustment (Light Mode)"),
+            "description": t.get("color_difficulty_light_desc", "Color for difficulty adjustment values in light mode"),
+            "default": "#00796B",
+            "category": "difficulty",
+            "order": 1000
+        },
+        "color_difficulty_dark": {
+            "type": "color",
+            "label": t.get("color_difficulty_dark", "Difficulty Adjustment (Dark Mode)"),
+            "description": t.get("color_difficulty_dark_desc", "Color for difficulty adjustment values in dark mode"),
+            "default": "#4DB6AC",
+            "category": "difficulty",
+            "order": 1001
+        },
         "show_bitaxe_block": {
             "type": "boolean",
             "label": t.get("show_bitaxe_block", "Show Bitaxe Hashrate/Blocks Block"),

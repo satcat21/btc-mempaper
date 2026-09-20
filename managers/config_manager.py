@@ -419,6 +419,10 @@ class ConfigManager:
             "show_network_block": True,
             "color_network_light": "#6A1B9A",
             "color_network_dark": "#B23CE8",
+            # --- Difficulty adjustment block (blocks to retarget + change) ---
+            "show_difficulty_block": True,
+            "color_difficulty_light": "#00796B",
+            "color_difficulty_dark": "#4DB6AC",
             "show_bitaxe_block": False,
             "bitaxe_display_mode": "blocks",
             "bitaxe_miner_table": [],
@@ -632,6 +636,7 @@ class ConfigManager:
             {"id": "countdown",        "_lk": "countdown_settings","label": t.get("countdown_settings","Countdown"),           "icon": "/static/icons/countdown.svg"},
             {"id": "halving",          "_lk": "halving_settings",  "label": t.get("halving_settings",  "Halving"),             "icon": "/static/icons/halving.svg"},
             {"id": "network_stats",    "_lk": "network_settings",  "label": t.get("network_settings",  "Network"),             "icon": "/static/icons/network.svg"},
+            {"id": "difficulty",       "_lk": "difficulty_settings","label": t.get("difficulty_settings","Difficulty"),          "icon": "/static/icons/difficulty.svg"},
             {"id": "wallet_monitoring","_lk": "wallet_monitoring", "label": t.get("wallet_monitoring", "Wallet Monitoring"),   "icon": "/static/icons/wallet.svg"},
             {"id": "bitaxe_stats",     "_lk": "bitaxe_stats",      "label": t.get("bitaxe_stats",      "Bitaxe Stats"),        "icon": "/static/icons/bitaxe.svg"},
             {"id": "donation",         "_lk": "donation_settings", "label": t.get("donation_settings", "Lightning Donation"),  "icon": "/static/icons/donation.svg"},

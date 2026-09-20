@@ -342,6 +342,38 @@ function _buildSectionPreview(categoryId, sectionEl) {
         return mkWrapper(lightCard, darkCard);
     }
 
+    // ── Difficulty Adjustment ─────────────────────────────────────────────
+    if (categoryId === 'difficulty') {
+        const clLight = cfg['color_difficulty_light'] || '#00796B';
+        const clDark  = cfg['color_difficulty_dark']  || '#4DB6AC';
+        const ll = t.difficulty_retarget || 'Retarget In';
+        const rl = t.difficulty_change || 'Difficulty Change';
+
+        function fmtRemaining(n) {
+            if (n == null) return '…';
+            return `${_fmtNum(n)} ${t.blocks_unit || 'blocks'}`;
+        }
+        // Signed, as on the panel: a retarget downwards must not read as one up.
+        function fmtChange(c) {
+            if (c == null) return '…';
+            return `${c >= 0 ? '+' : ''}${_fmtFixed(c, 2)}%`;
+        }
+
+        const dd = window._previewData.difficulty;
+        const lightCard = _buildSingleThemeCard(ll, fmtRemaining(dd?.remaining_blocks), rl, fmtChange(dd?.change_percent), clLight, '#fff', '#6a6a78');
+        const darkCard  = _buildSingleThemeCard(ll, fmtRemaining(dd?.remaining_blocks), rl, fmtChange(dd?.change_percent), clDark,  '#111827', '#aaa');
+
+        window._refreshDifficultyPreview = (data) => {
+            const lv2 = fmtRemaining(data?.remaining_blocks);
+            const rv2 = fmtChange(data?.change_percent);
+            [lightCard, darkCard].forEach(card => {
+                const cells = card.querySelectorAll('.preview-value');
+                if (cells.length >= 2) { _setPreviewValue(cells[0], lv2); _setPreviewValue(cells[1], rv2); }
+            });
+        };
+        return mkWrapper(lightCard, darkCard);
+    }
+
     return null;
 }
 

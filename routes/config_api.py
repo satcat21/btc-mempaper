@@ -629,6 +629,7 @@ def register(self):
             # Network stats — from precache; fetch synchronously if not cached yet.
             # Resolved before the halving payload below, which needs the block pace.
             network_payload = None
+            difficulty_payload = None
             net = None
             try:
                 net = self._precache.get('network_data') if hasattr(self, '_precache') else None
@@ -648,6 +649,15 @@ def register(self):
                     network_payload = {
                         'hashrate': net.get('currentHashrate', 0),
                         'difficulty': net.get('currentDifficulty', 0),
+                    }
+                # Independent of the hashrate: an error marker only means that
+                # lookup failed, while these come from the difficulty
+                # adjustment call and are what the difficulty card shows.
+                if net and (net.get('epochRemainingBlocks') is not None
+                            or net.get('difficultyChange') is not None):
+                    difficulty_payload = {
+                        'remaining_blocks': net.get('epochRemainingBlocks'),
+                        'change_percent': net.get('difficultyChange'),
                     }
             except Exception:
                 net = None
@@ -694,6 +704,7 @@ def register(self):
                 'countdown': countdown_payload,
                 'halving': halving_payload,
                 'network': network_payload,
+                'difficulty': difficulty_payload,
                 'block_hash': self.current_block_hash,
             })
         except Exception as e:

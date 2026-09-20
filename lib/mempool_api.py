@@ -332,6 +332,12 @@ class MempoolAPI:
             "timeAvg": da.get("timeAvg", 600000),
             "adjustedTimeAvg": da.get("adjustedTimeAvg"),
             "epochRemainingBlocks": da.get("remainingBlocks"),
+            # For the difficulty block. Carried here rather than fetched again:
+            # the same /v1/difficulty-adjustment call already answered it, and
+            # the block renders from whatever arrived even when the hashrate
+            # lookup below failed, since the two are independent.
+            "difficultyChange": da.get("difficultyChange"),
+            "estimatedRetargetDate": da.get("estimatedRetargetDate"),
         }
         if hd:
             stats["currentHashrate"] = hd.get("currentHashrate", 0)

@@ -73,12 +73,13 @@ class DualImageMixin:
 
         # Fetch shared network data only when at least one of the three network-dependent
         # blocks will actually be shown.
-        _network_types = {'countdown', 'halving', 'network'}
+        _network_types = {'countdown', 'halving', 'network', 'difficulty'}
         _need_network = (
             (active_types is None and (
                 config.get("show_countdown_block", True)
                 or config.get("show_halving_block", True)
                 or config.get("show_network_block", True)
+                or config.get("show_difficulty_block", True)
             )) or
             (active_types and any(t in _network_types for t in active_types))
         )
@@ -106,6 +107,9 @@ class DualImageMixin:
             elif block_type == 'network' and config.get("show_network_block", True):
                 info_blocks.append((self.render_network_block, network_data or {}))
                 displayed_blocks.append('network')
+            elif block_type == 'difficulty' and config.get("show_difficulty_block", True):
+                info_blocks.append((self.render_difficulty_block, network_data or {}))
+                displayed_blocks.append('difficulty')
             elif block_type == 'bitaxe' and config.get("show_bitaxe_block", True):
                 bitaxe_data = precached_bitaxe or self.bitaxe_api.fetch_bitaxe_stats()
                 info_blocks.append((self.render_bitaxe_block, bitaxe_data))
@@ -119,7 +123,7 @@ class DualImageMixin:
 
         if active_types is None:
             # Default layout: add all enabled blocks; renderer will randomise order.
-            for bt in ('price', 'countdown', 'halving', 'network', 'bitaxe'):
+            for bt in ('price', 'countdown', 'halving', 'network', 'difficulty', 'bitaxe'):
                 _add_block(bt)
             # Donation included like any other block; renderer handles guarantee vs. random
             _add_block('donation')
@@ -298,6 +302,7 @@ class DualImageMixin:
             config.get("show_countdown_block", True)
             or config.get("show_halving_block", True)
             or config.get("show_network_block", True)
+            or config.get("show_difficulty_block", True)
         )
         if _need_network and not _skip_info_blocks and network_data is None and mempool_api:
             network_data = mempool_api.get_network_stats()
@@ -316,6 +321,8 @@ class DualImageMixin:
                 info_blocks.append((self.render_halving_block, _halving))
             if config.get("show_network_block", True):
                 info_blocks.append((self.render_network_block, network_data or {}))
+            if config.get("show_difficulty_block", True):
+                info_blocks.append((self.render_difficulty_block, network_data or {}))
             if config.get("show_bitaxe_block", True):
                 bitaxe_data = precached_bitaxe or self.bitaxe_api.fetch_bitaxe_stats()
                 info_blocks.append((self.render_bitaxe_block, bitaxe_data))

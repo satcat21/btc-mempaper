@@ -671,6 +671,18 @@ translations = {
         "color_network_dark": "Network Stats",
         "color_network_dark_desc": "Color for network stats values in dark mode",
 
+        # Difficulty adjustment block (blocks to retarget + change)
+        "show_difficulty_block": "Show Difficulty Block",
+        "show_difficulty_block_desc": "Show how many blocks remain until the next difficulty retarget, and the change it is heading for.",
+        "difficulty_settings": "Difficulty",
+        "difficulty_retarget": "Retarget In",
+        "difficulty_change": "Difficulty Change",
+        "blocks_unit": "blocks",
+        "color_difficulty_light": "Difficulty Adjustment",
+        "color_difficulty_light_desc": "Color for difficulty adjustment values in light mode",
+        "color_difficulty_dark": "Difficulty Adjustment",
+        "color_difficulty_dark_desc": "Color for difficulty adjustment values in dark mode",
+
         # Footer
         "footer_open_source_heading": "Open Source = Bitcoin Ethos",
         "footer_open_source_text": "This project is <strong>100% Open Source</strong> under GPL-3.0 license. Clone it, build your own mempaper, or contribute to the project!",
@@ -1585,6 +1597,18 @@ translations = {
         "color_network_dark": "Netzwerk-Statistiken",
         "color_network_dark_desc": "Farbe für Netzwerkstatistikwerte im dunklen Modus",
 
+        # Schwierigkeitsanpassung (Blöcke bis zum Retarget + Änderung)
+        "show_difficulty_block": "Schwierigkeits-Block anzeigen",
+        "show_difficulty_block_desc": "Zeigt, wie viele Blöcke bis zur nächsten Schwierigkeitsanpassung fehlen und welche Änderung sich abzeichnet.",
+        "difficulty_settings": "Schwierigkeit",
+        "difficulty_retarget": "Anpassung in",
+        "difficulty_change": "Änderung",
+        "blocks_unit": "Blöcke",
+        "color_difficulty_light": "Schwierigkeitsanpassung",
+        "color_difficulty_light_desc": "Farbe für Werte der Schwierigkeitsanpassung im hellen Modus",
+        "color_difficulty_dark": "Schwierigkeitsanpassung",
+        "color_difficulty_dark_desc": "Farbe für Werte der Schwierigkeitsanpassung im dunklen Modus",
+
         # Footer
         "footer_open_source_heading": "Open Source = Bitcoin-Ethos",
         "footer_open_source_text": "Dieses Projekt ist <strong>100% Open Source</strong> unter GPL-3.0-Lizenz. Klone es, baue dein eigenes mempaper oder trage zum Projekt bei!",
@@ -2479,6 +2503,18 @@ translations = {
         "color_network_light_desc": "Color para los valores de estadísticas de red en modo claro",
         "color_network_dark": "Estadísticas de red",
         "color_network_dark_desc": "Color para los valores de estadísticas de red en modo oscuro",
+
+        # Ajuste de dificultad (bloques hasta el reajuste + cambio)
+        "show_difficulty_block": "Mostrar bloque de dificultad",
+        "show_difficulty_block_desc": "Muestra cuántos bloques faltan para el próximo reajuste de dificultad y el cambio previsto.",
+        "difficulty_settings": "Dificultad",
+        "difficulty_retarget": "Reajuste en",
+        "difficulty_change": "Cambio de dificultad",
+        "blocks_unit": "bloques",
+        "color_difficulty_light": "Ajuste de dificultad",
+        "color_difficulty_light_desc": "Color para los valores del ajuste de dificultad en modo claro",
+        "color_difficulty_dark": "Ajuste de dificultad",
+        "color_difficulty_dark_desc": "Color para los valores del ajuste de dificultad en modo oscuro",
 
         # Footer
         "footer_open_source_heading": "Open Source = Espíritu Bitcoin",
@@ -3376,6 +3412,18 @@ translations = {
         "color_network_dark": "Statistiques réseau",
         "color_network_dark_desc": "Couleur des valeurs des statistiques réseau en mode sombre",
 
+        # Ajustement de difficulté (blocs avant le recalcul + variation)
+        "show_difficulty_block": "Afficher le bloc de difficulté",
+        "show_difficulty_block_desc": "Affiche combien de blocs restent avant le prochain ajustement de difficulté, et la variation attendue.",
+        "difficulty_settings": "Difficulté",
+        "difficulty_retarget": "Ajustement dans",
+        "difficulty_change": "Variation de difficulté",
+        "blocks_unit": "blocs",
+        "color_difficulty_light": "Ajustement de difficulté",
+        "color_difficulty_light_desc": "Couleur des valeurs d’ajustement de difficulté en mode clair",
+        "color_difficulty_dark": "Ajustement de difficulté",
+        "color_difficulty_dark_desc": "Couleur des valeurs d’ajustement de difficulté en mode sombre",
+
         # Footer
         "footer_open_source_heading": "Open Source = Éthique Bitcoin",
         "footer_open_source_text": "Ce projet est <strong>100% Open Source</strong> sous licence GPL-3.0. Clonez-le, construisez votre propre mempaper ou contribuez au projet !",
@@ -4253,6 +4301,18 @@ translations = {
         "color_network_light_desc": "Colore per i valori delle statistiche di rete in modalità chiara",
         "color_network_dark": "Statistiche rete",
         "color_network_dark_desc": "Colore per i valori delle statistiche di rete in modalità scura",
+
+        # Aggiustamento della difficoltà (blocchi al ricalcolo + variazione)
+        "show_difficulty_block": "Mostra blocco difficoltà",
+        "show_difficulty_block_desc": "Mostra quanti blocchi mancano al prossimo aggiustamento della difficoltà e la variazione prevista.",
+        "difficulty_settings": "Difficoltà",
+        "difficulty_retarget": "Ricalcolo tra",
+        "difficulty_change": "Variazione difficoltà",
+        "blocks_unit": "blocchi",
+        "color_difficulty_light": "Aggiustamento difficoltà",
+        "color_difficulty_light_desc": "Colore per i valori dell’aggiustamento della difficoltà in modalità chiara",
+        "color_difficulty_dark": "Aggiustamento difficoltà",
+        "color_difficulty_dark_desc": "Colore per i valori dell’aggiustamento della difficoltà in modalità scura",
 
         # Footer
         "footer_open_source_heading": "Open Source = Etica Bitcoin",

@@ -941,6 +941,16 @@ function setupConfigSocketHandlers() {
         if (!data) return;
         window._previewData.network = { ...window._previewData.network, ...data };
         if (window._refreshNetworkPreview) window._refreshNetworkPreview(window._previewData.network);
+        // Same payload carries the retarget fields, so the difficulty card
+        // stays live too rather than freezing at whatever it loaded with.
+        if (data.remaining_blocks != null || data.change_percent != null) {
+            window._previewData.difficulty = {
+                ...window._previewData.difficulty,
+                remaining_blocks: data.remaining_blocks,
+                change_percent: data.change_percent,
+            };
+            if (window._refreshDifficultyPreview) window._refreshDifficultyPreview(window._previewData.difficulty);
+        }
     });
 
     // Listen for Bitaxe stats updates — aggregate miners for preview card

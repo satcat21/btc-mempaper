@@ -145,6 +145,8 @@ COLOR_SETS = {
         "halving": "#1565C0",        # deep blue for halving countdown
         "network_hashrate": "#6A1B9A",  # deep purple for network hashrate
         "network_difficulty": "#6A1B9A",  # same purple for difficulty
+        "difficulty_retarget": "#00796B",  # teal for the difficulty adjustment
+        "difficulty_change": "#00796B",    # same teal for the change percentage
     },
     "dark": {
         "background": "#1a1a1f",
@@ -176,6 +178,8 @@ COLOR_SETS = {
         "halving": "#4FC3F7",         # sky blue for halving countdown
         "network_hashrate": "#CE93D8",   # soft purple for network hashrate
         "network_difficulty": "#CE93D8", # same soft purple for difficulty
+        "difficulty_retarget": "#4DB6AC",  # light teal for the difficulty adjustment
+        "difficulty_change": "#4DB6AC",    # same light teal for the change percentage
     }
 }
 
@@ -462,6 +466,12 @@ class ImageRenderer(ColorMixin, MemeMixin, HashFrameMixin, TextMixin,
         if "color_network_dark" in config:
             self.color_sets["dark"]["network_hashrate"] = config["color_network_dark"]
             self.color_sets["dark"]["network_difficulty"] = config["color_network_dark"]
+        if "color_difficulty_light" in config:
+            self.color_sets["light"]["difficulty_retarget"] = config["color_difficulty_light"]
+            self.color_sets["light"]["difficulty_change"] = config["color_difficulty_light"]
+        if "color_difficulty_dark" in config:
+            self.color_sets["dark"]["difficulty_retarget"] = config["color_difficulty_dark"]
+            self.color_sets["dark"]["difficulty_change"] = config["color_difficulty_dark"]
 
         # Latest Lightning donation data (set from app before each render)
         self._donation_data = None
@@ -1402,6 +1412,80 @@ class ImageRenderer(ColorMixin, MemeMixin, HashFrameMixin, TextMixin,
 
         return info_block_y + INFO_BLOCK_HEIGHT + ELEMENT_MARGIN
 
+    def render_difficulty_block(self, draw, info_block_y, font_label, font_value, network_data, web_quality=False):
+        """Render the difficulty retarget: blocks to go (left) and the change it
+        is heading for (right).
+
+        Fed by the same network_data the network and halving blocks use, so it
+        costs no extra request. It renders on the difficulty-adjustment fields
+        alone and ignores the `error` marker, which only ever means the separate
+        hashrate lookup failed.
+
+        The estimate moves as the epoch progresses - it is what the remaining
+        blocks would do at the pace of the ones already mined - so it is shown
+        with a sign and two decimals rather than as a settled number.
+        """
+        if not network_data:
+            return info_block_y
+
+        remaining = network_data.get("epochRemainingBlocks")
+        change = network_data.get("difficultyChange")
+        if remaining is None and change is None:
+            return info_block_y
+
+        header_left_text = self.t.get("difficulty_retarget", "Retarget In")
+        header_right_text = self.t.get("difficulty_change", "Difficulty Change")
+
+        left_col_center = self.layout.get_column_center(2, 0)
+        right_col_center = self.layout.get_column_center(2, 1)
+
+        try:
+            font_small_label = self._get_font(self.font_regular, FONT_SIZE_SMALL_LABEL)
+        except Exception:
+            font_small_label = font_label
+
+        block_bounds = self.layout.get_info_block_bounds()
+        draw.rounded_rectangle(
+            [(block_bounds[0], info_block_y),
+             (block_bounds[2], info_block_y + INFO_BLOCK_HEIGHT)],
+            radius=BLOCK_RADIUS,
+            fill=self.get_color("info_bg", web_quality),
+            outline=self.get_color("info_outline", web_quality),
+            width=4
+        )
+
+        text_y = self.layout.get_label_y(info_block_y)
+        bbox_left = font_small_label.getbbox(header_left_text)
+        bbox_right = font_small_label.getbbox(header_right_text)
+        left_x = self.layout.get_text_centered_x(bbox_left, left_col_center)
+        right_x = self.layout.get_text_centered_x(bbox_right, right_col_center)
+        draw.text((left_x, text_y), header_left_text, font=font_small_label, fill=self.get_color("info_header", web_quality))
+        draw.text((right_x, text_y), header_right_text, font=font_small_label, fill=self.get_color("info_header", web_quality))
+
+        label_height = bbox_left[3] - bbox_left[1]
+        value_y = self.layout.get_value_y(info_block_y, label_height)
+
+        blocks_unit = self.t.get("blocks_unit", "blocks")
+        remaining_text = (f"{self._format_number(remaining, 0)} {blocks_unit}"
+                          if remaining is not None else "—")
+        # Always signed: without it a retarget downwards reads as one upwards.
+        change_text = f"{change:+.2f}%" if change is not None else "—"
+
+        max_col_w = self.layout.get_column_max_text_width(2)
+        font_large_value = self._shrink_font_to_fit(
+            self.font_bold, [remaining_text, change_text], max_col_w, FONT_SIZE_LARGE_VALUE
+        )
+
+        bbox_remaining = font_large_value.getbbox(remaining_text)
+        bbox_change = font_large_value.getbbox(change_text)
+        remaining_x = self.layout.get_text_centered_x(bbox_remaining, left_col_center)
+        change_x = self.layout.get_text_centered_x(bbox_change, right_col_center)
+
+        draw.text((remaining_x, value_y), remaining_text, font=font_large_value, fill=self.get_color("difficulty_retarget", web_quality))
+        draw.text((change_x, value_y), change_text, font=font_large_value, fill=self.get_color("difficulty_change", web_quality))
+
+        return info_block_y + INFO_BLOCK_HEIGHT + ELEMENT_MARGIN
+
     def _build_donation_header_text(self, amount_sats: int, timestamp: str, mode: str = None) -> str:
         """Build localized donation header text used for measure + render passes."""
         display_mode = mode if mode is not None else self.config.get("donation_display_mode", "latest")
@@ -1644,6 +1728,7 @@ class ImageRenderer(ColorMixin, MemeMixin, HashFrameMixin, TextMixin,
         if config.get("show_countdown_block", True):        enabled.append('countdown')
         if config.get("show_halving_block", True):          enabled.append('halving')
         if config.get("show_network_block", True):          enabled.append('network')
+        if config.get("show_difficulty_block", True):       enabled.append('difficulty')
         if config.get("show_bitaxe_block", True):           enabled.append('bitaxe')
         if config.get("show_wallet_balances_block", True):  enabled.append('wallet')
         # Non-guaranteed donation competes in the random pool; guaranteed is handled below
@@ -2123,6 +2208,8 @@ class ImageRenderer(ColorMixin, MemeMixin, HashFrameMixin, TextMixin,
             if config_ref.get("show_halving_block", True):
                 block_count += 1
             if config_ref.get("show_network_block", True):
+                block_count += 1
+            if config_ref.get("show_difficulty_block", True):
                 block_count += 1
             if config_ref.get("show_bitaxe_block", True):
                 block_count += 1
