@@ -40,8 +40,15 @@ class ColorMixin:
             mode = "dark" if self.config.get("eink_dark_mode", False) else "light"
             hex_color = self.color_sets[mode].get(color_name, "#ffffff")
 
-            # For e-ink dark mode background, use pure black for better readability
-            if mode == "dark" and color_name == "background":
+            # Pure black for every surface behind e-ink dark mode, page and
+            # info blocks alike. The panel has six inks and no grey, and the
+            # driver dithers whatever it cannot print, so #1a1a1f came out as a
+            # field of speckle rather than a flat dark card - and the error
+            # diffusion carried outwards from the bright values, ringing each
+            # one with a patch of the wrong tone. Black is an ink, so it prints
+            # flat. The outline follows: a near-black frame dithers the same
+            # way, and against a black page it was never visible as a frame.
+            if mode == "dark" and color_name in ("background", "info_bg", "info_outline"):
                 hex_color = "#000000"
 
             hex_color = hex_color.lstrip("#")
