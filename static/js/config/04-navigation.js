@@ -327,12 +327,13 @@ function _renderCategorySection(category, section) {
 
         section.appendChild(title);
 
-        const _previewCategories = ['price_stats', 'countdown', 'halving', 'network_stats', 'bitaxe_stats', 'wallet_monitoring', 'donation'];
+        const _previewCategories = ['price_stats', 'countdown', 'halving', 'network_stats', 'difficulty', 'bitaxe_stats', 'wallet_monitoring', 'donation'];
         const _sectionColorKeys = {
             price_stats:       ['color_btc_price_light',   'color_btc_price_dark'],
             countdown:         ['color_countdown_light',   'color_countdown_dark'],
             halving:           ['color_halving_light',     'color_halving_dark'],
             network_stats:     ['color_network_light',     'color_network_dark'],
+            difficulty:        ['color_difficulty_light',  'color_difficulty_dark'],
             bitaxe_stats:      ['color_bitaxe_stats_light','color_bitaxe_stats_dark'],
             wallet_monitoring: ['color_wallets_light',     'color_wallets_dark'],
             donation:          ['color_donation_light',    'color_donation_dark'],

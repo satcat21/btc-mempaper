@@ -70,6 +70,7 @@ function getSectionToggleKey(categoryId) {
         'countdown': 'show_countdown_block',
         'halving': 'show_halving_block',
         'network_stats': 'show_network_block',
+        'difficulty': 'show_difficulty_block',
         'bitaxe_stats': 'show_bitaxe_block',
         'wallet_monitoring': 'show_wallet_balances_block',
         'eink_display': 'e-ink-display-connected',
