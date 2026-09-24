@@ -227,6 +227,10 @@ _MA=$(awk '/^MemAvailable:/{print int($2/1024)}' /proc/meminfo 2>/dev/null)
 : "${_MT:=1}" "${_MA:=0}"
 _MU=$(( _MT - _MA ))
 _MP=$(( _MU * 100 / _MT ))
+if   [ "${_MP}" -ge 85 ]; then _MMC="${_RE}"
+elif [ "${_MP}" -ge 70 ]; then _MMC="${_Y}"
+else                           _MMC="${_G}"
+fi
 
 # Disk (root filesystem)
 _DU=$(df -h / 2>/dev/null | awk 'NR==2{print $3}')
@@ -237,35 +241,86 @@ elif [ "${_DP:-0}" -ge 70 ]; then _DC="${_Y}"
 else                              _DC="${_G}"
 fi
 
-# Load averages
-_LD=$(uptime 2>/dev/null | awk -F'load average:' '{print $2}' | xargs)
+# Load averages, each coloured by load per core: a load of 1.0 is one core
+# fully busy, so a Pi Zero is saturated at 1.0 and a Pi 4 only at 4.0. Read from
+# /proc/loadavg rather than uptime, whose decimal mark follows the locale; the
+# banner formats it the way the app's number_format setting does instead.
+_NCPU=$(nproc 2>/dev/null || echo 1)
+[ "${_NCPU:-0}" -ge 1 ] 2>/dev/null || _NCPU=1
+_LDA=($(awk -v n="${_NCPU}" '{
+    for (i = 1; i <= 3; i++) {
+        r = $i / n
+        printf "%s %s ", $i, (r > 1) ? "r" : (r >= 0.95) ? "y" : "g"
+    }
+}' /proc/loadavg 2>/dev/null))
+_LDP=""   # plain, for measuring the column
+_LDC=""   # coloured, for printing
+for _i in 0 2 4; do
+    _v="${_LDA[_i]:-}"
+    [ -n "${_v}" ] || continue
+    [ "${NUMBER_FORMAT}" = "us" ] || _v="${_v/./,}"
+    case "${_LDA[_i+1]}" in
+        r) _c="${_RE}" ;; y) _c="${_Y}" ;; *) _c="${_G}" ;;
+    esac
+    [ -n "${_LDP}" ] && { _LDP="${_LDP}, "; _LDC="${_LDC}, "; }
+    _LDP="${_LDP}${_v}"
+    _LDC="${_LDC}${_c}${_v}${_R}"
+done
+[ -n "${_LDP}" ] || { _LDP="?"; _LDC="?"; }
+_LDPAD=$(( 22 - ${#_LDP} ))
+[ "${_LDPAD}" -ge 0 ] || _LDPAD=0
 
 # Swap. Worth a row on a 512 MB device: a source build that outgrows RAM is
 # killed rather than slowed, and swap in use is the warning before that happens.
-_ST=$(awk '/^SwapTotal:/{print int($2/1024)}' /proc/meminfo 2>/dev/null)
-_SF=$(awk '/^SwapFree:/{print int($2/1024)}' /proc/meminfo 2>/dev/null)
-: "${_ST:=0}" "${_SF:=0}"
-if [ "${_ST}" -eq 0 ]; then
-    _SW="none"; _SC="${_Y}"
-else
-    _SU=$(( _ST - _SF ))
-    _SP=$(( _SU * 100 / _ST ))
-    _SW="$(_group "${_SU}")/$(_group "${_ST}") MB (${_SP}%)"
-    if   [ "${_SP}" -ge 50 ]; then _SC="${_RE}"
-    elif [ "${_SP}" -ge 20 ]; then _SC="${_Y}"
-    else                           _SC="${_G}"
-    fi
-fi
+#
+# zram and the swap file are shown apart because they mean different things.
+# zram is compressed RAM that Raspberry Pi OS sets up itself: always on, no SD
+# card writes, and some use of it is normal. The swap file is on the card and
+# mempaper-swap keeps it off except during builds and apt runs - so a single
+# total made a healthy zram device read as a swap file that failed to switch off.
+_SWAPFILE="/swapfile"
+read -r _ZT _ZU _FT _FU <<EOF
+$(awk 'NR > 1 {
+    if ($1 ~ /^\/dev\/zram/) { zt += $3; zu += $4 } else { ft += $3; fu += $4 }
+} END { printf "%d %d %d %d\n", zt / 1024, zu / 1024, ft / 1024, fu / 1024 }' /proc/swaps 2>/dev/null)
+EOF
+: "${_ZT:=0}" "${_ZU:=0}" "${_FT:=0}" "${_FU:=0}"
 
-# Print system rows (no color in value strings — printf width works correctly)
+# label used total red% yellow% -> "label used/total MB (p%)", numbers coloured
+_swap_part() {
+    local p=$(( $2 * 100 / $3 )) c="${_G}"
+    if   [ "$p" -ge "$4" ]; then c="${_RE}"
+    elif [ "$p" -ge "$5" ]; then c="${_Y}"
+    fi
+    printf '%s %s%s/%s MB (%s%%)%s' "$1" "$c" "$(_group "$2")" "$(_group "$3")" "$p" "${_R}"
+}
+
+_SW=""
+# zram filling up is the warning; up to half of it in use is routine.
+[ "${_ZT}" -gt 0 ] && _SW="$(_swap_part zram "${_ZU}" "${_ZT}" 80 50)"
+if [ "${_FT}" -gt 0 ]; then
+    _SWF="$(_swap_part file "${_FU}" "${_FT}" 50 20)"
+elif [ -e "${_SWAPFILE}" ]; then
+    _SWF="file ${_GY}off${_R}"
+else
+    _SWF=""
+fi
+[ -n "${_SWF}" ] && _SW="${_SW:+${_SW}  }${_SWF}"
+[ -n "${_SW}" ] || _SW="${_Y}none${_R}"
+unset -f _swap_part
+
+# Print system rows. The left value column is padded by printf, so colour goes
+# around the padded field rather than inside it; the right column is last on the
+# line and needs no padding, so its value carries its own colour codes (%b).
 # Left value column is 23 display chars; temp uses 24 to compensate for the
 # 2-byte UTF-8 degree sign (° = 0xC2 0xB0) which printf counts as 2 chars.
 printf "  %-9s ${_TC}%-23s${_R} %-13s %s\n" \
     "temp"   "${_T}°C"                         "uptime"  "${_UP}"
-printf "  %-9s ${_DC}%-22s${_R} %-13s %s\n" \
-    "disk"   "${_DU:-?}/${_DT:-?} (${_DP:-?}%)" "memory"  "$(_group "${_MU}")/$(_group "${_MT}") MB (${_MP}%)"
-printf "  %-9s %-22s ${_SC}%-13s${_R} %s\n" \
-    "load"   "${_LD}"                       "swap"  "${_SW}"
+printf "  %-9s ${_DC}%-22s${_R} %-13s %b\n" \
+    "disk"   "${_DU:-?}/${_DT:-?} (${_DP:-?}%)" "memory"  "${_MMC}$(_group "${_MU}")/$(_group "${_MT}") MB (${_MP}%)${_R}"
+# load holds three colours in one field, so it is padded by hand.
+printf "  %-9s %b%*s %-13s %b\n" \
+    "load"   "${_LDC}" "${_LDPAD}" ""         "swap"  "${_SW}"
 
 printf ' %b\n' "${_B}${_SEP}${_R}"
 
