@@ -21,6 +21,41 @@ PROJECT_DIR="/home/mempaper/btc-mempaper"
 CONFIG_FILE="${PROJECT_DIR}/config/config.json"
 MEMES_DIR="${PROJECT_DIR}/static/memes"
 
+# ── Latest release, fetched in the background ────────────────────────────────
+# The two network requests - this one and the block-height probe below - were
+# most of the time the login sat waiting, and they ran one after the other.
+# Each now starts as early as its inputs allow and is read only where it is
+# printed, so the banner takes as long as the slower of them rather than their
+# sum plus everything else. Process substitution rather than '&': this file is
+# sourced into an interactive shell, where a background job prints '[1] 1234'.
+#
+# Ask this checkout's own origin for the latest release, not a hardcoded
+# upstream repo — a fork or a self-hosted GitLab mirror was otherwise told
+# about upstream's releases and prompted to "update" to a tag it does not have.
+# Mirrors the host-based GitHub/GitLab split used by the in-app update check.
+_REMOTE=$(git -C "${PROJECT_DIR}" -c safe.directory="${PROJECT_DIR}" remote get-url origin 2>/dev/null || echo "")
+_REMOTE="${_REMOTE%.git}"
+_REMOTE="${_REMOTE%/}"
+# host and owner/repo, handling https://host/path and git@host:path alike
+_RHOST=$(printf '%s' "${_REMOTE}" | sed -E 's#^(https?|ssh|git)://##; s#^[^@/]+@##; s#[:/].*$##' | tr 'A-Z' 'a-z')
+_RPATH=$(printf '%s' "${_REMOTE}" | sed -E 's#^(https?|ssh|git)://##; s#^[^@/]+@##; s#^[^:/]+[:/]##')
+
+_fetch_latest() {
+    [ -n "${_RHOST}" ] && [ -n "${_RPATH}" ] || return 0
+    if [ "${_RHOST}" = "github.com" ] || [ "${_RHOST}" = "www.github.com" ]; then
+        curl -sf --max-time 2 \
+            "https://api.github.com/repos/${_RPATH}/releases/latest" 2>/dev/null \
+            | python3 -c "import json,sys; print(json.load(sys.stdin)['tag_name'])" 2>/dev/null
+    else
+        # GitLab returns a list, newest first; %2F-encode the project path
+        curl -sf --max-time 2 \
+            "https://${_RHOST}/api/v4/projects/$(printf '%s' "${_RPATH}" | sed 's#/#%2F#g')/releases" 2>/dev/null \
+            | python3 -c "import json,sys; d=json.load(sys.stdin); print(d[0]['tag_name'] if d else '')" 2>/dev/null
+    fi
+}
+exec {_FD_LATEST}< <(_fetch_latest)
+unset -f _fetch_latest
+
 # Group a whole number the way the app's number_format setting groups it, so the
 # banner and the display do not punctuate the same block height differently.
 # Falls back to the raw digits if anything about the input is not a number.
@@ -88,6 +123,55 @@ PYEOF
     : "${TOR_SOCKS_HOST:=127.0.0.1}" "${TOR_SOCKS_PORT:=9050}"
 fi
 
+# ── Block height, fetched in the background ───────────────────────────────────
+# Needs the mempool host from the config, so it starts here rather than at the
+# top; read back just before the mempaper rows are printed.
+
+# Mempool URL
+if [ "$MEMPOOL_HTTPS" = "true" ]; then
+    [ "$MEMPOOL_PORT" = "443" ] \
+        && _MURL="https://${MEMPOOL_HOST}" \
+        || _MURL="https://${MEMPOOL_HOST}:${MEMPOOL_PORT}"
+else
+    [ "$MEMPOOL_PORT" = "80" ] \
+        && _MURL="http://${MEMPOOL_HOST}" \
+        || _MURL="http://${MEMPOOL_HOST}:${MEMPOOL_PORT}"
+fi
+
+# An .onion host resolves only through the SOCKS proxy, so without this the
+# banner reports a perfectly healthy instance as offline. --socks5-hostname
+# (not --socks5) leaves resolution to Tor. The longer budget covers circuit
+# setup and the hidden-service descriptor lookup, which routinely exceed the
+# clearnet timeout — kept modest because the login still waits for the answer.
+_CURL_PROXY=()
+_CURL_TIME=4
+if [ "$MEMPOOL_TOR" = "true" ]; then
+    _CURL_PROXY=(--socks5-hostname "${TOR_SOCKS_HOST}:${TOR_SOCKS_PORT}")
+    _CURL_TIME=10
+fi
+
+_probe_tip() {
+    curl -sf "${_CURL_PROXY[@]}" --max-time "$1" \
+        "${_MURL}/api/blocks/tip/height" 2>/dev/null || true
+}
+
+# One failed request is not evidence of an offline host. A Tor circuit
+# routinely fails to build on the first attempt and succeeds a moment later, so
+# a single probe reported healthy onion instances as down. Two attempts, the
+# second on a smaller budget: a host that really is unreachable should not hold
+# the login open for twice as long as one that is merely slow.
+_fetch_tip() {
+    local tip
+    tip=$(_probe_tip "${_CURL_TIME}")
+    if ! printf '%s' "${tip}" | grep -qE '^[0-9]+$' 2>/dev/null; then
+        tip=$(_probe_tip "$(( _CURL_TIME / 2 + 1 ))")
+    fi
+    printf '%s' "${tip}"
+}
+exec {_FD_TIP}< <(_fetch_tip)
+# Sourced from profile.d, so anything defined here stays in the user's shell.
+unset -f _probe_tip _fetch_tip
+
 # ── Banner ────────────────────────────────────────────────────────────────────
 _sp=26
 _bl=(
@@ -102,9 +186,7 @@ for _l in "${_bl[@]}"; do
     printf '%b%s%b%s%b\n' "${_W}" "${_l:0:$_sp}" "${_O}" "${_l:$_sp}" "${_R}"
 done
 printf '\n'
-_ORIGIN=$(git -C "${PROJECT_DIR}" -c safe.directory="${PROJECT_DIR}" remote get-url origin 2>/dev/null || echo "")
-_ORIGIN="${_ORIGIN%.git}"
-_ORIGIN=$(printf '%s' "${_ORIGIN%/}" | sed -E 's#^(https?|ssh|git)://##; s#^[^@/]+@##; s#:#/#')
+_ORIGIN=$(printf '%s' "${_REMOTE}" | sed -E 's#^(https?|ssh|git)://##; s#^[^@/]+@##; s#:#/#')
 [ -n "${_ORIGIN}" ] || _ORIGIN="github.com/satcat21/btc-mempaper"
 printf '%b\n' "  ${_B}${_Y}Bitcoin Meme Block Clock  ·  ${_ORIGIN}${_R}"
 
@@ -113,33 +195,9 @@ _OS_PRETTY=$(. /etc/os-release 2>/dev/null && echo "${PRETTY_NAME:-}")
 _PY_VER=$(python3 --version 2>/dev/null | awk '{print $2}')
 _MVER=$(git -C "${PROJECT_DIR}" -c safe.directory="${PROJECT_DIR}" describe --tags --abbrev=0 2>/dev/null || echo "unknown")
 
-# Ask this checkout's own origin for the latest release, not a hardcoded
-# upstream repo — a fork or a self-hosted GitLab mirror was otherwise told
-# about upstream's releases and prompted to "update" to a tag it does not have.
-# Mirrors the host-based GitHub/GitLab split used by the in-app update check.
-_REMOTE=$(git -C "${PROJECT_DIR}" -c safe.directory="${PROJECT_DIR}" remote get-url origin 2>/dev/null || echo "")
-_REMOTE="${_REMOTE%.git}"
-_REMOTE="${_REMOTE%/}"
-# host and owner/repo, handling https://host/path and git@host:path alike
-_RHOST=$(printf '%s' "${_REMOTE}" | sed -E 's#^(https?|ssh|git)://##; s#^[^@/]+@##; s#[:/].*$##' | tr 'A-Z' 'a-z')
-_RPATH=$(printf '%s' "${_REMOTE}" | sed -E 's#^(https?|ssh|git)://##; s#^[^@/]+@##; s#^[^:/]+[:/]##')
-
-_LATEST=""
-if [ -n "${_RHOST}" ] && [ -n "${_RPATH}" ]; then
-    if [ "${_RHOST}" = "github.com" ] || [ "${_RHOST}" = "www.github.com" ]; then
-        _LATEST=$(curl -sf --max-time 2 \
-            "https://api.github.com/repos/${_RPATH}/releases/latest" 2>/dev/null \
-            | python3 -c "import json,sys; print(json.load(sys.stdin)['tag_name'])" 2>/dev/null \
-            || echo "")
-    else
-        # GitLab returns a list, newest first; %2F-encode the project path
-        _RPATH_ENC=$(printf '%s' "${_RPATH}" | sed 's#/#%2F#g')
-        _LATEST=$(curl -sf --max-time 2 \
-            "https://${_RHOST}/api/v4/projects/${_RPATH_ENC}/releases" 2>/dev/null \
-            | python3 -c "import json,sys; d=json.load(sys.stdin); print(d[0]['tag_name'] if d else '')" 2>/dev/null \
-            || echo "")
-    fi
-fi
+# Started at the top; this waits only for whatever of it is still running.
+_LATEST=$(cat <&"${_FD_LATEST}" 2>/dev/null)
+exec {_FD_LATEST}<&-
 
 printf '\n'
 printf "  %b%s%b\n" "${_D}" "${_OS_PRETTY}" "${_R}"
@@ -334,17 +392,6 @@ if [ -d "$MEMES_DIR" ]; then
     _MC=$(_group "${_MC}")
 fi
 
-# Mempool URL
-if [ "$MEMPOOL_HTTPS" = "true" ]; then
-    [ "$MEMPOOL_PORT" = "443" ] \
-        && _MURL="https://${MEMPOOL_HOST}" \
-        || _MURL="https://${MEMPOOL_HOST}:${MEMPOOL_PORT}"
-else
-    [ "$MEMPOOL_PORT" = "80" ] \
-        && _MURL="http://${MEMPOOL_HOST}" \
-        || _MURL="http://${MEMPOOL_HOST}:${MEMPOOL_PORT}"
-fi
-
 # The mempool host shares its row with the memes count, so it has the same
 # 20-character column as the service and display values. A host that fits is
 # shown whole; a longer one - a v3 onion is 62 - keeps its head and its tail.
@@ -356,35 +403,12 @@ _shorten_host() {
     printf '%s...%s' "${h:0:8}" "${h: -9}"
 }
 
-# Block height — query mempool. An .onion host resolves only through the SOCKS
-# proxy, so without this the banner reports a perfectly healthy instance as
-# offline. --socks5-hostname (not --socks5) leaves resolution to Tor.
-# The longer budget covers circuit setup and the hidden-service descriptor
-# lookup, which routinely exceed the clearnet timeout — kept modest because
-# every second here is a second the SSH login sits there waiting.
-_CURL_PROXY=()
-_CURL_TIME=4
-if [ "$MEMPOOL_TOR" = "true" ]; then
-    _CURL_PROXY=(--socks5-hostname "${TOR_SOCKS_HOST}:${TOR_SOCKS_PORT}")
-    _CURL_TIME=10
-fi
-
-_probe_tip() {
-    curl -sf "${_CURL_PROXY[@]}" --max-time "$1" \
-        "${_MURL}/api/blocks/tip/height" 2>/dev/null || true
-}
-
-# One failed request is not evidence of an offline host. A Tor circuit
-# routinely fails to build on the first attempt and succeeds a moment later, so
-# a single probe reported healthy onion instances as down. Two attempts, the
-# second on a smaller budget: a host that really is unreachable should not hold
-# the login open for twice as long as one that is merely slow.
+# Block height — started in the background after the config was read; this
+# waits only for whatever of it is still running.
 _BH="—"
 _MD="${_RE}"
-_TIP=$(_probe_tip "${_CURL_TIME}")
-if ! printf '%s' "${_TIP}" | grep -qE '^[0-9]+$' 2>/dev/null; then
-    _TIP=$(_probe_tip "$(( _CURL_TIME / 2 + 1 ))")
-fi
+_TIP=$(cat <&"${_FD_TIP}" 2>/dev/null)
+exec {_FD_TIP}<&-
 
 # The dot already says whether it answered - red for no, green for yes - so the
 # label is the host and nothing else. "(offline)" beside a red dot said the same
@@ -395,8 +419,7 @@ if printf '%s' "${_TIP}" | grep -qE '^[0-9]+$' 2>/dev/null; then
 fi
 _ML="$(_shorten_host "${MEMPOOL_HOST}")"
 
-# Sourced from profile.d, so anything defined here stays in the user's shell.
-unset -f _shorten_host _probe_tip
+unset -f _shorten_host
 
 # Display state, as a dot rather than a word in brackets: the two rows above
 # already carry their state that way, and "(enabled)" beside a device name says
@@ -471,3 +494,6 @@ printf "  %-9s %b● %b%-${_COL}s %b%-13s %s files\n" \
     "mempool"  "${_MD}" "${_R}" "${_ML}"  "${_R}" "memes count"   "${_MC}"
 
 printf ' %b\n\n' "${_B}${_SEP}${_R}"
+
+# Sourced from profile.d: leave no helper behind in the user's shell.
+unset -f _group
