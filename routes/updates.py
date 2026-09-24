@@ -566,7 +566,10 @@ def register(self):
 
             remote_host, remote_path = _parse_git_remote(remote_url)
             is_gitlab = remote_host not in ('github.com', 'www.github.com')
-            repo_url = remote_url
+            # The page links to this. A private mirror is fetched through a
+            # URL carrying a read-only token (https://user:token@host/...),
+            # which must not end up in an href on the settings page.
+            repo_url = re.sub(r'^(https?://)[^@/]+@', r'\1', remote_url)
             platform = 'GitLab' if is_gitlab else 'GitHub'
 
             # Try fetching releases from the hosting API first
@@ -603,57 +606,80 @@ def register(self):
             except requests.RequestException:
                 pass  # Fall back to local git tags
 
-            if api_releases is not None:
-                # Build result from API response (has release notes, dates, etc.)
-                result = []
-                for rel in api_releases:
-                    tag_name = rel.get('tag_name', '')
-                    ver = _parse_version(tag_name)
-                    if ver is not None and ver < min_version:
-                        continue
-                    result.append({
-                        'tag': tag_name,
-                        'name': rel.get('name', '') or tag_name,
-                        'published_at': rel.get('released_at', '') if is_gitlab else rel.get('published_at', ''),
-                        'body': rel.get('description', '') if is_gitlab else rel.get('body', ''),
-                        'prerelease': rel.get('upcoming_release', False) if is_gitlab else rel.get('prerelease', False),
-                        'draft': False if is_gitlab else rel.get('draft', False)
-                    })
-            else:
-                # Fallback: use local git tags (works for private repos)
-                subprocess.run(
-                    ['git', 'fetch', '--tags', '--force'],
-                    cwd=project_dir, capture_output=True, timeout=30
-                )
-                tag_output = subprocess.check_output(
-                    ['git', 'tag', '-l', '--sort=-version:refname'],
-                    cwd=project_dir, text=True
-                ).strip()
+            # Release entries from the API, where there are any: they carry the
+            # title, date and notes.
+            result = []
+            for rel in api_releases or []:
+                tag_name = rel.get('tag_name', '')
+                ver = _parse_version(tag_name)
+                if not tag_name or (ver is not None and ver < min_version):
+                    continue
+                result.append({
+                    'tag': tag_name,
+                    'name': rel.get('name', '') or tag_name,
+                    'published_at': rel.get('released_at', '') if is_gitlab else rel.get('published_at', ''),
+                    'body': rel.get('description', '') if is_gitlab else rel.get('body', ''),
+                    'prerelease': rel.get('upcoming_release', False) if is_gitlab else rel.get('prerelease', False),
+                    'draft': False if is_gitlab else rel.get('draft', False)
+                })
 
-                result = []
-                for tag_name in tag_output.splitlines():
-                    tag_name = tag_name.strip()
-                    if not tag_name:
-                        continue
-                    ver = _parse_version(tag_name)
-                    if ver is not None and ver < min_version:
-                        continue
-                    # Get tag date
-                    try:
-                        date_str = subprocess.check_output(
-                            ['git', 'log', '-1', '--format=%aI', tag_name],
-                            cwd=project_dir, text=True
-                        ).strip()
-                    except subprocess.SubprocessError:
-                        date_str = ''
-                    result.append({
-                        'tag': tag_name,
-                        'name': tag_name,
-                        'published_at': date_str,
-                        'body': '',
-                        'prerelease': False,
-                        'draft': False
-                    })
+            # Every tag the remote has, whether or not a release entry exists
+            # for it. A release is an object on the hosting platform, separate
+            # from the tag, and a self-hosted mirror copies tags but not those
+            # objects: GitLab then answers with an empty list rather than an
+            # error, and the settings page offered nothing to install while the
+            # auto-updater - which reads tags - happily moved to the new one.
+            # Releases created for older tags only did not help either: the
+            # newest tag was still missing. So tags fill in whatever the API
+            # left out, and a tag is always installable here once it exists.
+            #
+            # ls-remote rather than fetch: it asks the remote without writing
+            # to .git, which also works while / is mounted read-only between
+            # updates. The local tags cover a remote that cannot be reached.
+            remote_tags = []
+            try:
+                out = subprocess.run(
+                    ['git', 'ls-remote', '--tags', '--refs', 'origin'],
+                    cwd=project_dir, capture_output=True, text=True, timeout=30
+                )
+                if out.returncode == 0:
+                    remote_tags = [line.split('refs/tags/', 1)[1].strip()
+                                   for line in out.stdout.splitlines()
+                                   if 'refs/tags/' in line]
+            except (subprocess.SubprocessError, OSError):
+                pass
+            if not remote_tags:
+                remote_tags = subprocess.run(
+                    ['git', 'tag', '-l'],
+                    cwd=project_dir, capture_output=True, text=True
+                ).stdout.split()
+
+            listed = {r['tag'] for r in result}
+            for tag_name in remote_tags:
+                ver = _parse_version(tag_name)
+                if tag_name in listed or (ver is not None and ver < min_version):
+                    continue
+                listed.add(tag_name)
+                # The date of the tagged commit, when the tag is already here.
+                # A tag only the remote has yet shows without one.
+                date_str = subprocess.run(
+                    ['git', 'log', '-1', '--format=%aI', f'refs/tags/{tag_name}', '--'],
+                    cwd=project_dir, capture_output=True, text=True
+                ).stdout.strip()
+                result.append({
+                    'tag': tag_name,
+                    'name': tag_name,
+                    'published_at': date_str,
+                    'body': '',
+                    'prerelease': False,
+                    'draft': False
+                })
+
+            # Newest first: the page marks the first entry as the latest
+            # release. Tags that are not a version sort after those that are.
+            result.sort(key=lambda r: (_parse_version(r['tag']) is not None,
+                                       _parse_version(r['tag']) or ()),
+                        reverse=True)
 
             return jsonify({'success': True, 'releases': result, 'repo_url': repo_url, 'platform': platform})
         except Exception as e:

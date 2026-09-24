@@ -865,7 +865,7 @@ sudo chmod 0440 /etc/sudoers.d/mempaper-update
 - [Architecture](docs/ARCHITECTURE.md) -- Diagrams: deployment topologies, what data leaves the device, codebase map, block-to-image data flow
 - [Configuration Reference](docs/CONFIG_REFERENCE.md) -- Complete guide to all settings
 - [Manual Installation](docs/MANUAL_INSTALL.md) -- Every command `install.sh` runs, step by step
-- [Security Guide](docs/SECURITY_GUIDE.md) -- Hardening guide: installation, SSH, firewalls, threat model, audit checklist
+- [Security Guide](docs/SECURITY_GUIDE.md) -- Hardening guide: installation, SSH, firewalls, updating from your own git mirror, threat model, audit checklist
 - [Maintenance Guide](docs/MAINTENANCE_GUIDE.md) -- Safe apt upgrades, Python version management
 - [Self-Hosting Guide](docs/SELF_HOSTING_GUIDE.md) -- Expose mempaper to the internet via Traefik, OIDC login, and TLS; run a Tang server so wallet data cannot be decrypted off your network
 - [Cache System Documentation](docs/UNIFIED_CACHE_DOCUMENTATION.md) -- Technical cache implementation details

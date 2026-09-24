@@ -358,6 +358,190 @@ patches within the held minor still install. See the
 
 ---
 
+## Updating from your own git server
+
+Every update check goes to the git host the device was cloned from, which is
+github.com unless you chose otherwise. The release list in **Settings → Updates**,
+installing a release, the nightly auto-update and the SSH login banner all
+contact it directly. GitHub therefore sees your home IP on every check, and an
+address that regularly fetches this repository is recognisably a mempaper
+device.
+
+Routing those requests through Tor from the device costs more than it gains:
+GitHub's API rate-limits Tor exits (60 unauthenticated requests per hour, shared
+by everyone on the same exit), and every timeout on the Pi would have to grow.
+A mirror on a git server you run (GitLab, Gitea or Forgejo) solves it instead.
+Devices fetch from your LAN, and only the server talks to GitHub, on a schedule
+you set and through Tor if you like.
+
+```
+github.com ──(scheduled sync, optionally via Tor)──▶ your git server ──(LAN)──▶ mempaper devices
+```
+
+### 1. Create the mirror
+
+**Gitea / Forgejo** can mirror a repository by themselves:
+
+1. **+ → New Migration → GitHub** (or **Git**).
+2. Clone URL: `https://github.com/satcat21/btc-mempaper.git`
+3. Tick **This repository will be a mirror** and set the sync interval, for
+   example `24h`.
+
+Branches and tags then sync on their own, and the copy is read-only on your side.
+
+**GitLab** can pull a mirror under **Settings → Repository → Mirroring
+repositories** (direction *Pull*), but only on Premium and Ultimate. On the
+Free tier, create an empty project and keep it in sync with the script in
+[step 3](#3-keep-the-mirror-current).
+
+Set the repository's visibility to **Internal** or **Public** if your git server
+is only reachable on your LAN, so devices can fetch without credentials. For a
+private repository, see [Private mirrors](#private-mirrors).
+
+### 2. Point devices at the mirror
+
+**No file in the repository needs to change.** The updater, the auto-update and
+the login banner all read the checkout's `origin` remote, so switching a device
+takes one command. Run it as `mempaper`, the user that owns the checkout:
+
+```bash
+sudo -u mempaper git -C /home/mempaper/btc-mempaper remote set-url origin \
+    https://git.example.lan/you/btc-mempaper.git
+
+# Must list the tags without asking for a password:
+sudo -u mempaper git -C /home/mempaper/btc-mempaper fetch --tags
+```
+
+A mirror has the same commit and tag hashes as GitHub, so the device stays on
+the release it runs, and the next update continues from the mirror.
+
+For a **new device**, clone from the mirror instead of GitHub in
+[step 1 of the installation](#1-run-the-installer). The installer keeps the
+clone's `origin` as it is.
+
+### 3. Keep the mirror current
+
+A Gitea or Forgejo pull mirror does this by itself. Everywhere else, keep a
+mirror clone on the server, or on any machine that is always on, and push it
+on a timer:
+
+```bash
+# Once
+git clone --mirror https://github.com/satcat21/btc-mempaper.git ~/btc-mempaper.git
+git -C ~/btc-mempaper.git remote add selfhosted https://git.example.lan/you/btc-mempaper.git
+
+# Each sync, from cron or a systemd timer
+git -C ~/btc-mempaper.git fetch --prune origin
+git -C ~/btc-mempaper.git push --mirror selfhosted
+```
+
+`push --mirror` makes your repository an exact copy. It pushes every branch and
+tag and deletes those removed upstream, so **never commit to the mirror
+directly**; the next sync would discard the commit. GitLab protects `main` by
+default, so the pushing account needs permission to push to it (Maintainer).
+
+That machine is now the only one that contacts GitHub. To hide its address too,
+fetch through Tor there. A plain `git fetch` is not rate-limited the way the
+API is, and a sync that takes a minute longer on a server costs nothing:
+
+```bash
+git -C ~/btc-mempaper.git -c http.proxy=socks5h://127.0.0.1:9050 fetch --prune origin
+```
+
+### 4. Releases and release notes
+
+A mirror copies **tags**, not GitHub's release entries with their titles and
+notes. **Updating does not depend on them.** mempaper installs from tags, and
+the Settings page lists every tag on the remote, whether or not a release entry
+exists for it. The release entries only add a title, a date and the notes:
+
+| | Reads | With a tags-only mirror |
+|---|---|---|
+| Auto-update | git tags | Works |
+| **Settings → Updates** list | every tag on the remote; title and notes from the host's releases API where a release exists | Lists every tag and installs it; no title or notes |
+| "→ vX available" in the SSH banner | the host's releases API | **GitLab:** shown once a release exists for the newest tag. **Gitea / Forgejo:** not shown |
+
+To see the notes in Settings and get the banner notice, create the releases
+yourself, as described below. This works the same with or without
+`GIT_API_TOKEN`: the token only lets mempaper read the releases of a *private*
+project.
+
+#### Creating a release on GitLab
+
+Do this once for each new upstream tag, after the mirror has synced it. The
+notes are on the upstream release page,
+`https://github.com/satcat21/btc-mempaper/releases/tag/<tag>`.
+
+**In the web interface:**
+
+1. Open the project, then **Deploy → Releases → New release**.
+2. **Tag name:** pick the existing tag, for example `v2.14.1`. Do not create a
+   new tag here: a tag you create yourself is not the upstream one, and the next
+   mirror sync may remove it again.
+3. **Release title:** the upstream title, for example
+   `v2.14.1 - Tor security update, hostapd sync and a faster, clearer login banner`.
+4. **Release notes:** paste the upstream notes. They are Markdown, and the
+   Settings page shows them as they are.
+5. **Create release.**
+
+The release appears in **Settings → Updates** the next time the page loads,
+with its title, date and notes, and the SSH banner shows
+`→ v2.14.1 available` on devices that run an older version.
+
+**From the command line** (with a personal access token that has the `api`
+scope, and the notes saved to `notes.md`):
+
+```bash
+curl --header "PRIVATE-TOKEN: <token>" \
+     --data tag_name=v2.14.1 \
+     --data-urlencode "name=v2.14.1 - Tor security update, hostapd sync and a faster, clearer login banner" \
+     --data-urlencode "description@notes.md" \
+     "https://git.example.lan/api/v4/projects/you%2Fbtc-mempaper/releases"
+```
+
+or with GitLab's CLI, `glab`:
+
+```bash
+glab release create v2.14.1 --name "v2.14.1 - …" --notes-file notes.md \
+     --repo git.example.lan/you/btc-mempaper
+```
+
+Mirroring does not change tag contents, so a signed upstream tag stays signed.
+Once you have imported the maintainer's public key, `git tag -v <tag>` on a
+device verifies that the release it installs is exactly the one published
+upstream.
+
+### Private mirrors
+
+If devices must authenticate to fetch:
+
+- **Git access:** put a read-only token in the remote URL. On GitLab that is a
+  deploy token with `read_repository`
+  (`https://<deploy-token-user>:<token>@git.example.lan/you/btc-mempaper.git`);
+  on Gitea or Forgejo, an access token with read access to repositories
+  (`https://<user>:<token>@…`). The URL is stored in plain text in
+  `.git/config`, where the `mempaper` group can read it, so scope the token to
+  this one repository and to read access.
+- **Release notes in Settings (GitLab):** add `GIT_API_TOKEN` with the
+  `read_api` scope to `.env`; see `.env.example`.
+- **SSH banner:** it queries the API without a token, so on a private GitLab
+  project it shows no update notice. Updates themselves are unaffected.
+
+### What still contacts the internet
+
+A mirror covers mempaper's own code. Other outbound requests are unaffected:
+
+- **System and dependency updates** download from the Debian and Raspberry Pi
+  package mirrors (`apt`) and from PyPI (`pip`). A local caching proxy such as
+  `apt-cacher-ng` narrows this to one machine as well.
+- **The installer** checks connectivity against `https://github.com` and
+  downloads display drivers from `raw.githubusercontent.com` (Waveshare), as
+  does choosing a display later in Settings.
+- **Mempool, price and other dashboard data** follow their own settings. For
+  mempool, see the Tor toggle under [Initial secure installation](#1-run-the-installer).
+
+---
+
 ## Sudo rules — what mempaper can do as root
 
 The scoped sudoers file (`/etc/sudoers.d/mempaper`) grants exactly:
@@ -476,6 +660,7 @@ checked with one command.
 - [ ] Donation webhook URL updated in LNbits to include the security token
 - [ ] Unattended upgrades running — `systemctl is-enabled unattended-upgrades`
 - [ ] Mempool queries not leaking your IP — `mempool_host` is a `.onion`, or your own node
+- [ ] Optional: update checks not leaking your IP — `git -C /home/mempaper/btc-mempaper remote get-url origin` is your own git server (see [Updating from your own git server](#updating-from-your-own-git-server))
 
 ---
 
