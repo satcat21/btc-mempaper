@@ -204,9 +204,6 @@ if [ "$_MINIFY_STALE" = "true" ] || \
     printf '\n'
 fi
 
-_SEP="────────────────────────────────────────────────────────────────"
-printf ' %b\n' "${_B}${_SEP}${_R}"
-
 # ── System stats ──────────────────────────────────────────────────────────────
 
 # Temperature
@@ -317,24 +314,7 @@ else
     _SW1="${_Y}none${_R}"; _SW2=""
 fi
 
-# Print system rows. The left value column is padded by printf, so colour goes
-# around the padded field rather than inside it; the right column is last on the
-# line and needs no padding, so its value carries its own colour codes (%b).
-# Left value column is 23 display chars; temp uses 24 to compensate for the
-# 2-byte UTF-8 degree sign (° = 0xC2 0xB0) which printf counts as 2 chars.
-printf "  %-9s ${_TC}%-23s${_R} %-13s %b\n" \
-    "temp"   "${_T}°C"                         "memory"  "${_MMC}$(_group "${_MU}")/$(_group "${_MT}") MB (${_MP}%)${_R}"
-printf "  %-9s ${_DC}%-22s${_R} %-13s %b\n" \
-    "disk"   "${_DU:-?}/${_DT:-?} (${_DP:-?}%)" "swap"    "${_SW1}"
-# load holds three colours in one field, so it is padded by hand.
-if [ -n "${_SW2}" ]; then
-    printf "  %-9s %b%*s %-13s %b\n" \
-        "load"   "${_LDC}" "${_LDPAD}" ""     ""        "${_SW2}"
-else
-    printf "  %-9s %b\n" "load" "${_LDC}"
-fi
-
-printf ' %b\n' "${_B}${_SEP}${_R}"
+_MEMV="${_MMC}$(_group "${_MU}")/$(_group "${_MT}") MB (${_MP}%)${_R}"
 
 # ── mempaper stats ────────────────────────────────────────────────────────────
 
@@ -433,8 +413,50 @@ else
     [ "${DEVICE_NAME}" = "none" ] && _DL="not configured"
 fi
 
-# ── Print mempaper rows ───────────────────────────────────────────────────────
-# colored-dot rows: label(9) + " ● "(3 vis.) + value(20) + label(13) + value
+# ── Separator ─────────────────────────────────────────────────────────────────
+# As long as the widest row, so the lines frame the text rather than stopping
+# short of it. Right-hand values start at column 49 and the separator at column
+# 1, so it needs 48 characters plus the longest of them. Never shorter than the
+# 64 it always was, never wider than the terminal.
+_vlen() {
+    local s
+    s=$(printf '%b' "$1" | sed 's/\x1b\[[0-9;]*m//g')
+    printf '%s' "${#s}"
+}
+_SEPN=64
+for _v in "${_MEMV}" "${_SW1}" "${_SW2}" "${_UP}" "${_BH}" "${_MC} files"; do
+    _n=$(( 48 + $(_vlen "${_v}") ))
+    [ "${_n}" -gt "${_SEPN}" ] && _SEPN="${_n}"
+done
+_TCOLS=$(tput cols 2>/dev/null || echo 80)
+[ "${_TCOLS:-0}" -gt 1 ] 2>/dev/null || _TCOLS=80
+[ "${_SEPN}" -lt "${_TCOLS}" ] || _SEPN=$(( _TCOLS - 1 ))
+_SEP=$(printf '%*s' "${_SEPN}" '' | sed 's/ /─/g')
+unset -f _vlen
+
+# ── Print ─────────────────────────────────────────────────────────────────────
+printf ' %b\n' "${_B}${_SEP}${_R}"
+
+# System rows. The left value column is padded by printf, so colour goes
+# around the padded field rather than inside it; the right column is last on the
+# line and needs no padding, so its value carries its own colour codes (%b).
+# Left value column is 23 display chars; temp uses 24 to compensate for the
+# 2-byte UTF-8 degree sign (° = 0xC2 0xB0) which printf counts as 2 chars.
+printf "  %-9s ${_TC}%-23s${_R} %-13s %b\n" \
+    "temp"   "${_T}°C"                         "memory"  "${_MEMV}"
+printf "  %-9s ${_DC}%-22s${_R} %-13s %b\n" \
+    "disk"   "${_DU:-?}/${_DT:-?} (${_DP:-?}%)" "swap"    "${_SW1}"
+# load holds three colours in one field, so it is padded by hand.
+if [ -n "${_SW2}" ]; then
+    printf "  %-9s %b%*s %-13s %b\n" \
+        "load"   "${_LDC}" "${_LDPAD}" ""     ""        "${_SW2}"
+else
+    printf "  %-9s %b\n" "load" "${_LDC}"
+fi
+
+printf ' %b\n' "${_B}${_SEP}${_R}"
+
+# mempaper rows: label(9) + " ● "(3 vis.) + value(20) + label(13) + value
 # _COL=20 empirically aligns with system rows — ● is ambiguous-width in some
 # terminals, causing a 1-column offset vs. the byte-count calculation.
 _COL=20
