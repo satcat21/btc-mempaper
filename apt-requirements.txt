@@ -1,7 +1,7 @@
 # System packages the installer and web updater keep installed.
 #
 #   imagemagick           floats with the archive
-#   tor=0.4.9.11-0+deb13u1  pinned and held (apt-mark hold)
+#   tor=0.4.9.12-0+deb13u2  pinned and held (apt-mark hold)
 #
 # A pinned package stops receiving Debian security updates: pin only what
 # breaks when it moves. Pins apply only on the suite below; on any other they
@@ -36,7 +36,7 @@ libwebp-dev=1.5.0-0.1
 imagemagick=8:7.1.1.43+dfsg1-1+deb13u12
 
 # Setup hotspot: access point, captive-portal DNS and redirects
-hostapd=2:2.10-24
+hostapd=2:2.10-24+rpt2
 dnsmasq=2.91-1+deb13u2
 iptables=1.8.11-2
 nftables=1.1.3-1  # NetworkManager on trixie calls nft directly
@@ -45,7 +45,7 @@ nftables=1.1.3-1  # NetworkManager on trixie calls nft directly
 python3-gpiozero=2.0.1-0+rpt1+trixie
 
 # Tor: .onion mempool instances and the optional meme sync over Tor
-tor=0.4.9.11-0+deb13u1
+tor=0.4.9.12-0+deb13u2
 
 # Tang network-bound encryption client; inert unless enabled in settings
 clevis=20-1+b2
