@@ -295,9 +295,9 @@ _swap_part() {
     printf '%s %s%s/%s MB (%s%%)%s' "$1" "$c" "$(_group "$2")" "$(_group "$3")" "$p" "${_R}"
 }
 
-_SW=""
 # zram filling up is the warning; up to half of it in use is routine.
-[ "${_ZT}" -gt 0 ] && _SW="$(_swap_part zram "${_ZU}" "${_ZT}" 80 50)"
+_SWZ=""
+[ "${_ZT}" -gt 0 ] && _SWZ="$(_swap_part zram "${_ZU}" "${_ZT}" 80 50)"
 if [ "${_FT}" -gt 0 ]; then
     _SWF="$(_swap_part file "${_FU}" "${_FT}" 50 20)"
 elif [ -e "${_SWAPFILE}" ]; then
@@ -305,22 +305,34 @@ elif [ -e "${_SWAPFILE}" ]; then
 else
     _SWF=""
 fi
-[ -n "${_SWF}" ] && _SW="${_SW:+${_SW}  }${_SWF}"
-[ -n "${_SW}" ] || _SW="${_Y}none${_R}"
 unset -f _swap_part
+
+# One swap kind per line: the first sits beside the swap label, a second goes on
+# the row below under an empty label, so neither line runs past the terminal.
+if [ -n "${_SWZ}" ]; then
+    _SW1="${_SWZ}"; _SW2="${_SWF}"
+elif [ -n "${_SWF}" ]; then
+    _SW1="${_SWF}"; _SW2=""
+else
+    _SW1="${_Y}none${_R}"; _SW2=""
+fi
 
 # Print system rows. The left value column is padded by printf, so colour goes
 # around the padded field rather than inside it; the right column is last on the
 # line and needs no padding, so its value carries its own colour codes (%b).
 # Left value column is 23 display chars; temp uses 24 to compensate for the
 # 2-byte UTF-8 degree sign (° = 0xC2 0xB0) which printf counts as 2 chars.
-printf "  %-9s ${_TC}%-23s${_R} %-13s %s\n" \
-    "temp"   "${_T}°C"                         "uptime"  "${_UP}"
+printf "  %-9s ${_TC}%-23s${_R} %-13s %b\n" \
+    "temp"   "${_T}°C"                         "memory"  "${_MMC}$(_group "${_MU}")/$(_group "${_MT}") MB (${_MP}%)${_R}"
 printf "  %-9s ${_DC}%-22s${_R} %-13s %b\n" \
-    "disk"   "${_DU:-?}/${_DT:-?} (${_DP:-?}%)" "memory"  "${_MMC}$(_group "${_MU}")/$(_group "${_MT}") MB (${_MP}%)${_R}"
+    "disk"   "${_DU:-?}/${_DT:-?} (${_DP:-?}%)" "swap"    "${_SW1}"
 # load holds three colours in one field, so it is padded by hand.
-printf "  %-9s %b%*s %-13s %b\n" \
-    "load"   "${_LDC}" "${_LDPAD}" ""         "swap"  "${_SW}"
+if [ -n "${_SW2}" ]; then
+    printf "  %-9s %b%*s %-13s %b\n" \
+        "load"   "${_LDC}" "${_LDPAD}" ""     ""        "${_SW2}"
+else
+    printf "  %-9s %b\n" "load" "${_LDC}"
+fi
 
 printf ' %b\n' "${_B}${_SEP}${_R}"
 
@@ -353,16 +365,15 @@ else
         || _MURL="http://${MEMPOOL_HOST}:${MEMPOOL_PORT}"
 fi
 
-# The mempool row is printed last and carries nothing to its right, so the host
-# gets the rest of the line. 66 characters is what fits beside the label on an
-# 80-column terminal, and a v3 onion is 62 - so the address that most needs the
-# room is shown whole. Anything longer keeps its readable head and its tail.
+# The mempool host shares its row with the memes count, so it has the same
+# 20-character column as the service and display values. A host that fits is
+# shown whole; a longer one - a v3 onion is 62 - keeps its head and its tail.
 # ASCII dots rather than a single ellipsis character: printf pads by byte count,
 # and a multi-byte glyph would throw the width calculation off.
 _shorten_host() {
     local h="$1"
-    [ "${#h}" -le 66 ] && { printf '%s' "$h"; return; }
-    printf '%s...%s' "${h:0:30}" "${h: -30}"
+    [ "${#h}" -le 20 ] && { printf '%s' "$h"; return; }
+    printf '%s...%s' "${h:0:8}" "${h: -9}"
 }
 
 # Block height — query mempool. An .onion host resolves only through the SOCKS
@@ -429,13 +440,12 @@ fi
 _COL=20
 
 printf "  %-9s %b● %b%-${_COL}s %b%-13s %s\n" \
-    "service"  "${_SD}" "${_R}" "${_SL}"  "${_R}" "block height"  "${_BH}"
+    "service"  "${_SD}" "${_R}" "${_SL}"  "${_R}" "uptime"        "${_UP}"
+
+printf "  %-9s %b● %b%-${_COL}s %b%-13s %s\n" \
+    "display"  "${_DD}" "${_R}" "${_DL}"  "${_R}" "block height"  "${_BH}"
 
 printf "  %-9s %b● %b%-${_COL}s %b%-13s %s files\n" \
-    "display"  "${_DD}" "${_R}" "${_DL}"  "${_R}" "memes count"  "${_MC}"
-
-# Last, and alone on its line: see _shorten_host above.
-printf "  %-9s %b● %b%s\n" \
-    "mempool"  "${_MD}" "${_R}" "${_ML}"
+    "mempool"  "${_MD}" "${_R}" "${_ML}"  "${_R}" "memes count"   "${_MC}"
 
 printf ' %b\n\n' "${_B}${_SEP}${_R}"
