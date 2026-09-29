@@ -128,8 +128,8 @@ COLOR_SETS = {
         "info_header": "#222222",
         "info_value": "#222222",
         "info_unit": "#808080",
-        "info_bg": "#F8F9FA",
-        "info_outline": "#E9ECEF",
+        "info_bg": "#ffffff",        # matches "background", as in dark mode
+        "info_outline": "#E9ECEF",   # slightly visible frame on web, as in dark mode
         "hash_start": "#1c82c0",     # medium blue (shifted ~35% towards dark mode #4FC3F7)
         "hash_end": "#c040a8",       # pink-magenta (shifted towards pink from purple)
         "green": "#388E3C",          # Material Green (darker)
