@@ -12,7 +12,7 @@ pillow==12.3.0  # Pi Zero (ARMv6): build from source, prebuilt wheels crash with
 qrcode[pil]==8.2
 babel==2.18.0
 requests==2.34.2
-urllib3==2.7.0  # transitive via requests; pinned so updates actually move it
+urllib3==2.8.0 # transitive via requests; pinned so updates actually move it
 python-dotenv==1.2.3
 websocket-client==1.9.2
 werkzeug==3.1.8
