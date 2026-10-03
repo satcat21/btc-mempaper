@@ -372,6 +372,51 @@ def stamp_qr_codes_on_image(base_img, ssid, password, portal_url, config,
     return img, path
 
 
+def render_notice_screen(title, lines, config):
+    """A plain text screen: the brand, a title and a few wrapped lines.
+
+    For the cases where the panel is the only thing anyone can see, such as a
+    setup hotspot that failed to start on a device with no network yet.
+
+    Returns (PIL Image, path) or (None, None) if PIL is unavailable.
+    """
+    if not _PIL_OK:
+        return None, None
+    W, H = _display_wh(config)
+    cx = W // 2
+    BG, FG = (255, 255, 255), (30, 30, 30)
+    ORANGE, MUTED = (247, 147, 26), (100, 100, 100)
+    img = Image.new('RGB', (W, H), BG)
+    draw = ImageDraw.Draw(img)
+
+    base = min(W, H)
+    PAD = max(10, base // 20)
+    SZ_BRAND = max(40, base * 48 // 480)
+    SZ_TITLE = max(20, base * 26 // 480)
+    SZ_TEXT = max(15, base * 18 // 480)
+    f_brand = _font('RobotoCondensed-Bold.ttf', SZ_BRAND)
+    f_title = _font('Roboto-Bold.ttf', SZ_TITLE)
+    f_text = _font('Roboto-Regular.ttf', SZ_TEXT)
+
+    y = H // 4
+    _brand_title(draw, cx, y, f_brand, SZ_BRAND, FG, ORANGE)
+    y += SZ_BRAND + PAD
+    for line in _wrap_text(title, f_title, W - PAD * 2):
+        _centered(draw, cx, y, line, f_title, FG)
+        y += SZ_TITLE + 6
+    y += PAD // 2
+    for i, text in enumerate(lines):
+        for line in _wrap_text(str(text), f_text, W - PAD * 2):
+            _centered(draw, cx, y, line, f_text, FG if i == 0 else MUTED)
+            y += SZ_TEXT + 6
+        y += 6
+
+    os.makedirs(_CACHE_DIR, exist_ok=True)
+    path = os.path.join(_CACHE_DIR, 'notice.png')
+    img.save(path, compress_level=1)
+    return img, path
+
+
 def render_connected_screen(access_url, config, timeout_seconds=180, eink=True,
                             translations=None):
     """

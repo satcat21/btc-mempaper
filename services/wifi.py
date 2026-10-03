@@ -87,6 +87,33 @@ class WifiHotspotMixin:
         return None
 
     def _startup_wifi_check(self):
+        """Run the startup check, and never let an error end it silently.
+
+        Everything below is subprocess calls against a system that is still
+        booting, and any one of them can raise - a timeout, a missing tool, a
+        file that cannot be written. Raised, that used to end this thread with
+        no setup flag written, so the recovery monitor saw an ordinary device
+        that had lost its Wi-Fi and waited out its outage threshold before
+        offering the hotspot. A device with no saved network has nothing else
+        to offer, so on any failure the flag is written and the monitor brings
+        the hotspot up on its next tick.
+        """
+        try:
+            self._startup_wifi_check_inner()
+        except Exception as e:
+            import traceback
+            print(f'❌ Startup Wi-Fi check failed: {e}')
+            traceback.print_exc()
+            self._last_hotspot_error = f'startup check: {e}'
+            try:
+                if not self._has_saved_wifi_connections_on_disk():
+                    self._write_setup_mode_flag(
+                        True, interface=self._detect_wifi_interface_fs_only())
+                    print('📶 No saved Wi-Fi — setup flag written, recovery monitor takes over')
+            except Exception as e2:
+                print(f'⚠️ Could not hand the hotspot to the recovery monitor: {e2}')
+
+    def _startup_wifi_check_inner(self):
         """Called once at startup.
                 - If already connected: nothing to do.
                 - If disconnected and no saved networks: start hotspot immediately.
@@ -190,7 +217,7 @@ class WifiHotspotMixin:
             self._write_setup_mode_flag(True, interface=interface)
             print('⚠️ Hotspot failed at startup — recovery monitor will retry')
 
-    def _bring_up_setup_hotspot_with_retry(self, interface, max_attempts=4):
+    def _bring_up_setup_hotspot_with_retry(self, interface, max_attempts=6):
         """Try to bring up the setup hotspot with retries and back-off.
 
         NetworkManager can reject AP-mode activation right after boot if the
@@ -198,12 +225,22 @@ class WifiHotspotMixin:
         short delay makes the first-boot experience much more reliable.
         """
         for attempt in range(1, max_attempts + 1):
-            if self._bring_up_setup_hotspot(interface):
-                return True
+            try:
+                if self._bring_up_setup_hotspot(interface):
+                    return True
+            except Exception as e:
+                # One attempt's error is one failed attempt, not the end of
+                # onboarding: early in boot a call can time out that works
+                # a few seconds later.
+                import traceback
+                self._last_hotspot_error = str(e) or type(e).__name__
+                print(f'❌ Hotspot attempt {attempt}/{max_attempts} raised: {e}')
+                traceback.print_exc()
             if attempt < max_attempts:
-                delay = attempt * 5  # 5s, 10s, 15s
+                delay = attempt * 5  # 5s, 10s, 15s, 20s, 25s
                 print(f'⚠️ Hotspot attempt {attempt}/{max_attempts} failed — retrying in {delay}s')
                 time.sleep(delay)
+        self._show_hotspot_failure_screen()
         return False
 
     def _is_setup_mode_enabled(self):
@@ -777,6 +814,7 @@ class WifiHotspotMixin:
         if addr.returncode != 0:
             err = (addr.stderr or addr.stdout or '').strip()
             print(f'❌ Setup hotspot: failed to assign {self._HOTSPOT_CIDR} to {interface} — {err}')
+            self._last_hotspot_error = f'address on {interface}: {err}'
             self._nmcli(['device', 'set', interface, 'managed', 'yes'])
             return False
 
@@ -1086,6 +1124,7 @@ class WifiHotspotMixin:
             self._write_private_file(self._HOSTAPD_CONF, conf)
         except OSError as e:
             print(f'❌ Setup hotspot: could not write hostapd config — {e}')
+            self._last_hotspot_error = f'hostapd config: {e}'
             return False
 
         try:
@@ -1098,10 +1137,12 @@ class WifiHotspotMixin:
             # is ordered after it). Raised, this ended the startup check on
             # its first attempt; returned, the caller retries with back-off.
             print('❌ Setup hotspot: hostapd start timed out (system still booting?)')
+            self._last_hotspot_error = 'hostapd start timed out'
             return False
         if result.returncode != 0:
             err = (result.stderr or result.stdout or '').strip()
             print(f'❌ Setup hotspot: failed to start hostapd — {err}')
+            self._last_hotspot_error = f'hostapd start: {err}'
             return False
 
         time.sleep(1)
@@ -1114,6 +1155,7 @@ class WifiHotspotMixin:
                 capture_output=True, text=True, timeout=5,
             )
             print(f'❌ Setup hotspot: hostapd exited immediately — {(log.stdout or "").strip()[-400:]}')
+            self._last_hotspot_error = 'hostapd exited immediately: ' + (log.stdout or '').strip()[-160:]
             return False
 
         print(f'✅ Setup hotspot AP started ("{ssid}" on {interface})')
@@ -1252,6 +1294,7 @@ class WifiHotspotMixin:
         # No key in the URL any more: joining the WPA2 network is what grants
         # access to the portal, so the second QR is just the address.
         portal_url = f'http://{hotspot_ip}:{port}/setup'
+        path = None
         try:
             delivery_eink = os.path.join('cache', 'delivery_eink.png')
             if os.path.exists(delivery_eink):
@@ -1261,16 +1304,65 @@ class WifiHotspotMixin:
                 _, path = stamp_qr_codes_on_image(
                     base_img, ssid, password, portal_url, self.config,
                     eink=True)
-            else:
+        except Exception as e:
+            print(f'⚠️ Could not stamp QR codes onto the delivery image: {e}')
+        if not path:
+            # The standalone screen needs nothing but the credentials, so a
+            # missing or unreadable delivery image no longer means no QR codes.
+            try:
                 from lib.onboarding_renderer import render_hotspot_screen
                 _, path = render_hotspot_screen(ssid, password, portal_url, self.config)
+            except Exception as e:
+                print(f'⚠️ Could not render hotspot onboarding screen: {e}')
+        if path:
+            # The portal URL is shown on the panel itself; keeping it out of
+            # the log avoids writing setup-session details to the journal.
+            print('📺 Displaying hotspot onboarding screen on e-ink')
+            self._push_when_panel_free(path)
+
+    def _push_when_panel_free(self, path, max_wait=180):
+        """Push a frame once the panel is idle, instead of being dropped.
+
+        An ordinary push made while the panel is busy (the boot refresh, a
+        dashboard render) is not queued as itself: it becomes a generic
+        "refresh later" that redraws the dashboard. For the onboarding screen
+        that means the QR codes never appear. Waiting for the panel first
+        keeps this frame the one that gets drawn.
+        """
+        lock = getattr(self, '_display_worker_lock', None)
+        waited = 0
+        while lock is not None and lock.locked() and waited < max_wait:
+            time.sleep(2)
+            waited += 2
+        if waited:
+            print(f'📺 Panel was busy for {waited}s before the onboarding screen')
+        self._display_on_epaper_async(path, None, None)
+
+    def _show_hotspot_failure_screen(self):
+        """Say on the panel that the setup hotspot could not start, and why.
+
+        A device in delivery state has no network and nobody logged in: when
+        the hotspot fails there is no other way to learn that it did, let alone
+        what went wrong. Shown once per boot; the recovery monitor keeps
+        retrying, and a successful start replaces it with the QR codes.
+        """
+        if not self.e_ink_enabled or getattr(self, '_hotspot_failure_shown', False):
+            return
+        self._hotspot_failure_shown = True
+        reason = getattr(self, '_last_hotspot_error', None) or 'unknown error - see the service log'
+        try:
+            from lib.onboarding_renderer import render_notice_screen
+            _, path = render_notice_screen(
+                'Setup hotspot could not start',
+                [reason,
+                 'The device keeps retrying by itself.',
+                 'If this stays, power-cycle the device once.'],
+                self.config)
             if path:
-                # The portal URL is shown on the panel itself; keeping it out of
-                # the log avoids writing setup-session details to the journal.
-                print('📺 Displaying hotspot onboarding screen on e-ink')
-                self._display_on_epaper_async(path, None, None)
+                threading.Thread(target=self._push_when_panel_free, args=(path,),
+                                 daemon=True).start()
         except Exception as e:
-            print(f'⚠️ Could not render hotspot onboarding screen: {e}')
+            print(f'⚠️ Could not show the hotspot failure screen: {e}')
 
     def _display_onboarding_connected_screen(self):
         """Render the post-connection QR screen, display it, then restore normal
@@ -1406,7 +1498,17 @@ class WifiHotspotMixin:
 
                     # nmcli timed out (NM busy reconnecting) — skip this tick
                     # rather than treating the unknown state as a disconnect.
+                    # Not when setup mode is on and the hotspot is down: that
+                    # needs no answer from NetworkManager, and on a device with
+                    # nothing saved NM may stay unhelpful for a long while.
                     if not status_known:
+                        if self._is_setup_mode_enabled() and not self._hostapd_active():
+                            print('📶 Setup mode flagged, hotspot down, NM not answering — bringing up')
+                            try:
+                                self._bring_up_setup_hotspot(interface or self._detect_wifi_interface_fs_only())
+                            except Exception as e:
+                                self._last_hotspot_error = str(e) or type(e).__name__
+                                print(f'❌ Hotspot bring-up from the monitor failed: {e}')
                         time.sleep(max(5, poll_seconds))
                         continue
 
