@@ -1111,10 +1111,7 @@ function _unlockAfterUpdate() {
 // stacking a new one per step. Clicking the toast reopens the modal. Once the
 // run has ended, X closes the modal for good.
 function _createMinimizable(overlay, dialog, iconName, titleText) {
-    // The icon is tinted by class, so it is kept here to follow the title color
-    // as the run moves from progress to success or failure.
-    const icon = _toastIcon(iconName, 'accent');
-    const toastTitle = [icon, ' ' + titleText];
+    const toastTitle = [_toastIcon(iconName), ' ' + titleText];
     let toast = null;
     let minimized = false;
     let finished = false;
@@ -1133,8 +1130,6 @@ function _createMinimizable(overlay, dialog, iconName, titleText) {
     }
 
     function showToast(dismissMs) {
-        const variant = { '#22c55e': 'success', '#ef4444': 'error' }[last.color] || 'accent';
-        icon.className = 'toast-title-icon toast-icon-' + variant;
         if (toast && toast.isConnected) {
             toast.update(null, [last.body], last.color, dismissMs);
         } else {

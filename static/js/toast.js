@@ -12,13 +12,14 @@
 (function () {
     'use strict';
 
-    // Inject toast icon styles once
+    // Inject toast icon styles once. The icon is a mask painted with the text
+    // color, not an <img> tinted by a filter: it then always matches the title
+    // next to it, including the darker shades the light theme swaps in for
+    // contrast, which no fixed filter could follow.
     var s = document.createElement('style');
-    s.textContent = '.toast-title-icon{vertical-align:-3px;margin-right:4px;opacity:0.85}' +
-        '.dark-mode .toast-title-icon{filter:invert(1)}' +
-        '.toast-icon-accent{filter:brightness(0) saturate(100%) invert(62%) sepia(65%) saturate(2028%) hue-rotate(6deg) brightness(100%) contrast(93%)!important}' +
-        '.toast-icon-success{filter:brightness(0) saturate(100%) invert(44%) sepia(72%) saturate(456%) hue-rotate(97deg) brightness(96%) contrast(97%)!important}' +
-        '.toast-icon-error{filter:brightness(0) saturate(100%) invert(33%) sepia(93%) saturate(231%) hue-rotate(305deg) brightness(110%) contrast(216%)!important}';
+    s.textContent = '.toast-title-icon{display:inline-block;width:16px;height:16px;vertical-align:-3px;margin-right:4px;' +
+        'background-color:currentColor;' +
+        '-webkit-mask:var(--toast-icon) center/contain no-repeat;mask:var(--toast-icon) center/contain no-repeat}';
     document.head.appendChild(s);
 
     // Return (or create) the shared upper-right toast stack container
@@ -69,17 +70,14 @@
         return _lightModeColorMap[color.toLowerCase()] || color;
     }
 
-    // Build the 16px <img> icon used in toast titles. `variant` picks the
-    // color filter class ('accent' | 'success' | 'error'); omit it to keep
-    // the theme-neutral default.
+    // Build the 16px icon used in toast titles. It takes the color of the
+    // surrounding text. `variant` is kept as a class for callers that style it.
     window._toastIcon = function (name, variant) {
-        const img = document.createElement('img');
-        img.src = '/static/icons/' + encodeURIComponent(name) + '.svg';
-        img.alt = '';
-        img.width = 16;
-        img.height = 16;
-        img.className = 'toast-title-icon' + (variant ? ' toast-icon-' + variant : '');
-        return img;
+        const icon = document.createElement('span');
+        icon.style.setProperty('--toast-icon', "url('/static/icons/" + encodeURIComponent(name) + ".svg')");
+        icon.setAttribute('aria-hidden', 'true');
+        icon.className = 'toast-title-icon' + (variant ? ' toast-icon-' + variant : '');
+        return icon;
     };
 
     // Append content to `parent`: strings become text nodes, DOM nodes are
