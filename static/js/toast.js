@@ -118,7 +118,16 @@
     }
 
     // Build and display a glass-card toast in the shared upper-right container
-    window._buildLiveToast = function (title, body, titleColor, autoDismissMs) {
+    //
+    // `onClick`, when given, replaces the default click-to-dismiss on the card
+    // body (the corner button still dismisses), so a toast can act as a handle
+    // on something else, such as reopening the modal it stands in for.
+    //
+    // The returned toast has update(title, body, titleColor, autoDismissMs) to
+    // rewrite its content in place, so progress replaces the card instead of
+    // stacking a new one. Omitted arguments keep their current value; a
+    // positive autoDismissMs (re)starts the dismiss timer, 0 cancels it.
+    window._buildLiveToast = function (title, body, titleColor, autoDismissMs, onClick) {
         if (autoDismissMs === undefined) autoDismissMs = 6000;
         const isDark      = document.body.classList.contains('dark-mode');
         titleColor = _adaptTitleColor(titleColor, isDark);
@@ -186,7 +195,7 @@
         closeBtn.addEventListener('click', e => { e.stopPropagation(); closeToast(); });
         closeBtn.addEventListener('mouseenter', () => { closeBtn.style.backgroundColor = closeBtnHoverBg; });
         closeBtn.addEventListener('mouseleave', () => { closeBtn.style.backgroundColor = closeBtnBg; });
-        toast.addEventListener('click', closeToast);
+        toast.addEventListener('click', onClick || closeToast);
 
         const content = document.createElement('div');
         content.style.cssText = 'margin-right: 28px;';
@@ -219,8 +228,24 @@
 
         // A duration of 0 keeps the toast up until it is dismissed or its owner
         // replaces it, for progress that outlives any fixed timeout.
-        const timer = autoDismissMs > 0 ? setTimeout(closeToast, autoDismissMs) : null;
+        let timer = autoDismissMs > 0 ? setTimeout(closeToast, autoDismissMs) : null;
         toast.closeToast = () => { if (timer) clearTimeout(timer); closeToast(); };
+
+        toast.update = (newTitle, newBody, newTitleColor, newDismissMs) => {
+            if (newTitle !== undefined && newTitle !== null) {
+                titleEl.textContent = '';
+                _appendContent(titleEl, newTitle);
+            }
+            if (newTitleColor) titleEl.style.color = _adaptTitleColor(newTitleColor, isDark);
+            if (newBody !== undefined && newBody !== null) {
+                bodyEl.textContent = '';
+                _appendBody(bodyEl, newBody);
+            }
+            if (newDismissMs !== undefined) {
+                if (timer) clearTimeout(timer);
+                timer = newDismissMs > 0 ? setTimeout(closeToast, newDismissMs) : null;
+            }
+        };
 
         return toast;
     };

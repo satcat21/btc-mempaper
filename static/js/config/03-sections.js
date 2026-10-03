@@ -838,6 +838,7 @@ function createSoftwareUpdateSection() {
     });
 
     // Install button click handler
+    _registerUpdateLockable(updateBtn, () => _syncInstallButton(select, updateBtn));
     updateBtn.addEventListener('click', async () => {
         const selectedTag = select.value;
         if (!selectedTag) return;
@@ -861,6 +862,7 @@ function createSoftwareUpdateSection() {
 
     // "Check for Updates" button — re-fetches releases
     const checkBtn = versionRow.querySelector('#check-updates-btn');
+    _registerUpdateLockable(checkBtn);
     checkBtn.addEventListener('click', async () => {
         checkBtn.disabled = true;
         checkBtn.classList.add('checking');
@@ -901,6 +903,10 @@ function _syncInstallButton(selectEl, btn) {
         ? (t.already_installed || '{version} is already installed.')
               .replace('{version}', selected)
         : '';
+    if (_updateLocked) {
+        btn.disabled = true;
+        btn.title = _updateLockTooltip();
+    }
 }
 
 async function _loadUpdateData(selectEl, updateBtn, versionEl, notesContainer) {
@@ -1022,6 +1028,129 @@ async function _loadUpdateData(selectEl, updateBtn, versionEl, notesContainer) {
     }
 }
 
+// ── A running update: button lock and minimize-to-toast ─────────────────
+//
+// Only one update may run at a time, and the page stays usable while it does.
+// Every control that would start another update, or restart/reboot the device
+// underneath the running one, registers here; while an update runs they are
+// disabled with a tooltip saying why. `restore` puts a button back the way its
+// own logic would have left it (the Install button depends on the selection).
+const _updateLockables = [];
+let _updateLocked = false;
+let _updateLockOwner = null;
+
+function _updateLockTooltip() {
+    return window.translations?.update_running_tooltip || 'Update running - please wait until it finishes';
+}
+
+function _applyUpdateLock(entry) {
+    const { btn } = entry;
+    if (btn === _updateLockOwner) return;
+    entry.title = btn.getAttribute('title');
+    btn.disabled = true;
+    btn.title = _updateLockTooltip();
+}
+
+function _registerUpdateLockable(btn, restore) {
+    const entry = { btn, restore, title: null };
+    _updateLockables.push(entry);
+    if (_updateLocked) _applyUpdateLock(entry);
+    return btn;
+}
+
+function _lockForUpdate(ownerBtn) {
+    _updateLocked = true;
+    _updateLockOwner = ownerBtn || null;
+    _updateLockables.forEach(_applyUpdateLock);
+}
+
+function _unlockAfterUpdate() {
+    if (!_updateLocked) return;
+    _updateLocked = false;
+    _updateLockOwner = null;
+    _updateLockables.forEach(entry => {
+        if (entry.title) entry.btn.setAttribute('title', entry.title);
+        else entry.btn.removeAttribute('title');
+        if (entry.restore) entry.restore();
+        else entry.btn.disabled = false;
+    });
+}
+
+// Gives an update modal a corner X that minimizes it into a single toast
+// instead of closing it. The run carries on; report() rewrites the toast in
+// place (like the new-block toast filling in its mining data) rather than
+// stacking a new one per step. Clicking the toast reopens the modal. Once the
+// run has ended, X closes the modal for good.
+function _createMinimizable(overlay, dialog, toastTitle) {
+    let toast = null;
+    let minimized = false;
+    let finished = false;
+    let last = { body: '', color: '#f7931a' };
+
+    function setScrollLock(on) {
+        if (on) {
+            document.documentElement.style.setProperty('--scroll-y', `-${window.scrollY}px`);
+            document.body.classList.add('modal-open');
+        } else {
+            document.body.classList.remove('modal-open');
+            const y = document.documentElement.style.getPropertyValue('--scroll-y');
+            document.documentElement.style.removeProperty('--scroll-y');
+            window.scrollTo(0, parseInt(y || '0') * -1);
+        }
+    }
+
+    function showToast(dismissMs) {
+        if (toast && toast.isConnected) {
+            toast.update(null, [last.body], last.color, dismissMs);
+        } else {
+            toast = _buildLiveToast(toastTitle, [last.body], last.color, dismissMs ?? 0, restore);
+        }
+    }
+
+    function minimize() {
+        if (minimized) return;
+        minimized = true;
+        overlay.style.display = 'none';
+        setScrollLock(false);
+        showToast(finished ? 8000 : 0);
+    }
+
+    function restore() {
+        if (!minimized) return;
+        minimized = false;
+        overlay.style.display = '';
+        setScrollLock(true);
+        if (toast) toast.closeToast();
+    }
+
+    function close() {
+        overlay.classList.remove('visible');
+        overlay.addEventListener('transitionend', () => overlay.remove(), { once: true });
+        setTimeout(() => { if (overlay.parentNode) overlay.remove(); }, 350);
+        if (!minimized) setScrollLock(false);
+        minimized = false;
+        if (toast) toast.closeToast();
+    }
+
+    // Progress only touches a toast the user still has; one they dismissed
+    // stays dismissed until the run ends, when the outcome is worth a reappearance.
+    function report(body, opts = {}) {
+        last = { body, color: opts.color || last.color };
+        if (!minimized) return;
+        if (!opts.terminal && !(toast && toast.isConnected)) return;
+        showToast(opts.terminal ? (opts.dismissMs ?? 0) : undefined);
+    }
+
+    addModalCloseButton(dialog, () => (finished ? close() : minimize()));
+
+    return {
+        close,
+        report,
+        succeed(body) { finished = true; report(body, { color: '#22c55e', terminal: true, dismissMs: 8000 }); },
+        fail(body)    { finished = true; report(body, { color: '#ef4444', terminal: true, dismissMs: 0 }); },
+    };
+}
+
 async function _performUpdate(tag, updateBtn) {
     updateBtn.disabled = true;
     updateBtn.textContent = window.translations?.updating || 'Updating...';
@@ -1031,8 +1160,10 @@ async function _performUpdate(tag, updateBtn) {
         showNotification('Error: no socket connection', 'error', 8000);
         updateBtn.disabled = false;
         updateBtn.textContent = window.translations?.update_now || 'Update';
+        _unlockAfterUpdate();
         return;
     }
+    _lockForUpdate(updateBtn);
 
     // Capture current process startup timestamp before triggering update
     let oldStarted = 0;
@@ -1056,7 +1187,8 @@ async function _performUpdate(tag, updateBtn) {
     const heading = document.createElement('h3');
     heading.className = 'confirm-modal-title';
     // `tag` is a release tag from the update API — escape before it becomes markup.
-    heading.innerHTML = `<img src="/static/icons/update.svg" alt="" class="modal-title-icon"> ${escapeHtml((window.translations?.updating_to || 'Updating to') + ' ' + tag)}`;
+    const titleText = (window.translations?.updating_to || 'Updating to') + ' ' + tag;
+    heading.innerHTML = `<img src="/static/icons/update.svg" alt="" class="modal-title-icon"> ${escapeHtml(titleText)}`;
 
     const phaseBar = document.createElement('div');
     phaseBar.className = 'system-update-phase';
@@ -1093,6 +1225,8 @@ async function _performUpdate(tag, updateBtn) {
     overlay.appendChild(dialog);
     document.body.appendChild(overlay);
     requestAnimationFrame(() => overlay.classList.add('visible'));
+    const mini = _createMinimizable(overlay, dialog, [_toastIcon('update', 'accent'), ' ' + titleText]);
+    mini.report(phaseBar.textContent);
 
     const phaseLabels = {
         git: (window.translations?.checking_out_code || 'Checking out {tag}...').replace('{tag}', tag),
@@ -1153,6 +1287,7 @@ async function _performUpdate(tag, updateBtn) {
         if (atBottom) logArea.scrollTop = logArea.scrollHeight;
         if (data.phase && phaseLabels[data.phase]) {
             phaseBar.textContent = phaseLabels[data.phase];
+            mini.report(phaseBar.textContent);
         }
     }
 
@@ -1207,41 +1342,37 @@ async function _performUpdate(tag, updateBtn) {
                 if (remaining >= 0) {
                     countdownNumber.textContent = _fmtCountdown(remaining);
                     progressFill.style.transform = 'scaleX(' + (1 - remaining / estimatedSeconds) + ')';
+                    mini.report(countdownLabel.textContent + ' ' + _fmtCountdown(remaining));
                 }
                 if (remaining <= earlyPollStart && !polling) {
                     polling = true;
-                    _pollForService(overlay, countdownNumber, countdownLabel, progressFill, interval, tag, data.rollback_tag, data.rollback_commit, oldStarted, updateBtn);
+                    _pollForService(overlay, countdownNumber, countdownLabel, progressFill, interval, tag, data.rollback_tag, data.rollback_commit, oldStarted, updateBtn, undefined, mini);
                 }
                 if (remaining === 0) {
                     countdownLabel.textContent = t.checking_service || 'Checking service...';
                     countdownNumber.innerHTML = '<div class="restart-spinner"></div>';
+                    mini.report(countdownLabel.textContent);
                 }
             }, 1000);
         } else {
             phaseBar.textContent = '';
             statusBar.textContent = (window.translations?.update_failed || 'Update failed') + ': ' + (data.error || '');
             statusBar.classList.add('system-update-error');
+            mini.fail(statusBar.textContent);
             logArea.classList.remove('update-log-hidden');
             logArea.classList.add('update-log-visible');
             detailsToggle.textContent = window.translations?.hide_details || 'Hide details';
             const closeBtn = document.createElement('button');
             closeBtn.className = 'confirm-modal-btn confirm';
             closeBtn.textContent = window.translations?.close || 'Close';
-            closeBtn.addEventListener('click', () => {
-                overlay.classList.remove('visible');
-                overlay.addEventListener('transitionend', () => overlay.remove(), { once: true });
-                setTimeout(() => { if (overlay.parentNode) overlay.remove(); }, 350);
-                document.body.classList.remove('modal-open');
-                var _sy = document.documentElement.style.getPropertyValue('--scroll-y');
-                document.documentElement.style.removeProperty('--scroll-y');
-                window.scrollTo(0, parseInt(_sy || '0') * -1);
-            });
+            closeBtn.addEventListener('click', mini.close);
             const buttons = document.createElement('div');
             buttons.className = 'confirm-modal-buttons';
             buttons.appendChild(closeBtn);
             dialog.appendChild(buttons);
             updateBtn.disabled = false;
             updateBtn.textContent = window.translations?.update_now || 'Update';
+            _unlockAfterUpdate();
         }
     }
 
@@ -1267,24 +1398,18 @@ async function _performUpdate(tag, updateBtn) {
             detailsToggle.textContent = window.translations?.hide_details || 'Hide details';
             statusBar.textContent = data.message || 'Failed';
             statusBar.classList.add('system-update-error');
+            mini.fail(statusBar.textContent);
             const closeBtn = document.createElement('button');
             closeBtn.className = 'confirm-modal-btn confirm';
             closeBtn.textContent = window.translations?.close || 'Close';
-            closeBtn.addEventListener('click', () => {
-                overlay.classList.remove('visible');
-                overlay.addEventListener('transitionend', () => overlay.remove(), { once: true });
-                setTimeout(() => { if (overlay.parentNode) overlay.remove(); }, 350);
-                document.body.classList.remove('modal-open');
-                var _sy = document.documentElement.style.getPropertyValue('--scroll-y');
-                document.documentElement.style.removeProperty('--scroll-y');
-                window.scrollTo(0, parseInt(_sy || '0') * -1);
-            });
+            closeBtn.addEventListener('click', mini.close);
             const buttons = document.createElement('div');
             buttons.className = 'confirm-modal-buttons';
             buttons.appendChild(closeBtn);
             dialog.appendChild(buttons);
             updateBtn.disabled = false;
             updateBtn.textContent = window.translations?.update_now || 'Update';
+            _unlockAfterUpdate();
         }
     } catch (err) {
         console.error('Update request failed:', err);
@@ -1297,20 +1422,18 @@ async function _performUpdate(tag, updateBtn) {
         detailsToggle.textContent = window.translations?.hide_details || 'Hide details';
         statusBar.textContent = 'Request failed';
         statusBar.classList.add('system-update-error');
+        mini.fail(statusBar.textContent);
         const closeBtn = document.createElement('button');
         closeBtn.className = 'confirm-modal-btn confirm';
         closeBtn.textContent = window.translations?.close || 'Close';
-        closeBtn.addEventListener('click', () => {
-            overlay.classList.remove('visible');
-            overlay.addEventListener('transitionend', () => overlay.remove(), { once: true });
-            setTimeout(() => { if (overlay.parentNode) overlay.remove(); }, 350);
-        });
+        closeBtn.addEventListener('click', mini.close);
         const buttons = document.createElement('div');
         buttons.className = 'confirm-modal-buttons';
         buttons.appendChild(closeBtn);
         dialog.appendChild(buttons);
         updateBtn.disabled = false;
         updateBtn.textContent = window.translations?.update_now || 'Update';
+        _unlockAfterUpdate();
     }
 }
 
@@ -1891,6 +2014,7 @@ function createSystemUpdateSection() {
         return wrap;
     }
 
+    _registerUpdateLockable(fullBtn);
     fullBtn.addEventListener('click', async () => {
         const t = window.translations || {};
         // Ask apt what it would do before asking the user to approve it. The
@@ -2211,26 +2335,29 @@ function openMemeSyncModal() {
 
     document.getElementById('meme-sync-modal')?.remove();
 
+    // Same shell as the other modals (title, corner X, button row), and the X
+    // minimizes to a toast the way the update modals do: the sync runs on the
+    // device regardless, so the modal is only a view of it.
     const overlay = document.createElement('div');
     overlay.id = 'meme-sync-modal';
-    overlay.className = 'modal meme-sync-modal';
-    overlay.style.display = 'flex';
+    overlay.className = 'confirm-modal-overlay visible';
+    document.documentElement.style.setProperty('--scroll-y', `-${window.scrollY}px`);
+    document.body.classList.add('modal-open');
 
-    // Same dialog and log treatment as the system update modal: both show a
-    // long-running job reporting as it goes, and two different-looking log
-    // viewers in one settings page are two things to learn. system-update-log
-    // carries the min-height, so the box opens at full size rather than growing
-    // from a thin strip as lines arrive.
+    // system-update-log carries the min-height, so the box opens at full size
+    // rather than growing from a thin strip as lines arrive.
     const box = document.createElement('div');
-    box.className = 'modal-content system-update-dialog';
+    box.className = 'confirm-modal-dialog system-update-dialog';
 
+    const titleLabel = t.meme_sync_now || 'Fetch latest memes';
     const title = document.createElement('h3');
+    title.className = 'confirm-modal-title';
     const icon = document.createElement('img');
     icon.src = '/static/icons/download.svg';
     icon.alt = '';
     icon.className = 'modal-title-icon';
     const titleText = document.createElement('span');
-    titleText.textContent = t.meme_sync_now || 'Fetch latest memes';
+    titleText.textContent = titleLabel;
     title.append(icon, ' ', titleText);
 
     const log = document.createElement('div');
@@ -2244,24 +2371,26 @@ function openMemeSyncModal() {
     grid.className = 'meme-sync-added-grid';
 
     const actions = document.createElement('div');
-    actions.className = 'modal-actions';
+    actions.className = 'confirm-modal-buttons single';
     const closeBtn = document.createElement('button');
     closeBtn.type = 'button';
-    closeBtn.className = 'update-install-btn';
+    closeBtn.className = 'confirm-modal-btn cancel';
     closeBtn.textContent = t.close || 'Close';
     closeBtn.disabled = true;
-    closeBtn.addEventListener('click', () => overlay.remove());
     actions.appendChild(closeBtn);
 
     box.append(title, log, summary, grid, actions);
     overlay.appendChild(box);
     document.body.appendChild(overlay);
 
-    // No click-outside-to-close while the run is live: the sync keeps going on
-    // the device regardless, and dismissing the only view of it by accident
-    // loses the log for a job that takes minutes.
+    const mini = _createMinimizable(overlay, box, [_toastIcon('download', 'accent'), ' ' + titleLabel]);
+    closeBtn.addEventListener('click', mini.close);
+
+    // No click-outside-to-close while the run is live: dismissing the only view
+    // of it by accident loses the log for a job that takes minutes. The X is the
+    // deliberate way out, and keeps the run in view as a toast.
     overlay.addEventListener('click', (e) => {
-        if (e.target === overlay && !closeBtn.disabled) overlay.remove();
+        if (e.target === overlay && !closeBtn.disabled) mini.close();
     });
 
     return {
@@ -2273,17 +2402,21 @@ function openMemeSyncModal() {
             log.appendChild(el);
             // Follow the tail only while the reader has not scrolled away.
             if (atBottom) log.scrollTop = log.scrollHeight;
+            // Rule lines carry no information; the toast shows the latest real one.
+            if (/\S/.test(line) && !/^[=\-\s]+$/.test(line)) mini.report(line.trim());
         },
         finish(ok, message, added) {
             closeBtn.disabled = false;
             summary.classList.add(ok ? 'system-update-success' : 'system-update-error');
             if (!ok) {
                 summary.textContent = message;
+                mini.fail(message);
                 return;
             }
             summary.textContent = added.length
                 ? `${t.meme_sync_added || 'New memes downloaded'}: ${added.length}`
                 : (t.meme_sync_no_new || 'No new memes - already up to date.');
+            mini.succeed(summary.textContent);
 
             added.forEach(filename => {
                 const thumb = document.createElement('img');
@@ -2571,6 +2704,7 @@ function createFactoryResetSection() {
     resetBtn.innerHTML = '<span class="device-control-icon"><svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960" width="18px" fill="currentColor"><path d="M280-120q-33 0-56.5-23.5T200-200v-520h-40v-80h200v-40h240v40h200v80h-40v520q0 33-23.5 56.5T680-120H280Zm400-600H280v520h400v-520ZM360-280h80v-360h-80v360Zm160 0h80v-360h-80v360ZM280-720v520-520Z"/></svg></span> ' +
         (t.factory_reset || 'Factory Reset');
 
+    _registerUpdateLockable(resetBtn);
     resetBtn.addEventListener('click', async () => {
         const detail = _buildFactoryResetDetail();
         const ok = await showConfirmModal({
@@ -2789,6 +2923,7 @@ function createDeviceControlSection() {
     restartBtn.className = 'device-control-btn';
     restartBtn.innerHTML = `<span class="device-control-icon"><svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960" width="18px" fill="currentColor"><path d="M480-160q-134 0-227-93t-93-227q0-134 93-227t227-93q69 0 132 28.5T720-690v-110h80v280H520v-80h168q-32-56-87.5-88T480-720q-100 0-170 70t-70 170q0 100 70 170t170 70q77 0 139-44t87-116h84q-28 106-114 173t-196 67Z"/></svg></span> ${t.restart_service || 'Restart Service'}`;
 
+    _registerUpdateLockable(restartBtn);
     restartBtn.addEventListener('click', async () => {
         const ok = await showConfirmModal({
             title: t.restart_service || 'Restart Service',
@@ -2807,6 +2942,7 @@ function createDeviceControlSection() {
     rebootBtn.className = 'device-control-btn device-control-btn-danger';
     rebootBtn.innerHTML = `<span class="device-control-icon"><svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960" width="18px" fill="currentColor"><path d="M324-111.5Q251-143 197-197t-85.5-127Q80-397 80-480t31.5-156Q143-709 197-763t127-85.5Q397-880 480-880t156 31.5Q709-817 763-763t85.5 127Q880-563 880-480t-31.5 156Q817-251 763-197t-127 85.5Q563-80 480-80t-156-31.5ZM707-253q93-93 93-227t-93-227q-93-93-227-93t-227 93q-93 93-93 227t93 227q93 93 227 93t227-93Zm-57-57q70-70 70-170 0-51-19-94.5T650-650l-57 57q22 22 34.5 51t12.5 62q0 66-47 113t-113 47q-66 0-113-47t-47-113q0-33 12.5-62t34.5-51l-57-57q-32 32-51 75.5T240-480q0 100 70 170t170 70q100 0 170-70ZM440-480h80v-240h-80v240Zm40 0Z"/></svg></span> ${t.reboot_device || 'Reboot Device'}`;
 
+    _registerUpdateLockable(rebootBtn);
     rebootBtn.addEventListener('click', async () => {
         const ok = await showConfirmModal({
             title: t.reboot_device || 'Reboot Device',
@@ -2832,6 +2968,7 @@ function createDeviceControlSection() {
     shutdownBtn.className = 'device-control-btn device-control-btn-danger';
     shutdownBtn.innerHTML = `<span class="device-control-icon"><span style="display:inline-block;width:18px;height:18px;background-color:currentColor;-webkit-mask-image:url('/static/icons/power_off.svg');mask-image:url('/static/icons/power_off.svg');-webkit-mask-size:contain;mask-size:contain;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;vertical-align:middle"></span></span> ${t.shutdown_device || 'Shutdown'}`;
 
+    _registerUpdateLockable(shutdownBtn);
     shutdownBtn.addEventListener('click', async () => {
         const ok = await showConfirmModal({
             title: t.shutdown_device || 'Shutdown Device',
@@ -3043,7 +3180,7 @@ function _showRestartCountdown(title, estimatedSeconds, updateTag, rollbackTag, 
     }, 1000);
 }
 
-function _pollForService(overlay, countdownNumber, countdownLabel, progressFill, countdownInterval, updateTag, rollbackTag, rollbackCommit, oldStarted, updateBtn, maxPollAttempts) {
+function _pollForService(overlay, countdownNumber, countdownLabel, progressFill, countdownInterval, updateTag, rollbackTag, rollbackCommit, oldStarted, updateBtn, maxPollAttempts, mini) {
     const t = window.translations || {};
     let attempts = 0;
     const maxAttempts = maxPollAttempts || 60;
@@ -3080,6 +3217,7 @@ function _pollForService(overlay, countdownNumber, countdownLabel, progressFill,
                 countdownNumber.classList.add('restart-countdown-success');
                 countdownLabel.textContent = t.service_back_online || 'Service is back online!';
                 progressFill.style.transform = 'scaleX(1)';
+                if (mini) mini.succeed(countdownLabel.textContent);
                 document.body.classList.remove('modal-open');
                 var _sy = document.documentElement.style.getPropertyValue('--scroll-y');
                 document.documentElement.style.removeProperty('--scroll-y');
@@ -3100,6 +3238,7 @@ function _pollForService(overlay, countdownNumber, countdownLabel, progressFill,
             countdownLabel.textContent = t.service_not_responding || 'Service not responding. Try refreshing manually.';
             progressFill.style.transform = 'scaleX(1)';
             progressFill.classList.add('restart-progress-error');
+            if (mini) mini.fail(countdownLabel.textContent);
 
             const dialogEl = overlay.querySelector('.confirm-modal-dialog');
 
@@ -3110,6 +3249,7 @@ function _pollForService(overlay, countdownNumber, countdownLabel, progressFill,
                     updateBtn.disabled = false;
                     updateBtn.textContent = t.update_now || 'Update';
                 }
+                _unlockAfterUpdate();
             }
 
             // Add dismiss button
@@ -3118,6 +3258,7 @@ function _pollForService(overlay, countdownNumber, countdownLabel, progressFill,
             dismissBtn.textContent = t.dismiss || 'Dismiss';
             dismissBtn.style.marginTop = '16px';
             dismissBtn.addEventListener('click', () => {
+                if (mini) { mini.close(); return; }
                 document.body.classList.remove('modal-open');
                 var _sy = document.documentElement.style.getPropertyValue('--scroll-y');
                 document.documentElement.style.removeProperty('--scroll-y');
@@ -3151,7 +3292,8 @@ function _startSystemUpdate(btn, endpoint, heading_) {
 
     const heading = document.createElement('h3');
     heading.className = 'confirm-modal-title';
-    heading.innerHTML = `<img src="/static/icons/update.svg" alt="" class="modal-title-icon"> ${heading_ || window.translations?.system_update || 'System Update'}`;
+    const titleText = heading_ || window.translations?.system_update || 'System Update';
+    heading.innerHTML = `<img src="/static/icons/update.svg" alt="" class="modal-title-icon"> ${titleText}`;
 
     const phaseBar = document.createElement('div');
     phaseBar.className = 'system-update-phase';
@@ -3200,15 +3342,9 @@ function _startSystemUpdate(btn, endpoint, heading_) {
     document.body.appendChild(overlay);
     requestAnimationFrame(() => overlay.classList.add('visible'));
 
-    closeBtn.addEventListener('click', () => {
-        overlay.classList.remove('visible');
-        overlay.addEventListener('transitionend', () => overlay.remove(), { once: true });
-        setTimeout(() => { if (overlay.parentNode) overlay.remove(); }, 350);
-        document.body.classList.remove('modal-open');
-        var _sy = document.documentElement.style.getPropertyValue('--scroll-y');
-        document.documentElement.style.removeProperty('--scroll-y');
-        window.scrollTo(0, parseInt(_sy || '0') * -1);
-    });
+    const mini = _createMinimizable(overlay, dialog, [_toastIcon('update', 'accent'), ' ' + titleText]);
+    mini.report(phaseBar.textContent);
+    closeBtn.addEventListener('click', mini.close);
 
     // Listen for SocketIO events
     const socket = window.configSocket;
@@ -3218,8 +3354,11 @@ function _startSystemUpdate(btn, endpoint, heading_) {
         closeBtn.style.display = '';
         btn.disabled = false;
         btn.textContent = window.translations?.update_packages || 'Update';
+        _unlockAfterUpdate();
+        mini.fail(statusBar.textContent);
         return;
     }
+    _lockForUpdate(btn);
 
     function _stopAptProgressBar() {
         const bar = progressBar.querySelector('.update-progress-bar');
@@ -3252,6 +3391,7 @@ function _startSystemUpdate(btn, endpoint, heading_) {
         };
         if (data.phase && phaseLabels[data.phase]) {
             phaseBar.textContent = phaseLabels[data.phase];
+            mini.report(phaseBar.textContent);
         }
     }
 
@@ -3263,9 +3403,11 @@ function _startSystemUpdate(btn, endpoint, heading_) {
         if (data.success) {
             statusBar.textContent = window.translations?.system_update_complete || 'System update complete!';
             statusBar.classList.add('system-update-success');
+            mini.succeed(statusBar.textContent);
         } else {
             statusBar.textContent = (window.translations?.system_update_failed || 'Update failed') + ': ' + (data.error || '');
             statusBar.classList.add('system-update-error');
+            mini.fail(statusBar.textContent);
             logArea.classList.remove('update-log-hidden');
             logArea.classList.add('update-log-visible');
             detailsToggle.textContent = window.translations?.hide_details || 'Hide details';
@@ -3273,6 +3415,7 @@ function _startSystemUpdate(btn, endpoint, heading_) {
         closeBtn.style.display = '';
         btn.disabled = false;
         btn.textContent = window.translations?.update_packages || 'Update';
+        _unlockAfterUpdate();
     }
 
     socket.on('apt_output', onAptOutput);
@@ -3290,9 +3433,11 @@ function _startSystemUpdate(btn, endpoint, heading_) {
                 detailsToggle.textContent = window.translations?.hide_details || 'Hide details';
                 statusBar.textContent = data.message || 'Failed';
                 statusBar.classList.add('system-update-error');
+                mini.fail(statusBar.textContent);
                 closeBtn.style.display = '';
                 btn.disabled = false;
                 btn.textContent = window.translations?.update_packages || 'Update';
+                _unlockAfterUpdate();
                 socket.off('apt_output', onAptOutput);
                 socket.off('apt_done', onAptDone);
             }
@@ -3305,9 +3450,11 @@ function _startSystemUpdate(btn, endpoint, heading_) {
             detailsToggle.textContent = window.translations?.hide_details || 'Hide details';
             statusBar.textContent = 'Request failed';
             statusBar.classList.add('system-update-error');
+            mini.fail(statusBar.textContent);
             closeBtn.style.display = '';
             btn.disabled = false;
             btn.textContent = window.translations?.update_packages || 'Update';
+            _unlockAfterUpdate();
             socket.off('apt_output', onAptOutput);
             socket.off('apt_done', onAptDone);
         });

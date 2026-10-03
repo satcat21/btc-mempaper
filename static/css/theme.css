@@ -474,6 +474,41 @@ body.modal-open {
     font-size: 1.1rem;
     font-weight: 600;
     color: var(--text-primary);
+    text-align: left;
+}
+
+/* Corner close button. The dialog is the positioning context; the title gives
+   up the space under the button so a long title never runs beneath it. */
+.confirm-modal-dialog.has-close {
+    position: relative;
+}
+
+.confirm-modal-dialog.has-close .confirm-modal-title {
+    padding-right: 36px;
+}
+
+.confirm-modal-x {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    border-radius: 50%;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.confirm-modal-x:hover,
+.confirm-modal-x:focus-visible {
+    background: var(--border-color);
+    color: var(--text-primary);
 }
 
 .confirm-modal-message {
@@ -638,6 +673,19 @@ body.modal-open {
     display: flex;
     gap: 12px;
     justify-content: center;
+}
+
+/* A lone button (a Close under a read-only result) keeps the size it has beside
+   a second one instead of stretching across the dialog. */
+.confirm-modal-buttons.single,
+.confirm-modal-buttons:has(> .confirm-modal-btn:only-child) {
+    justify-content: flex-end;
+}
+
+.confirm-modal-buttons.single .confirm-modal-btn,
+.confirm-modal-buttons > .confirm-modal-btn:only-child {
+    flex: 0 0 auto;
+    min-width: 120px;
 }
 
 .confirm-modal-btn {

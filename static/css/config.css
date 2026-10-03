@@ -2486,9 +2486,20 @@ body.dark-mode .wifi-badge-saved {
     gap: 10px;
 }
 
+/* A lone button (Factory Reset) keeps the width it has in the three-button
+   Device Control row instead of stretching across the card. */
+.device-control-wrapper > .device-control-btn:only-child {
+    flex: 0 0 auto;
+    width: calc((100% - 20px) / 3);
+}
+
 @media (max-width: 600px) {
     .device-control-wrapper {
         flex-direction: column;
+    }
+
+    .device-control-wrapper > .device-control-btn:only-child {
+        width: auto;
     }
 }
 
@@ -2781,6 +2792,7 @@ body.dark-mode .wifi-badge-saved {
     display: flex;
     gap: 10px;
     align-items: center;
+    justify-content: flex-end;
 }
 
 .wheel-stop-btn {

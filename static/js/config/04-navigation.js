@@ -867,7 +867,7 @@ function _mpaSvgIcon(pathData, color, size, extraStyle) {
 }
 
 // `title` because both the mempool and the Tang check open this, and it used to
-// be captioned "Mempool Connection Log" either way.
+// be captioned "Mempool Connection Check" either way.
 function _mpaShowLogModal(checks, heading) {
     const dark = document.body.classList.contains('dark-mode');
     const C = dark ? {
@@ -896,16 +896,35 @@ function _mpaShowLogModal(checks, heading) {
         errText:     '#b91c1c',
     };
 
+    // Same shell as the confirmation modals, so the title, the corner X and the
+    // button row look and behave like theirs. Only the rows below keep the
+    // check-specific colors.
     const overlay = document.createElement('div');
-    overlay.style.cssText = `position:fixed;inset:0;z-index:200000;background:${C.overlay};display:flex;align-items:center;justify-content:center;padding:20px;`;
+    overlay.className = 'confirm-modal-overlay visible';
+    document.documentElement.style.setProperty('--scroll-y', `-${window.scrollY}px`);
+    document.body.classList.add('modal-open');
 
     const box = document.createElement('div');
-    box.style.cssText = `background:${C.bg};backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border:1px solid ${C.border};border-radius:14px;padding:24px;max-width:540px;width:100%;max-height:75vh;overflow-y:auto;box-shadow:${C.shadow};color:${C.text};`;
+    box.className = 'confirm-modal-dialog has-detail';
+    box.style.maxWidth = '540px';
 
-    const title = document.createElement('div');
-    title.style.cssText = `font-weight:700;font-size:15px;margin-bottom:18px;color:${C.text};`;
-    title.textContent = heading || (window.translations || {}).connection_log || 'Connection Log';
+    function close() {
+        overlay.remove();
+        document.body.classList.remove('modal-open');
+        const sy = document.documentElement.style.getPropertyValue('--scroll-y');
+        document.documentElement.style.removeProperty('--scroll-y');
+        window.scrollTo(0, parseInt(sy || '0') * -1);
+    }
+
+    const title = document.createElement('h3');
+    title.className = 'confirm-modal-title';
+    title.textContent = heading || (window.translations || {}).connection_check || 'Connection Check';
     box.appendChild(title);
+
+    // Rows scroll on their own so the title and the button stay in view.
+    const list = document.createElement('div');
+    list.style.cssText = 'flex:1 1 auto;min-height:0;overflow-y:auto;text-align:left;margin-bottom:16px;';
+    box.appendChild(list);
 
     checks.forEach(c => {
         const row = document.createElement('div');
@@ -938,18 +957,20 @@ function _mpaShowLogModal(checks, heading) {
             errBox.textContent = c.error;
             row.appendChild(errBox);
         }
-        box.appendChild(row);
+        list.appendChild(row);
     });
 
+    const buttons = document.createElement('div');
+    buttons.className = 'confirm-modal-buttons single';
     const closeBtn = document.createElement('button');
-    closeBtn.textContent = 'Close';
-    closeBtn.style.cssText = `margin-top:16px;width:100%;padding:10px;background:transparent;border:1px solid ${C.border};border-radius:8px;color:${C.muted};cursor:pointer;font-size:13px;font-family:inherit;transition:border-color 0.15s,color 0.15s;`;
-    closeBtn.addEventListener('mouseenter', () => { closeBtn.style.borderColor = 'var(--accent)'; closeBtn.style.color = 'var(--accent)'; });
-    closeBtn.addEventListener('mouseleave', () => { closeBtn.style.borderColor = C.border; closeBtn.style.color = C.muted; });
-    closeBtn.addEventListener('click', () => overlay.remove());
-    box.appendChild(closeBtn);
+    closeBtn.className = 'confirm-modal-btn cancel';
+    closeBtn.textContent = (window.translations || {}).close || 'Close';
+    closeBtn.addEventListener('click', close);
+    buttons.appendChild(closeBtn);
+    box.appendChild(buttons);
+    addModalCloseButton(box, close);
 
-    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
     overlay.appendChild(box);
     document.body.appendChild(overlay);
 }
@@ -1337,13 +1358,13 @@ function createFormField(key, field, value) {
 
                         const logBtn = document.createElement('button');
                         logBtn.type = 'button';
-                        logBtn.textContent = 'Open Log';
+                        logBtn.textContent = 'Show Details';
                         logBtn.style.cssText = 'margin-top:8px;width:100%;padding:5px 10px;background:transparent;'
                             + 'border:1px solid rgba(128,128,128,0.3);border-radius:6px;color:inherit;cursor:pointer;'
                             + 'font-size:11px;font-family:inherit;';
                         logBtn.addEventListener('click', e => {
                             e.stopPropagation();
-                            _mpaShowLogModal(checks, (window.translations || {}).tang_connection_log || 'Tang Connection Log');
+                            _mpaShowLogModal(checks, (window.translations || {}).tang_connection_check || 'Tang Connection Check');
                         });
                         logBtn.addEventListener('mouseenter', () => {
                             logBtn.style.borderColor = accentColor;
@@ -1357,7 +1378,7 @@ function createFormField(key, field, value) {
 
                         _buildLiveToast(
                             [_mpaIcon(allOk ? 'check' : 'error', accentColor, 15),
-                             allOk ? 'Tang — All OK' : 'Tang — Issues Found'],
+                             allOk ? 'Tang - All OK' : 'Tang - Issues Found'],
                             body, accentColor, 15000);
                     })
                     .catch(() => {
@@ -1420,14 +1441,14 @@ function createFormField(key, field, value) {
 
                         const logBtn = document.createElement('button');
                         logBtn.type = 'button';
-                        logBtn.textContent = 'Open Log';
+                        logBtn.textContent = 'Show Details';
                         logBtn.style.cssText = 'margin-top:8px;width:100%;padding:5px 10px;background:transparent;' +
                             'border:1px solid rgba(128,128,128,0.3);border-radius:6px;color:inherit;cursor:pointer;' +
                             'font-size:11px;font-family:inherit;';
                         logBtn.addEventListener('click', e => {
                             // The toast closes on any click inside it - keep this one for the modal
                             e.stopPropagation();
-                            _mpaShowLogModal(data.checks, (window.translations || {}).mempool_connection_log || 'Mempool Connection Log');
+                            _mpaShowLogModal(data.checks, (window.translations || {}).mempool_connection_check || 'Mempool Connection Check');
                         });
                         logBtn.addEventListener('mouseenter', () => {
                             logBtn.style.borderColor = accentColor;
@@ -1440,7 +1461,7 @@ function createFormField(key, field, value) {
                         body.appendChild(logBtn);
 
                         _buildLiveToast(
-                            [titleIcon, allOk ? 'Mempool — All OK' : 'Mempool — Issues Found'],
+                            [titleIcon, allOk ? 'Mempool - All OK' : 'Mempool - Issues Found'],
                             body, accentColor, 15000
                         );
                     })

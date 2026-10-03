@@ -46,6 +46,22 @@
         return dialog;
     }
 
+    // Corner close (X) shared by every modal built on .confirm-modal-dialog, so
+    // callers that assemble their own dialog get the same control. `onClose`
+    // decides what closing means: a confirmation cancels, a running update
+    // minimizes to a toast.
+    window.addModalCloseButton = function (dialog, onClose) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'confirm-modal-x';
+        btn.setAttribute('aria-label', t('close', 'Close'));
+        btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+        btn.addEventListener('click', onClose);
+        dialog.classList.add('has-close');
+        dialog.appendChild(btn);
+        return btn;
+    };
+
     // ── Confirm Modal ──────────────────────────────────────────
     window.showConfirmModal = function ({ title, message, confirmText, cancelText, danger, icon, detail } = {}) {
         return new Promise(resolve => {
@@ -105,6 +121,7 @@
 
             confirmBtn.addEventListener('click', () => close(true));
             cancelBtn.addEventListener('click', () => close(false));
+            addModalCloseButton(dialog, () => close(false));
             overlay.addEventListener('click', e => { if (e.target === overlay) close(false); });
 
             // Keyboard: Escape = cancel, Enter = confirm
@@ -159,6 +176,7 @@
             }
 
             okBtn.addEventListener('click', close);
+            addModalCloseButton(dialog, close);
             overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
 
             function onKey(e) {
