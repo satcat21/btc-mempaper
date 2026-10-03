@@ -1110,7 +1110,11 @@ function _unlockAfterUpdate() {
 // place (like the new-block toast filling in its mining data) rather than
 // stacking a new one per step. Clicking the toast reopens the modal. Once the
 // run has ended, X closes the modal for good.
-function _createMinimizable(overlay, dialog, toastTitle) {
+function _createMinimizable(overlay, dialog, iconName, titleText) {
+    // The icon is tinted by class, so it is kept here to follow the title color
+    // as the run moves from progress to success or failure.
+    const icon = _toastIcon(iconName, 'accent');
+    const toastTitle = [icon, ' ' + titleText];
     let toast = null;
     let minimized = false;
     let finished = false;
@@ -1129,6 +1133,8 @@ function _createMinimizable(overlay, dialog, toastTitle) {
     }
 
     function showToast(dismissMs) {
+        const variant = { '#22c55e': 'success', '#ef4444': 'error' }[last.color] || 'accent';
+        icon.className = 'toast-title-icon toast-icon-' + variant;
         if (toast && toast.isConnected) {
             toast.update(null, [last.body], last.color, dismissMs);
         } else {
@@ -1254,7 +1260,7 @@ async function _performUpdate(tag, updateBtn) {
     overlay.appendChild(dialog);
     document.body.appendChild(overlay);
     requestAnimationFrame(() => overlay.classList.add('visible'));
-    const mini = _createMinimizable(overlay, dialog, [_toastIcon('update', 'accent'), ' ' + titleText]);
+    const mini = _createMinimizable(overlay, dialog, 'update', titleText);
     mini.report(phaseBar.textContent);
 
     const phaseLabels = {
@@ -2412,7 +2418,7 @@ function openMemeSyncModal() {
     overlay.appendChild(box);
     document.body.appendChild(overlay);
 
-    const mini = _createMinimizable(overlay, box, [_toastIcon('download', 'accent'), ' ' + titleLabel]);
+    const mini = _createMinimizable(overlay, box, 'download', titleLabel);
     closeBtn.addEventListener('click', mini.close);
 
     // No click-outside-to-close while the run is live: dismissing the only view
@@ -3371,7 +3377,7 @@ function _startSystemUpdate(btn, endpoint, heading_) {
     document.body.appendChild(overlay);
     requestAnimationFrame(() => overlay.classList.add('visible'));
 
-    const mini = _createMinimizable(overlay, dialog, [_toastIcon('update', 'accent'), ' ' + titleText]);
+    const mini = _createMinimizable(overlay, dialog, 'update', titleText);
     mini.report(phaseBar.textContent);
     closeBtn.addEventListener('click', mini.close);
 
