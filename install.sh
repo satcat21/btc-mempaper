@@ -557,8 +557,34 @@ if [ -f apt-requirements.txt ]; then
     # is either 'name' or 'name=version', both of which apt-get install takes
     # verbatim — the pin is applied here and held later, once Step 7 has
     # installed the wrapper that manages holds.
-    APT_PKGS=$(sed -e 's/#.*//' -e 's/\r//g' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' \
+    APT_SPECS=$(sed -e 's/#.*//' -e 's/\r//g' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' \
         -e "$STRIP_PINS" apt-requirements.txt | grep -v '^$' | tr '\n' ' ')
+
+    # The archives keep only the current version of a package, so a pin that
+    # was right when it was written stops existing the day a security or
+    # point release replaces it - and apt then refuses the whole batch, not
+    # just that package. A pin the archive no longer offers is installed at
+    # the archive's version instead, with a warning naming it, so a fresh
+    # install still completes and the stale pin is visible to fix.
+    APT_PKGS=''
+    for spec in $APT_SPECS; do
+        case "$spec" in
+            *=*)
+                pkg_name=${spec%%=*}
+                pkg_ver=${spec#*=}
+                if apt-cache madison "$pkg_name" 2>/dev/null \
+                        | awk -F'|' '{gsub(/ /, "", $2); print $2}' | grep -qxF "$pkg_ver"; then
+                    APT_PKGS="$APT_PKGS $spec"
+                else
+                    warn "Pinned ${pkg_name}=${pkg_ver} is no longer in the archive - installing the current version"
+                    APT_PKGS="$APT_PKGS $pkg_name"
+                fi
+                ;;
+            *)
+                APT_PKGS="$APT_PKGS $spec"
+                ;;
+        esac
+    done
     sudo apt-get install -y $APT_PKGS
     ok "System packages installed"
 else
