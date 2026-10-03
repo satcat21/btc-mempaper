@@ -254,6 +254,11 @@ class TorRecovery:
         """
         if not over_tor:
             return
+        # Refused by the network gate, or failing because there is no uplink
+        # at all: restarting tor cannot help, and costs a full bootstrap.
+        from utils import network_gate
+        if network_gate.is_offline():
+            return
 
         with self._lock:
             now = time.time()

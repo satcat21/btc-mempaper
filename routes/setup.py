@@ -243,6 +243,8 @@ def register(self):
                         os.remove(self.setup_mode_flag_path)
                 except OSError:
                     pass
+                from utils import network_gate
+                network_gate.set_offline(False)
                 _wifi_connect_state['status'] = 'connected'
                 _wifi_connect_state['connection'] = final_status.get('connection', ssid)
                 _wifi_connect_state['message'] = f'Connected to {final_status.get("connection", ssid)}'
@@ -268,6 +270,8 @@ def register(self):
                             os.remove(self.setup_mode_flag_path)
                     except OSError:
                         pass
+                    from utils import network_gate
+                    network_gate.set_offline(False)
                     _wifi_connect_state['status'] = 'connected'
                     _wifi_connect_state['connection'] = final_status.get('connection', ssid)
                     _wifi_connect_state['message'] = f'Connected to {final_status.get("connection", ssid)}'

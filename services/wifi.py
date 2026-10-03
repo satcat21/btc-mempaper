@@ -454,6 +454,10 @@ class WifiHotspotMixin:
             print(f'⚠️ Could not clear SSH keys from {pi_path}: {e}')
 
     def _write_setup_mode_flag(self, enabled, ssid=None, interface=None, password=None):
+        # Setup mode means the only interface is the hotspot: nothing beyond
+        # it is reachable until a network has been joined.
+        from utils import network_gate
+        network_gate.set_offline(bool(enabled), 'setup mode')
         try:
             os.makedirs(os.path.dirname(self.setup_mode_flag_path), exist_ok=True)
         except Exception:
@@ -1513,6 +1517,8 @@ class WifiHotspotMixin:
                         continue
 
                     if connected:
+                        from utils import network_gate
+                        network_gate.set_offline(False)
                         self._wifi_disconnect_since = None
                         self._wifi_reconnect_attempts = 0
                         self._wifi_last_setup_probe_try = 0

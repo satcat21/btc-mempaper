@@ -558,7 +558,13 @@ class BlockRewardMonitor:
 
         heartbeat_count = 0
         consecutive_failures = 0
+        from utils import network_gate
         while self.running:
+            if network_gate.is_offline():
+                # No uplink: a connection attempt can only fail, and over Tor
+                # it fails slowly. Check again shortly; not a failure.
+                time.sleep(10)
+                continue
             self._ws_opened_at = None
             _proxy_kwargs = {}
             try:

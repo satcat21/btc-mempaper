@@ -32,6 +32,8 @@ from flask_socketio import SocketIO
 from flask_compress import Compress
 
 # Import custom modules
+from utils import network_gate
+network_gate.install()
 from lib.mempool_api import MempoolAPI
 from lib.image_renderer import ImageRenderer
 from utils.translations import translations
@@ -1421,6 +1423,19 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
         else:
             print("💾 No cached image found - will create placeholder")
             self._create_placeholder_image()
+
+        # With no saved Wi-Fi there is no route anywhere, so nothing the
+        # background startup is about to request can succeed. Close the gate
+        # before it starts, so those requests fail at once instead of each
+        # waiting out a Tor timeout while the hotspot is being brought up.
+        if os.name != 'nt':
+            try:
+                if self._is_setup_mode_enabled():
+                    network_gate.set_offline(True, 'setup mode')
+                elif self._has_saved_wifi_connections_on_disk() is False:
+                    network_gate.set_offline(True, 'no saved Wi-Fi')
+            except Exception as e:
+                print(f'⚠️ Could not determine network state at startup: {e}')
 
         # Start Wi-Fi check immediately in a separate thread so the hotspot
         # comes up as fast as possible (critical for first-boot / delivery reset).
