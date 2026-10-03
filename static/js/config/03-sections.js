@@ -1051,10 +1051,39 @@ function _applyUpdateLock(entry) {
     btn.title = _updateLockTooltip();
 }
 
+// A page opened or reloaded while an update is installing has no run of its own
+// to lock for, so ask the server. Checked once, when the first control
+// registers, and polled until the update ends - at which point the controls
+// come back. A failed poll (the service restarts mid-update) changes nothing.
+let _updateLockSynced = false;
+function _syncUpdateLockFromServer() {
+    if (_updateLockSynced) return;
+    _updateLockSynced = true;
+    const check = async () => {
+        try {
+            const r = await fetch('/api/health', { cache: 'no-store' });
+            const d = r.ok ? await r.json() : null;
+            if (!d) return setTimeout(check, 5000);
+            if (d.update_running) {
+                if (!_updateLocked) { _updateLockFromServer = true; _lockForUpdate(null); }
+                setTimeout(check, 5000);
+            } else if (_updateLocked && !_updateLockOwner && _updateLockFromServer) {
+                _updateLockFromServer = false;
+                _unlockAfterUpdate();
+            }
+        } catch (_) {
+            setTimeout(check, 5000);
+        }
+    };
+    check();
+}
+let _updateLockFromServer = false;
+
 function _registerUpdateLockable(btn, restore) {
     const entry = { btn, restore, title: null };
     _updateLockables.push(entry);
     if (_updateLocked) _applyUpdateLock(entry);
+    _syncUpdateLockFromServer();
     return btn;
 }
 

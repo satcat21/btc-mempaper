@@ -19,6 +19,25 @@ def register(self):
 
     # ── Software Update Endpoints ────────────────────────────────
 
+    def _update_in_progress():
+        return bool(getattr(self, '_update_running', False)
+                    or getattr(self, '_apt_running', False))
+
+    def _refuse_during_update():
+        """A 409 response while an update is installing, else None.
+
+        Restarting, rebooting or powering off part-way through an install can
+        leave the code, the packages or the filesystem half-written. The
+        settings page disables these buttons, but only in the tab that started
+        the update; this is the check that holds for every other client.
+        """
+        if not _update_in_progress():
+            return None
+        msg = self.translations.get(
+            'update_running_tooltip',
+            'Update running - please wait until it finishes')
+        return jsonify({'success': False, 'error': msg}), 409
+
     @self.app.route('/api/health', methods=['GET'])
     def health_check():
         """Health check endpoint for update polling."""
@@ -26,6 +45,9 @@ def register(self):
             'status': 'ok',
             'started': self._startup_timestamp,
             'boot_id': getattr(self, '_current_boot_id', None),
+            # Lets a page opened (or reloaded) mid-update keep the device
+            # controls disabled, as the tab that started the update does.
+            'update_running': _update_in_progress(),
         })
 
     # ── WiFi Management API ───────────────────────────────────────────
@@ -383,6 +405,9 @@ def register(self):
     @require_auth(self.auth_manager)
     def restart_service():
         """Restart the mempaper service."""
+        refused = _refuse_during_update()
+        if refused:
+            return refused
         try:
             def _do_restart():
                 time.sleep(1)
@@ -400,6 +425,9 @@ def register(self):
     @require_auth(self.auth_manager)
     def reboot_device():
         """Reboot the entire device."""
+        refused = _refuse_during_update()
+        if refused:
+            return refused
         try:
             def _do_reboot():
                 # Mark this as an authenticated, intentional reboot so
@@ -426,6 +454,9 @@ def register(self):
     @require_auth(self.auth_manager)
     def shutdown_device():
         """Shut down (power off) the device."""
+        refused = _refuse_during_update()
+        if refused:
+            return refused
         try:
             def _do_shutdown():
                 time.sleep(2)
@@ -450,6 +481,9 @@ def register(self):
         panel then holds the delivery image, and the next power-up finds no
         Wi-Fi and comes back in setup mode.
         """
+        refused = _refuse_during_update()
+        if refused:
+            return refused
         try:
             # Both default to keeping: a request that says nothing erases the
             # device's configuration but leaves its pictures, which is the
