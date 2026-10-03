@@ -28,12 +28,6 @@ class DisplayWorkerMixin:
 
         if priority:
             self._priority_display_pending = True
-        elif self._setup_screen_owns_panel():
-            # The setup hotspot is up and its QR screen is the only place the
-            # network name and passphrase are shown. A dashboard refresh (the
-            # boot confirmation, a new block) would paint over it.
-            print('📌 Setup hotspot active - leaving the onboarding screen on the panel')
-            return
         elif getattr(self, '_priority_display_pending', False):
             # A frame that must reach the panel is on its way; anything
             # ordinary would only be overwritten by it moments later.
@@ -193,18 +187,6 @@ class DisplayWorkerMixin:
             # later refresh for the life of the process.
             self._priority_display_pending = False
             raise
-
-    def _setup_screen_owns_panel(self):
-        """True while setup mode is on, so only priority frames reach the panel.
-
-        The setup flag is cleared before the post-onboarding "connected" screen
-        is drawn, so that screen is not held back by this.
-        """
-        check = getattr(self, '_is_setup_mode_enabled', None)
-        try:
-            return bool(check and check())
-        except Exception:
-            return False
 
     def _kill_display_worker(self, proc):
         """Terminate a stuck/failed display worker and clear the reference.
