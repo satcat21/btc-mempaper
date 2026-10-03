@@ -62,6 +62,25 @@ if [ "$(id -u)" = "0" ]; then
     fail "Do not run as root. Run as your normal user (e.g. 'pi'). The script uses sudo where needed."
 fi
 
+# ── sudo: asked for once, kept for the whole run ──────────────────────────
+# Images that give the first user passwordless sudo never prompt here. Newer
+# ones may not, and sudo only remembers a password for 15 minutes - shorter
+# than an install on a Pi Zero, with its source builds - so the password was
+# asked for again and again mid-run. Ask once up front, before the questions,
+# then refresh the timestamp in the background until this script exits.
+if ! sudo -n true 2>/dev/null; then
+    echo "The installer needs sudo. Enter your password once; it is kept for the whole installation."
+fi
+sudo -v || fail "sudo is required to install mempaper."
+(
+    while kill -0 "$$" 2>/dev/null; do
+        sudo -n true 2>/dev/null || exit
+        sleep 50
+    done
+) &
+SUDO_KEEPALIVE_PID=$!
+trap 'kill "$SUDO_KEEPALIVE_PID" 2>/dev/null' EXIT
+
 if ! command -v python3 >/dev/null 2>&1; then
     fail "python3 not found. Install it with: sudo apt install python3"
 fi
