@@ -7,6 +7,7 @@ from flask import request
 from managers.auth_manager import require_auth
 from werkzeug.utils import secure_filename
 import os
+import threading
 
 # Defined in mempaper_app; imported lazily inside register() to avoid
 # a circular import at module load time.
@@ -261,19 +262,29 @@ def register(self):
             if os.path.exists(thumb_path):
                 os.remove(thumb_path)
 
+            self.image_renderer.invalidate_meme_cache()
+
             # The record goes with the image. Left behind it describes a file
             # that is not there: harmless to the renderer, which draws only what
             # it finds on disk, but it is one more record per deletion for ever,
             # and a tag the operator removed here would come back if the image
             # were ever downloaded again.
-            forgotten = self.image_renderer.forget_meme(stem)
-
-            self.image_renderer.invalidate_meme_cache()
+            #
+            # After the response, not before it: forget_meme() rewrites both
+            # index files whole, thousands of records each, and on a Pi Zero
+            # that was most of the time the delete dialog sat open. The image
+            # and thumbnail are already gone, so nothing waits on the records.
+            def _forget():
+                try:
+                    self.image_renderer.forget_meme(stem)
+                    self.image_renderer.invalidate_meme_cache()
+                except Exception as e:
+                    print(f'⚠️ Could not remove the records of deleted meme {stem}: {e}')
+            threading.Thread(target=_forget, daemon=True).start()
 
             return jsonify({
                 'success': True,
-                'message': f'Meme deleted successfully: {filename}',
-                'metadata_removed': forgotten
+                'message': f'Meme deleted successfully: {filename}'
             })
 
         except Exception as e:
@@ -309,22 +320,25 @@ def register(self):
             old_stem = os.path.splitext(old_filename)[0]
             new_stem = os.path.splitext(new_filename)[0]
 
-            # Track rename so metadata stays linked to UUID
-            self.image_renderer.record_rename(old_stem, new_stem)
-
-            # Update user tags key if it exists
+            # Track rename so metadata stays linked to UUID, and move the user
+            # tags with it. Under the metadata lock: a deletion may be cleaning
+            # up these same files in the background.
+            from lib.render.memes import META_LOCK
             import json as _json
-            user_tags_path = os.path.join('static', 'memes', '_user_tags.json')
-            if os.path.exists(user_tags_path):
-                try:
-                    with open(user_tags_path, encoding='utf-8') as fh:
-                        user_tags = _json.load(fh)
-                    if old_stem in user_tags:
-                        user_tags[new_stem] = user_tags.pop(old_stem)
-                        with open(user_tags_path, 'w', encoding='utf-8') as fh:
-                            _json.dump(user_tags, fh, ensure_ascii=False, indent=2)
-                except (OSError, _json.JSONDecodeError):
-                    pass
+            with META_LOCK:
+                self.image_renderer.record_rename(old_stem, new_stem)
+
+                user_tags_path = os.path.join('static', 'memes', '_user_tags.json')
+                if os.path.exists(user_tags_path):
+                    try:
+                        with open(user_tags_path, encoding='utf-8') as fh:
+                            user_tags = _json.load(fh)
+                        if old_stem in user_tags:
+                            user_tags[new_stem] = user_tags.pop(old_stem)
+                            with open(user_tags_path, 'w', encoding='utf-8') as fh:
+                                _json.dump(user_tags, fh, ensure_ascii=False, indent=2)
+                    except (OSError, _json.JSONDecodeError):
+                        pass
 
             self.image_renderer.invalidate_meme_cache()
 

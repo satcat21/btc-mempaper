@@ -563,10 +563,14 @@ function setupModals() {
     const cancelDeleteBtn = document.getElementById('cancel-delete');
     
     if (confirmDeleteBtn) {
-        confirmDeleteBtn.onclick = async () => {
+        confirmDeleteBtn.onclick = () => {
             if (memeToDelete) {
-                await deleteMeme(memeToDelete);
+                // Close straight away rather than holding the dialog open for
+                // the round trip. deleteMeme() hides the thumbnail at once and
+                // only speaks up if the delete fails.
+                const filename = memeToDelete;
                 hideDeleteModal();
+                deleteMeme(filename);
             }
         };
     }
@@ -1112,52 +1116,47 @@ async function downloadMeme(filename) {
 }
 
 // Delete meme function
+//
+// The thumbnail disappears the moment the delete is confirmed - that is the
+// confirmation, so success raises no toast. It is hidden rather than removed
+// until the server answers, so a failed delete can put it back exactly where
+// it was, with an error toast saying why.
 async function deleteMeme(filename) {
+    const memesList = document.getElementById('memes-list');
+    const memeDiv = memesList
+        ?.querySelector(`img[data-filename="${CSS.escape(filename)}"]`)
+        ?.closest('.meme-thumbnail');
+    if (memeDiv) memeDiv.style.display = 'none';
+
+    const restore = (message) => {
+        if (memeDiv) memeDiv.style.display = '';
+        showNotification(message, 'error');
+    };
+
     try {
-        const response = await fetch(`/api/delete-meme/${filename}`, {
+        const response = await fetch(`/api/delete-meme/${encodeURIComponent(filename)}`, {
             method: 'DELETE'
         });
-        
         const result = await response.json();
-        
-        if (result.success) {
-            showNotification(window.translations.meme_deleted_successfully, 'success');
-            clearMemeCache(); // Clear cache
-            window.memeFilenameSet.delete(filename);
 
-            // Find and remove the meme element from the DOM without reloading the page
-            const memesList = document.getElementById('memes-list');
-            if (memesList) {
-                // Find the image element with matching filename
-                const imgElement = memesList.querySelector(`img[data-filename="${filename}"]`);
-                if (imgElement) {
-                    // Find the parent meme-thumbnail div and remove it
-                    const memeDiv = imgElement.closest('.meme-thumbnail');
-                    if (memeDiv) {
-                        memeDiv.remove();
-                        
-                        // Update total count
-                        if (memeLoader && memeLoader.totalMemes > 0) {
-                            memeLoader.totalMemes--;
-                        }
-                        
-                        // Check if list is now empty
-                        const remainingMemes = memesList.querySelectorAll('.meme-thumbnail');
-                        if (remainingMemes.length === 0) {
-                            const loadMoreBtn = memesList.querySelector('.load-more-btn');
-                            if (!loadMoreBtn) {
-                                // No more memes and no load more button
-                                memesList.innerHTML = `<p style="grid-column: 1/-1; text-align: center; color: var(--text-secondary);">${window.translations.no_memes_uploaded}</p>`;
-                            }
-                        }
-                    }
-                }
-            }
-        } else {
-            showNotification(result.message || window.translations.meme_delete_failed, 'error');
+        if (!result.success) {
+            restore(result.message || window.translations.meme_delete_failed);
+            return;
+        }
+
+        clearMemeCache();
+        window.memeFilenameSet.delete(filename);
+        if (!memeDiv) return;
+        memeDiv.remove();
+        if (memeLoader && memeLoader.totalMemes > 0) {
+            memeLoader.totalMemes--;
+        }
+        if (memesList && !memesList.querySelector('.meme-thumbnail')
+                && !memesList.querySelector('.load-more-btn')) {
+            memesList.innerHTML = `<p style="grid-column: 1/-1; text-align: center; color: var(--text-secondary);">${window.translations.no_memes_uploaded}</p>`;
         }
     } catch (error) {
-        showNotification(window.translations.meme_delete_failed + ': ' + error.message, 'error');
+        restore(window.translations.meme_delete_failed + ': ' + error.message);
     }
 }
 

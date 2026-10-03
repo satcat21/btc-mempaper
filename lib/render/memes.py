@@ -6,9 +6,11 @@ from PIL import Image
 from PIL import ImageOps
 from datetime import datetime
 from lib.btc_holidays import btc_holidays
+import functools
 import os
 import random
 import re
+import threading
 
 
 # Roughly how many blocks Bitcoin produces per day -- the number of memes the
@@ -48,6 +50,23 @@ _HOLIDAY_SHOWS_PER_MEME = 24
 # from inside another one.
 _KEYWORD_SUBSTRING_MIN = 6
 
+
+
+# _user_tags.json, _renames.json and the two index files are each rewritten
+# whole by whoever changes them. A meme deletion now cleans them up in the
+# background, after the request has returned, so it can overlap a rename or a
+# tag edit - and two read-modify-write passes over one file lose whichever
+# write lands first. Every writer takes this lock. Re-entrant, because the
+# rename route holds it around record_rename().
+META_LOCK = threading.RLock()
+
+
+def _meta_locked(fn):
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        with META_LOCK:
+            return fn(*args, **kwargs)
+    return wrapper
 
 class MemeMixin:
     """Meme and OPSec image selection: the on-disk cache, tag and rename"""
@@ -319,6 +338,7 @@ class MemeMixin:
         self._refresh_meme_cache()
         return self._meme_cache_api_tags
 
+    @_meta_locked
     def record_rename(self, old_stem: str, new_stem: str) -> None:
         """Track a file rename in _renames.json so metadata stays linked."""
         import json as _json
@@ -336,6 +356,7 @@ class MemeMixin:
         with open(renames_path, 'w', encoding='utf-8') as fh:
             _json.dump(renames, fh, ensure_ascii=False, indent=2)
 
+    @_meta_locked
     def forget_meme(self, stem: str) -> dict:
         """Drop every trace of one meme from the metadata beside the images.
 
@@ -433,6 +454,7 @@ class MemeMixin:
 
         return removed
 
+    @_meta_locked
     def set_meme_tags(self, stem: str, tags: list[str]) -> None:
         """Save user-defined tags for a meme (persisted in _user_tags.json)."""
         import json as _json
