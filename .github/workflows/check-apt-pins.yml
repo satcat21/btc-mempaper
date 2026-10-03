@@ -1,0 +1,70 @@
+# Weekly check that every pinned version in apt-requirements.txt is still
+# offered by the Raspberry Pi OS archives. The archives keep only the current
+# version of a package, so a pin goes stale the day a security or point release
+# replaces it. A scheduled run that finds a stale pin opens an issue (or
+# refreshes the open one) with the versions to bump to; a pull request that
+# touches the pins just fails.
+#
+# Locally: python tools/check_apt_pins.py --suggest   (or --write to apply)
+
+name: Check apt pins
+
+on:
+  schedule:
+    - cron: '17 6 * * 1'   # Mondays, 06:17 UTC
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - apt-requirements.txt
+      - tools/check_apt_pins.py
+      - utils/apt_requirements.py
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # Standard library only - nothing to install.
+      - name: Check pins against the archive
+        id: check
+        run: |
+          set +e
+          python tools/check_apt_pins.py --markdown --suggest > report.md
+          echo "status=$?" >> "$GITHUB_OUTPUT"
+          cat report.md
+          cat report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Open or update the stale-pins issue
+        if: steps.check.outputs.status == '1' && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title='Stale apt pins in apt-requirements.txt'
+          {
+            cat report.md
+            echo
+            echo 'To bump them: `python tools/check_apt_pins.py --write`, then commit.'
+            echo 'Or drop the `=version` if the package does not need a pin.'
+          } > body.md
+          number=$(gh issue list --state open --search "$title in:title" \
+                     --json number,title --jq ".[] | select(.title == \"$title\") | .number" | head -n1)
+          if [ -n "$number" ]; then
+            gh issue edit "$number" --body-file body.md
+            echo "Updated issue #$number"
+          else
+            gh issue create --title "$title" --body-file body.md
+          fi
+
+      # 1 = stale or missing pins, 2 = the archive index could not be read.
+      - name: Fail on stale pins
+        if: steps.check.outputs.status != '0'
+        run: exit ${{ steps.check.outputs.status }}

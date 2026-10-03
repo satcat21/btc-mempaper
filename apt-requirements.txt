@@ -1,51 +1,57 @@
 # System packages the installer and web updater keep installed.
 #
-#   imagemagick           floats with the archive
-#   tor=0.4.9.13-0+deb13u1  pinned and held (apt-mark hold)
+#   imagemagick                 floats with the archive
+#   python3-dev=3.13.5-1        pinned and held (apt-mark hold)
 #
-# A pinned package stops receiving Debian security updates: pin only what
-# breaks when it moves. Pins apply only on the suite below; on any other they
-# install floating. Details: utils/apt_requirements.py, docs/MAINTENANCE_GUIDE.md.
+# A pinned package stops receiving Debian security updates, and the archive
+# drops a pinned version the day a newer one replaces it. Pin only what breaks
+# when it moves. Trixie is a stable release: a floating package only moves for
+# security and bug fixes, never to a new upstream version. Pins apply only on
+# the suite below; on any other they install floating. Check pins against the
+# archive with tools/check_apt_pins.py. Details: utils/apt_requirements.py,
+# docs/MAINTENANCE_GUIDE.md.
 # pins-for: trixie
 
 # Build tools and Python development
-libffi-dev=3.4.8-2
-build-essential=12.12
-python3-pip=25.1.1+dfsg-1+rpt1
+libffi-dev
+build-essential
+python3-pip
+# Pinned: keeps the Python minor version the venv is built against.
+# tools/upgrade_python.sh owns moving it.
 python3-dev=3.13.5-1
 
 # Autotools: numpy's source build on ARM needs them (patchelf bootstrap)
-autoconf=2.72-3.1
-automake=1:1.17-4
-libtool=2.5.4-4
+autoconf
+automake
+libtool
 
 # Imaging
-python3-pil=11.1.0-5+deb13u4
-python3-numpy=1:2.2.4+ds-1
-libopenblas0=0.3.29+ds-3+rpi1+b1  # numpy runtime, not bundled in the pip wheel
+python3-pil
+python3-numpy
+libopenblas0  # numpy runtime, not bundled in the pip wheel
 
 # Codec libraries for Pillow source builds
-libopenjp2-7=2.5.3-2.1~deb13u2
-pkg-config=1.8.1-4
-libjpeg-dev=1:2.1.5-4
-zlib1g-dev=1:1.3.dfsg+really1.3.1-1
-libfreetype-dev=2.13.3+dfsg-1+deb13u1
-libwebp-dev=1.5.0-0.1
+libopenjp2-7
+pkg-config
+libjpeg-dev
+zlib1g-dev
+libfreetype-dev
+libwebp-dev
 
 # WebP/AVIF fallback when Pillow lacks the codec
-imagemagick=8:7.1.1.43+dfsg1-1+deb13u12
+imagemagick
 
 # Setup hotspot: access point, captive-portal DNS and redirects
-hostapd=2:2.10-24+rpt3
-dnsmasq=2.91-1+deb13u2
-iptables=1.8.11-2
-nftables=1.1.3-1  # NetworkManager on trixie calls nft directly
+hostapd
+dnsmasq
+iptables
+nftables  # NetworkManager on trixie calls nft directly
 
 # GPIO (Raspberry Pi)
-python3-gpiozero=2.0.1-0+rpt1+trixie
+python3-gpiozero
 
 # Tor: .onion mempool instances and the optional meme sync over Tor
-tor=0.4.9.13-0+deb13u1
+tor
 
 # Tang network-bound encryption client; inert unless enabled in settings
-clevis=20-1+b2
+clevis

@@ -105,6 +105,19 @@ The work is the maintainer's, once per release: since a pinned package no longer
 receives Debian's security updates, **the pins are only as current as the last
 time someone bumped them.** That is the job this section describes.
 
+> **Pin as little as possible.** `apt-requirements.txt` pins only `python3-dev`,
+> which keeps the Python minor version the venv is built against. Everything else
+> floats: trixie is a stable release, so a floating package only moves for
+> security and bug fixes. The archive also drops a pinned version as soon as a
+> newer one replaces it, so every extra pin goes stale on its own. Promoting the
+> device report below re-pins *every* package, so restore the floating lines
+> afterwards.
+>
+> `tools/check_apt_pins.py` checks the pins against the archive from any machine
+> (`--suggest` prints the current versions, `--write` applies them), and the
+> *Check apt pins* GitHub workflow runs it weekly and opens an issue when a pin
+> has gone stale.
+
 Do not hand-edit the versions. Every device can write down what actually resolved
 on it, and promoting that file is the whole workflow. Run this on a **Trixie test
 device**, from the repo checkout, and take the steps in order.
