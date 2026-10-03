@@ -479,11 +479,13 @@ body.modal-open {
 
 /* Corner close button. The dialog is the positioning context; the title gives
    up the space under the button so a long title never runs beneath it. */
-.confirm-modal-dialog.has-close {
+.confirm-modal-dialog.has-close,
+.modal-content.has-close {
     position: relative;
 }
 
-.confirm-modal-dialog.has-close .confirm-modal-title {
+.confirm-modal-dialog.has-close .confirm-modal-title,
+.modal-content.has-close .confirm-modal-title {
     padding-right: 36px;
 }
 

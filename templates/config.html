@@ -93,8 +93,9 @@
 
     <!-- Delete Meme Confirmation Modal -->
     <div id="delete-modal" class="modal" style="display: none;">
-        <div class="modal-content">
-            <h3><img src="{{ url_for('static', filename='icons/delete.svg') }}" alt="" class="modal-title-icon"> <span data-i18n="delete_confirmation_title">{{ translations.delete_confirmation_title }}</span></h3>
+        <div class="modal-content has-close">
+            <button type="button" class="confirm-modal-x" aria-label="{{ translations.close or 'Close' }}" onclick="hideDeleteModal()"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+            <h3 class="confirm-modal-title"><img src="{{ url_for('static', filename='icons/delete.svg') }}" alt="" class="modal-title-icon"> <span data-i18n="delete_confirmation_title">{{ translations.delete_confirmation_title }}</span></h3>
             <p data-i18n="delete_confirmation_message">{{ translations.delete_confirmation_message }}</p>
             <div class="confirm-modal-buttons">
                 <button id="cancel-delete" class="confirm-modal-btn cancel" data-i18n="cancel">{{ translations.cancel or 'Cancel' }}</button>
@@ -105,8 +106,9 @@
 
     <!-- OPSec Delete Confirmation Modal -->
     <div id="opsec-delete-modal" class="modal" style="display: none;">
-        <div class="modal-content">
-            <h3><img src="{{ url_for('static', filename='icons/delete.svg') }}" alt="" class="modal-title-icon"> <span data-i18n="opsec_delete_confirmation_title">{{ translations.opsec_delete_confirmation_title }}</span></h3>
+        <div class="modal-content has-close">
+            <button type="button" class="confirm-modal-x" aria-label="{{ translations.close or 'Close' }}" onclick="hideOpsecDeleteModal()"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+            <h3 class="confirm-modal-title"><img src="{{ url_for('static', filename='icons/delete.svg') }}" alt="" class="modal-title-icon"> <span data-i18n="opsec_delete_confirmation_title">{{ translations.opsec_delete_confirmation_title }}</span></h3>
             <p data-i18n="opsec_delete_confirmation_message">{{ translations.opsec_delete_confirmation_message }}</p>
             <div class="confirm-modal-buttons">
                 <button id="opsec-cancel-delete" class="confirm-modal-btn cancel" data-i18n="cancel">{{ translations.cancel or 'Cancel' }}</button>
