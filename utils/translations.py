@@ -736,7 +736,12 @@ translations = {
         "setup_found_networks": "Found {count} networks",
         "setup_no_networks": "No networks found",
         "setup_wifi_still_waiting": "Still waiting on mempaper — check its e-ink display for the result.",
-        "setup_wifi_disconnected_expected": "Your phone disconnected from mempaper’s WiFi — that’s expected. Give it about a minute, then check your mempaper’s e-ink display: it will either show the new connection details, or the setup hotspot will reappear if it couldn’t connect — the display then shows its network name and password, so you can rejoin and try again.",
+        "setup_wifi_disconnected_expected": "Your phone disconnected from mempaper’s WiFi - that’s expected. Give it about a minute, then check your mempaper’s e-ink display: it will either show the new connection details, or the setup hotspot will reappear if it couldn’t connect — the display then shows its network name and password, so you can rejoin and try again.",
+        "setup_progress_title": "Connecting mempaper to your Wi-Fi",
+        "setup_progress_step_send": "Sending your Wi-Fi details to mempaper",
+        "setup_progress_step_switch": "mempaper leaves its setup network and joins yours. Your phone loses the connection now - that is expected.",
+        "setup_progress_step_display": "Watch the e-ink display: once connected it shows a QR code for your dashboard. If the setup QR codes come back instead, the connection failed - rejoin the setup network and try again.",
+        "setup_progress_check_display": "Check the e-ink display now",
 
         # Software & System Update
         "software_update": "Software Update",
@@ -1663,7 +1668,12 @@ translations = {
         "setup_found_networks": "{count} Netzwerke gefunden",
         "setup_no_networks": "Keine Netzwerke gefunden",
         "setup_wifi_still_waiting": "Warte noch auf mempaper — überprüfen Sie das E-Ink-Display für das Ergebnis.",
-        "setup_wifi_disconnected_expected": "Ihr Telefon hat die Verbindung zum WLAN von mempaper getrennt — das ist normal. Warten Sie etwa eine Minute und schauen Sie dann auf das E-Ink-Display Ihres mempaper: Es zeigt entweder die neuen Verbindungsdaten an, oder der Setup-Hotspot erscheint erneut, falls die Verbindung fehlgeschlagen ist — das Display zeigt dann Netzwerkname und Passwort, damit Sie sich erneut verbinden und es noch einmal versuchen können.",
+        "setup_wifi_disconnected_expected": "Ihr Telefon hat die Verbindung zum WLAN von mempaper getrennt - das ist normal. Warten Sie etwa eine Minute und schauen Sie dann auf das E-Ink-Display Ihres mempaper: Es zeigt entweder die neuen Verbindungsdaten an, oder der Setup-Hotspot erscheint erneut, falls die Verbindung fehlgeschlagen ist - das Display zeigt dann Netzwerkname und Passwort, damit Sie sich erneut verbinden und es noch einmal versuchen können.",
+        "setup_progress_title": "mempaper verbindet sich mit Ihrem WLAN",
+        "setup_progress_step_send": "WLAN-Daten werden an mempaper gesendet",
+        "setup_progress_step_switch": "mempaper verlässt sein Setup-Netzwerk und verbindet sich mit Ihrem. Ihr Telefon verliert jetzt die Verbindung - das ist normal.",
+        "setup_progress_step_display": "Achten Sie auf das E-Ink-Display: Nach erfolgreicher Verbindung zeigt es einen QR-Code zu Ihrem Dashboard. Erscheinen stattdessen wieder die Setup-QR-Codes, ist die Verbindung fehlgeschlagen - verbinden Sie sich erneut mit dem Setup-Netzwerk und versuchen Sie es noch einmal.",
+        "setup_progress_check_display": "Jetzt das E-Ink-Display prüfen",
 
         # Software- & System-Update
         "software_update": "Software-Update",
@@ -2572,6 +2582,11 @@ translations = {
         "setup_no_networks": "No se encontraron redes",
         "setup_wifi_still_waiting": "Todavía esperando a mempaper — consulte su pantalla e-ink para ver el resultado.",
         "setup_wifi_disconnected_expected": "Su teléfono se desconectó del WiFi de mempaper — esto es normal. Espere aproximadamente un minuto y luego revise la pantalla e-ink de su mempaper: mostrará los nuevos datos de conexión, o el hotspot de configuración reaparecerá si no pudo conectarse — la pantalla mostrará entonces el nombre de red y la contraseña para volver a conectarse e intentarlo de nuevo.",
+        "setup_progress_title": "mempaper se está conectando a tu Wi-Fi",
+        "setup_progress_step_send": "Enviando los datos de tu Wi-Fi a mempaper",
+        "setup_progress_step_switch": "mempaper deja su red de configuración y se une a la tuya. Tu teléfono pierde la conexión ahora - es lo esperado.",
+        "setup_progress_step_display": "Observa la pantalla de tinta electrónica: una vez conectado muestra un código QR de tu panel. Si vuelven a aparecer los códigos QR de configuración, la conexión falló - vuelve a unirte a la red de configuración e inténtalo de nuevo.",
+        "setup_progress_check_display": "Revisa ahora la pantalla de tinta electrónica",
 
         # Actualización de Software y Sistema
         "software_update": "Actualización de Software",
@@ -3481,6 +3496,11 @@ translations = {
         "setup_no_networks": "Aucun reseau trouve",
         "setup_wifi_still_waiting": "Toujours en attente de mempaper — consultez son écran e-ink pour voir le résultat.",
         "setup_wifi_disconnected_expected": "Votre téléphone s'est déconnecté du WiFi de mempaper — c'est normal. Attendez environ une minute, puis consultez l'écran e-ink de votre mempaper : il affichera soit les nouvelles informations de connexion, soit le point d'accès de configuration réapparaîtra s'il n'a pas pu se connecter — l'écran indique alors le nom du réseau et le mot de passe pour s'y reconnecter et réessayer.",
+        "setup_progress_title": "mempaper se connecte à votre Wi-Fi",
+        "setup_progress_step_send": "Envoi de vos identifiants Wi-Fi à mempaper",
+        "setup_progress_step_switch": "mempaper quitte son réseau de configuration et rejoint le vôtre. Votre téléphone perd la connexion maintenant - c’est normal.",
+        "setup_progress_step_display": "Regardez l’écran e-ink : une fois connecté, il affiche un QR code vers votre tableau de bord. Si les QR codes de configuration réapparaissent, la connexion a échoué - rejoignez le réseau de configuration et réessayez.",
+        "setup_progress_check_display": "Vérifiez maintenant l’écran e-ink",
 
         # Mise à jour Logicielle et Système
         "software_update": "Mise à jour logicielle",
@@ -4372,6 +4392,11 @@ translations = {
         "setup_no_networks": "Nessuna rete trovata",
         "setup_wifi_still_waiting": "Ancora in attesa di mempaper — controlla il display e-ink per il risultato.",
         "setup_wifi_disconnected_expected": "Il tuo telefono si è disconnesso dal WiFi di mempaper — è normale. Attendi circa un minuto, poi controlla il display e-ink del tuo mempaper: mostrerà i nuovi dati di connessione, oppure l'hotspot di configurazione riapparirà se non è riuscito a connettersi — il display mostra allora nome della rete e password per ricollegarsi e riprovare.",
+        "setup_progress_title": "mempaper si sta collegando al tuo Wi-Fi",
+        "setup_progress_step_send": "Invio dei dati Wi-Fi a mempaper",
+        "setup_progress_step_switch": "mempaper lascia la sua rete di configurazione e si collega alla tua. Il telefono perde ora la connessione - è normale.",
+        "setup_progress_step_display": "Guarda il display e-ink: una volta connesso mostra un codice QR per la tua dashboard. Se ricompaiono i codici QR di configurazione, la connessione non è riuscita - ricollegati alla rete di configurazione e riprova.",
+        "setup_progress_check_display": "Controlla ora il display e-ink",
 
         # Aggiornamento Software e Sistema
         "software_update": "Aggiornamento Software",

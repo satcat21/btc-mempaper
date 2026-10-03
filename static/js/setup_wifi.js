@@ -222,40 +222,96 @@ async function loadNetworks() {
     scanStatus.textContent = t('setup_found_networks').replace('{count}', count);
 }
 
-async function pollConnectStatus(ssid, attempts) {
-    const maxAttempts = attempts || 20;
-    let tries = 0;
+// How long joining a network usually takes, end to end: the hotspot comes
+// down, the device associates and gets an address, and the display redraws.
+// Shown as a countdown so the wait reads as progress, not as a hang.
+const CONNECT_ESTIMATE_S = 90;
 
-    return new Promise((resolve, reject) => {
-        const interval = setInterval(async () => {
-            tries++;
-            try {
-                const res = await fetch('/api/setup/wifi/connect_status');
-                if (!res.ok) {
-                    if (tries >= maxAttempts) {
-                        clearInterval(interval);
-                        reject(new Error(t('setup_wifi_still_waiting')));
-                    }
-                    return;
+// The countdown, the bar and the three steps under the connect button.
+function connectProgress() {
+    const panel = document.getElementById('connect-progress');
+    const timeEl = document.getElementById('connect-progress-time');
+    const fill = document.getElementById('connect-progress-fill');
+    const title = document.getElementById('connect-progress-title');
+    const spinner = document.getElementById('connect-progress-spinner');
+    const step = name => panel.querySelector(`li[data-step="${name}"]`);
+    let timer = null;
+    let current = null;
+
+    const fmt = s => Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+    const activate = name => {
+        if (current === name) return;
+        if (current) { step(current).classList.remove('active'); step(current).classList.add('done'); }
+        current = name;
+        step(name).classList.add('active');
+    };
+
+    return {
+        start() {
+            panel.querySelectorAll('li').forEach(li => li.classList.remove('active', 'done'));
+            current = null;
+            title.textContent = t('setup_progress_title');
+            spinner.style.display = '';
+            panel.style.display = 'block';
+            activate('send');
+            const started = Date.now();
+            timeEl.textContent = fmt(CONNECT_ESTIMATE_S);
+            fill.style.transform = 'scaleX(0)';
+            timer = setInterval(() => {
+                const elapsed = Math.floor((Date.now() - started) / 1000);
+                const left = Math.max(0, CONNECT_ESTIMATE_S - elapsed);
+                timeEl.textContent = fmt(left);
+                fill.style.transform = 'scaleX(' + Math.min(1, elapsed / CONNECT_ESTIMATE_S) + ')';
+                if (elapsed >= 10) this.unreachable();   // the switch has begun either way
+                if (left === 0) {
+                    clearInterval(timer);
+                    title.textContent = t('setup_progress_check_display');
+                    spinner.style.display = 'none';
+                    timeEl.textContent = '';
                 }
-                const data = await res.json();
-                if (data.status === 'connected') {
-                    clearInterval(interval);
-                    resolve(data);
-                } else if (data.status === 'failed') {
-                    clearInterval(interval);
-                    reject(new Error(data.message || 'Connection failed'));
-                } else if (tries >= maxAttempts) {
-                    clearInterval(interval);
-                    reject(new Error(t('setup_wifi_still_waiting')));
+            }, 1000);
+        },
+        sent() { activate('switch'); },
+        // The phone can no longer reach the device: the hotspot is down and
+        // the device is joining the home network. Expected, not an error.
+        unreachable() { if (current !== 'display') { activate('switch'); activate('display'); } },
+        hide() { clearInterval(timer); panel.style.display = 'none'; },
+    };
+}
+
+// Ask the device how joining is going until it answers connected or failed,
+// or until well past the estimate. Each request gives up after 4 seconds:
+// once the hotspot is down a request has nowhere to go, and without a limit
+// the browser held each one for minutes, which is why "disconnected" used to
+// appear long after the phone had actually lost the network.
+function pollConnectStatus(progress) {
+    return new Promise((resolve, reject) => {
+        const started = Date.now();
+        const tick = async () => {
+            const ctrl = new AbortController();
+            const abort = setTimeout(() => ctrl.abort(), 4000);
+            try {
+                const res = await fetch('/api/setup/wifi/connect_status', { signal: ctrl.signal, cache: 'no-store' });
+                clearTimeout(abort);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.status === 'connected') return resolve(data);
+                    if (data.status === 'failed') return reject(new Error(data.message || 'Connection failed'));
+                } else {
+                    progress.unreachable();
                 }
             } catch (e) {
-                if (tries >= maxAttempts) {
-                    clearInterval(interval);
-                    reject(new Error(t('setup_wifi_disconnected_expected')));
-                }
+                clearTimeout(abort);
+                progress.unreachable();
             }
-        }, 1500);
+            if ((Date.now() - started) / 1000 > CONNECT_ESTIMATE_S + 60) {
+                const err = new Error(t('setup_wifi_disconnected_expected'));
+                err.expected = true;
+                return reject(err);
+            }
+            setTimeout(tick, 2000);
+        };
+        tick();
     });
 }
 
@@ -318,6 +374,8 @@ async function connectWifi() {
     const connectBtn = document.getElementById('connect-button');
     connectBtn.disabled = true;
     connectBtn.textContent = t('setup_connecting');
+    const progress = connectProgress();
+    progress.start();
 
     try {
         const language = (document.getElementById('language-select') || {}).value || 'en';
@@ -337,9 +395,9 @@ async function connectWifi() {
             throw new Error(data.message || 'Request failed');
         }
 
-        setMessage(t('setup_connecting'), false);
-
-        const result = await pollConnectStatus(ssid);
+        progress.sent();
+        const result = await pollConnectStatus(progress);
+        progress.hide();
         const connName = result.connection || ssid;
         setMessage('', false);
         document.getElementById('scan-status').textContent = connName;
@@ -357,6 +415,14 @@ async function connectWifi() {
         document.getElementById('refresh-button').style.display = 'none';
 
     } catch (err) {
+        if (err.expected) {
+            // Nothing went wrong that this page can see: the phone simply has
+            // no way back to the device. The panel keeps its last step, which
+            // says to check the display.
+            setMessage(err.message, false);
+            return;
+        }
+        progress.hide();
         setMessage(err.message || 'Connection failed', true);
         connectBtn.disabled = false;
         connectBtn.textContent = _adminVisible ? t('setup_connect_admin_button') : t('setup_connect_button');

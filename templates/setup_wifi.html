@@ -89,6 +89,20 @@
         <button id="connect-button" class="login-button" type="button" data-i18n="setup_connect_button">Connect and Finish Setup</button>
         <button id="refresh-button" class="secondary-button" type="button" data-i18n="setup_refresh_button">Refresh Network List</button>
 
+        <div id="connect-progress" class="connect-progress" style="display:none;" aria-live="polite">
+            <div class="connect-progress-head">
+                <span id="connect-progress-spinner" class="scan-spinner"></span>
+                <span id="connect-progress-title" data-i18n="setup_progress_title">Connecting mempaper to your Wi-Fi</span>
+                <span id="connect-progress-time" class="connect-progress-time"></span>
+            </div>
+            <div class="connect-progress-bar"><div id="connect-progress-fill" class="connect-progress-fill"></div></div>
+            <ol class="connect-progress-steps">
+                <li data-step="send" data-i18n="setup_progress_step_send">Sending your Wi-Fi details to mempaper</li>
+                <li data-step="switch" data-i18n="setup_progress_step_switch">mempaper leaves its setup network and joins yours. Your phone loses the connection now — that is expected.</li>
+                <li data-step="display" data-i18n="setup_progress_step_display">Watch the e-ink display: once connected it shows a QR code for your dashboard. If the setup QR codes come back instead, the connection failed — rejoin the setup network and try again.</li>
+            </ol>
+        </div>
+
         <div id="success-box" style="display:none; margin-top:1.5rem; padding:1rem 1.2rem; border-radius:8px; background:rgba(56,161,105,0.12); border-left:4px solid var(--success); color:var(--text-primary);">
             <div style="font-size:1.3rem; margin-bottom:0.5rem;" data-i18n-html="setup_success_title">&#x2705; Connected!</div>
             <div id="success-network" style="font-weight:600; margin-bottom:0.8rem;"></div>

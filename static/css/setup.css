@@ -131,3 +131,68 @@ html.setup-page body {
     opacity: 0.5;
     cursor: not-allowed;
 }
+
+/* ── Connect progress: countdown and steps while the device switches networks ── */
+.connect-progress {
+    margin-top: 1.2rem;
+    padding: 1rem 1.1rem;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md, 8px);
+    background: var(--bg-elevated, transparent);
+}
+
+.connect-progress-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.connect-progress-time {
+    margin-left: auto;
+    font-variant-numeric: tabular-nums;
+    color: var(--accent);
+}
+
+.connect-progress-bar {
+    height: 6px;
+    margin: 10px 0 12px;
+    border-radius: 3px;
+    background: var(--border-color);
+    overflow: hidden;
+}
+
+.connect-progress-fill {
+    height: 100%;
+    width: 100%;
+    background: var(--accent);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 1s linear;
+}
+
+.connect-progress-steps {
+    margin: 0;
+    padding-left: 1.3rem;
+    line-height: 1.5;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+.connect-progress-steps li {
+    margin-bottom: 6px;
+    opacity: 0.55;
+}
+
+.connect-progress-steps li.active {
+    opacity: 1;
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.connect-progress-steps li.done {
+    opacity: 0.8;
+    text-decoration: line-through;
+    text-decoration-color: var(--text-secondary);
+}
