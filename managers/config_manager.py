@@ -13,6 +13,7 @@ import threading
 from typing import Dict, Any, List, Callable
 
 from utils.atomic_io import atomic_write_json
+from utils.technical_config import MEMPOOL_DEFAULT_ONION
 
 # File watching functionality (install with: pip install watchdog)
 try:
@@ -340,15 +341,18 @@ class ConfigManager:
         return {
             "language": "en",
             "number_format": "eu",
-            "prioritize_large_scaled_meme": False,
+            "prioritize_large_scaled_meme": True,
             "mempool_is_private": False,
-            "mempool_host": "mempool.space",
-            "mempool_rest_port": 443,
-            "mempool_ws_port": 443,
+            # A delivered or reset device reaches mempool over Tor, through the
+            # official hidden service: no clearnet request ever names the
+            # device's IP alongside the addresses it is watching.
+            "mempool_host": MEMPOOL_DEFAULT_ONION,
+            "mempool_rest_port": 80,
+            "mempool_ws_port": 80,
             "mempool_ws_path": "/api/v1/ws",
-            "mempool_use_https": True,
+            "mempool_use_https": False,   # hidden services carry their own encryption
             "mempool_verify_ssl": True,
-            "mempool_use_tor": False,
+            "mempool_use_tor": True,
             "mempool_use_https_clearnet": True,
             "mempool_rest_port_clearnet": 443,
             "mempool_ws_port_clearnet": 443,

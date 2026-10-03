@@ -68,6 +68,21 @@ class WifiHotspotMixin:
             return None
         return result.returncode == 0
 
+    # Written by a factory reset (web, power-cycle or tools/delivery_state.py)
+    # once the saved Wi-Fi is gone; removed by the first startup that finds a
+    # saved network again. Tells the startup check that "no saved networks" is
+    # the expected answer rather than one netplan may still be about to change.
+    DELIVERY_STATE_MARKER_PATH = os.path.join('cache', 'delivery_state')
+
+    def _is_delivery_state(self):
+        return os.path.exists(self.DELIVERY_STATE_MARKER_PATH)
+
+    def _clear_delivery_state_marker(self):
+        try:
+            os.remove(self.DELIVERY_STATE_MARKER_PATH)
+        except OSError:
+            pass
+
     def _wait_for_nm_ready(self, max_attempts=12):
         """Poll until NetworkManager's D-Bus service actually responds, with back-off.
 
@@ -118,16 +133,28 @@ class WifiHotspotMixin:
         # With nothing saved to reconnect to, we only need to tell NM to
         # release the interface — no need to wait for it to be ready first.
         fs_interface = self._detect_wifi_interface_fs_only()
-        if fs_interface and self._has_saved_wifi_connections_on_disk() is False:
+        saved_on_disk = self._has_saved_wifi_connections_on_disk() if fs_interface else None
+        delivery_state = self._is_delivery_state()
+        if delivery_state and saved_on_disk is True:
+            # Onboarded since the reset: the marker has done its job.
+            self._clear_delivery_state_marker()
+            delivery_state = False
+        if fs_interface and saved_on_disk is False:
             # The saved-network profile file is written by netplan/NetworkManager's
             # own startup (netplan generate -> /run/NetworkManager/system-connections/),
-            # which can still be mid-reload right when this runs.
+            # which can still be mid-reload right when this runs - so a device
+            # that has networks is given 24s to show them. A device just reset
+            # to delivery state has none to show: the reset stripped netplan's
+            # wifis and stopped cloud-init re-adding them, so it skips the wait.
             no_saved_confirmed = True
-            for _ in range(8):
-                time.sleep(3)
-                if self._has_saved_wifi_connections_on_disk() is not False:
-                    no_saved_confirmed = False
-                    break
+            if delivery_state:
+                print('📶 Delivery state — no saved Wi-Fi expected, skipping the confirmation wait')
+            else:
+                for _ in range(8):
+                    time.sleep(3)
+                    if self._has_saved_wifi_connections_on_disk() is not False:
+                        no_saved_confirmed = False
+                        break
             if no_saved_confirmed:
                 print('📶 No saved Wi-Fi networks on disk — starting setup hotspot without waiting for NetworkManager')
                 if not self._bring_up_setup_hotspot_with_retry(fs_interface):
@@ -1261,7 +1288,11 @@ class WifiHotspotMixin:
                 # The portal URL is shown on the panel itself; keeping it out of
                 # the log avoids writing setup-session details to the journal.
                 print('📺 Displaying hotspot onboarding screen on e-ink')
-                self._display_on_epaper_async(path, None, None)
+                # Priority: this screen is the only way to learn the setup
+                # network's name and passphrase, so it waits for the panel
+                # rather than being dropped behind the boot refresh - whose
+                # queued retry would redraw the dashboard instead.
+                self._display_on_epaper_async(path, None, None, priority=True)
         except Exception as e:
             print(f'⚠️ Could not render hotspot onboarding screen: {e}')
 

@@ -633,6 +633,11 @@ def main():
         # Naming one here would only be a name nothing is broadcasting.
         with open(setup_mode_flag, "w", encoding="utf-8") as f:
             json.dump({"enabled": True, "interface": wifi_iface}, f)
+        # Lets the app's startup Wi-Fi check skip its 24s wait for netplan
+        # profiles: the ones it waits for were removed above. Same file and
+        # meaning as WifiHotspotMixin.DELIVERY_STATE_MARKER_PATH.
+        with open(os.path.join(cache_dir, "delivery_state"), "w", encoding="utf-8") as f:
+            f.write("")
         print(f"✅ Setup mode flag pre-written → recovery monitor starts hotspot immediately on boot ({wifi_iface})")
     except OSError as e:
         print(f"⚠️  Could not write setup mode flag: {e}")

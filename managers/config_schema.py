@@ -471,7 +471,7 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
                 "on this device. Bitaxe stays on the LAN and is never proxied."
             ),
             "_dk": "mempool_use_tor_desc",
-            "default": False,
+            "default": True,
             "category": "mempool",
             "order": 2
         },

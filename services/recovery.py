@@ -190,6 +190,7 @@ class RecoveryMixin:
             #    may silently fail inside the running service)
             print('🧹 Factory reset: clearing saved WiFi profiles...')
             self._factory_reset_clear_wifi()
+            self._mark_delivery_state()
 
             # 6. The images, if they were asked for. OPSec covers are family
             #    photos; the meme library is thousands of shipped files that
@@ -230,6 +231,24 @@ class RecoveryMixin:
             print(f'❌ Factory reset failed: {e}')
             import traceback
             traceback.print_exc()
+
+    def _mark_delivery_state(self):
+        """Leave the next boot what tools/delivery_state.py leaves it.
+
+        The delivery-state marker lets the startup Wi-Fi check skip its 24s
+        wait for netplan profiles that the reset has just removed, and the
+        setup-mode flag puts the hotspot in charge from the first boot tick,
+        so the recovery monitor brings it up even if the startup check exits
+        early, and no dashboard refresh paints over the onboarding screen.
+        """
+        try:
+            os.makedirs('cache', exist_ok=True)
+            with open(self.DELIVERY_STATE_MARKER_PATH, 'w', encoding='utf-8') as f:
+                f.write('')
+            self._write_setup_mode_flag(True, interface=self._detect_wifi_interface_fs_only())
+            print('📶 Delivery state marked - setup hotspot starts straight away on next boot')
+        except Exception as e:
+            print(f'⚠️ Could not mark delivery state: {e}')
 
     # The one meme the project ships and the reset itself depends on:
     # delivery_state renders the delivery image from it, in the step straight
