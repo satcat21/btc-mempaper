@@ -2887,7 +2887,7 @@ function _performFactoryReset(options) {
     // covers a 13.3" panel's slower full refresh and a cold first render.
     // Reaching zero early is the one thing it must not do: that would invite
     // pulling the plug mid-refresh.
-    const resetSeconds = 150;
+    const resetSeconds = 180;
 
     const countdownNumber = document.createElement('div');
     countdownNumber.className = 'restart-countdown-number';
