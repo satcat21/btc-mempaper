@@ -13,9 +13,9 @@ qrcode[pil]==8.2
 babel==2.18.0
 requests==2.34.2
 urllib3==2.8.0 # transitive via requests; pinned so updates actually move it
-python-dotenv==1.2.3
+python-dotenv==1.2.4
 websocket-client==1.9.2
-werkzeug==3.1.8
+werkzeug==3.1.9
 watchdog==6.0.0
 argon2-cffi==25.1.0
 schedule==1.2.2
@@ -26,10 +26,10 @@ numpy==2.2.5
 pilmoji==2.0.5
 
 gunicorn==26.2.0
-gevent==26.8.0
+gevent==26.9.0
 gevent-websocket==0.10.1
 
-cryptography==50.0.1
+cryptography==50.0.2
 psutil==6.0.0
 
 PySocks==1.7.1  # SOCKS5 for requests (Tor)
