@@ -1115,6 +1115,16 @@ async function downloadMeme(filename) {
     }
 }
 
+// Nudge the '(n)' beside the memes heading. It is otherwise only written when
+// a page of results loads, so a change made in place has to move it by hand.
+function _adjustMemeCount(delta) {
+    const label = document.getElementById('meme-image-count');
+    const n = parseInt((label?.textContent || '').replace(/\D/g, ''), 10);
+    if (!label || !Number.isFinite(n)) return;
+    const next = Math.max(0, n + delta);
+    label.textContent = `(${typeof _fmtNum === 'function' ? _fmtNum(next) : next})`;
+}
+
 // Delete meme function
 //
 // The thumbnail disappears the moment the delete is confirmed - that is the
@@ -1127,9 +1137,13 @@ async function deleteMeme(filename) {
         ?.querySelector(`img[data-filename="${CSS.escape(filename)}"]`)
         ?.closest('.meme-thumbnail');
     if (memeDiv) memeDiv.style.display = 'none';
+    // The count beside the heading falls with the thumbnail, not after the
+    // round trip, and goes back up if the delete fails.
+    _adjustMemeCount(-1);
 
     const restore = (message) => {
         if (memeDiv) memeDiv.style.display = '';
+        _adjustMemeCount(+1);
         showNotification(message, 'error');
     };
 
