@@ -1377,8 +1377,7 @@ function createFormField(key, field, value) {
                         body.appendChild(logBtn);
 
                         _buildLiveToast(
-                            [_mpaIcon(allOk ? 'check' : 'error', accentColor, 15),
-                             allOk ? 'Tang - All OK' : 'Tang - Issues Found'],
+                            allOk ? 'Tang - All OK' : 'Tang - Issues Found',
                             body, accentColor, 15000);
                     })
                     .catch(() => {
@@ -1424,7 +1423,6 @@ function createFormField(key, field, value) {
                     .then(data => {
                         const allOk = data.checks.every(c => c.ok);
                         const accentColor = allOk ? '#22c55e' : '#ef4444';
-                        const titleIcon = _mpaIcon(allOk ? 'check' : 'error', accentColor, 15);
 
                         const body = document.createDocumentFragment();
                         data.checks.forEach(c => {
@@ -1461,7 +1459,7 @@ function createFormField(key, field, value) {
                         body.appendChild(logBtn);
 
                         _buildLiveToast(
-                            [titleIcon, allOk ? 'Mempool - All OK' : 'Mempool - Issues Found'],
+                            allOk ? 'Mempool - All OK' : 'Mempool - Issues Found',
                             body, accentColor, 15000
                         );
                     })
