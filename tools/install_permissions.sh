@@ -273,6 +273,36 @@ _apply_holds() {
     return 0
 }
 
+# ── Pins the archive no longer offers ────────────────────────────────────────
+# The archives keep only the current version of a package, so a pin stops
+# existing the day a security or point release replaces it. Kept, it fails the
+# same install on every run - and the app's startup check calls this wrapper on
+# every boot while a pin is unsatisfied, so that is an index refresh and a
+# failed install per boot, forever. A pin the archive cannot satisfy is treated
+# as unpinned: the package floats and is not held, which _apply_holds below
+# reports, so the stale line in apt-requirements.txt is visible to fix.
+#
+# Only checked when some pin is unsatisfied, and only after refreshing the
+# index: a version a release has just pinned is often newer than an index that
+# predates it, and judging it against that index would drop a good pin.
+INDEX_FRESH=0
+NEED_PIN_CHECK=0
+for p in "${!WANT_VERSION[@]}"; do
+    [ "$(_installed_version "$p")" = "${WANT_VERSION[$p]}" ] || { NEED_PIN_CHECK=1; break; }
+done
+if [ "$NEED_PIN_CHECK" -eq 1 ]; then
+    apt-get update || echo "⚠️  apt-get update failed — continuing with the cached index" >&2
+    INDEX_FRESH=1
+    for p in "${!WANT_VERSION[@]}"; do
+        if ! apt-cache madison "$p" 2>/dev/null \
+                | awk -F'|' '{gsub(/ /, "", $2); print $2}' | grep -qxF "${WANT_VERSION[$p]}"; then
+            echo "⚠️  $p=${WANT_VERSION[$p]} is no longer in the archive — left unpinned." >&2
+            echo "    Update its line in apt-requirements.txt: apt-cache madison $p" >&2
+            unset 'WANT_VERSION[$p]'
+        fi
+    done
+fi
+
 # ── Pins that have drifted ───────────────────────────────────────────────────
 # A pinned package that is installed at the wrong version is not "missing", so
 # the presence check below would leave it alone forever. It gets there by an
@@ -293,7 +323,10 @@ if [ ${#DRIFTED[@]} -gt 0 ]; then
     # Unhold first: a held package cannot be changed at all, and these are
     # precisely the packages this script holds itself on the way out.
     apt-mark unhold "${DRIFTED[@]}" >/dev/null 2>&1 || true
-    apt-get update || echo "⚠️  apt-get update failed — continuing with the cached index" >&2
+    if [ "$INDEX_FRESH" -eq 0 ]; then
+        apt-get update || echo "⚠️  apt-get update failed — continuing with the cached index" >&2
+        INDEX_FRESH=1
+    fi
     for p in "${DRIFTED[@]}"; do
         # --allow-downgrades because a pin may point backwards: that is the
         # entire purpose of pinning a version that a later upgrade moved past.
@@ -349,7 +382,9 @@ MISSING=("${INSTALLABLE[@]}")
 # not exist in an index that predates it, and 'Unable to locate package' would
 # otherwise abort the entire batch below - which is exactly how a device ends up
 # running a release whose declared dependencies were never installed.
-apt-get update || echo "⚠️  apt-get update failed — continuing with the cached index" >&2
+if [ "$INDEX_FRESH" -eq 0 ]; then
+    apt-get update || echo "⚠️  apt-get update failed — continuing with the cached index" >&2
+fi
 
 # Batch first: it resolves shared dependencies in one pass and is far faster on a
 # Pi Zero. But apt-get install is all-or-nothing, so a single unavailable package

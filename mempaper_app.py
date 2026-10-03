@@ -681,7 +681,26 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
                 name, version = parts[0], parts[4]
                 if name in wanted and version != wanted[name]:
                     drifted.append(name)
-        return drifted
+        # A pin the archive no longer offers cannot be reached, so calling it
+        # drift sent the startup check to the apt wrapper on every boot, for a
+        # refresh and an install that fail the same way each time. The wrapper
+        # reports such pins itself whenever an update does run it. Judged
+        # against the local index: a pin newer than that index is skipped here
+        # too, and the updater - which refreshes the index - applies it.
+        return [n for n in drifted if MempaperApp._apt_offers(n, wanted[n])]
+
+    @staticmethod
+    def _apt_offers(name, version):
+        """Whether the local apt index has `version` of `name`. True when unsure."""
+        try:
+            result = subprocess.run(['apt-cache', 'madison', name],
+                                    capture_output=True, text=True, timeout=15)
+        except (subprocess.SubprocessError, OSError):
+            return True
+        offered = {cols[1].strip() for cols in
+                   (line.split('|') for line in (result.stdout or '').splitlines())
+                   if len(cols) >= 2}
+        return version in offered
 
     def _run_dependency_health_check(self):
         """Verify that all required apt and pip packages are installed.
