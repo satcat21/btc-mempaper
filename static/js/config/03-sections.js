@@ -2731,7 +2731,7 @@ function createFactoryResetSection() {
     const resetBtn = document.createElement('button');
     resetBtn.type = 'button';
     resetBtn.className = 'device-control-btn device-control-btn-danger';
-    resetBtn.innerHTML = '<span class="device-control-icon"><svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960" width="18px" fill="currentColor"><path d="M280-120q-33 0-56.5-23.5T200-200v-520h-40v-80h200v-40h240v40h200v80h-40v520q0 33-23.5 56.5T680-120H280Zm400-600H280v520h400v-520ZM360-280h80v-360h-80v360Zm160 0h80v-360h-80v360ZM280-720v520-520Z"/></svg></span> ' +
+    resetBtn.innerHTML = '<span class="device-control-icon"><span style="display:inline-block;width:18px;height:18px;background-color:currentColor;-webkit-mask-image:url(\'/static/icons/reset.svg\');mask-image:url(\'/static/icons/reset.svg\');-webkit-mask-size:contain;mask-size:contain;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;vertical-align:middle"></span></span> ' +
         (t.factory_reset || 'Factory Reset');
 
     _registerUpdateLockable(resetBtn);
@@ -2745,6 +2745,7 @@ function createFactoryResetSection() {
             confirmText: t.factory_reset_do || 'Erase and power off',
             cancelText: t.cancel || 'Cancel',
             danger: true,
+            icon: '/static/icons/reset.svg',
         });
         if (!ok) return;
         _performFactoryReset(detail.getOptions());
@@ -2875,7 +2876,11 @@ function _performFactoryReset(options) {
 
     const heading = document.createElement('h3');
     heading.className = 'confirm-modal-title';
-    heading.textContent = t.factory_reset || 'Factory Reset';
+    const headingIcon = document.createElement('img');
+    headingIcon.src = '/static/icons/reset.svg';
+    headingIcon.alt = '';
+    headingIcon.className = 'modal-title-icon';
+    heading.append(headingIcon, ' ', t.factory_reset || 'Factory Reset');
 
     const countdown = document.createElement('div');
     countdown.className = 'restart-countdown';

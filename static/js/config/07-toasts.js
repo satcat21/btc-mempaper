@@ -171,12 +171,7 @@ async function uploadOpsecFiles(files) {
 
         // Final status summary
         if (statusText) {
-            const parts = [];
-            if (uploadedCount > 0) parts.push((t?.upload_count_uploaded || '✓ {count} uploaded').replace('{count}', uploadedCount));
-            if (failedCount > 0) parts.push((t?.upload_count_failed || '✗ {count} failed').replace('{count}', failedCount));
-            if (duplicates.length > 0) parts.push((t?.upload_count_skipped || '⊝ {count} skipped (duplicates)').replace('{count}', duplicates.length));
-            statusText.textContent = parts.join(' | ');
-            statusText.style.color = failedCount > 0 ? '#e53e3e' : '#38a169';
+            _renderUploadSummary(statusText, uploadedCount, failedCount, duplicates.length);
         }
 
         if (uploadedCount > 0) loadOpsecImages();

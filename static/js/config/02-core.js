@@ -1042,19 +1042,7 @@ async function uploadFiles(files) {
 
         // Show final status
         if (statusText) {
-            const parts = [];
-            if (uploadedCount > 0) {
-                parts.push((t?.upload_count_uploaded || '✓ {count} uploaded').replace('{count}', uploadedCount));
-            }
-            if (failedCount > 0) {
-                parts.push((t?.upload_count_failed || '✗ {count} failed').replace('{count}', failedCount));
-            }
-            if (duplicates.length > 0) {
-                parts.push((t?.upload_count_skipped || '⊝ {count} skipped (duplicates)').replace('{count}', duplicates.length));
-            }
-
-            statusText.textContent = parts.join(' | ');
-            statusText.style.color = failedCount > 0 ? '#e53e3e' : '#38a169';
+            _renderUploadSummary(statusText, uploadedCount, failedCount, duplicates.length);
         }
         
         // Clear cache and reload memes
@@ -1123,6 +1111,34 @@ function _adjustMemeCount(delta) {
     if (!label || !Number.isFinite(n)) return;
     const next = Math.max(0, n + delta);
     label.textContent = `(${typeof _fmtNum === 'function' ? _fmtNum(next) : next})`;
+}
+
+// The line under an upload's progress bar: one entry per outcome, each led by
+// its Material icon in the entry's own color. Shared by the meme and OPSec
+// uploads. The icons are masks filled with currentColor, so they follow the
+// text color in both themes instead of being whatever an emoji font draws.
+function _renderUploadSummary(statusEl, uploaded, failed, skipped) {
+    const t = window.translations || {};
+    const entries = [
+        [uploaded, 'check', '#38a169', t.upload_count_uploaded || '{count} uploaded'],
+        [failed,   'error', '#e53e3e', t.upload_count_failed || '{count} failed'],
+        [skipped,  'copy',  'var(--text-secondary)', t.upload_count_skipped || '{count} skipped (duplicates)'],
+    ];
+    statusEl.textContent = '';
+    statusEl.style.color = '';
+    entries.filter(([count]) => count > 0).forEach(([count, icon, color, text], i) => {
+        if (i > 0) statusEl.append(' | ');
+        const entry = document.createElement('span');
+        entry.style.cssText = `color:${color};white-space:nowrap;`;
+        const mark = document.createElement('span');
+        mark.setAttribute('aria-hidden', 'true');
+        mark.style.cssText = 'display:inline-block;width:1em;height:1em;margin-right:4px;vertical-align:-0.15em;'
+            + 'background-color:currentColor;'
+            + `-webkit-mask:url('/static/icons/${icon}.svg') center/contain no-repeat;`
+            + `mask:url('/static/icons/${icon}.svg') center/contain no-repeat;`;
+        entry.append(mark, text.replace('{count}', count));
+        statusEl.append(entry);
+    });
 }
 
 // Delete meme function
