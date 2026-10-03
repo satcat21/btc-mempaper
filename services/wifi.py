@@ -68,6 +68,34 @@ class WifiHotspotMixin:
             return None
         return result.returncode == 0
 
+    def _connect_wifi_with_profile(self, interface, ssid, password, hidden):
+        """Join a network by writing its profile explicitly, then bringing it up.
+
+        'nmcli device wifi connect' works out the security type from
+        NetworkManager's scan results. Straight after the radio leaves AP mode
+        those are often empty or stale, and it then fails with
+        "802-11-wireless-security.key-mgmt: property is missing" - for a
+        network that is in range, with the right password, every retry alike.
+        Naming the key management here needs no scan at all: WPA2-PSK when a
+        password was given, an open network when not.
+
+        Returns the CompletedProcess of the activation (or of the step that
+        failed), or None when nmcli could not run.
+        """
+        # A profile of the same name left by a failed attempt would make 'add'
+        # create a second one beside it, and 'up' pick either.
+        self._nmcli(['connection', 'delete', 'id', ssid], timeout=15)
+        add = ['connection', 'add', 'type', 'wifi', 'ifname', interface,
+               'con-name', ssid, 'ssid', ssid, 'connection.autoconnect', 'yes']
+        if hidden:
+            add += ['802-11-wireless.hidden', 'yes']
+        if password:
+            add += ['wifi-sec.key-mgmt', 'wpa-psk', 'wifi-sec.psk', password]
+        result = self._nmcli(add, timeout=30)
+        if result is None or result.returncode != 0:
+            return result
+        return self._nmcli(['connection', 'up', 'id', ssid, 'ifname', interface], timeout=60)
+
     def _wait_for_nm_ready(self, max_attempts=12):
         """Poll until NetworkManager's D-Bus service actually responds, with back-off.
 

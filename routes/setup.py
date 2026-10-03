@@ -203,11 +203,28 @@ def register(self):
                 if connect_result is not None:
                     error_hint = (connect_result.stderr or connect_result.stdout or '').strip()
                 print(f'⚠️ WiFi connect attempt {attempt} failed: {error_hint}')
+                if 'key-mgmt' in error_hint:
+                    # nmcli could not tell the security type from its scan
+                    # results; repeating the same command fails the same way.
+                    break
                 if attempt < max_attempts:
                     # Rescan and retry after a short delay
                     time.sleep(5)
                     self._nmcli(['device', 'wifi', 'rescan', 'ifname', interface])
                     time.sleep(3)
+
+            if connect_result is None or connect_result.returncode != 0:
+                # 'device wifi connect' depends on NM's scan results to choose
+                # the security settings. Write the profile ourselves instead,
+                # which needs no scan, before giving up.
+                print(f'📡 Joining {ssid} with an explicit profile instead...')
+                fallback = self._connect_wifi_with_profile(interface, ssid, password, hidden)
+                if fallback is not None and fallback.returncode == 0:
+                    print('✅ Explicit profile activated')
+                    connect_result = fallback
+                elif fallback is not None:
+                    print('⚠️ Explicit profile failed too: '
+                          + (fallback.stderr or fallback.stdout or '').strip())
 
             if connect_result is None or connect_result.returncode != 0:
                 error_msg = 'Failed to connect to Wi-Fi network'
