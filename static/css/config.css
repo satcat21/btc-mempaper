@@ -3921,6 +3921,23 @@ body.dark-mode .preview-card-dark {
     margin-top: 3px;
 }
 
+.ssh-access-link {
+    color: var(--accent);
+    font-weight: 500;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer;
+}
+
+.ssh-access-section.ssh-access-highlight .ssh-access-wrapper {
+    animation: ssh-access-flash 2s ease-out;
+}
+
+@keyframes ssh-access-flash {
+    0%, 30% { box-shadow: 0 0 0 2px var(--accent); }
+    100% { box-shadow: 0 0 0 2px transparent; }
+}
+
 /* Segmented Windows / macOS / Linux switch */
 .os-toggle {
     display: inline-flex;

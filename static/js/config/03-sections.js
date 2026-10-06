@@ -2612,36 +2612,80 @@ function createCommandSteps(count) {
     return { list, steps };
 }
 
-// ── Copy memes over SSH (inside Meme Management > Advanced) ──────────────
+// ── Copy images over SSH (Meme Management and OPSec, under Advanced) ─────
 //
 // Uploading a large batch through the browser is slow on a Pi; scp straight
-// into the meme folder is not. The key is the one saved under General >
-// Advanced > SSH Access, which is installed for the service user as well.
-function createMemeScpSection() {
+// into the folder is not. It relies on a key saved under General > Advanced >
+// SSH Access, which is installed for the service user as well, so the setup
+// steps live there and this block only links to them.
+function jumpToSshAccess() {
+    const target = document.querySelector('.ssh-access-section');
+    if (!target) return;
+    const advanced = target.closest('.advanced-section');
+    if (advanced) advanced.classList.add('advanced-section--open');
+    const bar = document.querySelector('.sticky-top-bar');
+    const top = target.getBoundingClientRect().top + window.pageYOffset - (bar ? bar.offsetHeight : 0) - 8;
+    window.scrollTo({ top, behavior: 'smooth' });
+    target.classList.remove('ssh-access-highlight');
+    void target.offsetWidth;
+    target.classList.add('ssh-access-highlight');
+    setTimeout(() => target.classList.remove('ssh-access-highlight'), 2000);
+}
+
+function createScpSection(kind) {
     const t = window.translations || {};
+    const text = kind === 'opsec'
+        ? {
+            title: t.opsec_scp_title || 'Copy OPSec images via SSH',
+            intro: t.opsec_scp_intro || 'For many images at once, copy them from your computer straight into the OPSec folder.',
+            copy: t.opsec_scp_step_copy || 'Open a terminal in the folder with your images and copy them all:',
+            note: t.opsec_scp_note || 'Use file names without spaces. Copied images show up in the list right away.',
+        }
+        : {
+            title: t.meme_scp_title || 'Copy memes via SSH',
+            intro: t.meme_scp_intro || 'For many memes at once, copy them from your computer straight into the meme folder.',
+            copy: t.meme_scp_step_copy || 'Open a terminal in the folder with your memes and copy all images:',
+            note: t.meme_scp_note || 'Use file names without spaces. Copied memes show up in the list right away.',
+        };
 
     const formGroup = document.createElement('div');
     formGroup.className = 'form-group ssh-commands-group';
 
     const label = document.createElement('label');
     label.className = 'form-label';
-    label.textContent = t.meme_scp_title || 'Copy memes via SSH';
+    label.textContent = text.title;
 
     const intro = document.createElement('p');
     intro.className = 'ssh-access-hint';
-    intro.textContent = t.meme_scp_intro
-        || 'For many memes at once, copy them from your computer straight into the meme folder.';
+    intro.textContent = text.intro;
 
     const tip = document.createElement('p');
     tip.className = 'ssh-access-hint';
 
-    const { list, steps } = createCommandSteps(3);
-    const [createStep, addStep, copyStep] = steps;
+    const steps = document.createElement('ol');
+    steps.className = 'ssh-command-steps';
+
+    const accessStep = document.createElement('li');
+    const link = document.createElement('a');
+    link.href = '#';
+    link.className = 'ssh-access-link';
+    link.textContent = t.scp_step_access_link || 'General → Advanced → SSH Access';
+    link.addEventListener('click', (e) => {
+        e.preventDefault();
+        jumpToSshAccess();
+    });
+    accessStep.append((t.scp_step_access || 'Copying needs SSH access to the device. Set it up first under') + ' ', link, '.');
+
+    const copyStep = document.createElement('li');
+    const copyCaption = document.createElement('div');
+    copyCaption.textContent = text.copy;
+    const copyCode = createCopyableCode('…');
+    copyStep.append(copyCaption, copyCode);
+    steps.append(accessStep, copyStep);
 
     const note = document.createElement('p');
     note.className = 'ssh-access-hint';
-    note.textContent = t.meme_scp_note
-        || 'Use file names without spaces. Copied memes show up in the list right away.';
+    note.textContent = text.note;
 
     let host = window.location.hostname;
     let target = null;
@@ -2655,22 +2699,13 @@ function createMemeScpSection() {
 
     const render = (os) => {
         tip.textContent = clientOsTip(os);
-        createStep.caption.textContent = t.ssh_key_step_create
-            || 'Create an SSH key on your computer (skip this if you already have one):';
-        createStep.code.textContent = 'ssh-keygen -t ed25519 -C "mempaper"';
-        addStep.caption.textContent = os === 'linux'
-            ? (t.meme_scp_step_add || 'Show the public key, copy the whole line, add it under General → Advanced → SSH Access and save:')
-            : (t.meme_scp_step_add_clip || 'Copy the public key to the clipboard, paste it under General → Advanced → SSH Access and save:');
-        addStep.code.textContent = clientPubKeyCommand(os);
-        copyStep.caption.textContent = t.meme_scp_step_copy
-            || 'Open a terminal in the folder with your memes and copy all images:';
-        copyStep.code.textContent = target ? scpCommand(os, `${target.user}@${host}:${target.directory}/`) : '…';
+        copyCode.textContent = target ? scpCommand(os, `${target.user}@${host}:${target.directory}/`) : '…';
     };
 
-    formGroup.append(label, intro, createOsToggle(render), tip, list, note);
+    formGroup.append(label, intro, createOsToggle(render), tip, steps, note);
     render(getClientOs());
 
-    fetch('/api/media-ssh-target/memes')
+    fetch(`/api/media-ssh-target/${kind}`)
         .then(r => (r.ok ? r.json() : null))
         .then(d => { if (d && d.user) { target = d; render(getClientOs()); } })
         .catch(() => {});

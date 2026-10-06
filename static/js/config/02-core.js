@@ -730,6 +730,7 @@ const MEDIA_UPLOAD = {
         progressId: 'upload-progress',
         barId: 'progress-bar',
         statusId: 'upload-status',
+        countId: 'meme-image-count',
         onStored: name => window.memeFilenameSet.add(name),
         onDeleted: name => window.memeFilenameSet.delete(name),
         refresh: () => { clearMemeCache(); loadMemes(); },
@@ -741,6 +742,7 @@ const MEDIA_UPLOAD = {
         progressId: 'opsec-upload-progress',
         barId: 'opsec-progress-bar',
         statusId: 'opsec-upload-status',
+        countId: 'opsec-image-count',
         onStored: () => {},
         onDeleted: () => {},
         refresh: () => loadOpsecImages(),
@@ -1004,6 +1006,7 @@ function showDuplicateReview(kind, duplicates, localFiles) {
                     if (result.success) {
                         deleted++;
                         cfg.onDeleted(name);
+                        _adjustImageCount(cfg.countId, -1);
                     } else {
                         failed++;
                         console.error(`Failed to delete ${name}:`, result.message);
@@ -1099,6 +1102,7 @@ async function uploadImageBatch(kind, files) {
             if (result.success) {
                 stored.set(result.filename, file);
                 cfg.onStored(result.filename);
+                _adjustImageCount(cfg.countId, +1);
             } else {
                 failed++;
                 console.error(`Failed to upload ${file.name}:`, result.message);
@@ -1166,10 +1170,10 @@ async function downloadMeme(filename) {
     }
 }
 
-// Nudge the '(n)' beside the memes heading. It is otherwise only written when
+// Nudge the '(n)' beside a gallery heading. It is otherwise only written when
 // a page of results loads, so a change made in place has to move it by hand.
-function _adjustMemeCount(delta) {
-    const label = document.getElementById('meme-image-count');
+function _adjustImageCount(labelId, delta) {
+    const label = document.getElementById(labelId);
     const n = parseInt((label?.textContent || '').replace(/\D/g, ''), 10);
     if (!label || !Number.isFinite(n)) return;
     const next = Math.max(0, n + delta);
@@ -1218,11 +1222,11 @@ async function deleteMeme(filename) {
     if (memeDiv) memeDiv.style.display = 'none';
     // The count beside the heading falls with the thumbnail, not after the
     // round trip, and goes back up if the delete fails.
-    _adjustMemeCount(-1);
+    _adjustImageCount('meme-image-count', -1);
 
     const restore = (message) => {
         if (memeDiv) memeDiv.style.display = '';
-        _adjustMemeCount(+1);
+        _adjustImageCount('meme-image-count', +1);
         showNotification(message, 'error');
     };
 

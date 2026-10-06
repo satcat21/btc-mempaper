@@ -423,7 +423,7 @@ function _renderCategorySection(category, section) {
         // Meme sync lives inside Meme Management, in an Advanced block under the
         // grid. It is one row rather than a section of its own: the schedule is
         // not editable, so what is left is two switches and a button.
-        if (category.id === 'meme_management') {
+        if (category.id === 'meme_management' || category.id === 'opsec') {
             const advanced = document.createElement('div');
             advanced.className = 'advanced-section';
 
@@ -436,8 +436,12 @@ function _renderCategorySection(category, section) {
 
             const advContent = document.createElement('div');
             advContent.className = 'advanced-section-content';
-            advContent.appendChild(createMemeSyncSection());
-            advContent.appendChild(createMemeScpSection());
+            if (category.id === 'meme_management') {
+                advContent.appendChild(createMemeSyncSection());
+                advContent.appendChild(createScpSection('memes'));
+            } else {
+                advContent.appendChild(createScpSection('opsec'));
+            }
 
             advanced.appendChild(advToggle);
             advanced.appendChild(advContent);
