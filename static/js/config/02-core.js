@@ -753,7 +753,7 @@ async function fetchStoredFilenames(kind) {
     const response = await fetch(`/api/media-filenames/${kind}`);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
-    return new Set(data.filenames || []);
+    return data.filenames || [];
 }
 
 async function findUploadedDuplicates(kind, filenames) {
@@ -776,7 +776,29 @@ function suggestFreeName(filename, taken) {
     return `${base}_${counter}${ext}`;
 }
 
-function buildComparePane(labelText, src, caption) {
+const COMPARE_W = 160;
+const COMPARE_H = 120;
+
+// A picked file is decoded and painted rather than given a blob: URL, so
+// nothing derived from the file picker is ever assigned to an element URL.
+function drawFilePreview(canvas, file) {
+    const ratio = window.devicePixelRatio || 1;
+    canvas.width = COMPARE_W * ratio;
+    canvas.height = COMPARE_H * ratio;
+    createImageBitmap(file).then((bitmap) => {
+        const scale = Math.min(COMPARE_W / bitmap.width, COMPARE_H / bitmap.height);
+        const w = bitmap.width * scale;
+        const h = bitmap.height * scale;
+        const ctx = canvas.getContext('2d');
+        ctx.scale(ratio, ratio);
+        ctx.drawImage(bitmap, (COMPARE_W - w) / 2, (COMPARE_H - h) / 2, w, h);
+        bitmap.close();
+    }).catch((error) => console.warn('Could not preview', file.name, error));
+}
+
+// source is { url } for a stored image (a server-side name passed through
+// assetUrl), { file } for a picked file, or null when there is nothing to show.
+function buildComparePane(labelText, source, caption) {
     const pane = document.createElement('figure');
     pane.style.cssText = 'flex: 1; min-width: 0; margin: 0; text-align: center;';
 
@@ -784,17 +806,22 @@ function buildComparePane(labelText, src, caption) {
     label.style.cssText = 'font-size: 0.8rem; font-weight: 600; margin-bottom: 4px; color: var(--text-secondary, #6a6a78);';
     label.textContent = labelText;
 
-    const img = document.createElement('img');
-    // src is either a same-origin thumbnail URL built with assetUrl() or a
-    // blob:<origin>/<uuid> from createObjectURL; img.src does not execute
-    // javascript: URLs. CodeQL taints the result through createObjectURL.
-    // codeql[js/xss-through-dom]
-    img.src = src;
-    img.alt = caption || labelText;
-    img.loading = 'lazy';
-    img.style.cssText = 'width: 100%; max-width: 160px; height: 120px; object-fit: contain; border-radius: 6px; border: 1px solid var(--border-color, #ddd); background: var(--bg-secondary, transparent);';
+    let visual;
+    if (source && source.url) {
+        visual = document.createElement('img');
+        visual.src = source.url;
+        visual.alt = caption || labelText;
+        visual.loading = 'lazy';
+        visual.style.objectFit = 'contain';
+    } else {
+        visual = document.createElement('canvas');
+        visual.setAttribute('role', 'img');
+        visual.setAttribute('aria-label', caption || labelText);
+        if (source && source.file) drawFilePreview(visual, source.file);
+    }
+    visual.style.cssText += `display: inline-block; width: 100%; max-width: ${COMPARE_W}px; aspect-ratio: ${COMPARE_W} / ${COMPARE_H}; height: auto; border-radius: 6px; border: 1px solid var(--border-color, #ddd); background: var(--bg-secondary, transparent);`;
 
-    pane.append(label, img);
+    pane.append(label, visual);
     if (caption) {
         const text = document.createElement('figcaption');
         text.style.cssText = 'font-size: 0.75rem; margin-top: 4px; overflow-wrap: anywhere;';
@@ -804,23 +831,22 @@ function buildComparePane(labelText, src, caption) {
     return pane;
 }
 
-function buildCompareRow(existingSrc, existingCaption, newSrc, newCaption) {
+function buildCompareRow(existingSource, existingCaption, newSource, newCaption) {
     const t = window.translations || {};
     const row = document.createElement('div');
     row.style.cssText = 'display: flex; gap: 12px; align-items: flex-start;';
     row.append(
-        buildComparePane(t.upload_compare_existing || 'Already stored', existingSrc, existingCaption),
-        buildComparePane(t.upload_compare_new || 'New file', newSrc, newCaption),
+        buildComparePane(t.upload_compare_existing || 'Already stored', existingSource, existingCaption),
+        buildComparePane(t.upload_compare_new || 'New file', newSource, newCaption),
     );
     return row;
 }
 
 // Resolves to the name to upload the file under, or null to skip it.
-function showNameConflictDialog(file, existingThumbUrl, suggestedName, taken) {
+function showNameConflictDialog(file, existingSource, suggestedName, taken) {
     const t = window.translations || {};
     const dot = suggestedName.lastIndexOf('.');
     const extension = dot > 0 ? suggestedName.slice(dot) : '';
-    const previewUrl = URL.createObjectURL(file);
 
     return new Promise((resolve) => {
         const modal = document.createElement('div');
@@ -844,7 +870,7 @@ function showNameConflictDialog(file, existingThumbUrl, suggestedName, taken) {
             ' ' + (t.rename_conflict_exists || 'already exists.')
         );
 
-        const compare = buildCompareRow(existingThumbUrl, null, previewUrl, null);
+        const compare = buildCompareRow(existingSource, null, { file }, null);
         compare.style.marginBottom = '14px';
 
         const label = document.createElement('label');
@@ -890,7 +916,6 @@ function showNameConflictDialog(file, existingThumbUrl, suggestedName, taken) {
         };
         const finish = (result) => {
             modal.remove();
-            URL.revokeObjectURL(previewUrl);
             resolve(result);
         };
 
@@ -913,7 +938,6 @@ function showNameConflictDialog(file, existingThumbUrl, suggestedName, taken) {
 function showDuplicateReview(kind, duplicates, localFiles) {
     const cfg = MEDIA_UPLOAD[kind];
     const t = window.translations || {};
-    const objectUrls = [];
 
     return new Promise((resolve) => {
         const modal = document.createElement('div');
@@ -945,17 +969,12 @@ function showDuplicateReview(kind, duplicates, localFiles) {
             box.style.flexShrink = '0';
 
             const file = localFiles.get(dup.filename);
-            let newSrc = assetUrl(cfg.thumbPrefix, dup.filename);
-            if (file) {
-                newSrc = URL.createObjectURL(file);
-                objectUrls.push(newSrc);
-            }
             const original = dup.matches[0];
             const extra = dup.matches.length - 1;
             const compare = buildCompareRow(
-                assetUrl(cfg.thumbPrefix, original),
+                { url: assetUrl(cfg.thumbPrefix, original) },
                 extra > 0 ? `${original} (+${extra})` : original,
-                newSrc,
+                file ? { file } : { url: assetUrl(cfg.thumbPrefix, dup.filename) },
                 dup.filename
             );
             compare.style.flex = '1';
@@ -989,7 +1008,6 @@ function showDuplicateReview(kind, duplicates, localFiles) {
 
         const finish = () => {
             modal.remove();
-            objectUrls.forEach(url => URL.revokeObjectURL(url));
             resolve();
         };
 
@@ -1058,23 +1076,27 @@ async function uploadImageBatch(kind, files) {
     setProgress(0);
     setStatus(t.upload_checking_names || 'Checking file names...');
 
-    let taken;
+    let storedNames = [];
     try {
-        taken = await fetchStoredFilenames(kind);
+        storedNames = await fetchStoredFilenames(kind);
     } catch (error) {
         // The server never overwrites a stored file, so uploading without the
         // check only loses the chance to pick a name; clashes get a _1 suffix.
         console.warn('Could not load stored file names:', error);
-        taken = new Set();
     }
+    const taken = new Set(storedNames);
 
     const queue = [];
     let skipped = 0;
     for (const file of imageFiles) {
         let name = file.name;
         if (taken.has(name)) {
+            // The thumbnail URL is built from the server's own copy of the name;
+            // a clash with an earlier file of this batch has no thumbnail yet.
+            const storedMatch = storedNames.find(n => n === file.name);
+            const existingSource = storedMatch ? { url: assetUrl(cfg.thumbPrefix, storedMatch) } : null;
             name = await showNameConflictDialog(
-                file, assetUrl(cfg.thumbPrefix, file.name), suggestFreeName(file.name, taken), taken);
+                file, existingSource, suggestFreeName(file.name, taken), taken);
             if (name === null) {
                 skipped++;
                 continue;
