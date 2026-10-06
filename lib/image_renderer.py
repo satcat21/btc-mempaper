@@ -535,6 +535,7 @@ class ImageRenderer(ColorMixin, MemeMixin, HashFrameMixin, TextMixin,
         self._meme_cache_api_tags = {}       # stem -> list of API-sourced tags (read-only)
         self._meme_cache_stem_to_file = {}   # stem -> actual filename on disk
         self._meme_cache_ts = 0.0            # last rebuild timestamp
+        self._meme_cache_dir_mtime = None    # meme folder mtime at last rebuild
         self._MEME_CACHE_TTL = 86400         # seconds before auto-refresh (24h; mutations invalidate immediately)
         self._recent_memes = []              # last N meme paths to avoid repeats
         self._RECENT_MEMES_MAX = 50          # remember this many recent selections

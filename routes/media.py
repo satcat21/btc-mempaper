@@ -6,11 +6,108 @@ from flask import jsonify
 from flask import request
 from managers.auth_manager import require_auth
 from werkzeug.utils import secure_filename
+import hashlib
+import json
 import os
 import threading
 
 # Defined in mempaper_app; imported lazily inside register() to avoid
 # a circular import at module load time.
+
+_IMAGE_EXTENSIONS = ('.png', '.jpg', '.jpeg', '.gif', '.webp')
+_hash_cache_lock = threading.Lock()
+
+
+def _sha256_file(path):
+    digest = hashlib.sha256()
+    with open(path, 'rb') as f:
+        for block in iter(lambda: f.read(1 << 20), b''):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+_MEDIA_KINDS = {
+    'memes': (os.path.join('static', 'memes'), os.path.join('cache', 'meme_hashes.json')),
+    'opsec': (os.path.join('static', 'opsec'), os.path.join('cache', 'opsec_hashes.json')),
+}
+
+
+def _image_filenames(directory):
+    if not os.path.isdir(directory):
+        return []
+    return sorted(n for n in os.listdir(directory) if n.lower().endswith(_IMAGE_EXTENSIONS))
+
+
+def _find_duplicates(index, uploaded):
+    """For each uploaded file, the other files with identical content.
+
+    Within the batch only earlier uploads count as originals, so of two
+    identical new files the first is kept and only the second is reported.
+    """
+    by_digest = {}
+    for name, digest in index.items():
+        by_digest.setdefault(digest, []).append(name)
+
+    batch = set(uploaded)
+    seen = set()
+    duplicates = []
+    for name in uploaded:
+        digest = index.get(name)
+        if digest is None or name in seen:
+            continue
+        matches = sorted(n for n in by_digest[digest]
+                         if n != name and (n not in batch or n in seen))
+        seen.add(name)
+        if matches:
+            duplicates.append({'filename': name, 'matches': matches})
+    return duplicates
+
+
+def _directory_index(directory, cache_path):
+    """Return {filename: sha256} for the images in directory.
+
+    Hashing a few thousand images from the SD card takes minutes on a Pi Zero,
+    so each digest is kept with the file's size and mtime and only recomputed
+    when either changes.
+    """
+    if not os.path.isdir(directory):
+        return {}
+
+    with _hash_cache_lock:
+        try:
+            with open(cache_path, encoding='utf-8') as f:
+                cached = json.load(f)
+        except (OSError, ValueError):
+            cached = {}
+
+        fresh = {}
+        dirty = False
+        with os.scandir(directory) as entries:
+            for entry in entries:
+                if not entry.name.lower().endswith(_IMAGE_EXTENSIONS) or not entry.is_file():
+                    continue
+                try:
+                    st = entry.stat()
+                    known = cached.get(entry.name)
+                    if known and known[0] == st.st_size and known[1] == st.st_mtime_ns:
+                        fresh[entry.name] = known
+                    else:
+                        fresh[entry.name] = [st.st_size, st.st_mtime_ns, _sha256_file(entry.path)]
+                        dirty = True
+                except OSError as e:
+                    print(f"Error hashing {entry.name}: {e}")
+
+        if dirty or len(fresh) != len(cached):
+            try:
+                os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+                tmp_path = cache_path + '.tmp'
+                with open(tmp_path, 'w', encoding='utf-8') as f:
+                    json.dump(fresh, f)
+                os.replace(tmp_path, cache_path)
+            except OSError as e:
+                print(f"Could not save hash cache {cache_path}: {e}")
+
+    return {name: digest for name, (_, _, digest) in fresh.items()}
 
 
 def register(self):
@@ -370,37 +467,44 @@ def register(self):
         except Exception as e:
             return jsonify({'success': False, 'message': _safe_error(e)}), 500
 
-    @self.app.route('/api/meme-hashes', methods=['GET'])
+    @self.app.route('/api/media-filenames/<kind>', methods=['GET'])
     @require_auth(self.auth_manager)
-    def get_meme_hashes():
-        """Get SHA-256 hashes of all existing memes for duplicate detection."""
+    def get_media_filenames(kind):
+        """Names of the stored images, for the name-conflict check before upload."""
+        if kind not in _MEDIA_KINDS:
+            return jsonify({'success': False, 'message': 'Unknown media kind'}), 404
         try:
-            import hashlib
+            return jsonify({'filenames': _image_filenames(_MEDIA_KINDS[kind][0])})
+        except Exception as e:
+            return jsonify({'success': False, 'message': _safe_error(e)}), 500
 
-            memes_dir = os.path.join('static', 'memes')
-            if not os.path.exists(memes_dir):
-                return jsonify({'hashes': {}})
+    @self.app.route('/api/media-ssh-target/<kind>', methods=['GET'])
+    @require_auth(self.auth_manager)
+    def get_media_ssh_target(kind):
+        """Account and folder to copy images into with scp."""
+        if kind not in _MEDIA_KINDS:
+            return jsonify({'success': False, 'message': 'Unknown media kind'}), 404
+        import getpass
+        try:
+            return jsonify({'user': getpass.getuser(),
+                            'directory': os.path.abspath(_MEDIA_KINDS[kind][0])})
+        except Exception as e:
+            return jsonify({'success': False, 'message': _safe_error(e)}), 500
 
-            hashes = {}
-            for filename in os.listdir(memes_dir):
-                if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp')):
-                    file_path = os.path.join(memes_dir, filename)
-                    try:
-                        # Calculate SHA-256 hash of file content
-                        sha256_hash = hashlib.sha256()
-                        with open(file_path, "rb") as f:
-                            # Read file in chunks for efficiency
-                            for byte_block in iter(lambda: f.read(4096), b""):
-                                sha256_hash.update(byte_block)
-
-                        file_hash = sha256_hash.hexdigest()
-                        hashes[file_hash] = filename
-                    except Exception as e:
-                        print(f"Error hashing {filename}: {e}")
-                        continue
-
-            return jsonify({'hashes': hashes})
-
+    @self.app.route('/api/media-duplicates/<kind>', methods=['POST'])
+    @require_auth(self.auth_manager)
+    def find_media_duplicates(kind):
+        """Report which just-uploaded images are byte-identical to stored ones."""
+        if kind not in _MEDIA_KINDS:
+            return jsonify({'success': False, 'message': 'Unknown media kind'}), 404
+        data = request.get_json(silent=True) or {}
+        filenames = data.get('filenames')
+        if not isinstance(filenames, list) or not all(isinstance(f, str) for f in filenames):
+            return jsonify({'success': False, 'message': 'filenames must be a list of names'}), 400
+        try:
+            index = _directory_index(*_MEDIA_KINDS[kind])
+            uploaded = [secure_filename(f) for f in filenames]
+            return jsonify({'duplicates': _find_duplicates(index, uploaded)})
         except Exception as e:
             return jsonify({'success': False, 'message': _safe_error(e)}), 500
 
@@ -556,36 +660,6 @@ def register(self):
             if os.path.exists(thumb_path):
                 os.remove(thumb_path)
             return jsonify({'success': True, 'message': f'OPSec image deleted: {filename}'})
-
-        except Exception as e:
-            return jsonify({'success': False, 'message': _safe_error(e)}), 500
-
-    @self.app.route('/api/opsec-hashes', methods=['GET'])
-    @require_auth(self.auth_manager)
-    def get_opsec_hashes():
-        """Get SHA-256 hashes of all existing OPSec images for duplicate detection."""
-        try:
-            import hashlib
-
-            opsec_dir = os.path.join('static', 'opsec')
-            if not os.path.exists(opsec_dir):
-                return jsonify({'hashes': {}})
-
-            hashes = {}
-            for filename in os.listdir(opsec_dir):
-                if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp')):
-                    file_path = os.path.join(opsec_dir, filename)
-                    try:
-                        sha256_hash = hashlib.sha256()
-                        with open(file_path, "rb") as f:
-                            for byte_block in iter(lambda: f.read(4096), b""):
-                                sha256_hash.update(byte_block)
-                        hashes[sha256_hash.hexdigest()] = filename
-                    except Exception as e:
-                        print(f"Error hashing OPSec image {filename}: {e}")
-                        continue
-
-            return jsonify({'hashes': hashes})
 
         except Exception as e:
             return jsonify({'success': False, 'message': _safe_error(e)}), 500

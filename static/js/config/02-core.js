@@ -644,20 +644,6 @@ function setupUpload() {
 // Global set of existing meme filenames for client-side duplicate name checking
 window.memeFilenameSet = new Set();
 
-// Calculate SHA-256 hash of file content for duplicate detection
-async function calculateFileHash(file) {
-    try {
-        const arrayBuffer = await file.arrayBuffer();
-        const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
-        const hashArray = Array.from(new Uint8Array(hashBuffer));
-        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-        return hashHex;
-    } catch (error) {
-        console.error('Failed to calculate file hash:', error);
-        return null;
-    }
-}
-
 // Surface an upload failure in the UI. Without this, an exception thrown inside
 // an async upload becomes an unhandled rejection: the progress bar stays visible
 // and frozen on whatever status line was last written, which is indistinguishable
@@ -736,344 +722,421 @@ function renderMemeThumbBody(memeDiv, meme) {
     memeDiv.replaceChildren(actions, name);
 }
 
-// Get all existing OPSec image hashes from server
-async function getExistingOpsecHashes() {
-    try {
-        const response = await fetch('/api/opsec-hashes');
-        if (response.ok) {
-            const data = await response.json();
-            return data.hashes || {}; // Returns {hash: filename, ...}
-        }
-    } catch (error) {
-        console.warn('Failed to fetch existing OPSec hashes:', error);
-    }
-    return {};
+const MEDIA_UPLOAD = {
+    memes: {
+        uploadUrl: '/api/upload-meme',
+        deletePrefix: '/api/delete-meme/',
+        thumbPrefix: '/api/thumb/',
+        progressId: 'upload-progress',
+        barId: 'progress-bar',
+        statusId: 'upload-status',
+        onStored: name => window.memeFilenameSet.add(name),
+        onDeleted: name => window.memeFilenameSet.delete(name),
+        refresh: () => { clearMemeCache(); loadMemes(); },
+    },
+    opsec: {
+        uploadUrl: '/api/upload-opsec',
+        deletePrefix: '/api/delete-opsec/',
+        thumbPrefix: '/api/opsec-thumb/',
+        progressId: 'opsec-upload-progress',
+        barId: 'opsec-progress-bar',
+        statusId: 'opsec-upload-status',
+        onStored: () => {},
+        onDeleted: () => {},
+        refresh: () => loadOpsecImages(),
+    },
+};
+
+async function fetchStoredFilenames(kind) {
+    const response = await fetch(`/api/media-filenames/${kind}`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    return new Set(data.filenames || []);
 }
 
-// Get all existing meme hashes from server
-async function getExistingMemeHashes() {
-    try {
-        const response = await fetch('/api/meme-hashes');
-        if (response.ok) {
-            const data = await response.json();
-            return data.hashes || {}; // Returns {hash: filename, ...}
-        }
-    } catch (error) {
-        console.warn('Failed to fetch existing meme hashes:', error);
-    }
-    return {};
+async function findUploadedDuplicates(kind, filenames) {
+    const response = await fetch(`/api/media-duplicates/${kind}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filenames }),
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    return data.duplicates || [];
 }
 
-// Show rename dialog for a file when a filename conflict is detected.
-// suggestedFilename: pre-corrected full filename (e.g. "my_pic_1.png")
-// existingFilenames: Set of filenames already present on the server
-async function showRenameDialog(originalFilename, file, suggestedFilename, existingFilenames) {
-    const extension = suggestedFilename.substring(suggestedFilename.lastIndexOf('.'));
-    const suggestedNameWithoutExt = suggestedFilename.substring(0, suggestedFilename.lastIndexOf('.'));
-    const t = window.translations;
+function suggestFreeName(filename, taken) {
+    const dot = filename.lastIndexOf('.');
+    const base = dot > 0 ? filename.slice(0, dot) : filename;
+    const ext = dot > 0 ? filename.slice(dot) : '';
+    let counter = 1;
+    while (taken.has(`${base}_${counter}${ext}`)) counter++;
+    return `${base}_${counter}${ext}`;
+}
 
-    const previewUrl = file ? URL.createObjectURL(file) : null;
+function buildComparePane(labelText, src, caption) {
+    const pane = document.createElement('figure');
+    pane.style.cssText = 'flex: 1; min-width: 0; margin: 0; text-align: center;';
+
+    const label = document.createElement('div');
+    label.style.cssText = 'font-size: 0.8rem; font-weight: 600; margin-bottom: 4px; color: var(--text-secondary, #6a6a78);';
+    label.textContent = labelText;
+
+    const img = document.createElement('img');
+    // src is either a same-origin thumbnail URL built with assetUrl() or a
+    // blob:<origin>/<uuid> from createObjectURL; img.src does not execute
+    // javascript: URLs. CodeQL taints the result through createObjectURL.
+    // codeql[js/xss-through-dom]
+    img.src = src;
+    img.alt = caption || labelText;
+    img.loading = 'lazy';
+    img.style.cssText = 'width: 100%; max-width: 160px; height: 120px; object-fit: contain; border-radius: 6px; border: 1px solid var(--border-color, #ddd); background: var(--bg-secondary, transparent);';
+
+    pane.append(label, img);
+    if (caption) {
+        const text = document.createElement('figcaption');
+        text.style.cssText = 'font-size: 0.75rem; margin-top: 4px; overflow-wrap: anywhere;';
+        text.textContent = caption;
+        pane.appendChild(text);
+    }
+    return pane;
+}
+
+function buildCompareRow(existingSrc, existingCaption, newSrc, newCaption) {
+    const t = window.translations || {};
+    const row = document.createElement('div');
+    row.style.cssText = 'display: flex; gap: 12px; align-items: flex-start;';
+    row.append(
+        buildComparePane(t.upload_compare_existing || 'Already stored', existingSrc, existingCaption),
+        buildComparePane(t.upload_compare_new || 'New file', newSrc, newCaption),
+    );
+    return row;
+}
+
+// Resolves to the name to upload the file under, or null to skip it.
+function showNameConflictDialog(file, existingThumbUrl, suggestedName, taken) {
+    const t = window.translations || {};
+    const dot = suggestedName.lastIndexOf('.');
+    const extension = dot > 0 ? suggestedName.slice(dot) : '';
+    const previewUrl = URL.createObjectURL(file);
 
     return new Promise((resolve) => {
         const modal = document.createElement('div');
         modal.className = 'modal';
         modal.style.display = 'flex';
 
-        // Built as elements rather than markup: the filename comes from the
-        // user's own file picker and previously reached an alt attribute, a
-        // <strong> body and an input value through innerHTML.
         const content = document.createElement('div');
         content.className = 'modal-content';
-        content.style.maxWidth = '400px';
+        content.style.maxWidth = '440px';
 
         const heading = document.createElement('h3');
-        heading.textContent = t?.rename_image || 'Rename Image';
-        content.appendChild(heading);
-
-        if (previewUrl) {
-            const previewWrap = document.createElement('div');
-            previewWrap.style.cssText = 'text-align: center; margin-bottom: 15px;';
-            const previewImg = document.createElement('img');
-            // createObjectURL only ever mints blob:<origin>/<uuid> - nothing from
-            // the file or its name reaches the URL - and img.src does not execute
-            // javascript: URLs. CodeQL taints the result through createObjectURL.
-            // codeql[js/xss-through-dom]
-            previewImg.src = previewUrl;
-            previewImg.alt = originalFilename;
-            previewImg.style.cssText = 'max-width: 150px; max-height: 150px; object-fit: contain; border-radius: 6px; border: 1px solid #ddd;';
-            previewWrap.appendChild(previewImg);
-            content.appendChild(previewWrap);
-        }
+        heading.textContent = t.upload_conflict_title || 'File name already exists';
 
         const info = document.createElement('p');
-        info.style.cssText = 'margin-bottom: 8px; color: #6a6a78;';
+        info.style.cssText = 'margin-bottom: 12px; color: var(--text-secondary, #6a6a78); overflow-wrap: anywhere;';
         const nameEl = document.createElement('strong');
-        nameEl.textContent = originalFilename;
+        nameEl.textContent = file.name;
         info.append(
-            (t?.rename_conflict_info || 'A file named') + ' ',
+            (t.rename_conflict_info || 'A file named') + ' ',
             nameEl,
-            ' ' + (t?.rename_conflict_exists || 'already exists.')
+            ' ' + (t.rename_conflict_exists || 'already exists.')
         );
-        content.appendChild(info);
+
+        const compare = buildCompareRow(existingThumbUrl, null, previewUrl, null);
+        compare.style.marginBottom = '14px';
 
         const label = document.createElement('label');
         label.style.cssText = 'display: block; margin-bottom: 5px; font-weight: 600;';
-        label.textContent = t?.rename_new_name || 'New name (without extension):';
-        content.appendChild(label);
+        label.textContent = t.rename_new_name || 'New name (without extension):';
 
         const input = document.createElement('input');
         input.type = 'text';
-        input.id = 'rename-input';
         input.className = 'form-input';
-        input.value = suggestedNameWithoutExt;
+        input.value = dot > 0 ? suggestedName.slice(0, dot) : suggestedName;
         input.style.marginBottom = '5px';
-        content.appendChild(input);
 
         const warning = document.createElement('p');
-        warning.id = 'rename-name-warning';
         warning.style.cssText = 'font-size: 0.85rem; color: #e53e3e; margin-bottom: 5px; display: none;';
-        warning.textContent = t?.rename_name_in_use || 'This name is already in use. Please choose a different name.';
-        content.appendChild(warning);
+        warning.textContent = t.rename_name_in_use || 'This name is already in use. Please choose a different name.';
 
         const extNote = document.createElement('p');
         extNote.style.cssText = 'font-size: 0.85rem; color: #F7931A; margin-bottom: 15px;';
-        extNote.textContent = (t?.rename_extension_preserved || 'Extension {ext} will be preserved')
+        extNote.textContent = (t.rename_extension_preserved || 'Extension {ext} will be preserved')
             .replace('{ext}', extension);
-        content.appendChild(extNote);
 
         const buttons = document.createElement('div');
-        buttons.className = 'modal-buttons';
-        buttons.style.cssText = 'display: flex; gap: 10px;';
-        const confirmBtn = document.createElement('button');
-        confirmBtn.id = 'rename-confirm';
-        confirmBtn.className = 'save-button';
-        confirmBtn.style.flex = '1';
-        confirmBtn.textContent = t?.rename_confirm || 'Rename';
+        buttons.className = 'confirm-modal-buttons';
         const skipBtn = document.createElement('button');
-        skipBtn.id = 'rename-skip';
-        skipBtn.className = 'cancel-button';
-        skipBtn.style.flex = '1';
-        skipBtn.textContent = t?.rename_keep_original || 'Keep Original';
-        buttons.append(confirmBtn, skipBtn);
-        content.appendChild(buttons);
+        skipBtn.className = 'confirm-modal-btn cancel';
+        skipBtn.textContent = t.upload_conflict_skip || 'Skip file';
+        const confirmBtn = document.createElement('button');
+        confirmBtn.className = 'confirm-modal-btn confirm';
+        confirmBtn.textContent = t.upload_conflict_upload || 'Upload with this name';
+        buttons.append(skipBtn, confirmBtn);
 
+        content.append(heading, info, compare, label, input, warning, extNote, buttons);
         modal.appendChild(content);
         document.body.appendChild(modal);
 
-        const validateInput = () => {
-            const candidate = input.value.trim() + extension;
-            const conflict = existingFilenames && existingFilenames.has(candidate);
+        const candidate = () => input.value.trim() + extension;
+        const validate = () => {
+            const conflict = taken.has(candidate());
             warning.style.display = conflict ? 'block' : 'none';
             confirmBtn.disabled = conflict || !input.value.trim();
             confirmBtn.style.opacity = confirmBtn.disabled ? '0.5' : '';
             confirmBtn.style.cursor = confirmBtn.disabled ? 'not-allowed' : '';
         };
+        const finish = (result) => {
+            modal.remove();
+            URL.revokeObjectURL(previewUrl);
+            resolve(result);
+        };
 
-        input.addEventListener('input', validateInput);
-        validateInput();
+        input.addEventListener('input', validate);
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') confirmBtn.click();
+            else if (e.key === 'Escape') skipBtn.click();
+        });
+        confirmBtn.addEventListener('click', () => { if (!confirmBtn.disabled) finish(candidate()); });
+        skipBtn.addEventListener('click', () => finish(null));
+
+        validate();
         input.focus();
         input.select();
-
-        const cleanup = () => {
-            modal.remove();
-            if (previewUrl) URL.revokeObjectURL(previewUrl);
-        };
-
-        confirmBtn.onclick = () => {
-            if (confirmBtn.disabled) return;
-            const newName = input.value.trim();
-            cleanup();
-            resolve(newName + extension);
-        };
-
-        skipBtn.onclick = () => {
-            cleanup();
-            resolve(suggestedFilename);
-        };
-
-        input.onkeydown = (e) => {
-            if (e.key === 'Enter') {
-                confirmBtn.click();
-            } else if (e.key === 'Escape') {
-                skipBtn.click();
-            }
-        };
     });
 }
 
-// Upload multiple files with duplicate detection and rename capability
-async function uploadFiles(files) {
-    const progressDiv = document.getElementById('upload-progress');
-    const progressBar = document.getElementById('progress-bar');
-    const statusText = document.getElementById('upload-status');
-    
-    if (!files || files.length === 0) return;
-    
-    const t = window.translations;
+// Lists each uploaded copy next to the image it duplicates and deletes the
+// ones left ticked. Resolves once the dialog is closed.
+function showDuplicateReview(kind, duplicates, localFiles) {
+    const cfg = MEDIA_UPLOAD[kind];
+    const t = window.translations || {};
+    const objectUrls = [];
 
-    // Show progress
-    if (progressDiv && progressBar && statusText) {
-        progressDiv.style.display = 'block';
-        progressBar.style.transform = 'scaleX(0)';
-        statusText.textContent = t?.upload_checking_duplicates || 'Checking for duplicates...';
-        statusText.style.color = '#F7931A';
-    }
+    return new Promise((resolve) => {
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.style.display = 'flex';
 
-    // Get existing hashes
-    const existingHashes = await getExistingMemeHashes();
+        const content = document.createElement('div');
+        content.className = 'modal-content';
+        content.style.maxWidth = '520px';
 
-    // Build a working set of filenames (server state + files queued this batch)
-    const existingFilenames = new Set(Object.values(existingHashes));
+        const heading = document.createElement('h3');
+        heading.textContent = t.upload_duplicates_title || 'Duplicates found';
 
-    // Process files: check duplicates and handle name conflicts
-    const filesToUpload = [];
-    const duplicates = [];
+        const intro = document.createElement('p');
+        intro.style.cssText = 'margin-bottom: 10px; color: var(--text-secondary, #6a6a78);';
+        intro.textContent = t.upload_duplicates_intro
+            || 'These uploaded files are identical to images that were already stored. Select the copies to delete.';
 
-    for (let i = 0; i < files.length; i++) {
-        const file = files[i];
+        const list = document.createElement('div');
+        list.style.cssText = 'max-height: 55vh; overflow-y: auto; margin-bottom: 14px;';
 
-        if (statusText) {
-            statusText.textContent = (t?.upload_processing || 'Processing {current}/{total}: {filename}...')
-                .replace('{current}', i + 1).replace('{total}', files.length).replace('{filename}', file.name);
-        }
+        const rows = duplicates.map((dup) => {
+            const item = document.createElement('label');
+            item.style.cssText = 'display: flex; gap: 10px; align-items: center; padding: 10px 0; border-top: 1px solid var(--border-color, #e2e2e8); cursor: pointer;';
 
-        // Calculate hash for content-duplicate detection
-        const hash = await calculateFileHash(file);
+            const box = document.createElement('input');
+            box.type = 'checkbox';
+            box.checked = true;
+            box.style.flexShrink = '0';
 
-        // Skip content-identical files
-        if (hash && existingHashes[hash]) {
-            duplicates.push({ name: file.name, duplicate: existingHashes[hash] });
-            continue;
-        }
-
-        let targetName = file.name;
-
-        // Check for filename conflict (same name, different content)
-        if (existingFilenames.has(file.name)) {
-            const ext = file.name.substring(file.name.lastIndexOf('.'));
-            const base = file.name.substring(0, file.name.lastIndexOf('.'));
-
-            // Auto-generate a non-conflicting name: base_1.ext, base_2.ext, …
-            let counter = 1;
-            while (existingFilenames.has(base + '_' + counter + ext)) {
-                counter++;
+            const file = localFiles.get(dup.filename);
+            let newSrc = assetUrl(cfg.thumbPrefix, dup.filename);
+            if (file) {
+                newSrc = URL.createObjectURL(file);
+                objectUrls.push(newSrc);
             }
-            const suggestedName = base + '_' + counter + ext;
+            const original = dup.matches[0];
+            const extra = dup.matches.length - 1;
+            const compare = buildCompareRow(
+                assetUrl(cfg.thumbPrefix, original),
+                extra > 0 ? `${original} (+${extra})` : original,
+                newSrc,
+                dup.filename
+            );
+            compare.style.flex = '1';
 
-            // Show dialog with the pre-corrected name so user can adjust if desired
-            targetName = await showRenameDialog(file.name, file, suggestedName, existingFilenames);
-        }
+            item.append(box, compare);
+            list.appendChild(item);
+            return { box, filename: dup.filename };
+        });
 
-        const uploadFile = targetName === file.name
-            ? file
-            : new File([file], targetName, { type: file.type });
+        const buttons = document.createElement('div');
+        buttons.className = 'confirm-modal-buttons';
+        const keepBtn = document.createElement('button');
+        keepBtn.className = 'confirm-modal-btn cancel';
+        keepBtn.textContent = t.upload_duplicates_keep || 'Keep all';
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'confirm-modal-btn danger';
+        buttons.append(keepBtn, deleteBtn);
 
-        filesToUpload.push({ file: uploadFile, name: targetName, hash });
-        // Track name within this batch to avoid intra-batch conflicts
-        existingFilenames.add(targetName);
-    }
-    
-    // Show summary
-    let summaryMessage = '';
-    if (duplicates.length > 0) {
-        summaryMessage += (t?.upload_skipped_duplicates_msg || 'Skipped {count} duplicate(s).').replace('{count}', duplicates.length) + ' ';
-    }
-    if (filesToUpload.length > 0) {
-        summaryMessage += (t?.upload_uploading_count || 'Uploading {count} file(s)...').replace('{count}', filesToUpload.length);
-    } else {
-        summaryMessage = t?.upload_no_files || 'No files to upload.';
-    }
-    
-    if (statusText) {
-        statusText.textContent = summaryMessage;
-        statusText.style.color = duplicates.length > 0 ? '#ff9800' : '#F7931A';
-    }
-    
-    // Show duplicate details if any
-    if (duplicates.length > 0) {
-        const dupList = duplicates.map(d => `• ${d.name} (duplicate of ${d.duplicate})`).join('\n');
-        showNotification((t?.upload_duplicates_skipped_notification || '{count} duplicate file(s) skipped').replace('{count}', duplicates.length), 'warning');
-    }
-    
-    // Upload files one by one
-    if (filesToUpload.length > 0) {
-        let uploadedCount = 0;
-        let failedCount = 0;
-        
-        for (let i = 0; i < filesToUpload.length; i++) {
-            const { file, name } = filesToUpload[i];
-            
-            if (statusText) {
-                statusText.textContent = (t?.upload_uploading_progress || 'Uploading {current}/{total}: {filename}...')
-                    .replace('{current}', i + 1).replace('{total}', filesToUpload.length).replace('{filename}', name);
-            }
-            
-            if (progressBar) {
-                progressBar.style.transform = `scaleX(${i / filesToUpload.length})`;
-            }
+        content.append(heading, intro, list, buttons);
+        modal.appendChild(content);
+        document.body.appendChild(modal);
 
-            const formData = new FormData();
-            formData.append('file', file);
+        const selected = () => rows.filter(r => r.box.checked).map(r => r.filename);
+        const updateDeleteButton = () => {
+            const count = selected().length;
+            deleteBtn.textContent = (t.upload_duplicates_delete || 'Delete selected ({count})').replace('{count}', count);
+            deleteBtn.disabled = count === 0;
+        };
+        rows.forEach(r => r.box.addEventListener('change', updateDeleteButton));
+        updateDeleteButton();
 
-            try {
-                const response = await fetch('/api/upload-meme', {
-                    method: 'POST',
-                    body: formData
-                });
-                
-                const result = await response.json();
-                
-                if (result.success) {
-                    uploadedCount++;
-                    window.memeFilenameSet.add(name);
-                } else {
-                    failedCount++;
-                    console.error(`Failed to upload ${name}:`, result.message);
+        const finish = () => {
+            modal.remove();
+            objectUrls.forEach(url => URL.revokeObjectURL(url));
+            resolve();
+        };
+
+        keepBtn.addEventListener('click', finish);
+        deleteBtn.addEventListener('click', async () => {
+            keepBtn.disabled = true;
+            deleteBtn.disabled = true;
+            let deleted = 0;
+            let failed = 0;
+            for (const name of selected()) {
+                try {
+                    const response = await fetch(assetUrl(cfg.deletePrefix, name), { method: 'DELETE' });
+                    const result = await response.json();
+                    if (result.success) {
+                        deleted++;
+                        cfg.onDeleted(name);
+                    } else {
+                        failed++;
+                        console.error(`Failed to delete ${name}:`, result.message);
+                    }
+                } catch (error) {
+                    failed++;
+                    console.error(`Error deleting ${name}:`, error);
                 }
-            } catch (error) {
-                failedCount++;
-                console.error(`Error uploading ${name}:`, error);
             }
-        }
-        
-        if (progressBar) {
-            progressBar.style.transform = 'scaleX(1)';
-        }
+            if (deleted > 0) {
+                cfg.refresh();
+                showNotification((t.upload_duplicates_deleted || '{count} duplicate(s) deleted').replace('{count}', deleted), 'success');
+            }
+            if (failed > 0) {
+                showNotification((t.upload_duplicates_delete_failed || 'Could not delete {count} file(s)').replace('{count}', failed), 'error');
+            }
+            finish();
+        });
+    });
+}
 
-        // Show final status
-        if (statusText) {
-            _renderUploadSummary(statusText, uploadedCount, failedCount, duplicates.length);
-        }
-        
-        // Clear cache and reload memes
-        if (uploadedCount > 0) {
-            clearMemeCache();
-            // Add new memes to the list without reloading entire page
-            loadMemes();
-        }
-        
-        // Hide progress after delay
-        setTimeout(() => {
-            if (progressDiv) {
-                progressDiv.style.display = 'none';
-            }
-        }, 4000);
-        
-        // Show summary notification
-        if (uploadedCount > 0) {
-            showNotification((t?.upload_success_notification || 'Successfully uploaded {count} file(s)').replace('{count}', uploadedCount), 'success');
-        }
-        if (failedCount > 0) {
-            showNotification((t?.upload_fail_notification || 'Failed to upload {count} file(s)').replace('{count}', failedCount), 'error');
-        }
-    } else {
-        // No files to upload
-        setTimeout(() => {
-            if (progressDiv) {
-                progressDiv.style.display = 'none';
-            }
-        }, 3000);
+// Name conflicts are settled before uploading, while the user still has the
+// file in hand. Content duplicates need a hash of every stored image, which is
+// slow on a Pi, so the files are uploaded first and duplicates are offered for
+// deletion afterwards.
+async function uploadImageBatch(kind, files) {
+    const cfg = MEDIA_UPLOAD[kind];
+    const t = window.translations || {};
+    const progressDiv = document.getElementById(cfg.progressId);
+    const progressBar = document.getElementById(cfg.barId);
+    const statusText = document.getElementById(cfg.statusId);
+    const setStatus = (text) => {
+        if (!statusText) return;
+        statusText.textContent = text;
+        statusText.style.color = '#F7931A';
+    };
+    const setProgress = (fraction) => {
+        if (progressBar) progressBar.style.transform = `scaleX(${fraction})`;
+    };
+
+    if (!files || files.length === 0) return;
+    const imageFiles = files.filter(f => f.type.startsWith('image/'));
+    if (imageFiles.length === 0) {
+        showNotification(t.upload_images_only || 'Please select image files only', 'error');
+        return;
     }
+
+    if (progressDiv) progressDiv.style.display = 'block';
+    setProgress(0);
+    setStatus(t.upload_checking_names || 'Checking file names...');
+
+    let taken;
+    try {
+        taken = await fetchStoredFilenames(kind);
+    } catch (error) {
+        // The server never overwrites a stored file, so uploading without the
+        // check only loses the chance to pick a name; clashes get a _1 suffix.
+        console.warn('Could not load stored file names:', error);
+        taken = new Set();
+    }
+
+    const queue = [];
+    let skipped = 0;
+    for (const file of imageFiles) {
+        let name = file.name;
+        if (taken.has(name)) {
+            name = await showNameConflictDialog(
+                file, assetUrl(cfg.thumbPrefix, file.name), suggestFreeName(file.name, taken), taken);
+            if (name === null) {
+                skipped++;
+                continue;
+            }
+        }
+        taken.add(name);
+        queue.push(name === file.name ? file : new File([file], name, { type: file.type }));
+    }
+
+    // Keyed by the name the server stored each file under, which can differ
+    // from the requested one after sanitising.
+    const stored = new Map();
+    let failed = 0;
+    for (let i = 0; i < queue.length; i++) {
+        const file = queue[i];
+        setStatus((t.upload_uploading_progress || 'Uploading {current}/{total}: {filename}...')
+            .replace('{current}', i + 1).replace('{total}', queue.length).replace('{filename}', file.name));
+        setProgress(i / queue.length);
+
+        const formData = new FormData();
+        formData.append('file', file);
+        try {
+            const response = await fetch(cfg.uploadUrl, { method: 'POST', body: formData });
+            const result = await response.json();
+            if (result.success) {
+                stored.set(result.filename, file);
+                cfg.onStored(result.filename);
+            } else {
+                failed++;
+                console.error(`Failed to upload ${file.name}:`, result.message);
+            }
+        } catch (error) {
+            failed++;
+            console.error(`Error uploading ${file.name}:`, error);
+        }
+    }
+    setProgress(1);
+
+    let duplicates = [];
+    if (stored.size > 0) {
+        cfg.refresh();
+        setStatus(t.upload_checking_duplicates || 'Checking for duplicates...');
+        try {
+            duplicates = await findUploadedDuplicates(kind, [...stored.keys()]);
+        } catch (error) {
+            console.warn('Duplicate check failed:', error);
+        }
+    }
+
+    if (statusText) _renderUploadSummary(statusText, stored.size, failed, skipped);
+    if (stored.size > 0) {
+        showNotification((t.upload_success_notification || 'Successfully uploaded {count} file(s)').replace('{count}', stored.size), 'success');
+    }
+    if (failed > 0) {
+        showNotification((t.upload_fail_notification || 'Failed to upload {count} file(s)').replace('{count}', failed), 'error');
+    }
+    setTimeout(() => { if (progressDiv) progressDiv.style.display = 'none'; }, 4000);
+
+    if (duplicates.length > 0) {
+        await showDuplicateReview(kind, duplicates, stored);
+    }
+}
+
+async function uploadFiles(files) {
+    await uploadImageBatch('memes', files);
 }
 
 // Legacy single file upload (kept for backwards compatibility)
@@ -1122,7 +1185,7 @@ function _renderUploadSummary(statusEl, uploaded, failed, skipped) {
     const entries = [
         [uploaded, 'check', '#38a169', t.upload_count_uploaded || '{count} uploaded'],
         [failed,   'error', '#e53e3e', t.upload_count_failed || '{count} failed'],
-        [skipped,  'copy',  'var(--text-secondary)', t.upload_count_skipped || '{count} skipped (duplicates)'],
+        [skipped,  'copy',  'var(--text-secondary)', t.upload_count_skipped || '{count} skipped'],
     ];
     statusEl.textContent = '';
     statusEl.style.color = '';

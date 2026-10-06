@@ -2466,6 +2466,222 @@ function openMemeSyncModal() {
     };
 }
 
+// ── Per-OS SSH commands (SSH Access and the meme copy hint) ──────────────
+//
+// Shells differ in the details that matter here: PowerShell spells the home
+// folder $env:USERPROFILE and does not expand * for native programs, macOS has
+// pbcopy, and Linux has neither for sure. One choice drives every switch on
+// the page and is remembered per browser.
+const CLIENT_OS_LIST = [['windows', 'Windows'], ['macos', 'macOS'], ['linux', 'Linux']];
+const CLIENT_OS_STORAGE_KEY = 'mempaper.clientOs';
+const CLIENT_OS_EVENT = 'mempaper:client-os';
+let _clientOs = null;
+
+function getClientOs() {
+    if (_clientOs) return _clientOs;
+    let saved = null;
+    try { saved = localStorage.getItem(CLIENT_OS_STORAGE_KEY); } catch (_) {}
+    if (CLIENT_OS_LIST.some(([id]) => id === saved)) {
+        _clientOs = saved;
+    } else {
+        const p = (navigator.userAgentData?.platform || navigator.platform || navigator.userAgent || '').toLowerCase();
+        if (p.includes('win')) _clientOs = 'windows';
+        else if (p.includes('mac') || p.includes('iphone') || p.includes('ipad')) _clientOs = 'macos';
+        else _clientOs = 'linux';
+    }
+    return _clientOs;
+}
+
+function setClientOs(id) {
+    _clientOs = id;
+    try { localStorage.setItem(CLIENT_OS_STORAGE_KEY, id); } catch (_) {}
+    document.dispatchEvent(new CustomEvent(CLIENT_OS_EVENT, { detail: id }));
+}
+
+function clientKeyPath(os, keyFile) {
+    return os === 'windows' ? `$env:USERPROFILE\\.ssh\\${keyFile}` : `~/.ssh/${keyFile}`;
+}
+
+function clientPubKeyCommand(os) {
+    if (os === 'windows') return 'Get-Content $env:USERPROFILE\\.ssh\\id_ed25519.pub | Set-Clipboard';
+    if (os === 'macos') return 'pbcopy < ~/.ssh/id_ed25519.pub';
+    return 'cat ~/.ssh/id_ed25519.pub';
+}
+
+function clientOsTip(os) {
+    const t = window.translations || {};
+    if (os === 'windows') return t.ssh_tip_windows || 'Use PowerShell. Windows 10 and 11 already include ssh and scp.';
+    if (os === 'macos') return t.ssh_tip_macos || 'Use the Terminal app.';
+    return t.ssh_tip_linux || 'Use any terminal. If ssh or scp is missing, install the openssh-client package.';
+}
+
+// Segmented Windows / macOS / Linux switch; onChange runs on every change,
+// including one made in another switch on the page.
+function createOsToggle(onChange) {
+    const t = window.translations || {};
+    const toggle = document.createElement('div');
+    toggle.className = 'os-toggle';
+    toggle.setAttribute('role', 'radiogroup');
+    toggle.setAttribute('aria-label', t.os_toggle_label || 'Your operating system');
+
+    const buttons = CLIENT_OS_LIST.map(([id, name]) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'os-toggle-btn';
+        btn.setAttribute('role', 'radio');
+        btn.dataset.os = id;
+        const check = document.createElement('span');
+        check.className = 'os-toggle-check';
+        check.setAttribute('aria-hidden', 'true');
+        btn.append(check, name);
+        btn.addEventListener('click', () => setClientOs(id));
+        btn.addEventListener('keydown', (e) => {
+            if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+            e.preventDefault();
+            const i = CLIENT_OS_LIST.findIndex(([o]) => o === id);
+            const step = e.key === 'ArrowRight' ? 1 : CLIENT_OS_LIST.length - 1;
+            const next = CLIENT_OS_LIST[(i + step) % CLIENT_OS_LIST.length][0];
+            setClientOs(next);
+            toggle.querySelector(`[data-os="${next}"]`).focus();
+        });
+        toggle.appendChild(btn);
+        return btn;
+    });
+
+    const show = (os) => {
+        buttons.forEach((btn) => {
+            const selected = btn.dataset.os === os;
+            btn.classList.toggle('is-selected', selected);
+            btn.setAttribute('aria-checked', String(selected));
+            btn.tabIndex = selected ? 0 : -1;
+        });
+    };
+    show(getClientOs());
+    document.addEventListener(CLIENT_OS_EVENT, (e) => {
+        show(e.detail);
+        onChange(e.detail);
+    });
+    return toggle;
+}
+
+function createCopyableCode(text) {
+    const t = window.translations || {};
+    const code = document.createElement('code');
+    code.className = 'info-copyable';
+    code.title = t.click_to_copy || 'Click to copy';
+    code.textContent = text;
+    const markCopied = () => {
+        code.classList.add('copied');
+        setTimeout(() => code.classList.remove('copied'), 2000);
+    };
+    // navigator.clipboard only exists in secure contexts, and the device is
+    // usually reached over plain HTTP on the LAN.
+    const fallbackCopy = () => {
+        const ta = document.createElement('textarea');
+        ta.value = code.textContent;
+        ta.style.cssText = 'position:fixed;opacity:0;top:0;left:0;pointer-events:none';
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); markCopied(); } catch (_) {}
+        ta.remove();
+    };
+    code.addEventListener('click', () => {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(code.textContent).then(markCopied).catch(fallbackCopy);
+        } else {
+            fallbackCopy();
+        }
+    });
+    return code;
+}
+
+// Numbered list of caption + copyable command; returns one {caption, code}
+// handle per step so callers can rewrite them when the OS changes.
+function createCommandSteps(count) {
+    const list = document.createElement('ol');
+    list.className = 'ssh-command-steps';
+    const steps = [];
+    for (let i = 0; i < count; i++) {
+        const li = document.createElement('li');
+        const caption = document.createElement('div');
+        const code = createCopyableCode('');
+        li.append(caption, code);
+        list.appendChild(li);
+        steps.push({ caption, code });
+    }
+    return { list, steps };
+}
+
+// ── Copy memes over SSH (inside Meme Management > Advanced) ──────────────
+//
+// Uploading a large batch through the browser is slow on a Pi; scp straight
+// into the meme folder is not. The key is the one saved under General >
+// Advanced > SSH Access, which is installed for the service user as well.
+function createMemeScpSection() {
+    const t = window.translations || {};
+
+    const formGroup = document.createElement('div');
+    formGroup.className = 'form-group ssh-commands-group';
+
+    const label = document.createElement('label');
+    label.className = 'form-label';
+    label.textContent = t.meme_scp_title || 'Copy memes via SSH';
+
+    const intro = document.createElement('p');
+    intro.className = 'ssh-access-hint';
+    intro.textContent = t.meme_scp_intro
+        || 'For many memes at once, copy them from your computer straight into the meme folder.';
+
+    const tip = document.createElement('p');
+    tip.className = 'ssh-access-hint';
+
+    const { list, steps } = createCommandSteps(3);
+    const [createStep, addStep, copyStep] = steps;
+
+    const note = document.createElement('p');
+    note.className = 'ssh-access-hint';
+    note.textContent = t.meme_scp_note
+        || 'Use file names without spaces. Copied memes show up in the list right away.';
+
+    let host = window.location.hostname;
+    let target = null;
+
+    // PowerShell does not expand * for native programs, so the image list is
+    // built by Get-ChildItem. Elsewhere it comes from ls | grep rather than a
+    // glob, because zsh aborts on a glob that matches nothing.
+    const scpCommand = (os, dest) => (os === 'windows'
+        ? `scp -i ${clientKeyPath(os, 'id_ed25519')} (Get-ChildItem *.png,*.jpg,*.jpeg,*.gif,*.webp -Name) ${dest}`
+        : `scp -i ${clientKeyPath(os, 'id_ed25519')} $(ls | grep -iE '\\.(png|jpe?g|gif|webp)$') ${dest}`);
+
+    const render = (os) => {
+        tip.textContent = clientOsTip(os);
+        createStep.caption.textContent = t.ssh_key_step_create
+            || 'Create an SSH key on your computer (skip this if you already have one):';
+        createStep.code.textContent = 'ssh-keygen -t ed25519 -C "mempaper"';
+        addStep.caption.textContent = os === 'linux'
+            ? (t.meme_scp_step_add || 'Show the public key, copy the whole line, add it under General → Advanced → SSH Access and save:')
+            : (t.meme_scp_step_add_clip || 'Copy the public key to the clipboard, paste it under General → Advanced → SSH Access and save:');
+        addStep.code.textContent = clientPubKeyCommand(os);
+        copyStep.caption.textContent = t.meme_scp_step_copy
+            || 'Open a terminal in the folder with your memes and copy all images:';
+        copyStep.code.textContent = target ? scpCommand(os, `${target.user}@${host}:${target.directory}/`) : '…';
+    };
+
+    formGroup.append(label, intro, createOsToggle(render), tip, list, note);
+    render(getClientOs());
+
+    fetch('/api/media-ssh-target/memes')
+        .then(r => (r.ok ? r.json() : null))
+        .then(d => { if (d && d.user) { target = d; render(getClientOs()); } })
+        .catch(() => {});
+    fetch('/api/system/lan-ip')
+        .then(r => r.json())
+        .then(d => { if (d.success) { host = d.ip; render(getClientOs()); } })
+        .catch(() => {});
+
+    return formGroup;
+}
+
 // ── SSH Access (admin key management) ────────────────────────
 
 function createSshAccessSection() {
@@ -2498,8 +2714,34 @@ function createSshAccessSection() {
 
     const hint = document.createElement('p');
     hint.className = 'ssh-access-hint';
-    hint.innerHTML = t.ssh_access_hint || 'Paste the contents of <code>~/.ssh/id_ed25519.pub</code> to grant SSH access to this device.';
-    wrapper.appendChild(hint);
+    hint.textContent = t.ssh_access_intro || 'Add SSH public keys to grant admin SSH access to this device.';
+
+    const osTip = document.createElement('p');
+    osTip.className = 'ssh-access-hint';
+
+    const { list: keySteps, steps: [createKeyStep, copyKeyStep] } = createCommandSteps(2);
+
+    const renderKeySteps = (os) => {
+        osTip.textContent = clientOsTip(os);
+        createKeyStep.caption.textContent = t.ssh_key_step_create
+            || 'Create an SSH key on your computer (skip this if you already have one):';
+        createKeyStep.code.textContent = 'ssh-keygen -t ed25519 -C "your-name-mempaper"';
+        copyKeyStep.caption.textContent = os === 'linux'
+            ? (t.ssh_step_add_show || 'Show your public key and paste the whole line below:')
+            : (t.ssh_step_add_clip || 'Copy your public key to the clipboard and paste it below:');
+        copyKeyStep.code.textContent = clientPubKeyCommand(os);
+    };
+
+    const osToggle = createOsToggle((os) => {
+        renderKeySteps(os);
+        refreshAllCmds();
+    });
+    renderKeySteps(getClientOs());
+
+    const intro = document.createElement('div');
+    intro.className = 'ssh-commands-group';
+    intro.append(hint, osToggle, osTip, keySteps);
+    wrapper.appendChild(intro);
 
     // ── Table ─────────────────────────────────────────────────
     const table = document.createElement('table');
@@ -2558,7 +2800,7 @@ function createSshAccessSection() {
         const host = lanIp || window.location.hostname;
         const parts = keyLine.trim().split(/\s+/);
         const keyFile = KEY_TYPE_FILE[parts[0]] || 'id_ed25519';
-        return `ssh -i ~/.ssh/${keyFile} pi@${host}`;
+        return `ssh -i ${clientKeyPath(getClientOs(), keyFile)} pi@${host}`;
     }
 
     function updateCmdCell(cmdCell, keyText) {

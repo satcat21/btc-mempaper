@@ -3901,6 +3901,83 @@ body.dark-mode .preview-card-dark {
     font-variant-numeric: tabular-nums;
 }
 
+.ssh-commands-group .ssh-access-hint {
+    margin-bottom: 8px;
+}
+
+.ssh-command-steps {
+    margin: 0 0 8px;
+    padding-left: 1.3rem;
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+}
+
+.ssh-command-steps li {
+    margin-bottom: 8px;
+}
+
+.ssh-command-steps .info-copyable {
+    margin-top: 3px;
+}
+
+/* Segmented Windows / macOS / Linux switch */
+.os-toggle {
+    display: inline-flex;
+    margin: 2px 0 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+.os-toggle-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 16px;
+    border: 0;
+    border-left: 1px solid var(--border-color);
+    background: transparent;
+    color: var(--text-primary);
+    font: inherit;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 0.15s;
+}
+
+.os-toggle-btn:first-child {
+    border-left: 0;
+}
+
+.os-toggle-btn:hover {
+    background: var(--accent-dim);
+}
+
+.os-toggle-btn.is-selected {
+    background: var(--accent-dim);
+    box-shadow: inset 0 0 0 1px var(--accent-border);
+}
+
+.os-toggle-btn:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+}
+
+.os-toggle-check {
+    display: inline-block;
+    width: 0;
+    height: 1em;
+    background-color: var(--accent);
+    -webkit-mask: url('/static/icons/check.svg') center/contain no-repeat;
+    mask: url('/static/icons/check.svg') center/contain no-repeat;
+    transition: width 0.15s;
+}
+
+.os-toggle-btn.is-selected .os-toggle-check {
+    width: 1em;
+}
+
 /* ── Meme sync modal ────────────────────────────────────────────────────── */
 /* The dialog and log reuse .system-update-dialog / .system-update-log so this
    reads as the same kind of view as a system update. Only the thumbnail grid

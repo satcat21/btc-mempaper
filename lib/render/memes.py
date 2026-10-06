@@ -205,10 +205,18 @@ class MemeMixin:
         import time as _time
 
         now = _time.time()
-        if not force and (now - self._meme_cache_ts) < self._MEME_CACHE_TTL and self._meme_cache_files:
-            return  # cache still fresh
-
         memes_dir = self.meme_dir
+        # Files copied in over SSH bypass the routes that invalidate the cache;
+        # the directory mtime changes whenever an entry is added or removed.
+        try:
+            dir_mtime = os.stat(memes_dir).st_mtime_ns
+        except OSError:
+            dir_mtime = None
+        if (not force and (now - self._meme_cache_ts) < self._MEME_CACHE_TTL
+                and dir_mtime == self._meme_cache_dir_mtime and self._meme_cache_files):
+            return  # cache still fresh
+        self._meme_cache_dir_mtime = dir_mtime
+
         if not os.path.isdir(memes_dir):
             self._meme_cache_files = []
             self._meme_cache_stems = set()

@@ -437,6 +437,7 @@ function _renderCategorySection(category, section) {
             const advContent = document.createElement('div');
             advContent.className = 'advanced-section-content';
             advContent.appendChild(createMemeSyncSection());
+            advContent.appendChild(createMemeScpSection());
 
             advanced.appendChild(advToggle);
             advanced.appendChild(advContent);
