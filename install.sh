@@ -745,10 +745,11 @@ _pip_build_ready() {
 }
 
 # Project names pip could not download, read out of its own error. The wheel
-# URL carries the name: .../simple/brotli/brotli-1.2.0-cp313-...whl. That
+# URL carries the name: .../simple/<pkg>/<pkg>-<version>-cp313-...whl. That
 # matters because the package that fails is rarely the one that was asked for -
-# flask-compress is pure Python and installs fine, while the 403 is on brotli,
-# which it depends on. Naming flask-compress in --no-binary changes nothing.
+# flask-compress is pure Python and installs fine, but a 403 on brotli (a
+# transitive dependency) fails the batch too. Naming flask-compress in
+# --no-binary changes nothing.
 _blocked_names() {
     sed -nE 's#.*/simple/([A-Za-z0-9._-]+)/[A-Za-z0-9._-]+\.whl.*#\1#p' \
         | tr 'A-Z' 'a-z' | sort -u | paste -sd, -
