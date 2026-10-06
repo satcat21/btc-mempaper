@@ -7,7 +7,7 @@ btc_holidays = {
             },
             "de": {
                 "title": "Bitcoins Geburtstag",
-                "description": "An diesem Tag im Jahr 2009 wurde der Genesis Block von Satoshi Nakamoto gemined und startete offiziell die Bitcoin-Blockchain."
+                "description": "An diesem Tag im Jahr 2009 schürfte Satoshi Nakamoto den Genesis-Block und startete damit offiziell die Bitcoin-Blockchain."
             },
             "es": {
                 "title": "Cumpleaños de Bitcoin",
@@ -15,7 +15,7 @@ btc_holidays = {
             },
             "fr": {
                 "title": "Anniversaire de Bitcoin",
-                "description": "Ce jour-là en 2009, le Bloc Genèse a été miné par Satoshi Nakamoto, lançant officiellement la blockchain Bitcoin."
+                "description": "En ce jour de 2009, le bloc de genèse a été miné par Satoshi Nakamoto, lançant officiellement la blockchain Bitcoin."
             },
             "it": {
                 "title": "Compleanno di Bitcoin",
@@ -29,19 +29,19 @@ btc_holidays = {
             },
             "de": {
                 "title": "Proof-of-Keys-Tag",
-                "description": "An diesem Tag im Jahr 2019 startete Trace Mayer eine jährliche Feier: Ziehe deine BTC in eigene Verwahrung. Not your keys, not your coins!"
+                "description": "An diesem Tag im Jahr 2019 startete Trace Mayer eine jährliche Feier der monetären Souveränität: Hol deine BTC in die eigene Verwahrung. Not your keys, not your coins!"
             },
             "es": {
-                "title": "Día de Proof of Keys",
+                "title": "Día del Proof of Keys",
                 "description": "En este día de 2019, Trace Mayer inició una celebración anual de soberanía monetaria: retira tus BTC a tu propia custodia. Not your keys, not your coins!"
             },
             "fr": {
-                "title": "Jour du Proof of Keys",
-                "description": "Ce jour-là en 2019, Trace Mayer a lancé une célébration annuelle de la souveraineté monétaire : retirez vos BTC dans votre propre garde. Not your keys, not your coins !"
+                "title": "Journée du Proof of Keys",
+                "description": "En ce jour de 2019, Trace Mayer a lancé une célébration annuelle de la souveraineté monétaire : retirez vos BTC sous votre propre garde. Not your keys, not your coins !"
             },
             "it": {
-                "title": "Giorno del Proof of Keys",
-                "description": "In questo giorno del 2019, Trace Mayer ha avviato una celebrazione annuale: ritira i tuoi BTC nella tua custodia. Not your keys, not your coins!"
+                "title": "Giornata del Proof of Keys",
+                "description": "In questo giorno del 2019, Trace Mayer ha avviato una celebrazione annuale della sovranità monetaria: ritira i tuoi BTC in autocustodia. Not your keys, not your coins!"
             }
         }
     ],
@@ -53,19 +53,19 @@ btc_holidays = {
             },
             "de": {
                 "title": "Lightning-Pay-Tag",
-                "description": "An diesem Tag im Jahr 2018 wurde der erste echte Kauf über das Lightning-Netzwerk für ein TorGuard-VPN-Abo getätigt."
+                "description": "An diesem Tag im Jahr 2018 wurde der erste echte Kauf über das Lightning-Netzwerk getätigt: ein TorGuard-VPN-Abo."
             },
             "es": {
-                "title": "Día de Pago Lightning",
-                "description": "En este día de 2018, se realizó la primera compra real a través de Lightning Network para una suscripción VPN de TorGuard."
+                "title": "Día del pago Lightning",
+                "description": "En este día de 2018, se realizó la primera compra real a través de Lightning Network: una suscripción VPN de TorGuard."
             },
             "fr": {
-                "title": "Jour du Paiement Lightning",
-                "description": "Ce jour-là en 2018, le premier achat réel via le Lightning Network a été effectué pour un abonnement VPN TorGuard."
+                "title": "Journée du paiement Lightning",
+                "description": "En ce jour de 2018, le premier véritable achat via le Lightning Network a été effectué : un abonnement VPN TorGuard."
             },
             "it": {
-                "title": "Giorno del Pagamento Lightning",
-                "description": "In questo giorno del 2018, il primo acquisto reale tramite Lightning Network è stato effettuato per un abbonamento VPN TorGuard."
+                "title": "Giornata del pagamento Lightning",
+                "description": "In questo giorno del 2018, è stato effettuato il primo vero acquisto tramite Lightning Network: un abbonamento VPN TorGuard."
             }
         }
     ],
@@ -77,19 +77,19 @@ btc_holidays = {
             },
             "de": {
                 "title": "Running-Bitcoin-Tag",
-                "description": "An diesem Tag im Jahr 2009 twitterte Hal Finney seinen legendären 'Running bitcoin' Tweet, als er dem Netzwerk beitrat."
+                "description": "An diesem Tag im Jahr 2009 twitterte Hal Finney seinen legendären Tweet 'Running bitcoin', als er dem Netzwerk beitrat."
             },
             "es": {
-                "title": "Día de Running Bitcoin",
-                "description": "En este día de 2009, Hal Finney tuiteó su icónico tweet 'Running bitcoin', al unirse a la red."
+                "title": "Día de 'Running bitcoin'",
+                "description": "En este día de 2009, Hal Finney publicó su icónico tuit 'Running bitcoin' al unirse a la red."
             },
             "fr": {
-                "title": "Jour Running Bitcoin",
-                "description": "Ce jour-là en 2009, Hal Finney a tweeté son emblématique tweet 'Running bitcoin', en rejoignant le réseau."
+                "title": "Journée 'Running bitcoin'",
+                "description": "En ce jour de 2009, Hal Finney a publié son tweet emblématique 'Running bitcoin' en rejoignant le réseau."
             },
             "it": {
-                "title": "Giorno Running Bitcoin",
-                "description": "In questo giorno del 2009, Hal Finney ha twittato il suo iconico tweet 'Running bitcoin', unendosi alla rete."
+                "title": "Giornata 'Running bitcoin'",
+                "description": "In questo giorno del 2009, Hal Finney ha pubblicato il suo iconico tweet 'Running bitcoin', unendosi alla rete."
             }
         },
         {
@@ -99,43 +99,19 @@ btc_holidays = {
             },
             "de": {
                 "title": "Spot-Bitcoin-ETF-Tag",
-                "description": "An diesem Tag im Jahr 2024 genehmigte die SEC 11 Spot-Bitcoin-ETFs auf einmal und markierte Bitcoins Integration in die Finanzwelt."
+                "description": "An diesem Tag im Jahr 2024 genehmigte die SEC gleich 11 Spot-Bitcoin-ETFs und holte Bitcoin damit in die etablierte Finanzwelt."
             },
             "es": {
-                "title": "Día del ETF Spot de Bitcoin",
-                "description": "En este día de 2024, la SEC aprobó 11 ETFs spot de Bitcoin a la vez, marcando la integración de Bitcoin en las finanzas."
+                "title": "Día del ETF spot de Bitcoin",
+                "description": "En este día de 2024, la SEC aprobó 11 ETFs spot de Bitcoin a la vez, marcando la integración de Bitcoin en las finanzas tradicionales."
             },
             "fr": {
-                "title": "Jour de l'ETF Spot Bitcoin",
-                "description": "Ce jour-là en 2024, la SEC a approuvé 11 ETF Bitcoin spot simultanément, marquant l'intégration de Bitcoin dans la finance."
+                "title": "Journée de l'ETF Bitcoin spot",
+                "description": "En ce jour de 2024, la SEC a approuvé 11 ETF Bitcoin spot simultanément, marquant l'intégration de Bitcoin dans la finance traditionnelle."
             },
             "it": {
-                "title": "Giorno dell'ETF Spot Bitcoin",
-                "description": "In questo giorno del 2024, la SEC ha approvato 11 ETF spot Bitcoin contemporaneamente, segnando l'integrazione di Bitcoin nella finanza."
-            }
-        }
-    ],
-    "01-11": [
-        {
-            "en": {
-                "title": "Genesis Transaction Day",
-                "description": "On this day in 2009, the first transaction ever broadcast over the Bitcoin network was sent by Satoshi Nakamoto to Hal Finney."
-            },
-            "de": {
-                "title": "Genesis-Transaktionstag",
-                "description": "An diesem Tag im Jahr 2009 wurde die erste Transaktion, die jemals über das Bitcoin-Netzwerk gesendet wurde, von Satoshi Nakamoto an Hal Finney übertragen."
-            },
-            "es": {
-                "title": "Día de la Transacción Génesis",
-                "description": "En este día de 2009, la primera transacción jamás transmitida por la red Bitcoin fue enviada por Satoshi Nakamoto a Hal Finney."
-            },
-            "fr": {
-                "title": "Jour de la Transaction Genèse",
-                "description": "Ce jour-là en 2009, la première transaction jamais diffusée sur le réseau Bitcoin a été envoyée par Satoshi Nakamoto à Hal Finney."
-            },
-            "it": {
-                "title": "Giorno della Transazione Genesi",
-                "description": "In questo giorno del 2009, la prima transazione mai trasmessa sulla rete Bitcoin è stata inviata da Satoshi Nakamoto a Hal Finney."
+                "title": "Giornata dell'ETF spot su Bitcoin",
+                "description": "In questo giorno del 2024, la SEC ha approvato 11 ETF spot su Bitcoin contemporaneamente, segnando l'ingresso di Bitcoin nella finanza tradizionale."
             }
         }
     ],
@@ -147,18 +123,18 @@ btc_holidays = {
             },
             "de": {
                 "title": "Tag der ersten Transaktion",
-                "description": "An diesem Tag im Jahr 2009 übertrug Satoshi BTC über die erste (Nicht-Coinbase) Transaktion aller Zeiten an Hal Finney."
+                "description": "An diesem Tag im Jahr 2009 überwies Satoshi BTC in der allerersten Nicht-Coinbase-Transaktion. Empfänger war niemand Geringeres als Hal Finney."
             },
             "es": {
-                "title": "Día de la Primera Transacción",
+                "title": "Día de la primera transacción",
                 "description": "En este día de 2009, Satoshi transfirió BTC a Hal Finney a través de la primera transacción (no coinbase) de la historia."
             },
             "fr": {
-                "title": "Jour de la Première Transaction",
-                "description": "Ce jour-là en 2009, Satoshi a transféré des BTC à Hal Finney via la toute première transaction (non-coinbase)."
+                "title": "Journée de la première transaction",
+                "description": "En ce jour de 2009, Satoshi a transféré des BTC à Hal Finney via la toute première transaction (non-coinbase)."
             },
             "it": {
-                "title": "Giorno della Prima Transazione",
+                "title": "Giornata della prima transazione",
                 "description": "In questo giorno del 2009, Satoshi ha trasferito BTC a Hal Finney tramite la prima transazione (non-coinbase) della storia."
             }
         }
@@ -171,19 +147,19 @@ btc_holidays = {
             },
             "de": {
                 "title": "Ordinals-Launch-Tag",
-                "description": "An diesem Tag im Jahr 2023 startete Casey Rodarmor das Ordinals-Protokoll, mit dem Daten direkt auf einzelne Satoshis geschrieben werden können."
+                "description": "An diesem Tag im Jahr 2023 startete Casey Rodarmor das Ordinals-Protokoll, mit dem sich Daten direkt in einzelne Satoshis einschreiben lassen."
             },
             "es": {
-                "title": "Día del Lanzamiento de Ordinals",
+                "title": "Día del lanzamiento de Ordinals",
                 "description": "En este día de 2023, Casey Rodarmor lanzó el protocolo Ordinals, permitiendo inscribir datos directamente en satoshis individuales."
             },
             "fr": {
-                "title": "Jour du Lancement d'Ordinals",
-                "description": "Ce jour-là en 2023, Casey Rodarmor a lancé le protocole Ordinals, permettant d'inscrire des données directement sur des satoshis individuels."
+                "title": "Journée du lancement d'Ordinals",
+                "description": "En ce jour de 2023, Casey Rodarmor a lancé le protocole Ordinals, permettant d'inscrire des données directement sur des satoshis individuels."
             },
             "it": {
-                "title": "Giorno del Lancio di Ordinals",
-                "description": "In questo giorno del 2023, Casey Rodarmor ha lanciato il protocollo Ordinals, permettendo di inscrivere dati direttamente su singoli satoshi."
+                "title": "Giornata del lancio di Ordinals",
+                "description": "In questo giorno del 2023, Casey Rodarmor ha lanciato il protocollo Ordinals, permettendo di iscrivere dati direttamente su singoli satoshi."
             }
         }
     ],
@@ -198,16 +174,16 @@ btc_holidays = {
                 "description": "An diesem Tag im Jahr 2016 veröffentlichten Joseph Poon und Thaddeus Dryja das Lightning-Network-Whitepaper für skalierbare Off-Chain-Sofortzahlungen."
             },
             "es": {
-                "title": "Día del Whitepaper Lightning",
+                "title": "Día del whitepaper de Lightning",
                 "description": "En este día de 2016, Joseph Poon y Thaddeus Dryja publicaron el whitepaper de Lightning Network proponiendo pagos instantáneos escalables fuera de cadena."
             },
             "fr": {
-                "title": "Jour du Whitepaper Lightning",
-                "description": "Ce jour-là en 2016, Joseph Poon et Thaddeus Dryja ont publié le whitepaper du Lightning Network pour des paiements instantanés et évolutifs hors chaîne."
+                "title": "Journée du whitepaper Lightning",
+                "description": "En ce jour de 2016, Joseph Poon et Thaddeus Dryja ont publié le whitepaper du Lightning Network, proposant des paiements instantanés et évolutifs hors chaîne."
             },
             "it": {
-                "title": "Giorno del Whitepaper Lightning",
-                "description": "In questo giorno del 2016, Joseph Poon e Thaddeus Dryja hanno pubblicato il whitepaper del Lightning Network per pagamenti istantanei e scalabili off-chain."
+                "title": "Giornata del whitepaper Lightning",
+                "description": "In questo giorno del 2016, Joseph Poon e Thaddeus Dryja hanno pubblicato il whitepaper del Lightning Network, proponendo pagamenti istantanei e scalabili off-chain."
             }
         }
     ],
@@ -218,20 +194,20 @@ btc_holidays = {
                 "description": "On this day in 2019, the Lightning Network Torch relay began, passing Bitcoin payments between prominent figures including Jack Dorsey."
             },
             "de": {
-                "title": "Lightning-Torch-Tag",
-                "description": "An diesem Tag im Jahr 2019 begann die Lightning-Network-Fackelstaffel, bei der Bitcoin-Zahlungen zwischen prominenten Personen wie Jack Dorsey weitergereicht wurden."
+                "title": "Tag der Lightning-Fackel",
+                "description": "An diesem Tag im Jahr 2019 startete der Lightning-Fackellauf, bei dem Bitcoin-Zahlungen zwischen Prominenten wie Jack Dorsey weitergereicht wurden."
             },
             "es": {
-                "title": "Día de la Antorcha Lightning",
-                "description": "En este día de 2019, comenzó el relevo de la Antorcha Lightning, pasando pagos Bitcoin entre figuras prominentes como Jack Dorsey."
+                "title": "Día de la antorcha Lightning",
+                "description": "En este día de 2019, comenzó el relevo de la antorcha Lightning, un pago en Bitcoin que pasó de mano en mano entre figuras como Jack Dorsey."
             },
             "fr": {
-                "title": "Jour de la Torche Lightning",
-                "description": "Ce jour-là en 2019, le relais de la Torche Lightning a commencé, transmettant des paiements Bitcoin entre personnalités dont Jack Dorsey."
+                "title": "Journée de la torche Lightning",
+                "description": "En ce jour de 2019, le relais de la torche Lightning a commencé, un paiement Bitcoin passant de main en main entre personnalités, dont Jack Dorsey."
             },
             "it": {
-                "title": "Giorno della Torcia Lightning",
-                "description": "In questo giorno del 2019, è iniziata la staffetta della Torcia Lightning, passando pagamenti Bitcoin tra figure di spicco come Jack Dorsey."
+                "title": "Giornata della torcia Lightning",
+                "description": "In questo giorno del 2019, è iniziata la staffetta della torcia Lightning, un pagamento Bitcoin passato di mano in mano tra figure come Jack Dorsey."
             }
         }
     ],
@@ -242,20 +218,20 @@ btc_holidays = {
                 "description": "On this day in 2025, Ross Ulbricht was pardoned by President Trump after over 11 years in custody since his capture on October 1, 2013."
             },
             "de": {
-                "title": "Tag der Ross-Begnadigung",
+                "title": "Tag der Begnadigung von Ross",
                 "description": "An diesem Tag im Jahr 2025 wurde Ross Ulbricht von Präsident Trump begnadigt, nach über 11 Jahren Haft seit seiner Festnahme am 1. Oktober 2013."
             },
             "es": {
-                "title": "Día del Perdón de Ross",
-                "description": "En este día de 2025, Ross Ulbricht fue indultado por el presidente Trump tras más de 11 años en custodia desde su captura el 1 de octubre de 2013."
+                "title": "Día del indulto de Ross",
+                "description": "En este día de 2025, Ross Ulbricht fue indultado por el presidente Trump tras más de 11 años en prisión desde su arresto el 1 de octubre de 2013."
             },
             "fr": {
-                "title": "Jour du Pardon de Ross",
-                "description": "Ce jour-là en 2025, Ross Ulbricht a été gracié par le président Trump après plus de 11 ans de détention depuis sa capture le 1er octobre 2013."
+                "title": "Journée de la grâce de Ross",
+                "description": "En ce jour de 2025, Ross Ulbricht a été gracié par le président Trump après plus de 11 ans de détention depuis son arrestation le 1er octobre 2013."
             },
             "it": {
-                "title": "Giorno della Grazia di Ross",
-                "description": "In questo giorno del 2025, Ross Ulbricht è stato graziato dal presidente Trump dopo oltre 11 anni di custodia dalla cattura il 1° ottobre 2013."
+                "title": "Giornata della grazia a Ross",
+                "description": "In questo giorno del 2025, Ross Ulbricht è stato graziato dal presidente Trump dopo oltre 11 anni di detenzione dall'arresto del 1° ottobre 2013."
             }
         }
     ],
@@ -266,20 +242,20 @@ btc_holidays = {
                 "description": "On this day in 2025, combined US spot Bitcoin ETFs exceeded gold ETF assets under management for the first time, achieving in one year what gold took two decades."
             },
             "de": {
-                "title": "Bitcoin-ETF übertrifft Gold",
-                "description": "An diesem Tag im Jahr 2025 übertrafen US-Spot-Bitcoin-ETFs erstmals die Gold-ETFs und erreichten in einem Jahr, wofür Gold zwei Jahrzehnte brauchte."
+                "title": "Bitcoin-ETFs überholen Gold",
+                "description": "An diesem Tag im Jahr 2025 verwalteten US-Spot-Bitcoin-ETFs erstmals mehr Vermögen als Gold-ETFs und schafften in einem Jahr, wofür Gold zwei Jahrzehnte brauchte."
             },
             "es": {
-                "title": "ETF Bitcoin Supera al Oro",
+                "title": "Los ETF de Bitcoin superan al oro",
                 "description": "En este día de 2025, los ETFs spot de Bitcoin en EE.UU. superaron por primera vez los activos de los ETFs de oro, logrando en un año lo que al oro le tomó dos décadas."
             },
             "fr": {
-                "title": "L'ETF Bitcoin Dépasse l'Or",
-                "description": "Ce jour-là en 2025, les ETF Bitcoin spot américains ont dépassé les ETF or, accomplissant en un an ce que l'or a mis deux décennies à réaliser."
+                "title": "Les ETF Bitcoin dépassent l'or",
+                "description": "En ce jour de 2025, les ETF Bitcoin spot américains ont dépassé les ETF or en actifs gérés, accomplissant en un an ce que l'or a mis deux décennies à réaliser."
             },
             "it": {
-                "title": "L'ETF Bitcoin Supera l'Oro",
-                "description": "In questo giorno del 2025, gli ETF spot Bitcoin USA hanno superato gli ETF sull'oro, ottenendo in un anno ciò che l'oro ha impiegato due decenni."
+                "title": "Gli ETF Bitcoin superano l'oro",
+                "description": "In questo giorno del 2025, gli ETF spot su Bitcoin USA hanno superato per patrimonio gli ETF sull'oro, riuscendo in un anno in ciò che all'oro ha richiesto due decenni."
             }
         }
     ],
@@ -291,18 +267,18 @@ btc_holidays = {
             },
             "de": {
                 "title": "Dollar-Paritätstag",
-                "description": "An diesem Tag im Jahr 2011 erreichte 1 BTC zum ersten Mal Parität mit 1 USD auf der Mt. Gox Börse."
+                "description": "An diesem Tag im Jahr 2011 erreichte 1 BTC an der Börse Mt. Gox zum ersten Mal Parität mit 1 USD."
             },
             "es": {
-                "title": "Día de la Paridad con el Dólar",
+                "title": "Día de la paridad con el dólar",
                 "description": "En este día de 2011, 1 BTC alcanzó por primera vez la paridad con 1 USD en el exchange Mt. Gox."
             },
             "fr": {
-                "title": "Jour de la Parité Dollar",
-                "description": "Ce jour-là en 2011, 1 BTC a atteint pour la première fois la parité avec 1 USD sur l'échange Mt. Gox."
+                "title": "Journée de la parité avec le dollar",
+                "description": "En ce jour de 2011, 1 BTC a atteint pour la première fois la parité avec 1 USD sur la plateforme Mt. Gox."
             },
             "it": {
-                "title": "Giorno della Parità con il Dollaro",
+                "title": "Giornata della parità con il dollaro",
                 "description": "In questo giorno del 2011, 1 BTC ha raggiunto per la prima volta la parità con 1 USD sull'exchange Mt. Gox."
             }
         }
@@ -314,20 +290,20 @@ btc_holidays = {
                 "description": "On this day in 2021, the #LaserEyes meme went viral as Bitcoiners pledged not to remove laser eyes from their profile pictures until BTC hit $100K."
             },
             "de": {
-                "title": "Laser-Eyes-Tag",
-                "description": "An diesem Tag im Jahr 2021 ging das #LaserEyes-Meme viral, als Bitcoiner gelobten, die Laseraugen nicht zu entfernen, bis BTC 100.000 $ erreicht."
+                "title": "Laseraugen-Tag",
+                "description": "An diesem Tag im Jahr 2021 ging das #LaserEyes-Meme viral: Bitcoiner gelobten, die Laseraugen im Profilbild zu behalten, bis BTC 100.000 $ erreicht."
             },
             "es": {
-                "title": "Día de Laser Eyes",
-                "description": "En este día de 2021, el meme #LaserEyes se volvió viral cuando los Bitcoiners prometieron no quitarse los ojos láser hasta que BTC alcanzara los $100K."
+                "title": "Día de los ojos láser",
+                "description": "En este día de 2021, el meme #LaserEyes se volvió viral: los Bitcoiners prometieron no quitar los ojos láser de su foto de perfil hasta que BTC alcanzara los $100K."
             },
             "fr": {
-                "title": "Jour des Laser Eyes",
-                "description": "Ce jour-là en 2021, le mème #LaserEyes est devenu viral, les Bitcoiners s'engageant à garder les yeux laser jusqu'à ce que le BTC atteigne 100K $."
+                "title": "Journée des yeux laser",
+                "description": "En ce jour de 2021, le mème #LaserEyes est devenu viral, les Bitcoiners s'engageant à garder les yeux laser sur leur photo de profil jusqu'à ce que le BTC atteigne 100K $."
             },
             "it": {
-                "title": "Giorno dei Laser Eyes",
-                "description": "In questo giorno del 2021, il meme #LaserEyes è diventato virale: i Bitcoiner si sono impegnati a non togliere gli occhi laser finché BTC non raggiungesse $100K."
+                "title": "Giornata degli occhi laser",
+                "description": "In questo giorno del 2021, il meme #LaserEyes è diventato virale: i Bitcoiner hanno giurato di tenere gli occhi laser nella foto profilo finché BTC non toccasse $100K."
             }
         }
     ],
@@ -342,16 +318,16 @@ btc_holidays = {
                 "description": "An diesem Tag im Jahr 2021 überstieg die Marktkapitalisierung aller BTC zum ersten Mal 1 Billion USD."
             },
             "es": {
-                "title": "Día del Billón de Dólares",
+                "title": "Día del billón de dólares",
                 "description": "En este día de 2021, la capitalización de mercado de todos los BTC superó por primera vez 1 billón de USD."
             },
             "fr": {
-                "title": "Jour du Mille Milliards de Dollars",
-                "description": "Ce jour-là en 2021, la capitalisation boursière de tous les BTC a dépassé 1 billion USD pour la première fois."
+                "title": "Journée des mille milliards de dollars",
+                "description": "En ce jour de 2021, la capitalisation de tous les BTC a dépassé pour la première fois 1 000 milliards de dollars."
             },
             "it": {
-                "title": "Giorno dei Mille Miliardi di Dollari",
-                "description": "In questo giorno del 2021, la capitalizzazione di mercato di tutti i BTC ha superato per la prima volta i 1.000 miliardi di USD."
+                "title": "Giornata dei mille miliardi di dollari",
+                "description": "In questo giorno del 2021, la capitalizzazione di mercato di tutti i BTC ha superato per la prima volta i mille miliardi di dollari."
             }
         }
     ],
@@ -359,23 +335,23 @@ btc_holidays = {
         {
             "en": {
                 "title": "Mt. Gox Death Day",
-                "description": "On this day in 2013, Mt. Gox, the largest bitcoin exchange in the world, went offline due to insolvency, after losing 640,000 BTC."
+                "description": "On this day in 2014, Mt. Gox, the largest bitcoin exchange in the world, went offline due to insolvency, after losing 640,000 BTC."
             },
             "de": {
-                "title": "Mt.-Gox-Todestag",
-                "description": "An diesem Tag im Jahr 2013 ging Mt. Gox, die größte Bitcoin-Börse der Welt, aufgrund von Insolvenz offline, nachdem 640.000 BTC verloren wurden."
+                "title": "Todestag von Mt. Gox",
+                "description": "An diesem Tag im Jahr 2014 ging Mt. Gox, die größte Bitcoin-Börse der Welt, zahlungsunfähig vom Netz, nachdem 640.000 BTC verloren gegangen waren."
             },
             "es": {
-                "title": "Día de la Muerte de Mt. Gox",
-                "description": "En este día de 2013, Mt. Gox, el mayor intercambio de bitcoin del mundo, se desconectó debido a la insolvencia, después de perder 640,000 BTC."
+                "title": "Día de la muerte de Mt. Gox",
+                "description": "En este día de 2014, Mt. Gox, el mayor exchange de bitcoin del mundo, se desconectó por insolvencia tras perder 640,000 BTC."
             },
             "fr": {
-                "title": "Jour de la Mort de Mt. Gox",
-                "description": "Ce jour-là en 2013, Mt. Gox, la plus grande bourse de bitcoin au monde, est tombée hors ligne en raison d'insolvabilité, après avoir perdu 640 000 BTC."
+                "title": "Journée de la mort de Mt. Gox",
+                "description": "En ce jour de 2014, Mt. Gox, la plus grande plateforme d'échange de bitcoin au monde, a fermé pour cause d'insolvabilité, après avoir perdu 640 000 BTC."
             },
             "it": {
-                "title": "Giorno della Morte di Mt. Gox",
-                "description": "In questo giorno del 2013, Mt. Gox, il più grande exchange di bitcoin al mondo, è andato offline a causa dell'insolvenza, dopo aver perso 640.000 BTC."
+                "title": "Giornata della morte di Mt. Gox",
+                "description": "In questo giorno del 2014, Mt. Gox, il più grande exchange di bitcoin al mondo, è andato offline per insolvenza, dopo aver perso 640.000 BTC."
             }
         }
     ],
@@ -387,19 +363,19 @@ btc_holidays = {
             },
             "de": {
                 "title": "Lightning-Pizza-Tag",
-                "description": "An diesem Tag im Jahr 2018 kehrte Laszlo Hanyecz zurück, um Pizza über das Lightning-Netzwerk zu kaufen."
+                "description": "An diesem Tag im Jahr 2018 kaufte Laszlo Hanyecz erneut Pizza, diesmal über das Lightning-Netzwerk."
             },
             "es": {
-                "title": "Día de la Pizza Lightning",
-                "description": "En este día de 2018, Laszlo Hanyecz volvió para comprar pizza a través de Lightning Network."
+                "title": "Día de la pizza Lightning",
+                "description": "En este día de 2018, Laszlo Hanyecz volvió a comprar pizza, esta vez a través de Lightning Network."
             },
             "fr": {
-                "title": "Jour de la Pizza Lightning",
-                "description": "Ce jour-là en 2018, Laszlo Hanyecz est revenu pour acheter une pizza via le réseau Lightning."
+                "title": "Journée de la pizza Lightning",
+                "description": "En ce jour de 2018, Laszlo Hanyecz a de nouveau acheté de la pizza, cette fois via le réseau Lightning."
             },
             "it": {
-                "title": "Giorno della Pizza Lightning",
-                "description": "In questo giorno del 2018, Laszlo Hanyecz è tornato per comprare pizza tramite Lightning Network."
+                "title": "Giornata della pizza Lightning",
+                "description": "In questo giorno del 2018, Laszlo Hanyecz è tornato a comprare pizza, questa volta tramite Lightning Network."
             }
         }
     ],
@@ -414,15 +390,15 @@ btc_holidays = {
                 "description": "An diesem Tag im Jahr 2017 überstieg 1 BTC zum ersten Mal den Preis einer Unze Gold."
             },
             "es": {
-                "title": "Día de la Paridad con el Oro",
+                "title": "Día de la paridad con el oro",
                 "description": "En este día de 2017, 1 BTC superó por primera vez el precio de 1 onza de oro."
             },
             "fr": {
-                "title": "Jour de la Parité avec l'Or",
-                "description": "Ce jour-là en 2017, 1 BTC a dépassé pour la première fois le prix d'une once d'or."
+                "title": "Journée de la parité avec l'or",
+                "description": "En ce jour de 2017, 1 BTC a dépassé pour la première fois le prix d'une once d'or."
             },
             "it": {
-                "title": "Giorno della Parità con l'Oro",
+                "title": "Giornata della parità con l'oro",
                 "description": "In questo giorno del 2017, 1 BTC ha superato per la prima volta il prezzo di 1 oncia d'oro."
             }
         }
@@ -435,19 +411,19 @@ btc_holidays = {
             },
             "de": {
                 "title": "'I Am Not Dorian Nakamoto'-Tag",
-                "description": "An diesem Tag im Jahr 2014 brach Satoshis P2P-Foundation-Konto ein fünfjähriges Schweigen mit einer Nachricht, die jede Verbindung zu Dorian Nakamoto bestritt."
+                "description": "An diesem Tag im Jahr 2014 brach Satoshis P2P-Foundation-Konto ein fünfjähriges Schweigen mit einer einzigen Nachricht: keine Verbindung zu Dorian Nakamoto."
             },
             "es": {
-                "title": "Día de 'No Soy Dorian Nakamoto'",
-                "description": "En este día de 2014, la cuenta de Satoshi en P2P Foundation rompió cinco años de silencio con un mensaje negando cualquier conexión con Dorian Nakamoto."
+                "title": "Día de 'No soy Dorian Nakamoto'",
+                "description": "En este día de 2014, la cuenta de Satoshi en P2P Foundation rompió cinco años de silencio con un único mensaje que negaba cualquier relación con Dorian Nakamoto."
             },
             "fr": {
-                "title": "Jour de 'Je Ne Suis Pas Dorian Nakamoto'",
-                "description": "Ce jour-là en 2014, le compte P2P Foundation de Satoshi a rompu cinq ans de silence avec un message niant tout lien avec Dorian Nakamoto."
+                "title": "Journée du 'Je ne suis pas Dorian Nakamoto'",
+                "description": "En ce jour de 2014, le compte P2P Foundation de Satoshi a rompu cinq ans de silence avec un unique message niant tout lien avec Dorian Nakamoto."
             },
             "it": {
-                "title": "Giorno di 'Non Sono Dorian Nakamoto'",
-                "description": "In questo giorno del 2014, l'account P2P Foundation di Satoshi ha rotto cinque anni di silenzio con un messaggio che negava ogni legame con Dorian Nakamoto."
+                "title": "Giornata del 'Non sono Dorian Nakamoto'",
+                "description": "In questo giorno del 2014, l'account P2P Foundation di Satoshi ha rotto cinque anni di silenzio con un unico messaggio che negava ogni legame con Dorian Nakamoto."
             }
         },
         {
@@ -461,15 +437,15 @@ btc_holidays = {
             },
             "es": {
                 "title": "Día de la Reserva Estratégica de Bitcoin",
-                "description": "En este día de 2025, el presidente Trump firmó una orden ejecutiva estableciendo una Reserva Estratégica de Bitcoin con BTC confiscados."
+                "description": "En este día de 2025, el presidente Trump firmó una orden ejecutiva que crea una Reserva Estratégica de Bitcoin con BTC confiscados."
             },
             "fr": {
-                "title": "Jour de la Réserve Stratégique Bitcoin",
-                "description": "Ce jour-là en 2025, le président Trump a signé un décret établissant une Réserve Stratégique de Bitcoin à partir de BTC saisis."
+                "title": "Journée de la Réserve stratégique de Bitcoin",
+                "description": "En ce jour de 2025, le président Trump a signé un décret établissant une Réserve stratégique de Bitcoin à partir de BTC saisis."
             },
             "it": {
-                "title": "Giorno della Riserva Strategica Bitcoin",
-                "description": "In questo giorno del 2025, il presidente Trump ha firmato un ordine esecutivo istituendo una Riserva Strategica di Bitcoin dai BTC sequestrati."
+                "title": "Giornata della Riserva Strategica di Bitcoin",
+                "description": "In questo giorno del 2025, il presidente Trump ha firmato un ordine esecutivo che istituisce una Riserva Strategica di Bitcoin con i BTC sequestrati."
             }
         }
     ],
@@ -481,19 +457,19 @@ btc_holidays = {
             },
             "de": {
                 "title": "24-Block-Rollback-Tag",
-                "description": "An diesem Tag im Jahr 2013 verursachte ein Bug eine Blockchain-Aufspaltung. Entwickler und Miner koordinierten einen Rollback von 24 Blöcken."
+                "description": "An diesem Tag im Jahr 2013 spaltete ein Bug die Blockchain in zwei Ketten. Entwickler und Miner rollten 24 Blöcke zurück und verhinderten eine dauerhafte Spaltung."
             },
             "es": {
-                "title": "Día del Rollback de 24 Bloques",
-                "description": "En este día de 2013, un bug dividió la blockchain en dos cadenas. Desarrolladores y mineros coordinaron un rollback de 24 bloques."
+                "title": "Día del rollback de 24 bloques",
+                "description": "En este día de 2013, un bug dividió la blockchain en dos cadenas. Desarrolladores y mineros coordinaron un rollback de 24 bloques, evitando un fork permanente."
             },
             "fr": {
-                "title": "Jour du Rollback de 24 Blocs",
-                "description": "Ce jour-là en 2013, un bug a divisé la blockchain en deux chaînes. Développeurs et mineurs ont coordonné un rollback de 24 blocs."
+                "title": "Journée du rollback de 24 blocs",
+                "description": "En ce jour de 2013, un bug a divisé la blockchain en deux chaînes. Développeurs et mineurs ont coordonné un rollback de 24 blocs, évitant un fork permanent."
             },
             "it": {
-                "title": "Giorno del Rollback di 24 Blocchi",
-                "description": "In questo giorno del 2013, un bug ha diviso la blockchain in due catene. Sviluppatori e miner hanno coordinato un rollback di 24 blocchi."
+                "title": "Giornata del rollback di 24 blocchi",
+                "description": "In questo giorno del 2013, un bug ha diviso la blockchain in due catene. Sviluppatori e miner hanno coordinato un rollback di 24 blocchi, evitando un fork permanente."
             }
         },
         {
@@ -503,18 +479,18 @@ btc_holidays = {
             },
             "de": {
                 "title": "Schwarzer Donnerstag",
-                "description": "An diesem Tag im Jahr 2020 stürzte Bitcoin bei COVID-19-Panik von $7.900 auf $3.800. Der Tiefpunkt vor dem Anstieg auf $60.000 in zwölf Monaten."
+                "description": "An diesem Tag im Jahr 2020 stürzte Bitcoin in der COVID-19-Panik von 7.900 $ auf 3.800 $. Es war der Tiefpunkt vor dem Anstieg auf 60.000 $ binnen zwölf Monaten."
             },
             "es": {
                 "title": "Jueves Negro",
                 "description": "En este día de 2020, Bitcoin cayó de $7,900 a $3,800 en medio del pánico por COVID-19. Marcó el fondo del mercado antes de subir a $60,000 en doce meses."
             },
             "fr": {
-                "title": "Jeudi Noir",
-                "description": "Ce jour-là en 2020, Bitcoin a chuté de 7 900 $ à 3 800 $ dans la panique du COVID-19. Ce fut le point bas avant de remonter à 60 000 $ en douze mois."
+                "title": "Jeudi noir",
+                "description": "En ce jour de 2020, Bitcoin a chuté de 7 900 $ à 3 800 $ dans la panique du COVID-19. Ce fut le point bas avant de remonter à 60 000 $ en douze mois."
             },
             "it": {
-                "title": "Giovedì Nero",
+                "title": "Giovedì nero",
                 "description": "In questo giorno del 2020, Bitcoin è crollato da $7.900 a $3.800 nel panico da COVID-19. Ha segnato il minimo del mercato prima di risalire a $60.000 in dodici mesi."
             }
         }
@@ -527,18 +503,18 @@ btc_holidays = {
             },
             "de": {
                 "title": "Lightning-Mainnet-Tag",
-                "description": "An diesem Tag im Jahr 2018 startete Lightning Labs lnd 0.4-beta, die erste Mainnet-Lightning-Network-Implementierung für schnelle und günstige Bitcoin-Transaktionen."
+                "description": "An diesem Tag im Jahr 2018 veröffentlichte Lightning Labs lnd 0.4-beta, die erste Lightning-Implementierung fürs Mainnet, für schnelle und günstige Bitcoin-Transaktionen."
             },
             "es": {
-                "title": "Día de Lightning en Mainnet",
+                "title": "Día de Lightning en mainnet",
                 "description": "En este día de 2018, Lightning Labs lanzó lnd 0.4-beta, la primera implementación de Lightning Network en mainnet, habilitando transacciones Bitcoin rápidas y baratas."
             },
             "fr": {
-                "title": "Jour du Lightning Mainnet",
-                "description": "Ce jour-là en 2018, Lightning Labs a lancé lnd 0.4-beta, la première implémentation mainnet du Lightning Network pour des transactions Bitcoin rapides et économiques."
+                "title": "Journée de Lightning sur le mainnet",
+                "description": "En ce jour de 2018, Lightning Labs a lancé lnd 0.4-beta, la première implémentation mainnet du Lightning Network pour des transactions Bitcoin rapides et économiques."
             },
             "it": {
-                "title": "Giorno del Lightning Mainnet",
+                "title": "Giornata di Lightning sulla mainnet",
                 "description": "In questo giorno del 2018, Lightning Labs ha lanciato lnd 0.4-beta, la prima implementazione mainnet del Lightning Network per transazioni Bitcoin rapide ed economiche."
             }
         }
@@ -554,15 +530,15 @@ btc_holidays = {
                 "description": "An diesem Tag im Jahr 2013 überstieg die Marktkapitalisierung aller BTC zum ersten Mal 1 Milliarde USD."
             },
             "es": {
-                "title": "Día de los Mil Millones de Dólares",
+                "title": "Día de los mil millones de dólares",
                 "description": "En este día de 2013, la capitalización de mercado de todos los BTC superó por primera vez 1,000 millones de USD."
             },
             "fr": {
-                "title": "Jour du Milliard de Dollars",
-                "description": "Ce jour-là en 2013, la capitalisation boursière de tous les BTC a dépassé 1 milliard USD pour la première fois."
+                "title": "Journée du milliard de dollars",
+                "description": "En ce jour de 2013, la capitalisation de tous les BTC a dépassé pour la première fois 1 milliard de dollars."
             },
             "it": {
-                "title": "Giorno del Miliardo di Dollari",
+                "title": "Giornata del miliardo di dollari",
                 "description": "In questo giorno del 2013, la capitalizzazione di mercato di tutti i BTC ha superato per la prima volta 1 miliardo di USD."
             }
         }
@@ -575,18 +551,18 @@ btc_holidays = {
             },
             "de": {
                 "title": "100-Dollar-Bitcoin-Tag",
-                "description": "An diesem Tag im Jahr 2013 überschritt Bitcoin zum ersten Mal die 100-Dollar-Marke und bestätigte seine wachsende Bedeutung als Wertaufbewahrungsmittel."
+                "description": "An diesem Tag im Jahr 2013 überschritt Bitcoin zum ersten Mal die 100-Dollar-Marke und untermauerte seine wachsende Legitimität als Wertaufbewahrungsmittel."
             },
             "es": {
                 "title": "Día del Bitcoin a $100",
-                "description": "En este día de 2013, Bitcoin cruzó la marca de los $100 por primera vez, confirmando su creciente legitimidad como reserva de valor."
+                "description": "En este día de 2013, Bitcoin superó por primera vez la barrera de los $100, confirmando su creciente legitimidad como reserva de valor."
             },
             "fr": {
-                "title": "Jour du Bitcoin à 100 $",
-                "description": "Ce jour-là en 2013, Bitcoin a franchi pour la première fois la barre des 100 $, confirmant sa légitimité croissante comme réserve de valeur."
+                "title": "Journée du Bitcoin à 100 $",
+                "description": "En ce jour de 2013, Bitcoin a franchi pour la première fois la barre des 100 $, confirmant sa légitimité croissante comme réserve de valeur."
             },
             "it": {
-                "title": "Giorno del Bitcoin a $100",
+                "title": "Giornata del Bitcoin a $100",
                 "description": "In questo giorno del 2013, Bitcoin ha superato per la prima volta la soglia dei $100, confermando la sua crescente legittimità come riserva di valore."
             }
         }
@@ -599,7 +575,7 @@ btc_holidays = {
             },
             "de": {
                 "title": "Satoshis Geburtstag",
-                "description": "Satoshi Nakamoto gab als Geburtstag den 5. April 1975 an."
+                "description": "Satoshi Nakamoto gab den 5. April 1975 als Geburtstag an."
             },
             "es": {
                 "title": "Cumpleaños de Satoshi",
@@ -607,7 +583,7 @@ btc_holidays = {
             },
             "fr": {
                 "title": "Anniversaire de Satoshi",
-                "description": "Satoshi Nakamoto a indiqué sa date de naissance comme étant le 5 avril 1975."
+                "description": "Satoshi Nakamoto a indiqué le 5 avril 1975 comme date de naissance."
             },
             "it": {
                 "title": "Compleanno di Satoshi",
@@ -623,18 +599,18 @@ btc_holidays = {
             },
             "de": {
                 "title": "Halving-#4-Tag",
-                "description": "An diesem Tag im Jahr 2024 reduzierte das vierte 'Halving' die Belohnung von 6,25 BTC auf 3,125 BTC."
+                "description": "An diesem Tag im Jahr 2024 senkte das vierte 'Halving' die Blocksubvention von 6,25 BTC auf 3,125 BTC."
             },
             "es": {
                 "title": "Día del Halving #4",
                 "description": "En este día de 2024, el cuarto 'Halving' redujo el subsidio de 6.25 BTC a 3.125 BTC."
             },
             "fr": {
-                "title": "Jour du Halving #4",
-                "description": "Ce jour-là en 2024, le quatrième 'Halving' a réduit la subvention de 6,25 BTC à 3,125 BTC."
+                "title": "Journée du Halving #4",
+                "description": "En ce jour de 2024, le quatrième 'Halving' a réduit la subvention de 6,25 BTC à 3,125 BTC."
             },
             "it": {
-                "title": "Giorno dell'Halving #4",
+                "title": "Giornata dell'Halving #4",
                 "description": "In questo giorno del 2024, il quarto 'Halving' ha ridotto il sussidio da 6,25 BTC a 3,125 BTC."
             }
         }
@@ -647,18 +623,18 @@ btc_holidays = {
             },
             "de": {
                 "title": "'Bitcoin in guten Händen'-Tag",
-                "description": "An diesem Tag im Jahr 2011 sendete Satoshi Nakamoto seine letzte bekannte Nachricht, in der er sagte, Bitcoin sei 'in guten Händen', bevor er sich vom Projekt zurückzog."
+                "description": "An diesem Tag im Jahr 2011 schrieb Satoshi Nakamoto in der letzten bekannten Nachricht, Bitcoin sei 'in guten Händen', und zog sich dann aus dem Projekt zurück."
             },
             "es": {
-                "title": "Día de 'Bitcoin en Buenas Manos'",
+                "title": "Día de 'Bitcoin en buenas manos'",
                 "description": "En este día de 2011, Satoshi Nakamoto envió su último mensaje conocido, diciendo que Bitcoin estaba 'en buenas manos' antes de retirarse del proyecto."
             },
             "fr": {
-                "title": "Jour de 'Bitcoin en Bonnes Mains'",
-                "description": "Ce jour-là en 2011, Satoshi Nakamoto a envoyé son dernier message connu, disant que Bitcoin était 'en bonnes mains' avant de quitter le projet."
+                "title": "Journée de 'Bitcoin entre de bonnes mains'",
+                "description": "En ce jour de 2011, Satoshi Nakamoto a envoyé son dernier message connu, disant que Bitcoin était 'entre de bonnes mains' avant de quitter le projet."
             },
             "it": {
-                "title": "Giorno di 'Bitcoin in Buone Mani'",
+                "title": "Giornata di 'Bitcoin in buone mani'",
                 "description": "In questo giorno del 2011, Satoshi Nakamoto ha inviato il suo ultimo messaggio noto, dicendo che Bitcoin era 'in buone mani' prima di lasciare il progetto."
             }
         }
@@ -670,19 +646,19 @@ btc_holidays = {
                 "description": "On this day in 2013, the first-ever Bitcoin ATM was installed at a Vancouver coffee shop."
             },
             "de": {
-                "title": "Bitcoin-ATM-Tag",
-                "description": "An diesem Tag im Jahr 2013 wurde der allererste Bitcoin-Geldautomat in einem Kaffeehaus in Vancouver installiert."
+                "title": "Bitcoin-Automaten-Tag",
+                "description": "An diesem Tag im Jahr 2013 wurde der allererste Bitcoin-Automat in einem Café in Vancouver aufgestellt."
             },
             "es": {
-                "title": "Día del Cajero Bitcoin",
+                "title": "Día del cajero Bitcoin",
                 "description": "En este día de 2013, el primer cajero automático de Bitcoin fue instalado en una cafetería de Vancouver."
             },
             "fr": {
-                "title": "Jour du Distributeur Bitcoin",
-                "description": "Ce jour-là en 2013, le tout premier distributeur automatique Bitcoin a été installé dans un café de Vancouver."
+                "title": "Journée du distributeur Bitcoin",
+                "description": "En ce jour de 2013, le tout premier distributeur automatique Bitcoin a été installé dans un café de Vancouver."
             },
             "it": {
-                "title": "Giorno dell'ATM Bitcoin",
+                "title": "Giornata dell'ATM Bitcoin",
                 "description": "In questo giorno del 2013, il primo ATM Bitcoin in assoluto è stato installato in una caffetteria di Vancouver."
             }
         }
@@ -695,18 +671,18 @@ btc_holidays = {
             },
             "de": {
                 "title": "Halving-#3-Tag",
-                "description": "An diesem Tag im Jahr 2020 reduzierte das dritte 'Halving' die Belohnung von 12,5 BTC auf 6,25 BTC."
+                "description": "An diesem Tag im Jahr 2020 senkte das dritte 'Halving' die Blocksubvention von 12,5 BTC auf 6,25 BTC."
             },
             "es": {
                 "title": "Día del Halving #3",
                 "description": "En este día de 2020, el tercer 'Halving' redujo el subsidio de 12.5 BTC a 6.25 BTC."
             },
             "fr": {
-                "title": "Jour du Halving #3",
-                "description": "Ce jour-là en 2020, le troisième 'Halving' a réduit la subvention de 12,5 BTC à 6,25 BTC."
+                "title": "Journée du Halving #3",
+                "description": "En ce jour de 2020, le troisième 'Halving' a réduit la subvention de 12,5 BTC à 6,25 BTC."
             },
             "it": {
-                "title": "Giorno dell'Halving #3",
+                "title": "Giornata dell'Halving #3",
                 "description": "In questo giorno del 2020, il terzo 'Halving' ha ridotto il sussidio da 12,5 BTC a 6,25 BTC."
             }
         }
@@ -722,15 +698,15 @@ btc_holidays = {
                 "description": "An diesem Tag im Jahr 2010 bezahlte Laszlo Hanyecz 10.000 BTC für zwei Pizzas."
             },
             "es": {
-                "title": "Día de la Pizza Bitcoin",
+                "title": "Día de la pizza Bitcoin",
                 "description": "En este día de 2010, Laszlo Hanyecz pagó 10,000 BTC por dos pizzas."
             },
             "fr": {
-                "title": "Jour de la Pizza Bitcoin",
-                "description": "Ce jour-là en 2010, Laszlo Hanyecz a payé 10 000 BTC pour deux pizzas."
+                "title": "Journée de la pizza Bitcoin",
+                "description": "En ce jour de 2010, Laszlo Hanyecz a payé 10 000 BTC pour deux pizzas."
             },
             "it": {
-                "title": "Giorno della Pizza Bitcoin",
+                "title": "Giornata della pizza Bitcoin",
                 "description": "In questo giorno del 2010, Laszlo Hanyecz ha pagato 10.000 BTC per due pizze."
             }
         }
@@ -743,19 +719,19 @@ btc_holidays = {
             },
             "de": {
                 "title": "WikiLeaks-Bitcoin-Tag",
-                "description": "An diesem Tag im Jahr 2011 begann WikiLeaks Bitcoin-Spenden zu akzeptieren, nachdem traditionelle Zahlungsanbieter sie blockiert hatten."
+                "description": "An diesem Tag im Jahr 2011 nahm WikiLeaks erstmals Bitcoin-Spenden an, nachdem klassische Zahlungsdienste es gesperrt hatten: ein Beweis für Bitcoins Zensurresistenz."
             },
             "es": {
                 "title": "Día de WikiLeaks y Bitcoin",
-                "description": "En este día de 2011, WikiLeaks comenzó a aceptar donaciones en Bitcoin después de que los procesadores de pago tradicionales los bloquearan."
+                "description": "En este día de 2011, WikiLeaks empezó a aceptar donaciones en Bitcoin tras ser bloqueado por los procesadores de pago, demostrando la resistencia de Bitcoin a la censura."
             },
             "fr": {
-                "title": "Jour WikiLeaks Bitcoin",
-                "description": "Ce jour-là en 2011, WikiLeaks a commencé à accepter les dons en Bitcoin après que les processeurs de paiement traditionnels les ont coupés."
+                "title": "Journée WikiLeaks Bitcoin",
+                "description": "En ce jour de 2011, WikiLeaks a commencé à accepter les dons en Bitcoin après avoir été lâché par les processeurs de paiement, prouvant que Bitcoin résiste à la censure."
             },
             "it": {
-                "title": "Giorno di WikiLeaks e Bitcoin",
-                "description": "In questo giorno del 2011, WikiLeaks ha iniziato ad accettare donazioni in Bitcoin dopo che i processori di pagamento tradizionali li avevano bloccati."
+                "title": "Giornata di WikiLeaks e Bitcoin",
+                "description": "In questo giorno del 2011, WikiLeaks ha iniziato ad accettare donazioni in Bitcoin dopo il blocco dei circuiti di pagamento, dimostrando che Bitcoin resiste alla censura."
             }
         }
     ],
@@ -767,18 +743,18 @@ btc_holidays = {
             },
             "de": {
                 "title": "Bitcoin-Unicode-Tag",
-                "description": "An diesem Tag im Jahr 2017 wurde das Bitcoin-Symbol offiziell in Unicode 10.0 an Position U+20BF aufgenommen und gesellte sich zu Währungen wie Dollar, Euro und Yen."
+                "description": "An diesem Tag im Jahr 2017 wurde das Bitcoin-Symbol als U+20BF offiziell in Unicode 10.0 aufgenommen, neben großen Währungen wie Dollar, Euro und Yen."
             },
             "es": {
-                "title": "Día del Unicode de Bitcoin",
-                "description": "En este día de 2017, el símbolo de Bitcoin fue añadido oficialmente a Unicode 10.0 en la posición U+20BF, uniéndose a monedas como el dólar, euro y yen."
+                "title": "Día de Bitcoin en Unicode",
+                "description": "En este día de 2017, el símbolo de Bitcoin fue añadido oficialmente a Unicode 10.0 en la posición U+20BF, uniéndose a monedas como el dólar, el euro y el yen."
             },
             "fr": {
-                "title": "Jour du Unicode Bitcoin",
-                "description": "Ce jour-là en 2017, le symbole Bitcoin ₿ a été ajouté à Unicode 10.0 (U+20BF), rejoignant le dollar, l'euro et le yen."
+                "title": "Journée de Bitcoin dans Unicode",
+                "description": "En ce jour de 2017, le symbole Bitcoin a été officiellement ajouté à Unicode 10.0 (U+20BF), rejoignant le dollar, l'euro et le yen."
             },
             "it": {
-                "title": "Giorno dell'Unicode Bitcoin",
+                "title": "Giornata di Bitcoin in Unicode",
                 "description": "In questo giorno del 2017, il simbolo Bitcoin è stato ufficialmente aggiunto a Unicode 10.0 alla posizione U+20BF, unendosi a valute come dollaro, euro e yen."
             }
         }
@@ -791,18 +767,18 @@ btc_holidays = {
             },
             "de": {
                 "title": "Halving-#2-Tag",
-                "description": "An diesem Tag im Jahr 2016 reduzierte das zweite 'Halving' die Belohnung von 25 BTC auf 12,5 BTC."
+                "description": "An diesem Tag im Jahr 2016 senkte das zweite 'Halving' die Blocksubvention von 25 BTC auf 12,5 BTC."
             },
             "es": {
                 "title": "Día del Halving #2",
                 "description": "En este día de 2016, el segundo 'Halving' redujo el subsidio de 25 BTC a 12.5 BTC."
             },
             "fr": {
-                "title": "Jour du Halving #2",
-                "description": "Ce jour-là en 2016, le deuxième 'Halving' a réduit la subvention de 25 BTC à 12,5 BTC."
+                "title": "Journée du Halving #2",
+                "description": "En ce jour de 2016, le deuxième 'Halving' a réduit la subvention de 25 BTC à 12,5 BTC."
             },
             "it": {
-                "title": "Giorno dell'Halving #2",
+                "title": "Giornata dell'Halving #2",
                 "description": "In questo giorno del 2016, il secondo 'Halving' ha ridotto il sussidio da 25 BTC a 12,5 BTC."
             }
         }
@@ -814,20 +790,20 @@ btc_holidays = {
                 "description": "On this day in 2011, a tribute to cryptographer Len Sassaman was encoded in the Bitcoin blockchain at block 138,725 using ASCII art."
             },
             "de": {
-                "title": "Len Sassaman Gedenktag",
-                "description": "An diesem Tag im Jahr 2011 wurde ein Tribut an den Kryptographen Len Sassaman in der Bitcoin-Blockchain bei Block 138.725 mittels ASCII-Art verewigt."
+                "title": "Len-Sassaman-Gedenktag",
+                "description": "An diesem Tag im Jahr 2011 wurde eine Hommage an den Kryptografen Len Sassaman als ASCII-Art in Block 138.725 der Bitcoin-Blockchain verewigt."
             },
             "es": {
-                "title": "Día Conmemorativo de Len Sassaman",
-                "description": "En este día de 2011, un tributo al criptógrafo Len Sassaman fue codificado en la blockchain de Bitcoin en el bloque 138,725 usando arte ASCII."
+                "title": "Día en memoria de Len Sassaman",
+                "description": "En este día de 2011, un homenaje al criptógrafo Len Sassaman fue grabado en arte ASCII en la blockchain de Bitcoin, en el bloque 138,725."
             },
             "fr": {
-                "title": "Jour Commémoratif de Len Sassaman",
-                "description": "Ce jour-là en 2011, un hommage au cryptographe Len Sassaman a été encodé dans la blockchain Bitcoin au bloc 138 725 en art ASCII."
+                "title": "Journée en mémoire de Len Sassaman",
+                "description": "En ce jour de 2011, un hommage au cryptographe Len Sassaman a été inscrit en art ASCII dans la blockchain Bitcoin, au bloc 138 725."
             },
             "it": {
-                "title": "Giorno Commemorativo di Len Sassaman",
-                "description": "In questo giorno del 2011, un tributo al crittografo Len Sassaman è stato codificato nella blockchain di Bitcoin al blocco 138.725 in arte ASCII."
+                "title": "Giornata in memoria di Len Sassaman",
+                "description": "In questo giorno del 2011, un omaggio al crittografo Len Sassaman è stato inciso in arte ASCII nella blockchain di Bitcoin, al blocco 138.725."
             }
         }
     ],
@@ -846,12 +822,12 @@ btc_holidays = {
                 "description": "En este día de 2010, Satoshi Nakamoto escribió: 'If you don't believe me or don't understand, I don't have time to try to convince you, sorry.'"
             },
             "fr": {
-                "title": "Jour de 'Believe Me'",
-                "description": "Ce jour-là en 2010, Satoshi Nakamoto a écrit : 'If you don't believe me or don't understand, I don't have time to try to convince you, sorry.'"
+                "title": "Journée du 'Believe Me'",
+                "description": "En ce jour de 2010, Satoshi Nakamoto a écrit : 'If you don't believe me or don't understand, I don't have time to try to convince you, sorry.'"
             },
             "it": {
-                "title": "Giorno di 'Believe Me'",
-                "description": "In questo giorno del 2010, Satoshi Nakamoto scrisse: 'If you don't believe me or don't understand, I don't have time to try to convince you, sorry.'"
+                "title": "Giornata del 'Believe Me'",
+                "description": "In questo giorno del 2010, Satoshi Nakamoto ha scritto: 'If you don't believe me or don't understand, I don't have time to try to convince you, sorry.'"
             }
         }
     ],
@@ -863,19 +839,19 @@ btc_holidays = {
             },
             "de": {
                 "title": "Bitcoin-Unabhängigkeitstag (UASF-Tag)",
-                "description": "An diesem Tag im Jahr 2017 planten Mitglieder der Community die Aktivierung einer User-Activated Soft Fork (UASF)."
+                "description": "An diesem Tag im Jahr 2017 sollte nach dem Plan von Community-Mitgliedern eine User-Activated Soft Fork (UASF) aktiviert werden."
             },
             "es": {
                 "title": "Día de la Independencia de Bitcoin (Día UASF)",
                 "description": "En este día de 2017, miembros de la comunidad programaron la activación de un User-Activated Soft Fork (UASF)."
             },
             "fr": {
-                "title": "Jour de l'Indépendance Bitcoin (Jour UASF)",
-                "description": "Ce jour-là en 2017, des membres de la communauté ont programmé l'activation d'un User-Activated Soft Fork (UASF)."
+                "title": "Jour de l'Indépendance de Bitcoin (jour UASF)",
+                "description": "En ce jour de 2017, des membres de la communauté avaient programmé l'activation d'un User-Activated Soft Fork (UASF)."
             },
             "it": {
-                "title": "Giorno dell'Indipendenza di Bitcoin (Giorno UASF)",
-                "description": "In questo giorno del 2017, membri della comunità hanno programmato l'attivazione di un User-Activated Soft Fork (UASF)."
+                "title": "Giorno dell'Indipendenza di Bitcoin (giorno UASF)",
+                "description": "In questo giorno del 2017, alcuni membri della comunità avevano programmato l'attivazione di un User-Activated Soft Fork (UASF)."
             }
         }
     ],
@@ -887,19 +863,19 @@ btc_holidays = {
             },
             "de": {
                 "title": "SegWit-Lock-in-Tag",
-                "description": "An diesem Tag im Jahr 2017 wurde das Segregated Witness-Upgrade endgültig beschlossen."
+                "description": "An diesem Tag im Jahr 2017 wurde das Segregated-Witness-Upgrade unumkehrbar festgeschrieben (Lock-in)."
             },
             "es": {
-                "title": "Día del Lock-In de SegWit",
-                "description": "En este día de 2017, se confirmó la actualización Segregated Witness."
+                "title": "Día del lock-in de SegWit",
+                "description": "En este día de 2017, la actualización Segregated Witness quedó asegurada (lock-in)."
             },
             "fr": {
-                "title": "Jour du Verrouillage SegWit",
-                "description": "Ce jour-là en 2017, la mise à niveau Segregated Witness a été verrouillée."
+                "title": "Journée du verrouillage de SegWit",
+                "description": "En ce jour de 2017, la mise à niveau Segregated Witness a été verrouillée (lock-in)."
             },
             "it": {
-                "title": "Giorno del Lock-In di SegWit",
-                "description": "In questo giorno del 2017, l'aggiornamento Segregated Witness è stato confermato."
+                "title": "Giornata del lock-in di SegWit",
+                "description": "In questo giorno del 2017, l'aggiornamento Segregated Witness è stato bloccato definitivamente (lock-in)."
             }
         }
     ],
@@ -911,19 +887,19 @@ btc_holidays = {
             },
             "de": {
                 "title": "MicroStrategy-Bitcoin-Tag",
-                "description": "An diesem Tag im Jahr 2020 wurde MicroStrategy das erste börsennotierte Unternehmen mit Bitcoin als Treasury-Reserve: 21.454 BTC für $250 Mio."
+                "description": "An diesem Tag im Jahr 2020 machte MicroStrategy als erstes börsennotiertes Unternehmen Bitcoin zur wichtigsten Treasury-Reserve und kaufte 21.454 BTC für 250 Mio. $."
             },
             "es": {
                 "title": "Día de MicroStrategy y Bitcoin",
-                "description": "En este día de 2020, MicroStrategy fue la primera empresa pública en adoptar Bitcoin como reserva de tesorería, comprando 21.454 BTC por $250 millones."
+                "description": "En este día de 2020, MicroStrategy fue la primera empresa cotizada en adoptar Bitcoin como principal reserva de tesorería, comprando 21,454 BTC por $250 millones."
             },
             "fr": {
-                "title": "Jour MicroStrategy Bitcoin",
-                "description": "Ce jour-là en 2020, MicroStrategy est devenue la première entreprise cotée à adopter Bitcoin comme réserve de trésorerie principale, achetant 21 454 BTC pour 250 M$."
+                "title": "Journée MicroStrategy Bitcoin",
+                "description": "En ce jour de 2020, MicroStrategy est devenue la première entreprise cotée à adopter Bitcoin comme réserve de trésorerie principale, achetant 21 454 BTC pour 250 M$."
             },
             "it": {
-                "title": "Giorno MicroStrategy Bitcoin",
-                "description": "In questo giorno del 2020, MicroStrategy è diventata la prima azienda quotata ad adottare Bitcoin come riserva di tesoreria, acquistando 21.454 BTC per $250M."
+                "title": "Giornata MicroStrategy Bitcoin",
+                "description": "In questo giorno del 2020, MicroStrategy è diventata la prima azienda quotata ad adottare Bitcoin come principale riserva di tesoreria, acquistando 21.454 BTC per $250M."
             }
         }
     ],
@@ -935,19 +911,19 @@ btc_holidays = {
             },
             "de": {
                 "title": "Value-Overflow-Tag",
-                "description": "An diesem Tag im Jahr 2010 erzeugte ein Bug 184 Mrd. BTC in einer Transaktion. Satoshi behob dies mit einem Patch und einer Soft Fork."
+                "description": "An diesem Tag im Jahr 2010 erzeugte ein Bug 184 Mrd. BTC in einer einzigen Transaktion. Satoshi veröffentlichte einen Patch und entfernte sie per Soft Fork."
             },
             "es": {
-                "title": "Día del Value Overflow",
+                "title": "Día del value overflow",
                 "description": "En este día de 2010, un bug generó 184 mil millones de BTC en una sola transacción. Satoshi lanzó un parche y ejecutó un soft fork para eliminar la transacción inválida."
             },
             "fr": {
-                "title": "Jour du Value Overflow",
-                "description": "Ce jour-là en 2010, un bug a généré 184 milliards de BTC en une transaction. Satoshi a corrigé le bug via un patch et un soft fork."
+                "title": "Journée du value overflow",
+                "description": "En ce jour de 2010, un bug a généré 184 milliards de BTC en une seule transaction. Satoshi a publié un correctif et un soft fork pour supprimer la transaction invalide."
             },
             "it": {
-                "title": "Giorno del Value Overflow",
-                "description": "In questo giorno del 2010, un bug ha generato 184 miliardi di BTC in una transazione. Satoshi ha corretto il bug con una patch e un soft fork."
+                "title": "Giornata del value overflow",
+                "description": "In questo giorno del 2010, un bug ha generato 184 miliardi di BTC in una transazione. Satoshi ha rilasciato una patch e un soft fork per eliminare la transazione invalida."
             }
         }
     ],
@@ -962,15 +938,15 @@ btc_holidays = {
                 "description": "An diesem Tag im Jahr 2008 registrierte Satoshi Nakamoto bitcoin.org."
             },
             "es": {
-                "title": "Día de Registro de Bitcoin.org",
+                "title": "Día del registro de bitcoin.org",
                 "description": "En este día de 2008, Satoshi Nakamoto registró bitcoin.org."
             },
             "fr": {
-                "title": "Jour d'Enregistrement de Bitcoin.org",
-                "description": "Ce jour-là en 2008, Satoshi Nakamoto a enregistré bitcoin.org."
+                "title": "Journée de l'enregistrement de bitcoin.org",
+                "description": "En ce jour de 2008, Satoshi Nakamoto a enregistré bitcoin.org."
             },
             "it": {
-                "title": "Giorno della Registrazione di Bitcoin.org",
+                "title": "Giornata della registrazione di bitcoin.org",
                 "description": "In questo giorno del 2008, Satoshi Nakamoto ha registrato bitcoin.org."
             }
         }
@@ -983,19 +959,19 @@ btc_holidays = {
             },
             "de": {
                 "title": "Bitcoin-Unendlichkeitstag",
-                "description": "8/21 wird spielerisch als ∞/21M gefeiert."
+                "description": "Der 8/21 wird augenzwinkernd als ∞/21M gefeiert."
             },
             "es": {
-                "title": "Día del Infinito Bitcoin",
-                "description": "8/21 se celebra juguetonamente como ∞/21M."
+                "title": "Día del infinito de Bitcoin",
+                "description": "El 8/21 se celebra en broma como ∞/21M."
             },
             "fr": {
-                "title": "Jour de l'Infini Bitcoin",
-                "description": "Le 8/21 est célébré de manière ludique comme ∞/21M."
+                "title": "Journée de l'infini Bitcoin",
+                "description": "Le 8/21 est célébré avec humour comme ∞/21M."
             },
             "it": {
-                "title": "Giorno dell'Infinito di Bitcoin",
-                "description": "8/21 è celebrato scherzosamente come ∞/21M."
+                "title": "Giornata dell'infinito di Bitcoin",
+                "description": "L'8/21 viene celebrato scherzosamente come ∞/21M."
             }
         }
     ],
@@ -1010,16 +986,16 @@ btc_holidays = {
                 "description": "An diesem Tag im Jahr 2017 wurde SegWit im Bitcoin-Mainnet in Block #481.824 aktiviert."
             },
             "es": {
-                "title": "Día de Activación de SegWit",
-                "description": "En este día de 2017, SegWit se activó en la red principal de Bitcoin en el Bloque #481,824."
+                "title": "Día de la activación de SegWit",
+                "description": "En este día de 2017, SegWit se activó en la red principal de Bitcoin en el bloque #481,824."
             },
             "fr": {
-                "title": "Jour d'Activation de SegWit",
-                "description": "Ce jour-là en 2017, SegWit s'est activé sur le réseau principal Bitcoin dans le Bloc #481 824."
+                "title": "Journée de l'activation de SegWit",
+                "description": "En ce jour de 2017, SegWit a été activé sur le réseau principal Bitcoin au bloc #481 824."
             },
             "it": {
-                "title": "Giorno dell'Attivazione di SegWit",
-                "description": "In questo giorno del 2017, SegWit si è attivato sulla mainnet di Bitcoin nel Blocco #481.824."
+                "title": "Giornata dell'attivazione di SegWit",
+                "description": "In questo giorno del 2017, SegWit si è attivato sulla mainnet di Bitcoin nel blocco #481.824."
             }
         }
     ],
@@ -1030,20 +1006,20 @@ btc_holidays = {
                 "description": "On this day in 2014, Hal Finney passed away from ALS. He was the first recipient of a Bitcoin transaction and a pioneering cypherpunk."
             },
             "de": {
-                "title": "Hal Finney Gedenktag",
-                "description": "An diesem Tag im Jahr 2014 verstarb Hal Finney an ALS. Er war der erste Empfänger einer Bitcoin-Transaktion und ein wegweisender Cypherpunk."
+                "title": "Hal-Finney-Gedenktag",
+                "description": "An diesem Tag im Jahr 2014 starb Hal Finney an ALS. Er war der erste Empfänger einer Bitcoin-Transaktion und ein Cypherpunk der ersten Stunde."
             },
             "es": {
-                "title": "Día Conmemorativo de Hal Finney",
-                "description": "En este día de 2014, Hal Finney falleció por ELA. Fue el primer receptor de una transacción Bitcoin y un cypherpunk pionero."
+                "title": "Día en memoria de Hal Finney",
+                "description": "En este día de 2014, Hal Finney falleció de ELA. Fue el primer receptor de una transacción Bitcoin y un cypherpunk pionero."
             },
             "fr": {
-                "title": "Jour Commémoratif de Hal Finney",
-                "description": "Ce jour-là en 2014, Hal Finney est décédé de la SLA. Il fut le premier destinataire d'une transaction Bitcoin et un cypherpunk pionnier."
+                "title": "Journée en mémoire de Hal Finney",
+                "description": "En ce jour de 2014, Hal Finney est décédé de la SLA. Il fut le premier destinataire d'une transaction Bitcoin et un cypherpunk pionnier."
             },
             "it": {
-                "title": "Giorno Commemorativo di Hal Finney",
-                "description": "In questo giorno del 2014, Hal Finney è venuto a mancare per SLA. Fu il primo destinatario di una transazione Bitcoin e un cypherpunk pioniere."
+                "title": "Giornata in memoria di Hal Finney",
+                "description": "In questo giorno del 2014, Hal Finney è scomparso a causa della SLA. Fu il primo destinatario di una transazione Bitcoin e un pioniere cypherpunk."
             }
         }
     ],
@@ -1054,19 +1030,19 @@ btc_holidays = {
                 "description": "On this day in 2021, BTC became legal tender in El Salvador."
             },
             "de": {
-                "title": "Bitcoin-Legal-Tender-Tag",
-                "description": "An diesem Tag im Jahr 2021 wurde BTC gesetzliches Zahlungsmittel in El Salvador."
+                "title": "Tag des gesetzlichen Zahlungsmittels",
+                "description": "An diesem Tag im Jahr 2021 wurde BTC in El Salvador zum gesetzlichen Zahlungsmittel."
             },
             "es": {
-                "title": "Día del Bitcoin Legal Tender",
+                "title": "Día del Bitcoin de curso legal",
                 "description": "En este día de 2021, BTC se convirtió en moneda de curso legal en El Salvador."
             },
             "fr": {
-                "title": "Jour du Bitcoin Legal Tender",
-                "description": "Ce jour-là en 2021, BTC est devenu monnaie légale au Salvador."
+                "title": "Journée du Bitcoin monnaie légale",
+                "description": "En ce jour de 2021, le BTC est devenu monnaie légale au Salvador."
             },
             "it": {
-                "title": "Giorno del Bitcoin Legal Tender",
+                "title": "Giornata del Bitcoin a corso legale",
                 "description": "In questo giorno del 2021, BTC è diventato moneta a corso legale in El Salvador."
             }
         }
@@ -1078,19 +1054,19 @@ btc_holidays = {
                 "description": "On this day in 2017, the first on-chain atomic swap between Bitcoin and Litecoin was executed, proving trustless cross-chain trading is possible."
             },
             "de": {
-                "title": "Tag des ersten Atomic Swap",
-                "description": "An diesem Tag im Jahr 2017 wurde der erste On-Chain Atomic Swap zwischen Bitcoin und Litecoin durchgeführt und bewies, dass vertrauensloser Cross-Chain-Handel möglich ist."
+                "title": "Tag des ersten Atomic Swaps",
+                "description": "An diesem Tag im Jahr 2017 fand der erste On-Chain-Atomic-Swap zwischen Bitcoin und Litecoin statt und bewies, dass vertrauensloser Cross-Chain-Handel möglich ist."
             },
             "es": {
-                "title": "Día del Primer Atomic Swap",
+                "title": "Día del primer atomic swap",
                 "description": "En este día de 2017, se ejecutó el primer atomic swap on-chain entre Bitcoin y Litecoin, demostrando que el intercambio cross-chain sin confianza es posible."
             },
             "fr": {
-                "title": "Jour du Premier Atomic Swap",
-                "description": "Ce jour-là en 2017, le premier atomic swap on-chain entre Bitcoin et Litecoin a été réalisé, prouvant que l'échange cross-chain sans confiance est possible."
+                "title": "Journée du premier atomic swap",
+                "description": "En ce jour de 2017, le premier atomic swap on-chain entre Bitcoin et Litecoin a été réalisé, prouvant que l'échange cross-chain sans tiers de confiance est possible."
             },
             "it": {
-                "title": "Giorno del Primo Atomic Swap",
+                "title": "Giornata del primo atomic swap",
                 "description": "In questo giorno del 2017, è stato eseguito il primo atomic swap on-chain tra Bitcoin e Litecoin, dimostrando che lo scambio cross-chain trustless è possibile."
             }
         }
@@ -1103,19 +1079,19 @@ btc_holidays = {
             },
             "de": {
                 "title": "Free-Ross-Tag",
-                "description": "An diesem Tag im Jahr 2013 wurde Ross Ulbricht für die Erstellung der Silk Road gefasst."
+                "description": "An diesem Tag im Jahr 2013 wurde Ross Ulbricht als Gründer von The Silk Road festgenommen."
             },
             "es": {
                 "title": "Día Free Ross",
-                "description": "En este día de 2013, Ross Ulbricht fue capturado por crear The Silk Road."
+                "description": "En este día de 2013, Ross Ulbricht fue arrestado por crear The Silk Road."
             },
             "fr": {
-                "title": "Jour Free Ross",
-                "description": "Ce jour-là en 2013, Ross Ulbricht a été capturé pour avoir créé The Silk Road."
+                "title": "Journée Free Ross",
+                "description": "En ce jour de 2013, Ross Ulbricht a été arrêté pour avoir créé The Silk Road."
             },
             "it": {
-                "title": "Giorno Free Ross",
-                "description": "In questo giorno del 2013, Ross Ulbricht è stato catturato per aver creato The Silk Road."
+                "title": "Giornata Free Ross",
+                "description": "In questo giorno del 2013, Ross Ulbricht è stato arrestato per aver creato The Silk Road."
             }
         }
     ],
@@ -1127,18 +1103,18 @@ btc_holidays = {
             },
             "de": {
                 "title": "Tag des ersten Wechselkurses",
-                "description": "An diesem Tag im Jahr 2009 legte New Liberty Standard den ersten Bitcoin-zu-USD-Wechselkurs basierend auf den Stromkosten des Minings fest."
+                "description": "An diesem Tag im Jahr 2009 legte New Liberty Standard den ersten Wechselkurs von Bitcoin zu USD fest, berechnet aus den Stromkosten des Minings."
             },
             "es": {
-                "title": "Día del Primer Tipo de Cambio",
+                "title": "Día del primer tipo de cambio",
                 "description": "En este día de 2009, New Liberty Standard estableció el primer tipo de cambio Bitcoin-USD basado en los costos de electricidad del minado."
             },
             "fr": {
-                "title": "Jour du Premier Taux de Change",
-                "description": "Ce jour-là en 2009, New Liberty Standard a établi le premier taux de change Bitcoin-USD basé sur les coûts d'électricité du minage."
+                "title": "Journée du premier taux de change",
+                "description": "En ce jour de 2009, New Liberty Standard a établi le premier taux de change Bitcoin-USD basé sur les coûts d'électricité du minage."
             },
             "it": {
-                "title": "Giorno del Primo Tasso di Cambio",
+                "title": "Giornata del primo tasso di cambio",
                 "description": "In questo giorno del 2009, New Liberty Standard ha stabilito il primo tasso di cambio Bitcoin-USD basato sui costi dell'elettricità del mining."
             }
         }
@@ -1150,20 +1126,20 @@ btc_holidays = {
                 "description": "On this day in 2014, a bitcoin whale posted a 30,000 BTC sell wall and was defeated."
             },
             "de": {
-                "title": "Tag der BearWhale-Besiegung",
-                "description": "An diesem Tag im Jahr 2014 postete ein Bitcoin-Wal eine 30.000 BTC Verkaufsmauer und wurde besiegt."
+                "title": "Tag des Siegs über den BearWhale",
+                "description": "An diesem Tag im Jahr 2014 stellte ein Bitcoin-Wal eine Verkaufswand von 30.000 BTC ins Orderbuch, die Käufer restlos aufkauften."
             },
             "es": {
-                "title": "Día de la Derrota del BearWhale",
-                "description": "En este día de 2014, una ballena de bitcoin publicó una pared de venta de 30,000 BTC y fue derrotada."
+                "title": "Día de la derrota del BearWhale",
+                "description": "En este día de 2014, una ballena de bitcoin colocó un muro de venta de 30,000 BTC que los compradores absorbieron por completo."
             },
             "fr": {
-                "title": "Jour de la Défaite du BearWhale",
-                "description": "Ce jour-là en 2014, une baleine bitcoin a posté un mur de vente de 30 000 BTC et a été vaincue."
+                "title": "Journée de la défaite du BearWhale",
+                "description": "En ce jour de 2014, une baleine bitcoin a placé un mur de vente de 30 000 BTC, entièrement absorbé par les acheteurs."
             },
             "it": {
-                "title": "Giorno della Sconfitta del BearWhale",
-                "description": "In questo giorno del 2014, una balena di bitcoin ha pubblicato un muro di vendita di 30.000 BTC ed è stata sconfitta."
+                "title": "Giornata della sconfitta del BearWhale",
+                "description": "In questo giorno del 2014, una balena di bitcoin ha piazzato un muro di vendita di 30.000 BTC, interamente assorbito dagli acquirenti."
             }
         }
     ],
@@ -1175,19 +1151,19 @@ btc_holidays = {
             },
             "de": {
                 "title": "PayPal-Bitcoin-Tag",
-                "description": "An diesem Tag im Jahr 2020 kündigte PayPal Bitcoin-Unterstützung für seine 346 Millionen Nutzer an, die BTC kaufen, verkaufen und halten konnten."
+                "description": "An diesem Tag im Jahr 2020 kündigte PayPal Bitcoin-Unterstützung an: 346 Millionen Nutzer konnten nun BTC kaufen, verkaufen und halten."
             },
             "es": {
                 "title": "Día de PayPal y Bitcoin",
-                "description": "En este día de 2020, PayPal anunció soporte para Bitcoin para sus 346 millones de usuarios, permitiéndoles comprar, vender y mantener BTC."
+                "description": "En este día de 2020, PayPal anunció compatibilidad con Bitcoin para sus 346 millones de usuarios, que podrían comprar, vender y conservar BTC."
             },
             "fr": {
-                "title": "Jour PayPal Bitcoin",
-                "description": "Ce jour-là en 2020, PayPal a annoncé le support Bitcoin pour ses 346 millions d'utilisateurs, leur permettant d'acheter, vendre et détenir du BTC."
+                "title": "Journée PayPal Bitcoin",
+                "description": "En ce jour de 2020, PayPal a annoncé la prise en charge de Bitcoin pour ses 346 millions d'utilisateurs, leur permettant d'acheter, vendre et détenir du BTC."
             },
             "it": {
-                "title": "Giorno PayPal Bitcoin",
-                "description": "In questo giorno del 2020, PayPal ha annunciato il supporto Bitcoin per i suoi 346 milioni di utenti, consentendo di comprare, vendere e detenere BTC."
+                "title": "Giornata PayPal Bitcoin",
+                "description": "In questo giorno del 2020, PayPal ha annunciato il supporto a Bitcoin per i suoi 346 milioni di utenti, che potevano così comprare, vendere e detenere BTC."
             }
         }
     ],
@@ -1202,15 +1178,15 @@ btc_holidays = {
                 "description": "An diesem Tag im Jahr 2008 veröffentlichte Satoshi das Bitcoin-Whitepaper."
             },
             "es": {
-                "title": "Día del Libro Blanco de Bitcoin",
-                "description": "En este día de 2008, Satoshi publicó el libro blanco de Bitcoin."
+                "title": "Día del whitepaper de Bitcoin",
+                "description": "En este día de 2008, Satoshi publicó el whitepaper de Bitcoin."
             },
             "fr": {
-                "title": "Jour du Livre Blanc Bitcoin",
-                "description": "Ce jour-là en 2008, Satoshi a publié le livre blanc Bitcoin."
+                "title": "Journée du livre blanc de Bitcoin",
+                "description": "En ce jour de 2008, Satoshi a publié le livre blanc de Bitcoin."
             },
             "it": {
-                "title": "Giorno del Whitepaper di Bitcoin",
+                "title": "Giornata del whitepaper di Bitcoin",
                 "description": "In questo giorno del 2008, Satoshi ha pubblicato il whitepaper di Bitcoin."
             }
         }
@@ -1223,19 +1199,19 @@ btc_holidays = {
             },
             "de": {
                 "title": "Diffie-Hellman-Tag",
-                "description": "An diesem Tag im Jahr 1976 veröffentlichten Diffie und Hellman ihr Public/Private-Key-Papier."
+                "description": "An diesem Tag im Jahr 1976 veröffentlichten Diffie und Hellman ihre Arbeit über öffentliche und private Schlüssel."
             },
             "es": {
                 "title": "Día de Diffie-Hellman",
-                "description": "En este día de 1976, Diffie y Hellman publicaron su documento sobre claves públicas/privadas."
+                "description": "En este día de 1976, Diffie y Hellman publicaron su artículo sobre claves públicas y privadas."
             },
             "fr": {
-                "title": "Jour de Diffie-Hellman",
-                "description": "Ce jour-là en 1976, Diffie et Hellman ont publié leur article sur les clés publiques/privées."
+                "title": "Journée Diffie-Hellman",
+                "description": "En ce jour de 1976, Diffie et Hellman ont publié leur article sur les clés publiques et privées."
             },
             "it": {
-                "title": "Giorno di Diffie-Hellman",
-                "description": "In questo giorno del 1976, Diffie e Hellman hanno pubblicato il loro articolo sulle chiavi pubbliche/private."
+                "title": "Giornata di Diffie-Hellman",
+                "description": "In questo giorno del 1976, Diffie e Hellman hanno pubblicato il loro articolo sulle chiavi pubbliche e private."
             }
         }
     ],
@@ -1247,18 +1223,18 @@ btc_holidays = {
             },
             "de": {
                 "title": "Bitcoin-Logo-Tag",
-                "description": "An diesem Tag im Jahr 2010 wurde das ikonische Bitcoin-Logo von 'bitboy' auf Bitcointalk geteilt."
+                "description": "An diesem Tag im Jahr 2010 teilte 'bitboy' auf Bitcointalk das heute ikonische Bitcoin-Logo."
             },
             "es": {
-                "title": "Día del Logo de Bitcoin",
-                "description": "En este día de 2010, el icónico logo de Bitcoin fue compartido por 'bitboy' en Bitcointalk."
+                "title": "Día del logo de Bitcoin",
+                "description": "En este día de 2010, 'bitboy' compartió en Bitcointalk el icónico logo de Bitcoin."
             },
             "fr": {
-                "title": "Jour du Logo Bitcoin",
-                "description": "Ce jour-là en 2010, le logo emblématique de Bitcoin a été partagé par 'bitboy' sur Bitcointalk."
+                "title": "Journée du logo Bitcoin",
+                "description": "En ce jour de 2010, le logo emblématique de Bitcoin a été partagé par 'bitboy' sur Bitcointalk."
             },
             "it": {
-                "title": "Giorno del Logo Bitcoin",
+                "title": "Giornata del logo Bitcoin",
                 "description": "In questo giorno del 2010, l'iconico logo Bitcoin è stato condiviso da 'bitboy' su Bitcointalk."
             }
         }
@@ -1270,19 +1246,19 @@ btc_holidays = {
                 "description": "On this day in 2024, Bitcoin surged past $75K after the US presidential election, where Bitcoin-friendly policies became a major campaign issue."
             },
             "de": {
-                "title": "Bitcoin Wahltag",
-                "description": "An diesem Tag im Jahr 2024 stieg Bitcoin nach der US-Präsidentschaftswahl über 75.000 $, bei der Bitcoin-freundliche Politik ein zentrales Wahlkampfthema wurde."
+                "title": "Bitcoin-Wahltag",
+                "description": "An diesem Tag im Jahr 2024 stieg Bitcoin nach der US-Präsidentschaftswahl über 75.000 $. Bitcoin-freundliche Politik war ein zentrales Wahlkampfthema gewesen."
             },
             "es": {
-                "title": "Día de la Elección Bitcoin",
+                "title": "Día electoral de Bitcoin",
                 "description": "En este día de 2024, Bitcoin superó los $75K tras la elección presidencial de EE.UU., donde las políticas favorables a Bitcoin fueron un tema central de campaña."
             },
             "fr": {
-                "title": "Jour de l'Élection Bitcoin",
-                "description": "Ce jour-là en 2024, Bitcoin a dépassé 75K $ après l'élection présidentielle américaine, où les politiques pro-Bitcoin sont devenues un enjeu majeur de campagne."
+                "title": "Journée électorale Bitcoin",
+                "description": "En ce jour de 2024, Bitcoin a dépassé 75K $ après l'élection présidentielle américaine, où les politiques pro-Bitcoin sont devenues un enjeu majeur de campagne."
             },
             "it": {
-                "title": "Giorno dell'Elezione Bitcoin",
+                "title": "Giornata elettorale di Bitcoin",
                 "description": "In questo giorno del 2024, Bitcoin ha superato i $75K dopo le elezioni presidenziali USA, dove le politiche pro-Bitcoin sono diventate un tema centrale della campagna."
             }
         }
@@ -1295,18 +1271,18 @@ btc_holidays = {
             },
             "de": {
                 "title": "69K-Tag",
-                "description": "An diesem Tag im Jahr 2021 erreichte Bitcoin ein Allzeithoch von 69.044 $, ein Kursziel, das zu einem ikonischen Meme in der Community wurde."
+                "description": "An diesem Tag im Jahr 2021 erreichte Bitcoin ein Allzeithoch von 69.044 $, eine Marke, die in der Community zum Kult-Meme wurde."
             },
             "es": {
                 "title": "Día de los $69K",
                 "description": "En este día de 2021, Bitcoin alcanzó un máximo histórico de $69,044, un precio que se convirtió en un meme icónico en la comunidad."
             },
             "fr": {
-                "title": "Jour des 69K $",
-                "description": "Ce jour-là en 2021, Bitcoin a atteint un sommet historique de 69 044 $, un prix devenu un mème iconique dans la communauté."
+                "title": "Journée des 69K $",
+                "description": "En ce jour de 2021, Bitcoin a atteint un sommet historique de 69 044 $, un prix devenu un mème culte dans la communauté."
             },
             "it": {
-                "title": "Giorno dei $69K",
+                "title": "Giornata dei $69K",
                 "description": "In questo giorno del 2021, Bitcoin ha raggiunto un massimo storico di $69.044, un prezzo diventato un meme iconico nella comunità."
             }
         }
@@ -1322,15 +1298,15 @@ btc_holidays = {
                 "description": "An diesem Tag im Jahr 2014 prägte ein aufgeregter Reddit-Nutzer ein legendäres Meme."
             },
             "es": {
-                "title": "Día de ¡This is Gentlemen!",
+                "title": "Día de 'This is Gentlemen!'",
                 "description": "En este día de 2014, un usuario emocionado de Reddit acuñó un meme legendario."
             },
             "fr": {
-                "title": "Jour de This is Gentlemen!",
-                "description": "Ce jour-là en 2014, un utilisateur Reddit excité a créé un mème légendaire."
+                "title": "Journée du 'This is Gentlemen!'",
+                "description": "En ce jour de 2014, un utilisateur de Reddit surexcité a créé un mème légendaire."
             },
             "it": {
-                "title": "Giorno di This is Gentlemen!",
+                "title": "Giornata di 'This is Gentlemen!'",
                 "description": "In questo giorno del 2014, un utente entusiasta di Reddit ha coniato un meme leggendario."
             }
         },
@@ -1341,18 +1317,18 @@ btc_holidays = {
             },
             "de": {
                 "title": "Tag des FTX-Zusammenbruchs",
-                "description": "An diesem Tag im Jahr 2022 meldete die Krypto-Börse FTX Insolvenz an, nachdem Kundengelder missbraucht wurden. Eine Erinnerung: Not your keys, not your coins."
+                "description": "An diesem Tag im Jahr 2022 meldete die Krypto-Börse FTX Insolvenz an, nachdem Kundengelder zweckentfremdet worden waren. Eine Erinnerung: Not your keys, not your coins."
             },
             "es": {
-                "title": "Día del Colapso de FTX",
-                "description": "En este día de 2022, el exchange FTX se declaró en bancarrota tras el uso indebido de fondos de clientes. Un recordatorio: not your keys, not your coins."
+                "title": "Día del colapso de FTX",
+                "description": "En este día de 2022, el exchange FTX se declaró en quiebra tras el uso indebido de fondos de clientes. Un recordatorio: not your keys, not your coins."
             },
             "fr": {
-                "title": "Jour de l'Effondrement de FTX",
-                "description": "Ce jour-là en 2022, l'exchange FTX a déposé le bilan après le détournement de fonds clients. Un rappel : not your keys, not your coins."
+                "title": "Journée de l'effondrement de FTX",
+                "description": "En ce jour de 2022, la plateforme FTX a déposé le bilan après le détournement de fonds clients. Un rappel : not your keys, not your coins."
             },
             "it": {
-                "title": "Giorno del Crollo di FTX",
+                "title": "Giornata del crollo di FTX",
                 "description": "In questo giorno del 2022, l'exchange FTX ha dichiarato bancarotta dopo l'uso improprio dei fondi dei clienti. Un promemoria: not your keys, not your coins."
             }
         }
@@ -1365,19 +1341,19 @@ btc_holidays = {
             },
             "de": {
                 "title": "Taproot-Aktivierungstag",
-                "description": "An diesem Tag im Jahr 2021 wurde Bitcoins größtes Upgrade seit SegWit bei Block 709.632 aktiviert: Schnorr-Signaturen und verbesserte Smart Contracts."
+                "description": "An diesem Tag im Jahr 2021 wurde Bitcoins größtes Upgrade seit SegWit bei Block 709.632 aktiviert. Es brachte Schnorr-Signaturen und bessere Smart Contracts."
             },
             "es": {
-                "title": "Día de Activación de Taproot",
-                "description": "En este día de 2021, la mayor actualización de Bitcoin desde SegWit se activó en el bloque 709.632, con firmas Schnorr y smart contracts mejorados."
+                "title": "Día de la activación de Taproot",
+                "description": "En este día de 2021, la mayor actualización de Bitcoin desde SegWit se activó en el bloque 709,632, con firmas Schnorr y smart contracts mejorados."
             },
             "fr": {
-                "title": "Jour d'Activation de Taproot",
-                "description": "Ce jour-là en 2021, la plus grande mise à jour Bitcoin depuis SegWit s'est activée au bloc 709 632, avec les signatures Schnorr et des smart contracts améliorés."
+                "title": "Journée de l'activation de Taproot",
+                "description": "En ce jour de 2021, la plus grande mise à jour de Bitcoin depuis SegWit s'est activée au bloc 709 632, avec les signatures Schnorr et des smart contracts améliorés."
             },
             "it": {
-                "title": "Giorno dell'Attivazione di Taproot",
-                "description": "In questo giorno del 2021, il più grande aggiornamento Bitcoin da SegWit si è attivato al blocco 709.632, con firme Schnorr e smart contract migliorati."
+                "title": "Giornata dell'attivazione di Taproot",
+                "description": "In questo giorno del 2021, il più importante aggiornamento di Bitcoin da SegWit si è attivato al blocco 709.632, con firme Schnorr e smart contract migliorati."
             }
         }
     ],
@@ -1389,18 +1365,18 @@ btc_holidays = {
             },
             "de": {
                 "title": "Tag des S2X-Scheiterns",
-                "description": "An diesem Tag im Jahr 2017 scheiterte der SegWit2X-Hard-Fork-Versuch, als ein kritischer Bug die S2X-Chain daran hinderte, Blöcke zu erzeugen."
+                "description": "An diesem Tag im Jahr 2017 scheiterte der SegWit2X-Hard-Fork, weil ein kritischer Bug verhinderte, dass die S2X-Chain überhaupt Blöcke erzeugte."
             },
             "es": {
-                "title": "Día del Fracaso de S2X",
+                "title": "Día del fracaso de S2X",
                 "description": "En este día de 2017, el intento de hard fork SegWit2X fracasó cuando un bug crítico impidió que la cadena S2X produjera bloques."
             },
             "fr": {
-                "title": "Jour de l'Échec S2X",
-                "description": "Ce jour-là en 2017, la tentative de hard fork SegWit2X a échoué lorsqu'un bug critique a empêché la chaîne S2X de produire des blocs."
+                "title": "Journée de l'échec de S2X",
+                "description": "En ce jour de 2017, la tentative de hard fork SegWit2X a échoué lorsqu'un bug critique a empêché la chaîne S2X de produire le moindre bloc."
             },
             "it": {
-                "title": "Giorno del Fallimento di S2X",
+                "title": "Giornata del fallimento di S2X",
                 "description": "In questo giorno del 2017, il tentativo di hard fork SegWit2X è fallito quando un bug critico ha impedito alla catena S2X di produrre blocchi."
             }
         }
@@ -1417,15 +1393,15 @@ btc_holidays = {
             },
             "es": {
                 "title": "Día del Bitcoin a $1,000",
-                "description": "En este día de 2013, Bitcoin cruzó la marca de los $1,000 por primera vez, un momento histórico para la joven criptomoneda."
+                "description": "En este día de 2013, Bitcoin superó por primera vez la barrera de los $1,000, un momento histórico para la todavía joven criptomoneda."
             },
             "fr": {
-                "title": "Jour du Bitcoin à 1 000 $",
-                "description": "Ce jour-là en 2013, Bitcoin a franchi pour la première fois la barre des 1 000 $, un moment historique pour la jeune cryptomonnaie."
+                "title": "Journée du Bitcoin à 1 000 $",
+                "description": "En ce jour de 2013, Bitcoin a franchi pour la première fois la barre des 1 000 $, un moment historique pour une cryptomonnaie encore jeune."
             },
             "it": {
-                "title": "Giorno del Bitcoin a $1.000",
-                "description": "In questo giorno del 2013, Bitcoin ha superato per la prima volta la soglia dei $1.000, un momento storico per la giovane criptovaluta."
+                "title": "Giornata del Bitcoin a $1.000",
+                "description": "In questo giorno del 2013, Bitcoin ha superato per la prima volta la soglia dei $1.000, un momento storico per una criptovaluta ancora giovane."
             }
         }
     ],
@@ -1437,18 +1413,18 @@ btc_holidays = {
             },
             "de": {
                 "title": "Halving-#1-Tag",
-                "description": "An diesem Tag im Jahr 2012 reduzierte das erste 'Halving' die Belohnung von 50 BTC auf 25 BTC."
+                "description": "An diesem Tag im Jahr 2012 senkte das erste 'Halving' die Blocksubvention von 50 BTC auf 25 BTC."
             },
             "es": {
                 "title": "Día del Halving #1",
                 "description": "En este día de 2012, el primer 'Halving' redujo el subsidio de 50 BTC a 25 BTC."
             },
             "fr": {
-                "title": "Jour du Halving #1",
-                "description": "Ce jour-là en 2012, le premier 'Halving' a réduit la subvention de 50 BTC à 25 BTC."
+                "title": "Journée du Halving #1",
+                "description": "En ce jour de 2012, le premier 'Halving' a réduit la subvention de 50 BTC à 25 BTC."
             },
             "it": {
-                "title": "Giorno dell'Halving #1",
+                "title": "Giornata dell'Halving #1",
                 "description": "In questo giorno del 2012, il primo 'Halving' ha ridotto il sussidio da 50 BTC a 25 BTC."
             }
         }
@@ -1464,15 +1440,15 @@ btc_holidays = {
                 "description": "An diesem Tag im Jahr 2024 erreichte BTC 100.000 USD."
             },
             "es": {
-                "title": "Día de los 'Cien Mil'",
+                "title": "Día de los 'cien mil'",
                 "description": "En este día de 2024, BTC alcanzó los 100,000 USD."
             },
             "fr": {
-                "title": "Jour des 'Cent Mille'",
-                "description": "Ce jour-là en 2024, BTC a atteint 100 000 USD."
+                "title": "Journée des 'cent mille'",
+                "description": "En ce jour de 2024, le BTC a atteint 100 000 USD."
             },
             "it": {
-                "title": "Giorno dei 'Centomila'",
+                "title": "Giornata dei 'centomila'",
                 "description": "In questo giorno del 2024, BTC ha raggiunto i 100.000 USD."
             }
         }
@@ -1484,19 +1460,19 @@ btc_holidays = {
                 "description": "On this day in 2014, Microsoft began accepting Bitcoin for Xbox games, apps and Windows software, one of the first major corporations to do so."
             },
             "de": {
-                "title": "Tag der Microsoft-Bitcoin-Akzeptanz",
-                "description": "An diesem Tag im Jahr 2014 begann Microsoft, Bitcoin für Xbox-Spiele, Apps und Windows-Software zu akzeptieren, als eines der ersten großen Unternehmen."
+                "title": "Microsoft-Bitcoin-Tag",
+                "description": "An diesem Tag im Jahr 2014 akzeptierte Microsoft erstmals Bitcoin für Xbox-Spiele, Apps und Windows-Software, als einer der ersten Großkonzerne überhaupt."
             },
             "es": {
                 "title": "Día de Microsoft y Bitcoin",
                 "description": "En este día de 2014, Microsoft comenzó a aceptar Bitcoin para juegos de Xbox, apps y software de Windows, una de las primeras grandes corporaciones en hacerlo."
             },
             "fr": {
-                "title": "Jour Microsoft Bitcoin",
-                "description": "Ce jour-là en 2014, Microsoft a commencé à accepter le Bitcoin pour les jeux Xbox, les apps et les logiciels Windows, l'une des premières grandes entreprises à le faire."
+                "title": "Journée Microsoft Bitcoin",
+                "description": "En ce jour de 2014, Microsoft a commencé à accepter le Bitcoin pour les jeux Xbox, les apps et les logiciels Windows, l'une des premières grandes entreprises à le faire."
             },
             "it": {
-                "title": "Giorno di Microsoft e Bitcoin",
+                "title": "Giornata di Microsoft e Bitcoin",
                 "description": "In questo giorno del 2014, Microsoft ha iniziato ad accettare Bitcoin per giochi Xbox, app e software Windows, una delle prime grandi aziende a farlo."
             }
         }
@@ -1508,20 +1484,20 @@ btc_holidays = {
                 "description": "On this day in 2010, Satoshi made his final public post on Bitcointalk."
             },
             "de": {
-                "title": "Auf-Wiedersehen-Satoshi-Tag",
-                "description": "An diesem Tag im Jahr 2010 machte Satoshi seinen letzten öffentlichen Beitrag auf Bitcointalk."
+                "title": "Tag des Abschieds von Satoshi",
+                "description": "An diesem Tag im Jahr 2010 verfasste Satoshi seinen letzten öffentlichen Beitrag auf Bitcointalk."
             },
             "es": {
-                "title": "Día de Adiós Satoshi",
-                "description": "En este día de 2010, Satoshi hizo su última publicación pública en Bitcointalk."
+                "title": "Día del adiós a Satoshi",
+                "description": "En este día de 2010, Satoshi publicó su último mensaje público en Bitcointalk."
             },
             "fr": {
-                "title": "Jour d'Adieu Satoshi",
-                "description": "Ce jour-là en 2010, Satoshi a fait son dernier post public sur Bitcointalk."
+                "title": "Journée de l'adieu à Satoshi",
+                "description": "En ce jour de 2010, Satoshi a publié son dernier message public sur Bitcointalk."
             },
             "it": {
-                "title": "Giorno dell'Addio a Satoshi",
-                "description": "In questo giorno del 2010, Satoshi ha fatto il suo ultimo post pubblico su Bitcointalk."
+                "title": "Giornata dell'addio a Satoshi",
+                "description": "In questo giorno del 2010, Satoshi ha scritto il suo ultimo post pubblico su Bitcointalk."
             }
         }
     ],
@@ -1537,14 +1513,14 @@ btc_holidays = {
             },
             "es": {
                 "title": "Día de los $20K",
-                "description": "En este día de 2017, Bitcoin alcanzó los $20,000 por primera vez durante la histórica racha alcista de 2017, captando la atención mundial."
+                "description": "En este día de 2017, Bitcoin alcanzó los $20,000 por primera vez durante el histórico mercado alcista de 2017, captando la atención mundial."
             },
             "fr": {
-                "title": "Jour des 20K $",
-                "description": "Ce jour-là en 2017, Bitcoin a atteint 20 000 $ pour la première fois lors du bull run historique de 2017, captant l'attention mondiale."
+                "title": "Journée des 20K $",
+                "description": "En ce jour de 2017, Bitcoin a atteint 20 000 $ pour la première fois lors du bull run historique de 2017, captant l'attention mondiale."
             },
             "it": {
-                "title": "Giorno dei $20K",
+                "title": "Giornata dei $20K",
                 "description": "In questo giorno del 2017, Bitcoin ha raggiunto i $20.000 per la prima volta durante lo storico bull run del 2017, catturando l'attenzione mondiale."
             }
         }
@@ -1557,18 +1533,18 @@ btc_holidays = {
             },
             "de": {
                 "title": "HODL-Tag",
-                "description": "An diesem Tag im Jahr 2013 wurde der legendäre 'I AM HODLING' Beitrag verfasst."
+                "description": "An diesem Tag im Jahr 2013 erschien der legendäre Beitrag 'I AM HODLING'."
             },
             "es": {
-                "title": "Día HODL",
-                "description": "En este día de 2013, se hizo la legendaria publicación 'I AM HODLING'."
+                "title": "Día del HODL",
+                "description": "En este día de 2013, se publicó el legendario mensaje 'I AM HODLING'."
             },
             "fr": {
-                "title": "Jour HODL",
-                "description": "Ce jour-là en 2013, le légendaire post 'I AM HODLING' a été publié."
+                "title": "Journée HODL",
+                "description": "En ce jour de 2013, le post légendaire 'I AM HODLING' a été publié."
             },
             "it": {
-                "title": "Giorno HODL",
+                "title": "Giornata HODL",
                 "description": "In questo giorno del 2013, è stato pubblicato il leggendario post 'I AM HODLING'."
             }
         }
