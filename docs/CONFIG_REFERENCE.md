@@ -512,8 +512,8 @@ the latest older post is shown there as a preview only.
 | :--- | :--- | :--- | :--- | :--- |
 | **Show Memes** (Meme Management toggle) | `memes_enabled` | Switch | Use the meme library; with Nostr on, as the fallback | `true` (default), `false` |
 | **Show Nostr Posts** (section toggle) | `nostr_enabled` | Switch | Show live posts from the followed accounts | `true`, `false` (default) |
-| **Skip Sensitive Posts** | `nostr_skip_sensitive` | Switch | Leave out posts with a content warning or a hashtag such as `#nsfw` | `true` (default), `false` |
-| **Posts per Account** | `nostr_max_per_account` | Select | Current posts kept per account, newest first; `0` for no limit | `1`, `2`, `3` (default), `5`, `10`, `0` |
+| **Skip Sensitive Posts** (Advanced) | `nostr_skip_sensitive` | Switch | Leave out posts with a content warning or a hashtag such as `#nsfw` | `true` (default), `false` |
+| **Posts per Account** (Advanced) | `nostr_max_per_account` | Select | Current posts kept per account, newest first; `0` for no limit | `1`, `2`, `3` (default), `5`, `10`, `0` |
 | **Followed Accounts** | `nostr_accounts` | List | Accounts to fetch from. Accepts npub, nprofile or hex; stored as npub | `[{"npub": "npub1…"}]` |
 | **Post Card Style** | `nostr_card_theme` | Toggle | Look of the post card on the display | `light` (default), `dark` |
 | **Show Posts For** (Advanced) | `nostr_pool_minutes` | Slider | How long after publication a post counts as current | `10` to `10080` minutes, `60` (default) |

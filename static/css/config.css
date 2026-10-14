@@ -1129,12 +1129,14 @@ body.dark-mode .table-delete-icon {
     background-color: var(--accent) !important;
 }
 
-.bitaxe-open-link:hover {
+.bitaxe-open-link:hover,
+.nostr-open-link:hover {
     background: var(--bg-card-hover);
     border-radius: 4px;
 }
 
-.bitaxe-open-link:hover .themed-mask-icon {
+.bitaxe-open-link:hover .themed-mask-icon,
+.nostr-open-link:hover .themed-mask-icon {
     background-color: var(--accent) !important;
 }
 

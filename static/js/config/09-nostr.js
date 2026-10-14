@@ -224,6 +224,35 @@ function _createNostrImportForm(toggleButton, list, onChange) {
 // Copies the npub, to reuse or share it. Falls back to
 // execCommand because navigator.clipboard only exists in secure contexts, and
 // the device is usually reached over plain HTTP on the LAN.
+// The account's profile on Primal, in a new tab - like the link to a Bitaxe
+// miner's own page. The address is read when the link is used, so it follows
+// whatever the field holds by then, typed or canonicalised.
+function _createNostrProfileLink(input) {
+    const link = document.createElement('a');
+    link.className = 'nostr-open-link';
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.title = _nt('nostr_open_profile', 'Open profile on Primal');
+    link.style.cssText = 'border:1px solid var(--border-subtle); border-radius:6px; padding:0 10px; display:inline-flex; align-items:center; flex:none; align-self:stretch;';
+    link.appendChild(_createMaskIcon('/static/icons/open.svg', 16));
+    const sync = () => {
+        const key = input.value.trim();
+        if (key) {
+            link.href = 'https://primal.net/p/' + encodeURIComponent(key);
+            link.style.opacity = '1';
+            link.style.pointerEvents = 'auto';
+        } else {
+            link.removeAttribute('href');
+            link.style.opacity = '0.3';
+            link.style.pointerEvents = 'none';
+        }
+    };
+    input.addEventListener('input', sync);
+    ['mouseenter', 'focus', 'pointerdown'].forEach(ev => link.addEventListener(ev, sync));
+    sync();
+    return link;
+}
+
 function _createNostrCopyButton(input) {
     const btn = document.createElement('button');
     btn.type = 'button';
@@ -312,7 +341,7 @@ function _createNostrAccountRow(entry, onChange, profile, deferred) {
 
     // In the input line rather than the row: centred on the whole row it sat
     // halfway up the name line, out of line with the copy button.
-    inputs.append(npubInput, _createNostrCopyButton(npubInput), removeButton);
+    inputs.append(npubInput, _createNostrCopyButton(npubInput), _createNostrProfileLink(npubInput), removeButton);
     row.append(avatar, middle);
 
     // As tall as the name line and the npub field together, whatever the

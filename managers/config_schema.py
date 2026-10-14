@@ -772,7 +772,7 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
         "nostr_enabled": {
             "type": "boolean",
             "label": t.get("nostr_enabled", "Show Nostr Posts"),
-            "description": t.get("nostr_enabled_desc", "Show image posts from the accounts below as a post card, live: anything published within the time window set under Advanced (1 hour by default), newest first, each again only after two other images. When nobody posted, a meme is shown."),
+            "description": t.get("nostr_enabled_desc", "Image posts of the accounts below as post cards, newest first. Memes fill in when nobody posted."),
             "default": False,
             "category": "nostr",
             "order": 0
@@ -780,7 +780,7 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
         "nostr_accounts": {
             "type": "nostr_accounts",
             "label": t.get("nostr_accounts", "Followed Accounts"),
-            "description": t.get("nostr_accounts_desc", "Paste an npub. Name and picture are looked up from the account's profile."),
+            "description": t.get("nostr_accounts_desc", "Add accounts by npub, or import the accounts an npub follows."),
             "default": [],
             "category": "nostr",
             "order": 1
@@ -788,15 +788,16 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
         "nostr_skip_sensitive": {
             "type": "boolean",
             "label": t.get("nostr_skip_sensitive", "Skip Sensitive Posts"),
-            "description": t.get("nostr_skip_sensitive_desc", "Leave out posts their author marked with a content warning, or tagged #nsfw and the like."),
+            "description": t.get("nostr_skip_sensitive_desc", "Leave out posts marked with a content warning or #nsfw."),
             "default": True,
             "category": "nostr",
-            "order": 1.5
+            "advanced": True,
+            "order": 8.2
         },
         "nostr_max_per_account": {
             "type": "select",
             "label": t.get("nostr_max_per_account", "Posts per Account"),
-            "description": t.get("nostr_max_per_account_desc", "At most this many current posts of one account take turns, its newest. Keeps one busy account from filling the display."),
+            "description": t.get("nostr_max_per_account_desc", "How many of an account's newest posts take turns."),
             "default": 3,
             "options": [
                 {"value": 1, "label": "1"},
@@ -807,12 +808,13 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
                 {"value": 0, "label": t.get("nostr_per_account_unlimited", "No limit"), "_lk": "nostr_per_account_unlimited"},
             ],
             "category": "nostr",
-            "order": 1.6
+            "advanced": True,
+            "order": 8.1
         },
         "nostr_card_theme": {
             "type": "toggle",
             "label": t.get("nostr_card_theme", "Post Card Style"),
-            "description": t.get("nostr_card_theme_desc", "How a post looks on the display: light or dark, like a screenshot from a Nostr app."),
+            "description": t.get("nostr_card_theme_desc", "Light or dark, like a screenshot from a Nostr app."),
             "options": [
                 {"value": "light", "label": t.get("theme_light", "Light"), "_lk": "theme_light", "icon": "/static/icons/light.svg"},
                 {"value": "dark",  "label": t.get("theme_dark",  "Dark"),  "_lk": "theme_dark",  "icon": "/static/icons/dark.svg"},
@@ -830,7 +832,7 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
         "nostr_pool_minutes": {
             "type": "duration_slider",
             "label": t.get("nostr_pool_minutes", "Show Posts For"),
-            "description": t.get("nostr_pool_minutes_desc", "How long after it was published a post counts as current and takes part in the rotation. Short keeps the display live, long shows posts of quiet accounts for longer."),
+            "description": t.get("nostr_pool_minutes_desc", "How long after publishing a post stays in rotation."),
             "default": 60,
             "min": 10,
             "max": 10080,
@@ -841,12 +843,12 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
                       1440, 2880, 4320, 5760, 7200, 8640, 10080],
             "category": "nostr",
             "advanced": True,
-            "order": 9
+            "order": 8
         },
         "nostr_relays": {
             "type": "tags",
             "label": t.get("nostr_relays", "Relays"),
-            "description": t.get("nostr_relays_desc", "Relays to ask for posts and profiles (wss://...). Leave empty for the defaults: relay.damus.io, nos.lol, relay.primal.net, relay.snort.social."),
+            "description": t.get("nostr_relays_desc", "Relays for posts and profiles. Empty uses the defaults."),
             "placeholder": "wss://relay.example.com",
             "default": [],
             "category": "nostr",
@@ -856,16 +858,16 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
         "nostr_live": {
             "type": "boolean",
             "label": t.get("nostr_live", "Live Updates"),
-            "description": t.get("nostr_live_desc", "Keep a connection to the relays open, so new posts arrive within seconds. Saves the network load of asking every 5 minutes; off falls back to that."),
+            "description": t.get("nostr_live_desc", "Relays push new posts within seconds; off checks every 5 minutes."),
             "default": True,
             "category": "nostr",
             "advanced": True,
-            "order": 8
+            "order": 8.5
         },
         "nostr_use_tor": {
             "type": "boolean",
             "label": t.get("nostr_use_tor", "Fetch via Tor"),
-            "description": t.get("nostr_use_tor_desc", "Route relay connections and image downloads through Tor, so relays and image hosts do not learn which accounts this device follows. Some image hosts refuse Tor; turn off if many downloads fail."),
+            "description": t.get("nostr_use_tor_desc", "Hides from relays and image hosts which accounts this device follows. Some image hosts block Tor."),
             "default": True,
             "category": "nostr",
             "advanced": True,
