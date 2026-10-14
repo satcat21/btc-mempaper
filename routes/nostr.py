@@ -98,6 +98,34 @@ def register(self):
         except Exception as e:
             return jsonify({'success': False, 'message': _safe_error(e)}), 500
 
+    @self.app.route('/api/nostr-profiles', methods=['POST'])
+    @require_auth(self.auth_manager)
+    def get_nostr_profiles():
+        """Names, avatars and pool counts of the whole account list at once.
+
+        One request instead of one per row: with hundreds of accounts the
+        browser queued them, and slow lookups held up the newest rows for
+        good. Answered from what is stored; missing names are looked up in the
+        background, and 'pending' tells the page to ask again shortly.
+        """
+        data = request.get_json(silent=True) or {}
+        keys = data.get('keys')
+        if not isinstance(keys, list) or not all(isinstance(k, str) for k in keys):
+            return jsonify({'success': False, 'message': 'keys must be a list of npubs'}), 400
+        try:
+            store = nostr_images.get_store()
+            by_key = {k: nostr_images.parse_pubkey(k) for k in keys[:2000]}
+            pubkeys = list(dict.fromkeys(pk for pk in by_key.values() if pk))
+            found, pending = store.profiles_for(pubkeys, self.config)
+            counts = store.overview()['counts']
+            results = {}
+            for key, pk in by_key.items():
+                if pk:
+                    results[key] = {**found[pk], 'pubkey': pk, 'count': counts.get(pk, 0)}
+            return jsonify({'success': True, 'profiles': results, 'pending': pending})
+        except Exception as e:
+            return jsonify({'success': False, 'message': _safe_error(e)}), 500
+
     @self.app.route('/api/nostr-follows', methods=['GET'])
     @require_auth(self.auth_manager)
     def get_nostr_follows():

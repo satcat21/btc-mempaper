@@ -80,7 +80,8 @@ function createNostrAccountsInput(values, field) {
     container.appendChild(list);
 
     const changed = () => container.dispatchEvent(new Event('change', { bubbles: true }));
-    values.forEach(entry => list.appendChild(_createNostrAccountRow(entry, changed)));
+    values.forEach(entry => list.appendChild(_createNostrAccountRow(entry, changed, null, true)));
+    setTimeout(() => _nostrResolveAll(list), 0);
 
     const addButton = document.createElement('button');
     addButton.type = 'button';
@@ -114,16 +115,51 @@ function createNostrAccountsInput(values, field) {
         set: (newValues) => {
             list.innerHTML = '';
             (Array.isArray(newValues) ? newValues : [])
-                .forEach(entry => list.appendChild(_createNostrAccountRow(entry, changed)));
+                .forEach(entry => list.appendChild(_createNostrAccountRow(entry, changed, null, true)));
+            _nostrResolveAll(list);
         }
     });
 
     // Lets the pool refresh the per-account counts after a fetch.
-    container.refreshProfiles = () => list.querySelectorAll('.nostr-account-row')
-        .forEach(row => row._resolve && row._resolve());
+    container.refreshProfiles = () => _nostrResolveAll(list);
     window._nostrAccountsInput = container;
 
     return container;
+}
+
+// Names and avatars of every row in one request. Stored profiles come back
+// at once; while the server is still looking up missing ones it says so, and
+// this asks again a few seconds later, for about a minute.
+let _nostrResolveTimer = null;
+async function _nostrResolveAll(list, round = 0) {
+    clearTimeout(_nostrResolveTimer);
+    const rows = Array.from(list.querySelectorAll('.nostr-account-row'))
+        .filter(row => row.querySelector('.nostr-npub-input')?.value.trim());
+    if (!rows.length) return;
+    const keys = rows.map(row => row.querySelector('.nostr-npub-input').value.trim());
+    try {
+        const resp = await fetch('/api/nostr-profiles', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ keys }),
+        });
+        const data = await resp.json();
+        if (!data.success) throw new Error(data.message || resp.status);
+        rows.forEach((row, i) => {
+            const profile = data.profiles[keys[i]];
+            if (!profile) {
+                row._resolve?.();          // not a valid key: let the row say so
+                return;
+            }
+            row._apply(profile);
+            if (data.pending && !profile.name) row._looking();
+        });
+        if (data.pending && round < 15) {
+            _nostrResolveTimer = setTimeout(() => _nostrResolveAll(list, round + 1), 4000);
+        }
+    } catch (err) {
+        console.error('Nostr profile lookup failed:', err);
+    }
 }
 
 // Inline form behind "Import follows": takes an npub, adds every account its
@@ -224,8 +260,9 @@ function _createNostrCopyButton(input) {
 }
 
 // profile: a profile already known (from an import), shown without asking
-// the server again.
-function _createNostrAccountRow(entry, onChange, profile) {
+// the server again. deferred: the list resolves it with all the others in
+// one request (_nostrResolveAll).
+function _createNostrAccountRow(entry, onChange, profile, deferred) {
     const row = document.createElement('div');
     row.className = 'nostr-account-row';
     row.style.cssText = 'display:flex; align-items:center; gap:10px; padding:8px; border:1px solid var(--border-subtle); border-radius:8px;';
@@ -301,6 +338,7 @@ function _createNostrAccountRow(entry, onChange, profile) {
         nameEl.textContent = data.name
             || (data.npub ? data.npub.slice(0, 12) + '…' + data.npub.slice(-6) : _nt('nostr_no_profile', 'No profile found'));
         nameEl.style.color = data.name ? '' : 'var(--text-secondary)';
+        nameEl.dataset.named = data.name ? '1' : '';
         if (data.avatar) {
             avatar.src = `/api/nostr-avatar/${data.pubkey}`;
             avatar.style.visibility = 'visible';
@@ -350,8 +388,16 @@ function _createNostrAccountRow(entry, onChange, profile) {
         clearTimeout(debounce);
         debounce = setTimeout(row._resolve, 700);
     });
+    row._apply = applyProfile;
+    row._looking = () => {
+        if (nameEl.dataset.named !== '1') {
+            nameEl.textContent = _nt('nostr_looking_up', 'Looking up…');
+            nameEl.style.color = 'var(--text-secondary)';
+        }
+    };
     if (profile) applyProfile(profile);
-    else if (entry.npub) row._resolve();
+    else if (entry.npub && !deferred) row._resolve();
+    else if (entry.npub) row._looking();
 
     return row;
 }

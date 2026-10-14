@@ -68,8 +68,17 @@ _MAX_OUTBOX_RELAYS = 8
 # Further attempts, each through another Tor exit, for a relay that refuses
 # or drops the connection.
 _EXIT_RETRIES = 2
-# An account with no profile found is asked about again after this long.
-_NO_PROFILE_RETRY = 3600
+# An account without a name found is looked up again after this long by the
+# background lookup, and after _TYPED_RETRY when its npub is typed in. Over Tor
+# a lookup fails often enough that an hour of waiting read as "broken".
+_NO_PROFILE_RETRY = 10 * 60
+_TYPED_RETRY = 2 * 60
+# Accounts per background lookup round, and avatars fetched with it.
+_LOOKUP_BATCH = 300
+_LOOKUP_AVATARS = 30
+# A profile looked up this recently survives the clean-up of accounts not in
+# the saved list: it is most likely one being added right now.
+_KEEP_UNSAVED_PROFILE = 24 * 3600
 
 # Often enough that a post reaches the panel while it is still news; a relay
 # query asking only for what is new since the last one is cheap.
@@ -862,6 +871,11 @@ class NostrPostStore:
         # One image download at a time: a Pi Zero gains nothing from running
         # them side by side, and two picks of one post must not fetch it twice.
         self._image_lock = threading.Lock()
+        # profiles.json is rewritten by the fetch, the follow import and the
+        # lookups of the settings page; each re-reads and writes it under
+        # this lock, so none overwrites what another just found.
+        self._state_lock = threading.RLock()
+        self._lookup_running = False
         self._prefetching = False
         # Recent picks, so one made for a pre-render that a newer post then
         # replaced can be taken back: path -> (key, shown, last_tick) before.
@@ -1262,26 +1276,17 @@ class NostrPostStore:
 
         # Profiles, for the name and avatar on each card. Not every run: they
         # rarely change, and a new account is looked up straight away anyway.
-        state = _load_json(_STATE_PATH, {})
-        profiles = state.setdefault('profiles', {})
+        profiles = self._profiles()
         if (now - self._profiles_fetched > _PROFILE_REFRESH_SECONDS
                 or any(pk not in profiles for pk in pubkeys)):
-            lookup = _profile_relays(config)
-            events, errors = query_relays(lookup, _profile_filters(pubkeys), config)
+            # Avatars newest-added first: the account list grows at its end.
+            profiles, errors = self._lookup_profiles(pubkeys, config, _AVATARS_PER_RUN,
+                                                     avatar_order=list(reversed(pubkeys)))
             self._add_errors(e for e in errors if e['source'] not in INDEXER_RELAYS)
-            if len(errors) == len(lookup):
+            if len(errors) == len(_profile_relays(config)):
                 self.status['message'] = 'No relay could be reached'
                 log('⚠️ Nostr: no relay could be reached')
                 return
-            before = json.dumps(profiles, sort_keys=True)
-            self._apply_profiles(events, set(pubkeys), profiles, config, avatars=False)
-            self._names_from_own_relays(pubkeys, profiles, config)
-            for pk in pubkeys:
-                profiles.setdefault(pk, {'name': '', 'picture': '', 'updated': 0})['checked'] = now
-            self._fill_avatars(pubkeys, profiles, config, _AVATARS_PER_RUN)
-            if json.dumps(profiles, sort_keys=True) != before:
-                os.makedirs(NOSTR_DIR, exist_ok=True)
-                atomic_write_json(_STATE_PATH, state, ensure_ascii=False)
             self._profiles_fetched = now
 
         # Posts since the last run, never older than the window. While the
@@ -1430,16 +1435,21 @@ class NostrPostStore:
         for pk in list(self._cursors):
             if pk not in followed:
                 del self._cursors[pk]
-        state = _load_json(_STATE_PATH, {})
-        profiles = state.get('profiles', {})
-        gone = [pk for pk in profiles if pk not in followed]
-        if gone:
-            for pk in gone:
-                del profiles[pk]
-            atomic_write_json(_STATE_PATH, state, ensure_ascii=False)
+        now = time.time()
+        keep = set(followed)
+
+        def prune(profiles):
+            for pk in list(profiles):
+                if pk in followed:
+                    continue
+                if now - profiles[pk].get('checked', 0) < _KEEP_UNSAVED_PROFILE:
+                    keep.add(pk)        # being added in the settings, probably
+                else:
+                    del profiles[pk]
+        self._merge_profiles(prune)
         if os.path.isdir(AVATAR_DIR):
             for name in os.listdir(AVATAR_DIR):
-                if os.path.splitext(name)[0] not in followed:
+                if os.path.splitext(name)[0] not in keep:
                     try:
                         os.remove(os.path.join(AVATAR_DIR, name))
                     except OSError:
@@ -1564,19 +1574,7 @@ class NostrPostStore:
         profiles = self._profiles()
         missing = [pk for pk in follows if pk not in profiles]
         if missing:
-            events, _ = query_relays(relays, _profile_filters(missing), config)
-            with self.lock:
-                state = _load_json(_STATE_PATH, {})
-                profiles = state.setdefault('profiles', {})
-                self._apply_profiles(events, set(missing), profiles, config, avatars=False)
-                self._names_from_own_relays(missing, profiles, config)
-                # Remembered even without a profile, so the page does not ask
-                # the relays once per row for accounts that have none.
-                now = int(time.time())
-                for pk in missing:
-                    profiles.setdefault(pk, {'name': '', 'picture': '', 'updated': 0})['checked'] = now
-                os.makedirs(NOSTR_DIR, exist_ok=True)
-                atomic_write_json(_STATE_PATH, state, ensure_ascii=False)
+            profiles, _ = self._lookup_profiles(missing, config, 0)
         return [{'pubkey': pk, 'npub': npub(pk), 'name': profiles.get(pk, {}).get('name', ''),
                  'avatar': bool(self._avatar_path(pk))} for pk in follows], None
 
@@ -1611,29 +1609,141 @@ class NostrPostStore:
         For the settings page, which shows who an npub is as soon as it is
         typed in. Returns {'name', 'npub', 'avatar'}; avatar is a bool.
         """
-        profiles = self._profiles()
-        known = profiles.get(pubkey)
-        now = int(time.time())
-        if known is None or (not known.get('name')
-                             and now - known.get('checked', 0) > _NO_PROFILE_RETRY):
-            events, _ = query_relays(_profile_relays(config),
-                                     [{'kinds': [0, 10002], 'authors': [pubkey], 'limit': 5}], config)
-            with self.lock:
-                state = _load_json(_STATE_PATH, {})
-                profiles = state.setdefault('profiles', {})
-                self._apply_profiles(events, {pubkey}, profiles, config)
-                if not profiles.get(pubkey, {}).get('name'):
-                    self._names_from_own_relays([pubkey], profiles, config)
-                    if profiles.get(pubkey, {}).get('name') and not self._avatar_path(pubkey):
-                        self._save_avatar(pubkey, profiles[pubkey].get('picture'), config)
-                # Recorded either way: a key with no profile anywhere is not
-                # looked up again on every page load.
-                profiles.setdefault(pubkey, {'name': '', 'picture': '', 'updated': 0})['checked'] = now
-                os.makedirs(NOSTR_DIR, exist_ok=True)
-                atomic_write_json(_STATE_PATH, state, ensure_ascii=False)
-        p = profiles.get(pubkey, {})
+        known = self._profiles().get(pubkey)
+        if (known is None
+                or (not known.get('name') and time.time() - known.get('checked', 0) > _TYPED_RETRY)
+                or (known.get('picture') and not self._avatar_path(pubkey))):
+            self._lookup_profiles([pubkey], config, 1)
+        p = self._profiles().get(pubkey, {})
         return {'name': p.get('name', ''), 'npub': npub(pubkey),
                 'avatar': bool(self._avatar_path(pubkey))}
+
+    def profiles_for(self, pubkeys, config):
+        """Name and avatar of many accounts at once, from what is stored.
+
+        For the account list: answered straight away, without asking a relay.
+        Accounts still without a name, or without the avatar their profile
+        names, are looked up in one background round; the page asks again a
+        little later. Returns (results by pubkey, whether a lookup runs).
+        """
+        profiles = self._profiles()
+        now = time.time()
+        avatars = {pk: bool(self._avatar_path(pk)) for pk in pubkeys}
+        # Profiles to ask the relays for: accounts never looked up - the ones
+        # just added - first, then those still without a name whose last try
+        # is a while ago.
+        new = [pk for pk in pubkeys if pk not in profiles]
+        nameless = [pk for pk in pubkeys if pk in profiles and not profiles[pk].get('name')
+                    and now - profiles[pk].get('checked', 0) > _NO_PROFILE_RETRY]
+        # New accounts get a round of their own: bundled with hundreds of
+        # nameless ones, the account just typed in waited for all of them.
+        lookup = (new or nameless)[:_LOOKUP_BATCH]
+        # Avatars a known profile names but that are not stored yet: fetched on
+        # their own, a few at a time, and without holding the page in
+        # "looking up" - otherwise every reload of a long list started another
+        # round for the same hundreds of accounts.
+        missing_avatars = [pk for pk in reversed(pubkeys)
+                           if profiles.get(pk, {}).get('picture') and not avatars[pk]]
+        results = {pk: {'name': profiles.get(pk, {}).get('name', ''), 'npub': npub(pk),
+                        'avatar': avatars[pk]} for pk in pubkeys}
+        if lookup:
+            self._start_lookup(lookup, config)
+        elif missing_avatars:
+            self._start_avatar_fill(missing_avatars, config)
+        with self.lock:
+            return results, bool(lookup) or self._lookup_running
+
+    def _start_avatar_fill(self, pubkeys, config):
+        """Up to _LOOKUP_AVATARS missing avatars in the background, at most
+        one such round a minute."""
+        with self.lock:
+            if (getattr(self, '_avatars_running', False)
+                    or time.time() - getattr(self, '_avatars_filled_at', 0) < 60):
+                return
+            self._avatars_running = True
+            self._avatars_filled_at = time.time()
+
+        def run():
+            try:
+                self._fill_avatars(pubkeys, self._profiles(), config, _LOOKUP_AVATARS)
+            except Exception as e:
+                print(f'⚠️ Nostr: avatar fill failed: {e}')
+            finally:
+                with self.lock:
+                    self._avatars_running = False
+        threading.Thread(target=run, name='nostr-avatars', daemon=True).start()
+
+    def _start_lookup(self, pubkeys, config):
+        with self.lock:
+            if self._lookup_running:
+                return
+            self._lookup_running = True
+
+        def run():
+            try:
+                self._lookup_profiles(pubkeys, config, 0)
+            except Exception as e:
+                print(f'⚠️ Nostr: profile lookup failed: {e}')
+            finally:
+                with self.lock:
+                    self._lookup_running = False
+            # Names are in; avatars of these accounts follow, the newest first,
+            # without the page waiting on them.
+            self._start_avatar_fill(list(reversed(pubkeys)), config)
+        threading.Thread(target=run, name='nostr-profiles', daemon=True).start()
+
+    def _merge_profiles(self, update):
+        """Run update(profiles) on the stored profiles and write them back,
+        re-read under the state lock so no other writer's work is lost.
+        Returns the profiles as written."""
+        with self._state_lock:
+            state = _load_json(_STATE_PATH, {})
+            profiles = state.setdefault('profiles', {})
+            before = json.dumps(profiles, sort_keys=True)
+            update(profiles)
+            if json.dumps(profiles, sort_keys=True) != before:
+                os.makedirs(NOSTR_DIR, exist_ok=True)
+                atomic_write_json(_STATE_PATH, state, ensure_ascii=False)
+            return dict(profiles)
+
+    def _lookup_profiles(self, pubkeys, config, avatars, avatar_order=None):
+        """Ask the relays for these accounts' profiles and relay lists, and
+        merge what they say into the stored profiles. All network work runs
+        outside any lock; only the merge takes one.
+
+        Returns (profiles as stored afterwards, errors of the configured
+        relays).
+        """
+        wanted = set(pubkeys)
+        working = {pk: dict(v) for pk, v in self._profiles().items() if pk in wanted}
+        events, errors = query_relays(_profile_relays(config), _profile_filters(list(pubkeys)), config)
+        self._apply_profiles(events, wanted, working, config, avatars=False)
+        self._names_from_own_relays(list(pubkeys), working, config)
+        now = int(time.time())
+
+        def merge(profiles):
+            for pk in pubkeys:
+                new = working.get(pk, {})
+                old = profiles.get(pk, {})
+                merged = dict(old)
+                if new.get('updated', 0) >= old.get('updated', 0):
+                    for key in ('name', 'picture', 'updated'):
+                        if key in new:
+                            merged[key] = new[key]
+                if new.get('relays_updated', -1) > old.get('relays_updated', -1):
+                    merged['relays'] = new['relays']
+                    merged['relays_updated'] = new['relays_updated']
+                merged.setdefault('name', '')
+                merged.setdefault('picture', '')
+                merged.setdefault('updated', 0)
+                # Remembered even without a profile, so it is not asked for
+                # again on every page load - see _NO_PROFILE_RETRY.
+                merged['checked'] = now
+                profiles[pk] = merged
+        stored = self._merge_profiles(merge)
+        if avatars:
+            self._fill_avatars(avatar_order or list(pubkeys), stored, config, avatars)
+        return stored, errors
 
 
 def _post_text(content, urls):
