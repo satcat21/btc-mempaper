@@ -457,6 +457,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // --- Fetch status ------------------------------------------------------------
 
+// One fetch problem in the page's language. The server sends a code with
+// its parameters and an English text, which stays the fallback for codes
+// this page has no translation for.
+function _nostrErrorText(e) {
+    if (typeof e === 'string') return e;
+    let text = window.translations?.['nostr_err_' + e.code] || e.text || e.code;
+    Object.entries(e.params || {}).forEach(([k, v]) => { text = text.replace(`{${k}}`, v); });
+    return `${e.source}: ${text}`;
+}
+
 async function refreshNostrStatus() {
     const el = document.getElementById('nostr-fetch-status');
     const btn = document.getElementById('nostr-fetch-btn');
@@ -469,9 +479,9 @@ async function refreshNostrStatus() {
         const errList = document.getElementById('nostr-fetch-errors');
         const errors = s.running ? [] : (s.errors || []);
         if (errList) {
-            errList.replaceChildren(...errors.map(text => {
+            errList.replaceChildren(...errors.map(e => {
                 const li = document.createElement('li');
-                li.textContent = text;
+                li.textContent = _nostrErrorText(e);
                 return li;
             }));
             if (!errors.length) errList.style.display = 'none';
@@ -488,10 +498,16 @@ async function refreshNostrStatus() {
             if (errors.length && errList) {
                 // The count opens the list underneath: a tooltip is out of
                 // reach on a phone, and the reasons are what tell you what to fix.
+                // Red only when the fetch failed. A relay or two not answering
+                // while the rest delivered is a note, not an error.
+                const failed = s.message && s.message !== 'ok';
                 const toggle = document.createElement('a');
                 toggle.href = '#';
-                toggle.style.cssText = 'color:var(--danger); text-decoration:underline; cursor:pointer;';
-                toggle.textContent = _nt('nostr_fetch_errors', '{count} error(s)').replace('{count}', errors.length);
+                toggle.style.cssText = `color:${failed ? 'var(--danger)' : 'var(--text-secondary)'}; text-decoration:underline; cursor:pointer;`;
+                toggle.textContent = (failed
+                    ? _nt('nostr_fetch_errors', '{count} error(s)')
+                    : _nt('nostr_fetch_notes', '{count} source(s) not reached'))
+                    .replace('{count}', errors.length);
                 toggle.addEventListener('click', (e) => {
                     e.preventDefault();
                     errList.style.display = errList.style.display === 'none' ? 'block' : 'none';

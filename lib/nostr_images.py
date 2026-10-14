@@ -64,6 +64,9 @@ INDEXER_RELAYS = [
 # followed accounts write to (NIP-65), so a post published only there is
 # still seen. Capped, because a list of hundreds names hundreds of relays.
 _MAX_OUTBOX_RELAYS = 8
+# Further attempts, each through another Tor exit, for a relay that refuses
+# or drops the connection.
+_EXIT_RETRIES = 2
 # An account with no profile found is asked about again after this long.
 _NO_PROFILE_RETRY = 3600
 
@@ -435,7 +438,8 @@ def _query_relay(url, filters, config, deadline_s, circuit='nostr'):
             pass
         return events, None, False
     except Exception as e:
-        return events, f'{url}: {_describe_relay_error(e)}', _exit_may_matter(e)
+        code, text, params = _describe_relay_error(e)
+        return events, _error(url, code, text, **params), _exit_may_matter(e)
     finally:
         if ws is not None:
             try:
@@ -444,40 +448,58 @@ def _query_relay(url, filters, config, deadline_s, circuit='nostr'):
                 pass
 
 
+def _error(source, code, text, **params):
+    """One fetch problem, for the status list.
+
+    code names the kind of failure; the settings page shows its own text for
+    it, in the page's language, and falls back to text - English, also what
+    goes to the log - for codes it does not know.
+    """
+    return {'source': source, 'code': code, 'params': params, 'text': text}
+
+
 def _exit_may_matter(e):
     """True for failures another Tor exit might not get.
 
     Relays behind Cloudflare drop or refuse some exits: the TLS handshake is
-    cut off (SSLEOFError), the connection reset, or a 403/429/503 returned.
-    A timeout or a bad address is the same from every exit.
+    cut off (SSLEOFError), the connection reset or lost, or a 403/429/503
+    returned. A timeout or a bad address is the same from every exit.
     """
     import ssl
     status = getattr(e, 'status_code', None)
     if status:
         return status in (403, 429, 503)
-    return isinstance(e, (ssl.SSLError, ConnectionResetError, ConnectionAbortedError,
-                          BrokenPipeError)) or 'connection closed' in str(e).lower()
+    text = str(e).lower()
+    return (isinstance(e, (ssl.SSLError, ConnectionResetError, ConnectionAbortedError,
+                           BrokenPipeError))
+            or type(e).__name__ == 'WebSocketConnectionClosedException'
+            or 'connection closed' in text or 'connection to remote host was lost' in text)
 
 
 def _describe_relay_error(e):
-    """One line a person can act on. A refused handshake otherwise carries
-    every response header, a TLS failure an OpenSSL source location."""
+    """(code, English text, params) for a relay failure. A refused handshake
+    otherwise carries every response header, a TLS failure an OpenSSL source
+    location."""
     import ssl
     status = getattr(e, 'status_code', None)
+    text = str(e)
     if status:
-        return f'HTTP {status} during handshake (relay down or refusing)'
-    if isinstance(e, ssl.SSLEOFError) or 'UNEXPECTED_EOF' in str(e):
-        return 'connection closed during TLS handshake (relay overloaded, or it refuses this Tor exit)'
+        return 'relay_refused', f'HTTP {status} during handshake (relay down or refusing)', {'status': status}
+    if isinstance(e, ssl.SSLEOFError) or 'UNEXPECTED_EOF' in text:
+        return ('tls_closed', 'connection closed during TLS handshake '
+                '(relay overloaded, or it refuses this Tor exit)', {})
     if isinstance(e, ssl.SSLCertVerificationError):
-        return 'TLS certificate not valid'
+        return 'tls_cert', 'TLS certificate not valid', {}
     if isinstance(e, (ConnectionResetError, ConnectionAbortedError)):
-        return 'connection reset by the relay'
-    if isinstance(e, TimeoutError) or 'timed out' in str(e).lower():
-        return 'timed out'
-    if 'getaddrinfo' in str(e) or 'name or service not known' in str(e).lower():
-        return 'relay address not found'
-    first = (str(e).splitlines() or [''])[0]
-    return f'{type(e).__name__}: {first}'[:160]
+        return 'reset', 'connection reset by the relay', {}
+    if type(e).__name__ == 'WebSocketConnectionClosedException' or 'remote host was lost' in text.lower():
+        return 'lost', 'connection lost while fetching', {}
+    if isinstance(e, TimeoutError) or 'timed out' in text.lower():
+        return 'timeout', 'timed out', {}
+    if 'getaddrinfo' in text or 'name or service not known' in text.lower():
+        return 'not_found', 'relay address not found', {}
+    first = (text.splitlines() or [''])[0]
+    return 'other', f'{type(e).__name__}: {first}'[:160], {}
 
 
 def _author_filters(pubkeys, kinds, limit=None, since=None):
@@ -555,12 +577,14 @@ def query_relays(relays, filters, config, extra=None):
     def ask(task):
         relay, relay_filters = task
         events, err, exit_matters = _query_relay(relay, relay_filters, config, deadline)
-        if err and tor and exit_matters and not events:
-            # Once more on a circuit of its own: a relay refusing one exit
-            # usually accepts the next.
-            print(f'🧅 Nostr relay: {err} - retrying through another Tor exit')
-            events, err, _ = _query_relay(relay, relay_filters, config, deadline,
-                                          circuit=f'nostr-{uuid.uuid4().hex[:8]}')
+        # Again on circuits of their own, up to _EXIT_RETRIES times: a relay
+        # that refuses or drops one exit usually accepts another.
+        for _ in range(_EXIT_RETRIES):
+            if not (err and tor and exit_matters and not events):
+                break
+            print(f'🧅 Nostr relay: {relay}: {err["text"]} - retrying through another Tor exit')
+            events, err, exit_matters = _query_relay(relay, relay_filters, config, deadline,
+                                                     circuit=f'nostr-{uuid.uuid4().hex[:8]}')
         return events, err
 
     tasks = [(r, filters) for r in relays]
@@ -570,7 +594,7 @@ def query_relays(relays, filters, config, extra=None):
     with ThreadPoolExecutor(max_workers=max(1, min(len(tasks), 8))) as pool:
         for i, (events, err) in enumerate(pool.map(ask, tasks)):
             if err:
-                print(f'⚠️ Nostr relay: {err}')
+                print(f'⚠️ Nostr relay: {err["source"]}: {err["text"]}')
                 if i < len(relays):
                     errors.append(err)
             for ev in events:
@@ -692,27 +716,30 @@ def _short_url(url):
 
 
 def _describe_error(e):
-    """A reason a person can act on, rather than an exception class name."""
+    """(code, English text, params) for a failed image download: a reason a
+    person can act on, rather than an exception class name."""
     import requests
     from PIL import UnidentifiedImageError
     if isinstance(e, requests.HTTPError) and e.response is not None:
-        return f'HTTP {e.response.status_code} {e.response.reason or ""}'.strip()
+        status = e.response.status_code
+        return 'http', f'HTTP {status} {e.response.reason or ""}'.strip(), {'status': status}
     if isinstance(e, requests.Timeout):
-        return 'timed out'
+        return 'timeout', 'timed out', {}
     if isinstance(e, requests.ConnectionError):
         text = str(e).lower()
         if 'socks' in text or 'proxy' in text:
-            return 'connection via Tor failed (host may block Tor)'
+            return 'tor_refused', 'connection via Tor failed (host may block Tor)', {}
         if 'name or service' in text or 'resolve' in text or 'getaddrinfo' in text:
-            return 'host not found'
+            return 'host_not_found', 'host not found', {}
         if 'ssl' in text or 'certificate' in text:
-            return 'TLS/certificate error'
-        return 'connection failed'
+            return 'tls', 'TLS/certificate error', {}
+        return 'connection', 'connection failed', {}
     if isinstance(e, UnidentifiedImageError):
-        return 'not an image the server can read'
+        return 'not_image', 'not an image the server can read', {}
     if isinstance(e, ValueError) and 'too large' in str(e):
-        return f'larger than {_MAX_DOWNLOAD_BYTES // (1024 * 1024)} MB'
-    return f'{type(e).__name__}: {e}'[:160]
+        mb = _MAX_DOWNLOAD_BYTES // (1024 * 1024)
+        return 'too_large', f'larger than {mb} MB', {'mb': mb}
+    return 'other', f'{type(e).__name__}: {e}'[:160], {}
 
 
 # ----------------------------------------------------------------------
@@ -949,6 +976,15 @@ class NostrPostStore:
 
     # -- fetching -------------------------------------------------------
 
+    def _add_errors(self, errors):
+        """Into the status list, each source and reason once: a relay that
+        fails is asked for profiles and for posts, and would be listed twice."""
+        known = {(e['source'], e['code']) for e in self.status['errors']}
+        for e in errors:
+            if (e['source'], e['code']) not in known:
+                known.add((e['source'], e['code']))
+                self.status['errors'].append(e)
+
     def fetch(self, config, log=print):
         """One fetch run. Returns the status dict. Never runs twice at once."""
         if not self._fetch_lock.acquire(blocking=False):
@@ -1005,7 +1041,7 @@ class NostrPostStore:
                 or any(pk not in profiles for pk in pubkeys)):
             lookup = _profile_relays(config)
             events, errors = query_relays(lookup, _profile_filters(pubkeys), config)
-            self.status['errors'].extend(e for e in errors if not e.startswith(tuple(INDEXER_RELAYS)))
+            self._add_errors(e for e in errors if e['source'] not in INDEXER_RELAYS)
             if len(errors) == len(lookup):
                 self.status['message'] = 'No relay could be reached'
                 log('⚠️ Nostr: no relay could be reached')
@@ -1046,7 +1082,7 @@ class NostrPostStore:
                     since=lambda group: max(min(self._cursors.get(pk, 0) for pk in group) + 1, floor))
                  for r in busiest}
         events, errors = query_relays(relays, filters, config, extra=extra)
-        self.status['errors'].extend(errors)
+        self._add_errors(errors)
         if len(errors) == len(relays) and not events:
             self.status['message'] = 'No relay could be reached'
             log('⚠️ Nostr: no relay could be reached')
@@ -1124,8 +1160,8 @@ class NostrPostStore:
                 img = ImageOps.exif_transpose(img)
                 img.load()
             except Exception as e:
-                reason = _describe_error(e)
-                self.status['errors'].append(f'{_short_url(url)}: {reason}')
+                code, reason, params = _describe_error(e)
+                self._add_errors([_error(_short_url(url), code, reason, **params)])
                 log(f'⚠️ Nostr: could not download {url}: {reason}')
                 failed = True
                 continue
