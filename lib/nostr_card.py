@@ -20,8 +20,10 @@ _AVATAR = 104
 _GAP = 26
 _RADIUS = 28
 _MAX_TEXT_LINES = 4
-# Taller images are cropped to this, so a portrait photo does not turn the
-# card into a strip too narrow to read once it is fitted into the meme area.
+# Taller images are scaled down to this height, never cropped: a meme's
+# caption is usually at its top or bottom edge, and cutting the image to a
+# square cut it off. Without a limit a portrait photo would make the card a
+# strip too narrow to read once it is fitted into the meme area.
 _MAX_IMAGE_ASPECT = 1.0  # height / width
 
 THEMES = {
@@ -170,7 +172,8 @@ def render_card(image, name, text, created_at, avatar_path=None, theme='light', 
     probe = _TextDraw(ImageDraw.Draw(Image.new('RGB', (1, 1))), None)
     lines = probe.wrap(text, body_font, inner, _MAX_TEXT_LINES) if text else []
 
-    # Image: full width, cropped when taller than _MAX_IMAGE_ASPECT allows.
+    # Image: full width, or - when taller than _MAX_IMAGE_ASPECT allows -
+    # scaled down to that height and centred, the whole picture kept.
     if image.mode in ('RGBA', 'LA', 'P'):
         flat = Image.new('RGB', image.size, colors['bg'])
         rgba = image.convert('RGBA')
@@ -179,11 +182,11 @@ def render_card(image, name, text, created_at, avatar_path=None, theme='light', 
     else:
         image = image.convert('RGB')
     img_h = round(inner * image.height / image.width)
+    img_w = inner
     if img_h > inner * _MAX_IMAGE_ASPECT:
         img_h = round(inner * _MAX_IMAGE_ASPECT)
-        picture = ImageOps.fit(image, (inner, img_h), Image.LANCZOS, centering=(0.5, 0.4))
-    else:
-        picture = image.resize((inner, img_h), Image.LANCZOS)
+        img_w = max(1, round(img_h * image.width / image.height))
+    picture = image.resize((img_w, img_h), Image.LANCZOS)
 
     text_h = len(lines) * line_height
     height = (_PAD + _AVATAR + _GAP + (text_h + _GAP if lines else 0) + img_h + _PAD)
@@ -224,5 +227,5 @@ def render_card(image, name, text, created_at, avatar_path=None, theme='light', 
     if lines:
         y += _GAP
 
-    card.paste(picture, (_PAD, y), _rounded(picture, _RADIUS))
+    card.paste(picture, (_PAD + (inner - img_w) // 2, y), _rounded(picture, _RADIUS))
     return card
