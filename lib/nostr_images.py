@@ -216,6 +216,26 @@ def note_id(event_id_hex):
     return bech32_encode('note', bytes.fromhex(event_id_hex))
 
 
+_PUBKEY_HEX = re.compile(r'[0-9a-f]{64}')
+
+
+def avatar_file(pubkey):
+    """Where pubkey's avatar is stored, or None for anything but a hex key.
+
+    The key reaches this from requests and from relay data, so the path is
+    checked here rather than trusted to every caller: it must be 64 hex
+    characters, and the joined path must resolve to a file directly inside
+    AVATAR_DIR.
+    """
+    if not isinstance(pubkey, str) or not _PUBKEY_HEX.fullmatch(pubkey):
+        return None
+    root = os.path.realpath(AVATAR_DIR)
+    path = os.path.realpath(os.path.join(root, pubkey + '.jpg'))
+    if not path.startswith(root + os.sep):
+        return None
+    return path
+
+
 def configured_accounts(config):
     """[(pubkey_hex, label)] from the config, invalid and repeated keys dropped."""
     out = []
@@ -1280,21 +1300,23 @@ class NostrPostStore:
 
     @staticmethod
     def _avatar_path(pubkey):
-        path = os.path.join(AVATAR_DIR, f'{pubkey}.jpg')
-        return path if os.path.exists(path) else None
+        path = avatar_file(pubkey)
+        return path if path and os.path.exists(path) else None
 
     @staticmethod
     def _save_avatar(pubkey, url, config):
         """Store a small copy of the profile picture, so neither the card nor
         the settings page has to reach the image host each time."""
-        if not url or not url.lower().startswith(('http://', 'https://')) or _is_private_host(url):
+        path = avatar_file(pubkey)
+        if (not path or not url or not url.lower().startswith(('http://', 'https://'))
+                or _is_private_host(url)):
             return
         try:
             img = Image.open(io.BytesIO(_download(url, config)))
             img.seek(0)
             img = ImageOps.fit(ImageOps.exif_transpose(img).convert('RGB'), (128, 128), Image.LANCZOS)
             os.makedirs(AVATAR_DIR, exist_ok=True)
-            img.save(os.path.join(AVATAR_DIR, f'{pubkey}.jpg'), 'JPEG', quality=88)
+            img.save(path, 'JPEG', quality=88)
         except Exception as e:
             print(f'⚠️ Nostr: could not fetch avatar for {pubkey[:12]}: {e}')
 

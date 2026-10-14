@@ -67,10 +67,10 @@ def register(self):
         # No session refresh: a Set-Cookie would stop the browser caching it.
         if not self.auth_manager.is_authenticated():
             return jsonify({'error': 'Authentication required'}), 401
-        if not re.fullmatch(r'[0-9a-f]{64}', pubkey):
-            return 'Not found', 404
-        path = os.path.join(nostr_images.AVATAR_DIR, f'{pubkey}.jpg')
-        if not os.path.isfile(path):
+        # avatar_file() checks the key and keeps the path inside the
+        # avatar folder.
+        path = nostr_images.avatar_file(pubkey)
+        if not path or not os.path.isfile(path):
             return 'Not found', 404
         etag = f'"{int(os.stat(path).st_mtime)}"'
         headers = {'ETag': etag, 'Cache-Control': 'private, max-age=3600'}
