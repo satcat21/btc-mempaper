@@ -316,24 +316,69 @@ function _nostrTheme() {
 }
 
 function _nostrCardUrl(key, width) {
-    // The age printed on the card moves; the timestamp keeps the browser from
-    // showing a stale copy.
-    return `/api/nostr-card/${key}?theme=${_nostrTheme()}${width ? '&w=' + width : ''}&t=${Date.now()}`;
+    // A stable address, so the browser keeps the card instead of asking the
+    // Pi to render it again on every reload of the list.
+    return `/api/nostr-card/${key}?theme=${_nostrTheme()}${width ? '&w=' + width : ''}`;
 }
 
-function _nostrStateLabel(post) {
-    if (post.state === 'next') return _nt('nostr_state_next', 'Next');
-    if (post.state === 'waiting') return _nt('nostr_state_waiting', 'Waiting');
-    if (post.state === 'preview') return _nt('nostr_state_preview', 'Preview only');
-    return _nt('nostr_state_queued', 'Queued');
+// What the list showed last, so a reload that changes nothing leaves it be.
+let _nostrPoolSignature = null;
+
+// Only the post the display shows at the next block is marked; the order of
+// the cards already tells the rest.
+function _nostrNextLabel(post) {
+    return post.state === 'next' ? _nt('nostr_state_next', 'Next') : '';
 }
 
-function _nostrPostDetail(post) {
-    if (post.state === 'preview') return _nostrDate(post.created_at);
-    const shown = _nt('nostr_shown_times', 'Shown {count}×').replace('{count}', post.shown || 0);
-    const left = _nt('nostr_minutes_left', '{minutes} min left')
-        .replace('{minutes}', Math.max(1, Math.round((post.expires_in || 0) / 60)));
-    return `${shown} · ${left}`;
+// When a post was published: how long ago, and the date and time.
+// "vor 5 Min. (14.10.26, 23:29 Uhr)". The age is worded by the browser in the
+// page's language; the template around it, e.g. the German "Uhr", comes from
+// the translations.
+function _nostrAge(ts) {
+    if (!ts) return '';
+    const lang = document.documentElement.lang || undefined;
+    const seconds = Math.max(0, Math.round(Date.now() / 1000 - ts));
+    let ago;
+    try {
+        const rtf = new Intl.RelativeTimeFormat(lang, { numeric: 'auto', style: 'short' });
+        if (seconds < 60) ago = rtf.format(0, 'second');
+        else if (seconds < 3600) ago = rtf.format(-Math.floor(seconds / 60), 'minute');
+        else if (seconds < 86400) ago = rtf.format(-Math.floor(seconds / 3600), 'hour');
+        else ago = rtf.format(-Math.floor(seconds / 86400), 'day');
+    } catch (e) {
+        ago = `${Math.floor(seconds / 60)} min`;
+    }
+    const d = new Date(ts * 1000);
+    const date = d.toLocaleDateString(lang, { day: '2-digit', month: '2-digit', year: '2-digit' });
+    const time = d.toLocaleTimeString(lang, { hour: '2-digit', minute: '2-digit' });
+    return _nt('nostr_post_age', '{ago} ({date}, {time})')
+        .replace('{ago}', ago).replace('{date}', date).replace('{time}', time);
+}
+
+// Seconds until an age now `seconds` old reads differently. The wording steps
+// per minute below an hour, per hour below a day, then per day - each post at
+// its own moment, not on the clock's full minute: one published at 23:29:40
+// turns from 5 to 6 minutes at 23:35:40.
+function _nostrAgeStep(seconds) {
+    const unit = seconds < 3600 ? 60 : seconds < 86400 ? 3600 : 86400;
+    return unit - (seconds % unit);
+}
+
+// Every age on the page moves on by itself, between the minute-wise reloads:
+// one timer, woken exactly when the next of them changes.
+let _nostrAgeTimer = null;
+function _nostrScheduleAges() {
+    clearTimeout(_nostrAgeTimer);
+    const stamps = Array.from(document.querySelectorAll('.nostr-age[data-ts]'), el => Number(el.dataset.ts));
+    if (!stamps.length) return;
+    const now = Date.now() / 1000;
+    const wait = Math.min(...stamps.map(ts => _nostrAgeStep(Math.max(0, Math.round(now - ts)))));
+    _nostrAgeTimer = setTimeout(() => {
+        document.querySelectorAll('.nostr-age[data-ts]').forEach(el => {
+            el.textContent = _nostrAge(Number(el.dataset.ts));
+        });
+        _nostrScheduleAges();
+    }, Math.max(1, wait) * 1000 + 50);
 }
 
 function createNostrPostTile(post) {
@@ -350,16 +395,19 @@ function createNostrPostTile(post) {
     img.loading = 'lazy';
     img.dataset.nostrKey = post.key;
     img.style.cssText = 'display:block; width:100%; height:auto;';
-    const badge = document.createElement('span');
-    badge.textContent = _nostrStateLabel(post);
-    const badgeColor = post.state === 'next' ? 'var(--accent)'
-        : post.state === 'waiting' || post.state === 'preview' ? '#6c757d' : '#28a745';
-    badge.style.cssText = `position:absolute; top:6px; left:6px; font-size:0.7rem; font-weight:600; padding:2px 8px; border-radius:10px; color:#fff; background:${badgeColor};`;
-    frame.append(img, badge);
+    frame.append(img);
+    if (_nostrNextLabel(post)) {
+        const badge = document.createElement('span');
+        badge.textContent = _nostrNextLabel(post);
+        badge.style.cssText = 'position:absolute; top:6px; left:6px; font-size:0.7rem; font-weight:600; padding:2px 8px; border-radius:10px; color:#fff; background:var(--accent);';
+        frame.append(badge);
+    }
 
     const detail = document.createElement('div');
+    detail.className = 'nostr-age';
+    detail.dataset.ts = post.created_at;
     detail.style.cssText = 'font-size:0.75rem; color:var(--text-secondary); text-align:center;';
-    detail.textContent = _nostrPostDetail(post);
+    detail.textContent = _nostrAge(post.created_at);
 
     tile.append(frame, detail);
     return tile;
@@ -375,6 +423,10 @@ async function loadNostrPool() {
         const posts = data.posts || [];
         const count = document.getElementById('nostr-pool-count');
         if (count) count.textContent = `(${posts.length})`;
+        const signature = JSON.stringify([_nostrTheme(), posts.map(p => [p.key, p.state]),
+                                          data.sample?.key || null]);
+        if (signature === _nostrPoolSignature && list.children.length) return;
+        _nostrPoolSignature = signature;
         list.replaceChildren();
         if (!posts.length) {
             const note = document.createElement('p');
@@ -383,10 +435,12 @@ async function loadNostrPool() {
             list.appendChild(note);
             if (data.sample) {
                 list.appendChild(createNostrPostTile({ ...data.sample, state: 'preview' }));
+                _nostrScheduleAges();
             }
             return;
         }
         posts.forEach(post => list.appendChild(createNostrPostTile(post)));
+        _nostrScheduleAges();
     } catch (err) {
         list.innerHTML = `<p style="grid-column:1/-1; text-align:center; color:var(--danger);">${escapeHtml(_nt('nostr_load_failed', 'Error loading Nostr posts'))}</p>`;
     }
@@ -399,14 +453,19 @@ function openNostrPreview(post) {
     const modal = document.getElementById('nostr-modal');
     if (!modal) return;
     document.getElementById('nostr-modal-author').textContent = post.name || post.npub || '';
-    document.getElementById('nostr-modal-published').textContent = _nostrDate(post.created_at);
-    document.getElementById('nostr-modal-state').textContent =
-        `${_nostrStateLabel(post)} · ${_nostrPostDetail(post)}`;
+    const published = document.getElementById('nostr-modal-published');
+    published.className = 'nostr-age';
+    published.dataset.ts = post.created_at;
+    published.textContent = _nostrAge(post.created_at);
+    const state = document.getElementById('nostr-modal-state');
+    state.textContent = _nostrNextLabel(post);
+    state.closest('.meme-info-row').style.display = state.textContent ? '' : 'none';
     const image = document.getElementById('nostr-modal-image');
     image.alt = post.name || '';
     image.src = _nostrCardUrl(post.key);
     document.getElementById('nostr-modal-open-btn').style.display = post.note ? '' : 'none';
     modal.style.display = 'flex';
+    _nostrScheduleAges();
 }
 
 function closeNostrModal() {
@@ -572,7 +631,7 @@ function createNostrManagementInterface(field) {
 
     const label = document.createElement('label');
     label.className = 'form-label';
-    label.innerHTML = `${escapeHtml(_nt('nostr_management', 'Prepared Posts'))} <span id="nostr-pool-count" style="color:var(--text-secondary); font-weight:400;"></span>`;
+    label.innerHTML = `${escapeHtml(_nt('nostr_management', 'Current Posts'))} <span id="nostr-pool-count" style="color:var(--text-secondary); font-weight:400;"></span>`;
     const hint = document.createElement('div');
     hint.className = 'form-description';
     hint.style.cssText = 'font-size:0.8rem; color:var(--text-secondary); margin-bottom:8px;';

@@ -48,8 +48,10 @@ def register(self):
             return jsonify({'success': False, 'message': _safe_error(e)}), 500
         if data is None:
             return 'Not found', 404
+        # Kept by the browser for a while: the page reloads the list every
+        # minute, and each card fetched again would be rendered again.
         return Response(data, mimetype='image/jpeg',
-                        headers={'Cache-Control': 'private, no-store'})
+                        headers={'Cache-Control': 'private, max-age=300'})
 
     @self.app.route('/api/nostr-dismiss/<key>', methods=['POST'])
     @require_auth(self.auth_manager)

@@ -478,8 +478,10 @@ accounts share. Names still missing are asked from the accounts' own relays;
 an account without any profile shows a shortened npub. Avatars fill in a few
 per run, except for authors of posts in the pool, which get theirs at once.
 
-The settings section shows the prepared posts as rendered cards, in the order
-they will be picked, with their state (next, queued, waiting) and minutes left.
+The settings section shows the current posts as rendered cards under **Current
+Posts**, in the order they will be picked, with when each was published, e.g.
+`5 min ago (14.10.26, 23:29)`. The one the display shows at the next block is
+marked **Next**.
 **Remove** takes a post out of the pool. When nobody posted in the last hour,
 the latest older post is shown there as a preview only.
 

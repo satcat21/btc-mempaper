@@ -799,7 +799,7 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
         },
         "nostr_management": {
             "type": "nostr_management",
-            "label": t.get("nostr_management", "Prepared Posts"),
+            "label": t.get("nostr_management", "Current Posts"),
             "category": "nostr",
             "order": 3
         },

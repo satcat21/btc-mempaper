@@ -40,6 +40,7 @@ CARD_DIR = (os.path.join('/dev/shm', 'mempaper-nostr') if os.path.isdir('/dev/sh
 # a long block, while other picks write newer cards. Posts leave the pool
 # after an hour, so three is ample, and the cards are in RAM, a few MB at most.
 _CARD_MAX_AGE = 3 * 3600
+_PREVIEW_CACHE_SECONDS = 600
 # Where an earlier version kept every image on disk. Removed once.
 _LEGACY_DIR = os.path.join('static', 'nostr')
 _LEGACY_SHOWN = os.path.join('cache', 'nostr_shown.json')
@@ -84,6 +85,10 @@ POOL_WINDOW = 3600
 # A post comes back only after this many other images have been shown.
 _MIN_GAP = 2
 _MAX_POOL = 40
+# Image downloads per fetch run. Following many busy accounts can bring a
+# hundred posts in five minutes; only the newest _MAX_POOL can be kept, and
+# each download costs a Pi Zero seconds of decoding and hashing.
+_MAX_DOWNLOADS_PER_RUN = _MAX_POOL
 _EVENT_LIMIT = 200
 # Authors per relay filter. A followed list imported from a contact list can
 # run to hundreds, and relays cap how many keys one filter may carry.
@@ -925,8 +930,10 @@ class NostrPostStore:
             return None
         cache_key = (key, theme, width)
         cached = self._preview_cache.get(cache_key)
-        # The age on the card moves, so a cached preview lives a minute.
-        if cached and time.time() - cached[0] < 60:
+        # Rendering a card costs a Pi Zero about a second, and the settings
+        # page asks for all of them. The age printed on a cached preview may
+        # be a few minutes behind; the page shows the exact one under it.
+        if cached and time.time() - cached[0] < _PREVIEW_CACHE_SECONDS:
             return cached[1]
         card = self._render(post, theme)
         if width and width < card.width:
@@ -934,8 +941,11 @@ class NostrPostStore:
         buf = io.BytesIO()
         card.save(buf, 'JPEG', quality=88)
         data = buf.getvalue()
-        if len(self._preview_cache) > 100:
-            self._preview_cache.clear()
+        # Two sizes per post (grid and preview), so room for the pool and the
+        # archive; past that the oldest go, not all at once.
+        if len(self._preview_cache) >= 200:
+            oldest = min(self._preview_cache, key=lambda k: self._preview_cache[k][0])
+            del self._preview_cache[oldest]
         self._preview_cache[cache_key] = (time.time(), data)
         return data
 
@@ -1092,13 +1102,25 @@ class NostrPostStore:
                          and isinstance(e.get('created_at'), int)),
                         key=lambda e: -e['created_at'])
         added = 0
-        for ev in events:
+        downloads = 0
+        for ev in events:                       # newest first
             eid = ev.get('id', '')
             if eid in self._seen_events or eid in self._dismissed:
                 continue
             in_window = now - ev['created_at'] <= POOL_WINDOW
             if not in_window and older_wanted <= 0:
                 continue
+            if in_window:
+                with self.lock:
+                    full = (len(self._pool) >= _MAX_POOL
+                            and ev['created_at'] <= min(p['created_at'] for p in self._pool.values()))
+                if full:
+                    # Older than every post kept: the cap would drop it straight
+                    # after downloading it.
+                    continue
+            if downloads >= _MAX_DOWNLOADS_PER_RUN:
+                break
+            downloads += 1
             post = self._make_post(ev, config, log)
             if post is None:
                 continue
@@ -1128,7 +1150,10 @@ class NostrPostStore:
             cutoff = now - 2 * DAY
             self._seen_events = {k: t for k, t in self._seen_events.items() if t > cutoff}
             self._recent_hashes = [h for h in self._recent_hashes if now - h[0] <= _DUPLICATE_MEMORY]
-            self._preview_cache.clear()
+            # Previews only of posts that are gone - clearing all of them each
+            # run had the settings page render every card again.
+            live = set(self._pool) | set(self._archive)
+            self._preview_cache = {k: v for k, v in self._preview_cache.items() if k[0] in live}
             pool_size = len(self._pool)
 
         self.status['added'] = added
