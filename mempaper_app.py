@@ -2132,6 +2132,7 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
             with self._precache['lock']:
                 self._precache['next_meme_path'] = None
                 self._precache['selected_block_types'] = None
+            self._prerender_choice = None
 
     def _image_affecting_changes(self, old_config, new_config):
         """The settings that changed and actually alter what gets drawn."""
@@ -2871,13 +2872,29 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
                     and self._prerendered.get('mode_signature') == mode_signature):
                 return
 
-            # Consume the pre-selected meme and block types (if any) — clear after use
-            # so the next _update_precache_data cycle picks fresh ones.
-            with self._precache['lock']:
-                precached_meme = self._precache.get('next_meme_path')
-                precached_selected = self._precache.get('selected_block_types')
-                self._precache['next_meme_path'] = None
-                self._precache['selected_block_types'] = None
+            # The image already chosen for this block survives a re-render. The
+            # pre-render is redone whenever pre-cached data changes - every five
+            # minutes, as the price moves - and picking afresh each time burnt
+            # choices nobody saw: a meme cycle marked shown, and a Nostr post's
+            # turn spent, so the post on screen came round again at the next
+            # block. Only a new block height, or a change of image source,
+            # chooses again.
+            choice = getattr(self, '_prerender_choice', None)
+            if (choice and choice.get('height') == next_height and choice.get('meme_path')
+                    and os.path.exists(choice['meme_path'])):
+                precached_meme = choice['meme_path']
+                # Its info blocks were fitted for the layout of that render;
+                # after a layout switch they are fitted again.
+                precached_selected = (choice.get('selected')
+                                      if choice.get('mode') == mode_signature else None)
+            else:
+                # Consume the pre-selected meme and block types (if any) — clear after use
+                # so the next _update_precache_data cycle picks fresh ones.
+                with self._precache['lock']:
+                    precached_meme = self._precache.get('next_meme_path')
+                    precached_selected = self._precache.get('selected_block_types')
+                    self._precache['next_meme_path'] = None
+                    self._precache['selected_block_types'] = None
 
             # Gather pre-cached data (filtered to pre-selected types when applicable)
             precached_price, precached_bitaxe, precached_fee, _, precached_network = self._get_precached_data()
@@ -2921,6 +2938,8 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
             self._prerendered['meme_path'] = content_path
             self._prerendered['displayed_blocks'] = displayed_blocks
             self._prerendered['timestamp'] = time.time()
+            self._prerender_choice = {'height': next_height, 'meme_path': content_path,
+                                      'selected': precached_selected, 'mode': mode_signature}
             self._prerendered['mode_signature'] = mode_signature
 
             print(f"🚀 Pre-rendered image ready for next block {next_height}")

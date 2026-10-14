@@ -88,9 +88,17 @@ _AUTHORS_PER_FILTER = 100
 # Avatars fetched per run beyond the ones a card needs right now, so an
 # imported list of hundreds fills in over a few runs instead of in one burst.
 _AVATARS_PER_RUN = 10
-# When nobody posted within the window, the newest post of the last day is
-# kept - not to show, only so the settings page has something to preview.
-_SAMPLE_WINDOW = DAY
+# Posts that have left the pool stay this long, at most this many, newest
+# kept. Shown only when memes are off and the pool has nothing that may be
+# shown: rotating through the day's posts beats repeating the last one. The
+# newest of them is also the settings page's preview when the pool is empty.
+_ARCHIVE_WINDOW = DAY
+_MAX_ARCHIVE = 30
+# While the archive holds fewer than this, a fetch also loads up to
+# _ARCHIVE_FILL older posts of the last day, so there is something to rotate
+# through from the start.
+_ARCHIVE_MIN = 6
+_ARCHIVE_FILL = 8
 
 _MAX_DOWNLOAD_BYTES = 15 * 1024 * 1024
 # Smaller than this is an emoji, an avatar or a badge, not a picture.
@@ -737,7 +745,8 @@ class NostrPostStore:
         self.lock = threading.RLock()
         self._fetch_lock = threading.Lock()
         self._pool = {}
-        self._sample = None
+        self._archive = {}          # key -> post that has left the pool
+        self._last_key = None       # key of the post shown last
         self._dismissed = set()
         self._seen_events = {}      # event_id -> created_at, handled for good
         self._failures = {}         # event_id -> failed download attempts
@@ -765,8 +774,21 @@ class NostrPostStore:
         for key, post in list(self._pool.items()):
             if now - post['created_at'] > POOL_WINDOW:
                 del self._pool[key]
-                if self._sample is None or post['created_at'] > self._sample['created_at']:
-                    self._sample = post
+                self._archive[key] = post
+        for key, post in list(self._archive.items()):
+            if now - post['created_at'] > _ARCHIVE_WINDOW:
+                del self._archive[key]
+        if len(self._archive) > _MAX_ARCHIVE:
+            for key in sorted(self._archive, key=lambda k: self._archive[k]['created_at'])[:len(self._archive) - _MAX_ARCHIVE]:
+                del self._archive[key]
+
+    @property
+    def _sample(self):
+        """The newest post that has left the pool: the preview when it is empty."""
+        return max(self._archive.values(), key=lambda p: p['created_at'], default=None)
+
+    def _find(self, key):
+        return self._pool.get(key) or self._archive.get(key)
 
     def _ranked(self, tick, now):
         """Pool posts in the order they would be picked at this tick, each with
@@ -787,30 +809,41 @@ class NostrPostStore:
     def pick(self, config, now=None, relaxed=False):
         """Path of the card to show now, or None to fall back to a meme.
 
-        relaxed: there is nothing else to show (memes are off or empty), so
-        the gap is not waited out - the post shown longest ago comes back -
-        and with the pool empty, the newest older post is shown rather than
-        an empty panel.
+        relaxed: there is nothing else to show (memes are off or empty). The
+        posts of the last day that have left the pool join in, so the panel
+        rotates through them instead of repeating the post shown last; that
+        one comes back only when there is no other post at all.
         """
         now = now or time.time()
         with self.lock:
             ranked = self._ranked(self._tick, now)
-            if ranked and (ranked[0][1] or relaxed):
-                # The waiting posts are ranked by when they were last shown,
-                # oldest first, so in relaxed mode this is the fairest repeat.
-                post = ranked[0][0] if ranked[0][1] else min(
-                    (p for p, _ in ranked), key=lambda p: p['last_tick'])
-            elif relaxed and self._sample is not None:
-                post = self._sample
+            if ranked and ranked[0][1]:
+                post = ranked[0][0]
+            elif relaxed:
+                post = self._relaxed_choice()
+                if post is None:
+                    return None
             else:
                 return None
             post['shown'] += 1
             post['last_tick'] = self._tick
+            self._last_key = post['key']
         try:
             return self._write_card(post, config, now)
         except Exception as e:
             print(f'⚠️ Nostr: could not render card {post["key"]}: {e}')
             return None
+
+    def _relaxed_choice(self):
+        """With nothing else to show: never-shown posts first, newest first,
+        then the one shown longest ago - from the pool and the archive alike,
+        and not the post shown last while there is any other."""
+        everything = list(self._pool.values()) + list(self._archive.values())
+        others = [p for p in everything if p['key'] != self._last_key] or everything
+        if not others:
+            return None
+        return min(others, key=lambda p: (p['last_tick'] if p['last_tick'] is not None else -1,
+                                          -p['created_at']))
 
     def has_posts(self):
         with self.lock:
@@ -860,7 +893,7 @@ class NostrPostStore:
     def preview_jpeg(self, key, theme, width=None):
         """The card as JPEG bytes for the settings page, or None."""
         with self.lock:
-            post = self._pool.get(key) or (self._sample if self._sample and self._sample['key'] == key else None)
+            post = self._find(key)
         if post is None:
             return None
         cache_key = (key, theme, width)
@@ -882,9 +915,7 @@ class NostrPostStore:
     def dismiss(self, key):
         """Take a post out of the pool for good."""
         with self.lock:
-            post = self._pool.pop(key, None)
-            if post is None and self._sample and self._sample['key'] == key:
-                post, self._sample = self._sample, None
+            post = self._pool.pop(key, None) or self._archive.pop(key, None)
             if post is None:
                 return False
             self._dismissed.add(post['event_id'])
@@ -990,11 +1021,13 @@ class NostrPostStore:
                 atomic_write_json(_STATE_PATH, state, ensure_ascii=False)
             self._profiles_fetched = now
 
-        # Posts since the last run, never older than the window. While there is
-        # nothing to preview yet, a day back, to find one.
+        # Posts since the last run, never older than the window. While the
+        # archive is short, a day back, to give a memes-off panel something to
+        # rotate through and the settings page a preview.
         with self.lock:
-            need_sample = self._sample is None and not self._pool
-        floor = now - (_SAMPLE_WINDOW if need_sample else POOL_WINDOW)
+            self._expire(now)
+            older_wanted = max(0, _ARCHIVE_FILL if len(self._archive) < _ARCHIVE_MIN else 0)
+        floor = now - (_ARCHIVE_WINDOW if older_wanted else POOL_WINDOW)
         # One filter per group of authors, from the oldest cursor in the group;
         # anything already handled is skipped by its event id.
         filters = _author_filters(
@@ -1023,13 +1056,12 @@ class NostrPostStore:
                          and isinstance(e.get('created_at'), int)),
                         key=lambda e: -e['created_at'])
         added = 0
-        sample_found = not need_sample
         for ev in events:
             eid = ev.get('id', '')
             if eid in self._seen_events or eid in self._dismissed:
                 continue
             in_window = now - ev['created_at'] <= POOL_WINDOW
-            if not in_window and sample_found:
+            if not in_window and older_wanted <= 0:
                 continue
             post = self._make_post(ev, config, log)
             if post is None:
@@ -1038,15 +1070,14 @@ class NostrPostStore:
                 if in_window:
                     self._pool[post['key']] = post
                     added += 1
-                elif self._sample is None or post['created_at'] > self._sample['created_at']:
-                    self._sample = post
-                    sample_found = True
+                else:
+                    self._archive[post['key']] = post
+                    older_wanted -= 1
 
         # A card needs its author's avatar now, not in a few runs.
         with self.lock:
             authors = {p['pubkey'] for p in self._pool.values()}
-            if self._sample:
-                authors.add(self._sample['pubkey'])
+            authors |= {p['pubkey'] for p in self._archive.values()}
         if authors:
             self._fill_avatars(sorted(authors), self._profiles(), config, len(authors))
 
@@ -1144,8 +1175,8 @@ class NostrPostStore:
     def _prune_unfollowed(self, followed):
         for key in [k for k, p in self._pool.items() if p['pubkey'] not in followed]:
             del self._pool[key]
-        if self._sample and self._sample['pubkey'] not in followed:
-            self._sample = None
+        for key in [k for k, p in self._archive.items() if p['pubkey'] not in followed]:
+            del self._archive[key]
         for pk in list(self._cursors):
             if pk not in followed:
                 del self._cursors[pk]
@@ -1168,7 +1199,8 @@ class NostrPostStore:
         """Everything: pool, profiles, avatars, cards. For the factory reset."""
         with self.lock:
             self._pool.clear()
-            self._sample = None
+            self._archive.clear()
+            self._last_key = None
             self._cursors.clear()
             self._seen_events.clear()
             self._recent_hashes.clear()
