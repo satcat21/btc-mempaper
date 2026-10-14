@@ -1,6 +1,8 @@
 """The two public entry points producing the web and e-ink images from a single layout pass, including the cached-meme fast path.
 """
 
+import os
+
 
 
 class DualImageMixin:
@@ -42,6 +44,16 @@ class DualImageMixin:
         # Try overrides first, then Twitter content, fallback to memes
         content_path = override_content_path
         
+        # A path chosen ahead of time can be gone by now - a meme deleted or
+        # synced away, a Nostr card cleaned up. Replace it before the layout:
+        # the layout would otherwise fit the info blocks around no image, and
+        # the fallback then drew a full-height one over them, while the e-ink
+        # pass, asking again, could get nothing at all.
+        if content_path and not os.path.exists(content_path):
+            print(f"⚠️ Selected image {content_path} no longer exists — picking another")
+            content_path = None
+            preserve_info_blocks = None
+
         # Fallback to random meme if no override and no content path yet
         if not content_path:
             content_path = self.pick_random_meme()
@@ -232,6 +244,8 @@ class DualImageMixin:
         self._apply_layout_settings()
 
         print(f"✅ Image generated for block {block_height}")
+        # The layout may have replaced an image it could not read.
+        content_path = shared_data.get("meme_path") or content_path
         return web_img, eink_img, content_path, displayed_blocks  # Return images, content path, and displayed block types
     
     def render_dual_images_with_cached_meme(self, block_height, block_hash, cached_meme_path, mempool_api=None,
@@ -390,4 +404,5 @@ class DualImageMixin:
         # Restore default
         self._apply_layout_settings()
 
-        return web_img, eink_img, meme_path
+        # The layout may have replaced an image it could not read.
+        return web_img, eink_img, shared_data.get("meme_path") or meme_path

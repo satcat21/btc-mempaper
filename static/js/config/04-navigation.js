@@ -705,7 +705,7 @@ function renderConfigurationForm() {
         const section = document.createElement('div');
         section.className = 'config-section';
         section.id = 'section-' + category.id;
-        if (category.id === 'meme_management' || category.id === 'opsec') {
+        if (category.id === 'meme_management' || category.id === 'opsec' || category.id === 'nostr') {
             section.classList.add('meme-management-section');
         }
         section.dataset.lazy = 'true';
@@ -991,7 +991,7 @@ function createFormField(key, field, value) {
     }
 
     // Skip adding label for self-managed interfaces and pure info boxes
-    const skipLabel = field.type === 'meme_management' || field.type === 'donation_history' || field.type === 'info_text' || field.type === 'open_url_button' || field.type === 'connection_check' || field.type === 'mempool_actions' || field.type === 'tang_check' || field.type === 'hidden';
+    const skipLabel = field.type === 'meme_management' || field.type === 'nostr_management' || field.type === 'donation_history' || field.type === 'info_text' || field.type === 'open_url_button' || field.type === 'connection_check' || field.type === 'mempool_actions' || field.type === 'tang_check' || field.type === 'hidden';
     if (!skipLabel) {
         const label = document.createElement('label');
         label.className = 'form-label';
@@ -1289,6 +1289,14 @@ function createFormField(key, field, value) {
 
         case 'opsec_management':
             input = createOpsecManagementInterface(field);
+            break;
+
+        case 'nostr_accounts':
+            input = createNostrAccountsInput(value || [], field);
+            break;
+
+        case 'nostr_management':
+            input = createNostrManagementInterface(field);
             break;
 
         case 'donation_history':

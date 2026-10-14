@@ -456,6 +456,16 @@ class ConfigManager:
             # a job that runs weekly and unattended, which is a much smaller
             # price than the default leaking that.
             "tor_meme_downloads": True,
+            # Turn the meme library off to show only Nostr images.
+            "memes_enabled": True,
+            # --- Nostr images ---
+            "nostr_enabled": False,
+            "nostr_accounts": [],
+            "nostr_relays": [],
+            # On by default for the same reason as tor_meme_downloads: the
+            # relays would otherwise learn which accounts this IP follows.
+            "nostr_use_tor": True,
+            "nostr_card_theme": "light",
             # --- Donation block ---
             "show_donation_block": False,
             "donation_display_mode": "latest",
@@ -645,6 +655,7 @@ class ConfigManager:
             {"id": "bitaxe_stats",     "_lk": "bitaxe_stats",      "label": t.get("bitaxe_stats",      "Bitaxe Stats"),        "icon": "/static/icons/bitaxe.svg"},
             {"id": "donation",         "_lk": "donation_settings", "label": t.get("donation_settings", "Lightning Donation"),  "icon": "/static/icons/donation.svg"},
             {"id": "meme_management",  "_lk": "meme_management",   "label": t.get("meme_management",   "Meme Management"),     "icon": "/static/icons/mood.svg"},
+            {"id": "nostr",            "_lk": "nostr_settings",    "label": t.get("nostr_settings",    "Nostr Images"),        "icon": "/static/icons/nostr.svg"},
             {"id": "opsec",            "_lk": "opsec_settings",    "label": t.get("opsec_settings",    "OPSec"),               "icon": "/static/icons/opsec.svg"},
             {"id": "wifi",             "_lk": "wifi_settings",     "label": t.get("wifi_settings",     "WiFi"),                "icon": "/static/icons/wifi.svg"},
             {"id": "updates",          "_lk": "updates_settings",  "label": t.get("updates_settings",  "Updates"),             "icon": "/static/icons/update.svg"},

@@ -686,6 +686,14 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
             "category": "theming",
             "order": 1
         },
+        "memes_enabled": {
+            "type": "boolean",
+            "label": t.get("memes_enabled", "Show Memes"),
+            "description": t.get("memes_enabled_desc", "Show images from the meme library. With Nostr posts on, memes fill in whenever no fresh post is waiting; turn off to show only Nostr posts."),
+            "default": True,
+            "category": "meme_management",
+            "order": 0
+        },
         "meme_management": {
             "type": "meme_management",
             "label": t.get("meme_management", "Meme Management"),
@@ -759,6 +767,60 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
             "type": "opsec_management",
             "label": t.get("opsec_management", "OPSec Images"),
             "category": "opsec"
+        },
+        # --- Nostr images ---
+        "nostr_enabled": {
+            "type": "boolean",
+            "label": t.get("nostr_enabled", "Show Nostr Posts"),
+            "description": t.get("nostr_enabled_desc", "Show image posts from the accounts below as a post card, live: anything published in the last 60 minutes, newest first, each again only after two other images. When nobody posted, a meme is shown."),
+            "default": False,
+            "category": "nostr",
+            "order": 0
+        },
+        "nostr_accounts": {
+            "type": "nostr_accounts",
+            "label": t.get("nostr_accounts", "Followed Accounts"),
+            "description": t.get("nostr_accounts_desc", "Paste an npub. Name and picture are looked up from the account's profile."),
+            "default": [],
+            "category": "nostr",
+            "order": 1
+        },
+        "nostr_card_theme": {
+            "type": "toggle",
+            "label": t.get("nostr_card_theme", "Post Card Style"),
+            "description": t.get("nostr_card_theme_desc", "How a post looks on the display: light or dark, like a screenshot from a Nostr app."),
+            "options": [
+                {"value": "light", "label": t.get("theme_light", "Light"), "_lk": "theme_light", "icon": "/static/icons/light.svg"},
+                {"value": "dark",  "label": t.get("theme_dark",  "Dark"),  "_lk": "theme_dark",  "icon": "/static/icons/dark.svg"},
+            ],
+            "default": "light",
+            "category": "nostr",
+            "order": 2
+        },
+        "nostr_management": {
+            "type": "nostr_management",
+            "label": t.get("nostr_management", "Prepared Posts"),
+            "category": "nostr",
+            "order": 3
+        },
+        "nostr_relays": {
+            "type": "tags",
+            "label": t.get("nostr_relays", "Relays"),
+            "description": t.get("nostr_relays_desc", "Relays to ask for posts and profiles (wss://...). Leave empty for the defaults: relay.damus.io, nos.lol, relay.primal.net, relay.snort.social."),
+            "placeholder": "wss://relay.example.com",
+            "default": [],
+            "category": "nostr",
+            "advanced": True,
+            "order": 10
+        },
+        "nostr_use_tor": {
+            "type": "boolean",
+            "label": t.get("nostr_use_tor", "Fetch via Tor"),
+            "description": t.get("nostr_use_tor_desc", "Route relay connections and image downloads through Tor, so relays and image hosts do not learn which accounts this device follows. Some image hosts refuse Tor; turn off if many downloads fail."),
+            "default": True,
+            "category": "nostr",
+            "advanced": True,
+            "order": 11
         },
         # --- Meme sync ---
         # meme_sync_enabled and tor_meme_downloads are deliberately absent from

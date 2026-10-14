@@ -53,6 +53,7 @@ from services.recovery import RecoveryMixin
 from services.display_worker import DisplayWorkerMixin
 from services.caching import CachingMixin
 from services.updates import UpdateSchedulerMixin
+from services.nostr import NostrMixin, NOSTR_FETCH_KEYS
 
 # Privacy utilities for secure logging
 try:
@@ -180,7 +181,7 @@ def _in_reboot_window(h, m, reboot_hm, before_minutes=120, after_minutes=15):
 
 
 class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
-                  DisplayWorkerMixin, CachingMixin, UpdateSchedulerMixin):
+                  DisplayWorkerMixin, CachingMixin, UpdateSchedulerMixin, NostrMixin):
     """Main application class that coordinates all components."""
     
     def __init__(self, config_path="config/config.json"):
@@ -1578,6 +1579,7 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
             # reduce boot time (network calls, CPU-heavy threads).
             self._start_webhook_site_listener()
             self._start_precache_updater()
+            self._start_nostr_fetcher()
 
             # Check block height now (moved from __init__ to avoid 10s+ timeout when offline)
             needs_post_connectivity_recheck = self._reconcile_block_height_at_startup()
@@ -2115,6 +2117,21 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
                            'meme_sync_minute', 'tor_meme_downloads'}
         if any(old_config.get(k) != new_config.get(k) for k in _meme_sync_keys):
             self._apply_meme_sync_crontab(new_config)
+
+        if any(old_config.get(k) != new_config.get(k) for k in NOSTR_FETCH_KEYS):
+            self.trigger_nostr_fetch()
+
+        # Which image sources are on is read at pick time, so it needs no
+        # redraw - but a renderer that was not rebuilt above still holds the
+        # old config, and a meme pre-selected for the next block may come from
+        # the source that was just switched off.
+        _source_keys = ('memes_enabled', 'nostr_enabled', 'nostr_card_theme')
+        if any(old_config.get(k) != new_config.get(k) for k in _source_keys):
+            for k in _source_keys:
+                self.image_renderer.config[k] = new_config.get(k)
+            with self._precache['lock']:
+                self._precache['next_meme_path'] = None
+                self._precache['selected_block_types'] = None
 
     def _image_affecting_changes(self, old_config, new_config):
         """The settings that changed and actually alter what gets drawn."""
@@ -3424,10 +3441,10 @@ class MempaperApp(WifiHotspotMixin, DonationsMixin, RecoveryMixin,
     def _setup_routes(self):
         """Register every route. Groups live in the routes package."""
         from routes import (setup, static_assets, pages, auth, config_api, media,
-                            wallet, bitaxe, system, updates, sockets)
+                            nostr, wallet, bitaxe, system, updates, sockets)
 
         for _group in (setup, static_assets, pages, auth, config_api, media,
-                       wallet, bitaxe, system, updates, sockets):
+                       nostr, wallet, bitaxe, system, updates, sockets):
             _group.register(self)
     
     def _flush_pending_caches_on_shutdown(self):

@@ -75,6 +75,8 @@ function getSectionToggleKey(categoryId) {
         'wallet_monitoring': 'show_wallet_balances_block',
         'eink_display': 'e-ink-display-connected',
         'donation': 'show_donation_block',
+        'meme_management': 'memes_enabled',
+        'nostr': 'nostr_enabled',
     };
     return toggleMapping[categoryId] || null;
 }

@@ -200,6 +200,11 @@ class RecoveryMixin:
             if delete_memes:
                 print('🧹 Factory reset: removing meme images...')
                 self._factory_reset_clear_memes()
+            # Unconditional: the reset clears the followed accounts with the
+            # rest of the config, and these images only exist because of them.
+            print('🧹 Factory reset: removing Nostr images...')
+            from lib.nostr_images import get_store
+            get_store().clear()
 
             # 7. Render the delivery-state image and push via the app's display worker
             print('🎨 Factory reset: rendering delivery state image...')

@@ -213,6 +213,37 @@
         </div>
     </div>
 
+    <!-- Nostr Post Modal: same frame as the meme modal, shows the rendered card -->
+    <div id="nostr-modal" class="modal" style="display: none;">
+        <div class="modal-content meme-modal-content">
+            <div class="modal-header">
+                <h3 id="nostr-modal-title" data-i18n="nostr_preview_title">{{ translations.nostr_preview_title or 'Nostr Post' }}</h3>
+                <button class="modal-close" onclick="closeNostrModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="meme-preview-container">
+                    <img id="nostr-modal-image" src="" alt="" />
+                </div>
+                <div class="meme-info">
+                    <div class="meme-info-row">
+                        <strong data-i18n="nostr_author">{{ translations.nostr_author or 'Author' }}</strong> <span id="nostr-modal-author"></span>
+                    </div>
+                    <div class="meme-info-row">
+                        <strong data-i18n="nostr_published">{{ translations.nostr_published or 'Published' }}</strong> <span id="nostr-modal-published"></span>
+                    </div>
+                    <div class="meme-info-row">
+                        <strong data-i18n="nostr_status">{{ translations.nostr_status or 'Status' }}</strong> <span id="nostr-modal-state"></span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer confirm-modal-buttons">
+                <button class="confirm-modal-btn cancel" onclick="closeNostrModal()"><img src="/static/icons/cancel.svg" alt="" class="modal-action-icon"><span class="btn-label" data-i18n="close">{{ translations.close or 'Close' }}</span></button>
+                <button id="nostr-modal-open-btn" class="confirm-modal-btn confirm" onclick="openNostrNoteFromModal()"><img src="/static/icons/open.svg" alt="" class="modal-action-icon"><span class="btn-label" data-i18n="nostr_open_note">{{ translations.nostr_open_note or 'Open post' }}</span></button>
+                <button class="confirm-modal-btn danger" onclick="dismissNostrFromModal()"><img src="/static/icons/delete.svg" alt="" class="modal-action-icon"><span class="btn-label" data-i18n="nostr_dismiss">{{ translations.nostr_dismiss or 'Remove' }}</span></button>
+            </div>
+        </div>
+    </div>
+
     <div id="notification" class="notification"></div>
 
     <!-- Easter egg: sneaky pepe mole -->
@@ -239,6 +270,8 @@
     <script src="static/js/config/06-opsec.js"></script>
     <script src="static/js/config/07-toasts.js"></script>
     <script src="static/js/config/08-modals.js"></script>
+    <script src="static/js/config/09-nostr.js"></script>
+    <script src="static/js/config/10-gallery.js"></script>
     <script>
     (function() {
         var mole = document.getElementById('pepe-mole');

@@ -1178,10 +1178,11 @@ body.dark-mode .table-delete-icon {
     color: var(--text-primary) !important;
 }
 
-/* ── Add Buttons (wallet, bitaxe, block-reward) ─────────────── */
+/* ── Add Buttons (wallet, bitaxe, block-reward, nostr) ─────────────── */
 .wallet-add-btn,
 .bitaxe-add-btn,
-.block-reward-add-btn {
+.block-reward-add-btn,
+.nostr-add-btn {
     background: var(--accent-dim);
     border: 1px solid var(--accent-border);
     color: var(--accent);
@@ -1197,7 +1198,8 @@ body.dark-mode .table-delete-icon {
 
 .wallet-add-btn:hover,
 .bitaxe-add-btn:hover,
-.block-reward-add-btn:hover {
+.block-reward-add-btn:hover,
+.nostr-add-btn:hover {
     background: rgba(247, 147, 26, 0.2);
     border-color: var(--accent);
 }
@@ -1511,6 +1513,247 @@ body.dark-mode .table-delete-icon {
     gap: 12px;
     padding-top: 14px;
     border-top: 1px solid var(--border-color);
+}
+
+/* ── Image modals (meme, OPSec, Nostr): lightbox layout ───────
+   The picture is the point of these dialogs, so it gets the space: the dialog
+   is capped at the viewport and the image shrinks to fit rather than the
+   dialog scrolling. Wide screens put title, details and actions in a slim
+   panel beside the image; narrow ones stack them under it. The footer Close
+   is dropped - the header's x, a click outside and Esc already close it. */
+#meme-modal,
+#opsec-modal,
+#nostr-modal {
+    padding: 12px;
+}
+
+.modal .meme-modal-content {
+    --stage-bg: var(--bg-input);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto auto;
+    grid-template-areas: "header" "preview" "info" "footer";
+    width: min(1200px, 100%);
+    /* A flex item of .modal: without this the image's natural width sets the
+       dialog's minimum, and on a phone it ran off the screen. */
+    min-width: 0;
+    max-width: none;
+    max-height: calc(100vh - 24px);
+    max-height: calc(100dvh - 24px);
+    padding: 0;
+    overflow: hidden;
+    text-align: left;
+}
+
+.meme-modal-content .modal-body {
+    display: contents;
+}
+
+.meme-modal-content .modal-header {
+    grid-area: header;
+    margin: 0;
+    padding: 8px 8px 8px 16px;
+    border-bottom: none;
+    min-width: 0;
+}
+
+.meme-modal-content .modal-header h3 {
+    font-size: 0.95rem;
+    font-weight: 600;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.meme-modal-content .meme-preview-container {
+    grid-area: preview;
+    margin: 0;
+    padding: 0;
+    border-radius: 0;
+    background: var(--stage-bg);
+    max-height: none;
+    min-height: 0;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.meme-modal-content .meme-preview-container img {
+    display: block;
+    max-width: 100%;
+    /* Room left once title, details and buttons are taken: the image shrinks
+       instead of the dialog growing a scroll bar. */
+    max-height: calc(100vh - var(--modal-chrome, 250px));
+    max-height: calc(100dvh - var(--modal-chrome, 250px));
+    width: auto;
+    height: auto;
+    border-radius: 0;
+}
+
+#meme-modal { --modal-chrome: 280px; }
+
+/* Tag editing in the preview: the input is one more pill in the row, not a
+   box of its own - a dashed outline the height of the tags, solid while
+   typing - and the add button appears only once there is something to add. */
+.meme-modal-content .tags-input {
+    align-items: center;
+    gap: 6px;
+    min-height: 0;
+    padding: 0;
+    border: none;
+    background: none;
+}
+
+.meme-modal-content .tag-input {
+    flex: 1 1 90px;
+    min-width: 90px;
+    height: 24px;
+    padding: 0 10px;
+    border: 1px dashed var(--border-color);
+    border-radius: 20px;
+    font-size: 0.78rem;
+    transition: border-color var(--transition);
+}
+
+.meme-modal-content .tag-input:focus {
+    border-style: solid;
+    border-color: var(--accent);
+}
+
+.meme-modal-content .tag-add-button {
+    width: 24px;
+    height: 24px;
+    min-width: 0;
+    min-height: 0;
+    padding: 0;
+    border-radius: 50%;
+}
+
+.meme-modal-content .tag-add-button:disabled {
+    display: none;
+}
+
+.meme-modal-content .tag-add-icon {
+    width: 14px;
+    height: 14px;
+}
+
+@media (max-width: 999px) {
+    /* 16px keeps iOS from zooming into the field. */
+    .meme-modal-content .tag-input { height: 30px; font-size: 16px; }
+    .meme-modal-content .tag-add-button { width: 30px; height: 30px; }
+}
+
+/* Gallery arrows over the image: faint until hovered, so they do not sit on
+   the picture's edges at full strength. */
+.meme-modal-content .meme-preview-container {
+    position: relative;
+}
+
+.gallery-nav {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 2;
+    width: 40px;
+    height: 64px;
+    padding: 0;
+    border: none;
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.35);
+    color: #fff;
+    opacity: 0.55;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity var(--transition), background var(--transition);
+}
+
+.gallery-nav:hover,
+.gallery-nav:focus-visible {
+    opacity: 1;
+    background: rgba(0, 0, 0, 0.6);
+}
+
+.gallery-nav.prev { left: 8px; }
+.gallery-nav.next { right: 8px; }
+
+.meme-modal-content .meme-info {
+    grid-area: info;
+    background: none;
+    border-radius: 0;
+    padding: 6px 16px;
+    overflow-y: auto;
+    min-height: 0;
+}
+
+.meme-modal-content .meme-info-row {
+    padding: 4px 0;
+    border-bottom: none;
+    font-size: 0.8rem;
+}
+
+.meme-modal-content .meme-info-row span {
+    font-size: 0.78rem;
+    overflow-wrap: anywhere;
+}
+
+.meme-modal-content .modal-footer {
+    grid-area: footer;
+    padding: 8px 16px 12px;
+    border-top: none;
+    gap: 8px;
+}
+
+.meme-modal-content .modal-footer .confirm-modal-btn.cancel {
+    display: none;
+}
+
+.meme-modal-content .confirm-modal-btn {
+    padding: 8px 12px;
+    font-size: 0.82rem;
+}
+
+/* Wide: image left at full height, details and actions in a side panel. */
+@media (min-width: 1000px) {
+    .modal .meme-modal-content {
+        grid-template-columns: minmax(0, 1fr) 300px;
+        grid-template-rows: auto minmax(0, 1fr) auto;
+        grid-template-areas: "preview header" "preview info" "preview footer";
+        width: auto;
+        max-width: min(1400px, 100%);
+    }
+
+    .meme-modal-content .meme-preview-container img {
+        max-height: calc(100vh - 26px);
+        max-height: calc(100dvh - 26px);
+        max-width: calc(min(1400px, 100vw - 24px) - 300px);
+    }
+
+    .meme-modal-content .modal-header {
+        padding: 10px 8px 4px 16px;
+    }
+
+    /* A narrow panel reads better with each label above its value. */
+    .meme-modal-content .meme-info-row {
+        flex-wrap: wrap;
+        gap: 2px 8px;
+    }
+
+    .meme-modal-content .meme-info-row strong {
+        flex-basis: 100%;
+        min-width: 0;
+    }
+
+    .meme-modal-content .meme-info-row span {
+        text-align: left;
+    }
+
+    .meme-modal-content .modal-footer {
+        flex-direction: column;
+        padding: 8px 16px 16px;
+    }
 }
 
 /* ── Icon Buttons (modal actions) ───────────────────────────── */
@@ -1862,7 +2105,8 @@ body.dark-mode .meme-filename {
 
 /* Scrollable container for meme/opsec grids */
 .memes-scroll-container,
-.opsec-scroll-container {
+.opsec-scroll-container,
+.nostr-scroll-container {
     max-height: 500px;
     overflow-y: auto;
     border-radius: var(--radius-md);
@@ -1871,23 +2115,27 @@ body.dark-mode .meme-filename {
 }
 
 .memes-scroll-container::-webkit-scrollbar,
-.opsec-scroll-container::-webkit-scrollbar {
+.opsec-scroll-container::-webkit-scrollbar,
+.nostr-scroll-container::-webkit-scrollbar {
     width: 6px;
 }
 
 .memes-scroll-container::-webkit-scrollbar-track,
-.opsec-scroll-container::-webkit-scrollbar-track {
+.opsec-scroll-container::-webkit-scrollbar-track,
+.nostr-scroll-container::-webkit-scrollbar-track {
     background: transparent;
 }
 
 .memes-scroll-container::-webkit-scrollbar-thumb,
-.opsec-scroll-container::-webkit-scrollbar-thumb {
+.opsec-scroll-container::-webkit-scrollbar-thumb,
+.nostr-scroll-container::-webkit-scrollbar-thumb {
     background: var(--border-color);
     border-radius: 3px;
 }
 
 .memes-scroll-container::-webkit-scrollbar-thumb:hover,
-.opsec-scroll-container::-webkit-scrollbar-thumb:hover {
+.opsec-scroll-container::-webkit-scrollbar-thumb:hover,
+.nostr-scroll-container::-webkit-scrollbar-thumb:hover {
     background: var(--text-muted);
 }
 
@@ -1950,27 +2198,6 @@ body.dark-mode .meme-lazy:not(.loaded) {
     body { padding-bottom: 80px; }
 
     .config-section { padding: 14px; }
-
-    .meme-modal-content {
-        width: 98%;
-        max-height: 95vh;
-        padding: 16px;
-    }
-
-    .meme-preview-container {
-        padding: 12px;
-        max-height: 280px;
-    }
-
-    .meme-info-row {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 4px;
-    }
-
-    .meme-info-row span {
-        text-align: left;
-    }
 
     .cancel-button { margin-left: 0; }
 

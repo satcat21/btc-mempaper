@@ -55,6 +55,7 @@ current_processed.png
 # User content
 static/memes/*
 static/opsec/*
+static/nostr/
 
 # Display drivers
 display/drivers/

@@ -56,6 +56,9 @@ def validate_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
         "tang_enabled",
         "meme_sync_enabled",
         "tor_meme_downloads",
+        "memes_enabled",
+        "nostr_enabled",
+        "nostr_use_tor",
     ]
     for setting in bool_settings:
         if setting in config:
@@ -118,6 +121,30 @@ def validate_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
             validated["block_reward_addresses_table"] = validated_entries
         else:
             validated["block_reward_addresses_table"] = []
+
+    # Nostr accounts: any form of key is accepted and stored as an npub, so
+    # the list reads the same however each entry was pasted in.
+    if "nostr_accounts" in config:
+        from lib.nostr_images import parse_pubkey, npub
+        accounts, seen = [], set()
+        for item in config["nostr_accounts"] if isinstance(config["nostr_accounts"], list) else []:
+            if not isinstance(item, dict):
+                continue
+            pk = parse_pubkey(item.get("npub", ""))
+            if pk and pk not in seen:
+                seen.add(pk)
+                # Only the key: the name comes from the account's own profile.
+                accounts.append({"npub": npub(pk)})
+        validated["nostr_accounts"] = accounts
+
+    if config.get("nostr_card_theme") in ("light", "dark"):
+        validated["nostr_card_theme"] = config["nostr_card_theme"]
+
+    if "nostr_relays" in config and isinstance(config["nostr_relays"], list):
+        validated["nostr_relays"] = list(dict.fromkeys(
+            r.strip() for r in config["nostr_relays"]
+            if isinstance(r, str) and r.strip().lower().startswith(("wss://", "ws://"))
+            and len(r.strip()) <= 200))
 
     # Currency validation for BTC price
     valid_currencies = ["USD", "EUR", "GBP", "CAD", "CHF", "AUD", "JPY"]

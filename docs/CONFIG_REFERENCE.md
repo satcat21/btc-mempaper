@@ -439,6 +439,63 @@ glyph.
 
 ---
 
+## Nostr posts
+
+Shows image posts from Nostr accounts you follow, live, as a post card in place
+of a meme. Every 5 minutes mempaper asks the relays for what those accounts
+posted since the last run. Only events whose id and signature check out against
+the account's key are used.
+
+**The pool.** A post with an image is in the pool for 60 minutes after it was
+published. Each block, the display picks from it:
+
+1. posts not shown yet, newest first;
+2. then the one shown longest ago, so the hour's posts rotate;
+3. a post comes back only after at least two other images, memes included;
+4. when the pool is empty, or every post in it is still waiting out its gap, a
+   random meme from the library is shown (if **Show Memes** is on).
+
+So a single post alternates with two memes, and three or more posts keep the
+display on Nostr for the whole hour.
+
+**Nothing is written to the SD card per post.** Images are held in memory,
+downscaled to 1200 px, at most 40 posts. The card the display shows is rendered
+to `/dev/shm` (RAM), and only the last few are kept. Profile names and avatars
+are kept in `cache/nostr/`, written only when a profile changes. Reposts of an
+image seen in the last 24 hours are skipped by exact and perceptual hash.
+
+**The card** looks like a post in a Nostr app: avatar, name and age (`12m`),
+up to four lines of text, then the image. Links are shortened to their host,
+references to other notes are dropped. **Post Card Style** sets light or dark.
+
+**Following many accounts.** **Import follows** takes an npub and adds every
+account in its follow list (NIP-02 contact list); remove the ones you do not
+want, then save. Profiles are looked up on the configured relays plus indexer
+relays (purplepag.es, user.kindpag.es, indexer.coracle.social), and each
+account's relay list (NIP-65) is remembered. Posts are also fetched from the
+relays the followed accounts write to, at most 8 of them, those most of the
+accounts share. Names still missing are asked from the accounts' own relays;
+an account without any profile shows a shortened npub. Avatars fill in a few
+per run, except for authors of posts in the pool, which get theirs at once.
+
+The settings section shows the prepared posts as rendered cards, in the order
+they will be picked, with their state (next, queued, waiting) and minutes left.
+**Remove** takes a post out of the pool. When nobody posted in the last hour,
+the latest older post is shown there as a preview only.
+
+| Web Label | Config Key | Type | Description | Allowed Values / Examples |
+| :--- | :--- | :--- | :--- | :--- |
+| **Show Memes** (Meme Management toggle) | `memes_enabled` | Switch | Use the meme library; with Nostr on, as the fallback | `true` (default), `false` |
+| **Show Nostr Posts** (section toggle) | `nostr_enabled` | Switch | Show live posts and fetch every 5 minutes | `true`, `false` (default) |
+| **Followed Accounts** | `nostr_accounts` | List | Accounts to fetch from. Accepts npub, nprofile or hex; stored as npub | `[{"npub": "npub1…"}]` |
+| **Post Card Style** | `nostr_card_theme` | Toggle | Look of the post card on the display | `light` (default), `dark` |
+| **Relays** (Advanced) | `nostr_relays` | List | Relays to query. Empty uses relay.damus.io, nos.lol, relay.primal.net, relay.snort.social | `["wss://nos.lol"]` |
+| **Fetch via Tor** (Advanced) | `nostr_use_tor` | Switch | Route relay connections and image downloads through the Tor SOCKS proxy (`tor_socks_host` / `tor_socks_port`) | `true` (default), `false` |
+
+With both sources off, no image is shown.
+
+---
+
 ## OPSec mode
 
 When OPSec Mode is enabled the e-ink display shows a randomly selected cover image (e.g. a family photo) instead of Bitcoin data. The web dashboard is **not** affected and always shows normal BTC data.

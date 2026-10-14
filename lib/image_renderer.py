@@ -2036,6 +2036,31 @@ class ImageRenderer(ColorMixin, MemeMixin, HashFrameMixin, TextMixin,
         return y + text_height + LINE_SPACING_DEFAULT
 
     
+    def _open_layout_meme(self, shared_data):
+        """The image for this layout, fully decoded, or None.
+
+        When the chosen file cannot be read, a replacement is picked here -
+        before any space is worked out - and written back to shared_data, so
+        the e-ink pass draws the same one. Picking it later, as the fallback
+        did, drew a full-height image into space already given to the info
+        blocks, and the e-ink pass, asking again, could get none.
+        """
+        path = shared_data.get("meme_path")
+        for attempt in range(2):
+            if not path:
+                return None
+            try:
+                image = self._open_image_robust(path)
+                image.load()  # decode now: a broken file fails here, not mid-layout
+                return image
+            except Exception as e:
+                print(f"⚠️ Could not read image {path}: {type(e).__name__}: {e}")
+                if attempt:
+                    return None
+                path = self.pick_random_meme()
+                shared_data["meme_path"] = path
+        return None
+
     def _render_image_with_shared_data(self, block_height, block_hash, mempool_api,
                                       shared_data, web_quality=False, startup_mode=False,
                                       skip_hash_frame=False):
@@ -2304,7 +2329,10 @@ class ImageRenderer(ColorMixin, MemeMixin, HashFrameMixin, TextMixin,
 
             if meme_path:
                 try:
-                    meme_img = self._open_image_robust(meme_path)
+                    meme_img = self._open_layout_meme(shared_data)
+                    meme_path = shared_data.get("meme_path")
+                    if meme_img is None:
+                        raise ValueError("no readable image")
                     aspect_ratio = meme_img.width / meme_img.height
                     max_width = self.width - 40
 
@@ -2389,7 +2417,11 @@ class ImageRenderer(ColorMixin, MemeMixin, HashFrameMixin, TextMixin,
                 meme_img = self.add_rounded_corners(meme_img, radius=20)  
                 img.paste(meme_img, (meme_x, current_y), meme_img)
                 current_y += meme_height
-            else:
+            elif not info_blocks_to_render:
+                # No image could be read, even a replacement. Draw a fallback
+                # only into space nothing else was given - drawing it over
+                # info blocks fitted around an empty image is what pushed
+                # them into the hash frame.
                 fallback_h = max(50, max_meme_height) if meme_height == 0 else meme_height
                 self._render_fallback_content(img, draw, current_y, fallback_h,
                                             font_holiday_title, web_quality)
@@ -2459,7 +2491,10 @@ class ImageRenderer(ColorMixin, MemeMixin, HashFrameMixin, TextMixin,
             meme_width = 0
             if meme_path:
                 try:
-                    meme_img = self._open_image_robust(meme_path)
+                    meme_img = self._open_layout_meme(shared_data)
+                    meme_path = shared_data.get("meme_path")
+                    if meme_img is None:
+                        raise ValueError("no readable image")
                     aspect_ratio = meme_img.width / meme_img.height
                     max_width = self.width - 40
                     

@@ -73,6 +73,32 @@ class MemeMixin:
 
     def pick_random_meme(self):
         """
+        Select the next image. A live post from a followed Nostr account comes
+        first when there is one ready; the meme library is the fallback.
+
+        Returns:
+            str or None: Path to the selected image, or None if there is none
+        """
+        from lib.nostr_images import get_store
+        result = None
+        if self.config.get("nostr_enabled", False):
+            store = get_store()
+            # Every pick counts towards the gap a shown post has to wait out,
+            # memes included - "two other images in between".
+            store.tick()
+            result = store.pick(self.config)
+        if not result and self.config.get("memes_enabled", True):
+            result = self._pick_library_meme()
+        if not result and self.config.get("nostr_enabled", False):
+            # Nothing else to show - memes off or none on disk. A post again
+            # before its gap, or the newest older one, beats an empty panel.
+            result = get_store().pick(self.config, relaxed=True)
+        if result:
+            self._track_recent_meme(result)
+        return result
+
+    def _pick_library_meme(self):
+        """
         Select a random meme image from the local memes directory.
         Avoids repeating recently shown memes.
 
@@ -95,12 +121,8 @@ class MemeMixin:
             if keywords:
                 result = self._pick_local_meme_by_keywords(keywords)
                 if result:
-                    self._track_recent_meme(result)
                     return result
-        result = self._pick_local_meme()
-        if result:
-            self._track_recent_meme(result)
-        return result
+        return self._pick_local_meme()
 
     def _track_recent_meme(self, path: str) -> None:
         """Record a meme path in the recent history ring buffer."""
