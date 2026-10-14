@@ -772,7 +772,7 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
         "nostr_enabled": {
             "type": "boolean",
             "label": t.get("nostr_enabled", "Show Nostr Posts"),
-            "description": t.get("nostr_enabled_desc", "Show image posts from the accounts below as a post card, live: anything published in the last 60 minutes, newest first, each again only after two other images. When nobody posted, a meme is shown."),
+            "description": t.get("nostr_enabled_desc", "Show image posts from the accounts below as a post card, live: anything published within the time window set under Advanced (1 hour by default), newest first, each again only after two other images. When nobody posted, a meme is shown."),
             "default": False,
             "category": "nostr",
             "order": 0
@@ -784,6 +784,30 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
             "default": [],
             "category": "nostr",
             "order": 1
+        },
+        "nostr_skip_sensitive": {
+            "type": "boolean",
+            "label": t.get("nostr_skip_sensitive", "Skip Sensitive Posts"),
+            "description": t.get("nostr_skip_sensitive_desc", "Leave out posts their author marked with a content warning, or tagged #nsfw and the like."),
+            "default": True,
+            "category": "nostr",
+            "order": 1.5
+        },
+        "nostr_max_per_account": {
+            "type": "select",
+            "label": t.get("nostr_max_per_account", "Posts per Account"),
+            "description": t.get("nostr_max_per_account_desc", "At most this many current posts of one account take turns, its newest. Keeps one busy account from filling the display."),
+            "default": 3,
+            "options": [
+                {"value": 1, "label": "1"},
+                {"value": 2, "label": "2"},
+                {"value": 3, "label": "3"},
+                {"value": 5, "label": "5"},
+                {"value": 10, "label": "10"},
+                {"value": 0, "label": t.get("nostr_per_account_unlimited", "No limit"), "_lk": "nostr_per_account_unlimited"},
+            ],
+            "category": "nostr",
+            "order": 1.6
         },
         "nostr_card_theme": {
             "type": "toggle",
@@ -803,6 +827,22 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
             "category": "nostr",
             "order": 3
         },
+        "nostr_pool_minutes": {
+            "type": "duration_slider",
+            "label": t.get("nostr_pool_minutes", "Show Posts For"),
+            "description": t.get("nostr_pool_minutes_desc", "How long after it was published a post counts as current and takes part in the rotation. Short keeps the display live, long shows posts of quiet accounts for longer."),
+            "default": 60,
+            "min": 10,
+            "max": 10080,
+            # Snap points, in minutes. A straight scale from 10 minutes to
+            # 7 days would squeeze every useful short value into its first
+            # few pixels.
+            "stops": [10, 15, 20, 30, 45, 60, 90, 120, 180, 240, 360, 480, 720, 1080,
+                      1440, 2880, 4320, 5760, 7200, 8640, 10080],
+            "category": "nostr",
+            "advanced": True,
+            "order": 9
+        },
         "nostr_relays": {
             "type": "tags",
             "label": t.get("nostr_relays", "Relays"),
@@ -812,6 +852,15 @@ def get_config_schema(self, translations: Dict[str, str] = None) -> Dict[str, An
             "category": "nostr",
             "advanced": True,
             "order": 10
+        },
+        "nostr_live": {
+            "type": "boolean",
+            "label": t.get("nostr_live", "Live Updates"),
+            "description": t.get("nostr_live_desc", "Keep a connection to the relays open, so new posts arrive within seconds. Saves the network load of asking every 5 minutes; off falls back to that."),
+            "default": True,
+            "category": "nostr",
+            "advanced": True,
+            "order": 8
         },
         "nostr_use_tor": {
             "type": "boolean",

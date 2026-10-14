@@ -80,15 +80,59 @@ _PROFILE_REFRESH_SECONDS = 30 * 60
 _IMAGE_KINDS = [1, 20]
 
 DAY = 24 * 3600
-# A post is in the pool for this long after it was published.
+# A post is in the pool for this long after it was published: the operator's
+# nostr_pool_minutes, held within these bounds.
 POOL_WINDOW = 3600
+POOL_WINDOW_MIN = 10 * 60
+POOL_WINDOW_MAX = 7 * DAY
+
+
+def max_per_account(config):
+    """Posts per account kept in the pool; 0 means no limit."""
+    try:
+        value = int(config.get('nostr_max_per_account', DEFAULT_MAX_PER_ACCOUNT))
+    except (TypeError, ValueError):
+        value = DEFAULT_MAX_PER_ACCOUNT
+    return max(0, min(20, value))
+
+
+def is_sensitive(event):
+    """True for a post its author marked as sensitive: a NIP-36 content
+    warning, a content-warning label, or a hashtag such as #nsfw."""
+    for tag in event.get('tags', []):
+        if not isinstance(tag, list) or not tag:
+            continue
+        if tag[0] == 'content-warning':
+            return True
+        if tag[0] == 'L' and len(tag) > 1 and tag[1] == 'content-warning':
+            return True
+        if tag[0] == 't' and len(tag) > 1 and str(tag[1]).lower() in _SENSITIVE_HASHTAGS:
+            return True
+    return False
+
+
+def pool_window(config):
+    """The pool window in seconds, from the config."""
+    try:
+        minutes = int(config.get('nostr_pool_minutes', POOL_WINDOW // 60))
+    except (TypeError, ValueError):
+        minutes = POOL_WINDOW // 60
+    return max(POOL_WINDOW_MIN, min(POOL_WINDOW_MAX, minutes * 60))
 # A post comes back only after this many other images have been shown.
 _MIN_GAP = 2
 _MAX_POOL = 40
-# Image downloads per fetch run. Following many busy accounts can bring a
-# hundred posts in five minutes; only the newest _MAX_POOL can be kept, and
-# each download costs a Pi Zero seconds of decoding and hashing.
-_MAX_DOWNLOADS_PER_RUN = _MAX_POOL
+# Images are downloaded only when a post is about to be shown or previewed:
+# a post itself is a few KB of text and links. This many of the posts next in
+# line are fetched ahead, so a pick seldom waits on the network.
+_PREFETCH = 2
+# Download rounds a post gets before it is dropped as unreachable.
+_IMAGE_ATTEMPTS = 3
+# Posts per account in the pool unless configured: following hundreds of
+# accounts, one busy one would otherwise fill it.
+DEFAULT_MAX_PER_ACCOUNT = 3
+# Hashtags treated like a content warning (NIP-36) when sensitive posts are
+# skipped.
+_SENSITIVE_HASHTAGS = {'nsfw', 'nsfl', 'porn', 'nude', 'nudity', 'gore'}
 _EVENT_LIMIT = 200
 # Authors per relay filter. A followed list imported from a contact list can
 # run to hundreds, and relays cap how many keys one filter may carry.
@@ -111,8 +155,9 @@ _ARCHIVE_FILL = 8
 _MAX_DOWNLOAD_BYTES = 15 * 1024 * 1024
 # Smaller than this is an emoji, an avatar or a badge, not a picture.
 _MIN_SIDE = 200
-# Held in memory at this size: enough for the card, which is 1000 px wide.
-_MAX_HELD_SIDE = 1200
+# Held in memory at this size: the card's image area is 912 px wide, so
+# 1000 covers it in either orientation, and lets a JPEG decode at 1/4 scale.
+_MAX_HELD_SIDE = 1000
 
 # Perceptual match: 256-bit difference hash. Nostr clients and media hosts
 # re-encode on upload, so a repost is rarely byte-identical. 256 bits rather
@@ -684,6 +729,27 @@ def _download(url, config):
         return buf.getvalue()
 
 
+def _open_downscaled(data, side):
+    """The image in data, decoded no larger than needed for side pixels.
+
+    For a JPEG, draft mode has the decoder skip straight to 1/2, 1/4 or 1/8
+    scale: a 4000 px photo is never decoded in full, which on a Pi Zero is
+    the difference between seconds and a fraction of one.
+    """
+    img = Image.open(io.BytesIO(data))
+    w, h = img.size
+    scale = side / max(w, h)
+    if img.format == 'JPEG' and scale < 1:
+        # The box in the image's own proportions: draft keeps both sides at
+        # least this big, so a square box would hold a landscape photo at
+        # half size where a quarter is enough.
+        img.draft('RGB', (max(1, round(w * scale)), max(1, round(h * scale))))
+    img.seek(0)
+    img = ImageOps.exif_transpose(img)
+    img.load()
+    return img
+
+
 def dhash(img):
     """256-bit difference hash of a PIL image, as an int."""
     small = img.convert('L').resize((_DHASH_SIZE + 1, _DHASH_SIZE), Image.LANCZOS)
@@ -769,27 +835,47 @@ class NostrPostStore:
     """One per process: the pool must outlive ImageRenderer, which is rebuilt
     on every settings save.
 
-    A post is a dict: key, event_id, pubkey, created_at, text, image (encoded
-    bytes), shown (count) and last_tick (pick counter when last shown).
+    A post is a dict: key, event_id, pubkey, created_at, text, urls (image
+    links), image (encoded bytes once downloaded, else None), attempts
+    (download rounds so far), shown (count) and last_tick (pick counter when
+    last shown).
     """
 
     def __init__(self):
         self.lock = threading.RLock()
         self._fetch_lock = threading.Lock()
         self._pool = {}
+        self._window = POOL_WINDOW  # seconds; set from the config by fetch and pick
         self._archive = {}          # key -> post that has left the pool
         self._last_key = None       # key of the post shown last
         self._dismissed = set()
         self._seen_events = {}      # event_id -> created_at, handled for good
-        self._failures = {}         # event_id -> failed download attempts
         self._recent_hashes = []    # (added_at, sha256, dhash, aspect, label)
         self._cursors = {}          # pubkey -> newest created_at seen
         self._profiles_fetched = 0.0
         self._preview_cache = {}    # (key, theme, width) -> (rendered_at, bytes)
         self._tick = 0
         self._migrated = False
+        self._followed = set()
+        self._per_account = DEFAULT_MAX_PER_ACCOUNT
+        self._skip_sensitive = True
+        # One image download at a time: a Pi Zero gains nothing from running
+        # them side by side, and two picks of one post must not fetch it twice.
+        self._image_lock = threading.Lock()
+        self._prefetching = False
+        # Recent picks, so one made for a pre-render that a newer post then
+        # replaced can be taken back: path -> (key, shown, last_tick) before.
+        self._picks = {}
         self.status = {'running': False, 'last_run': None, 'message': '',
                        'added': 0, 'duplicates': 0, 'errors': []}
+
+    def configure(self, config):
+        """Take the settings that shape the pool from the config."""
+        with self.lock:
+            self._window = pool_window(config)
+            self._followed = {pk for pk, _ in configured_accounts(config)}
+            self._per_account = max_per_account(config)
+            self._skip_sensitive = bool(config.get('nostr_skip_sensitive', True))
 
     # -- picking --------------------------------------------------------
 
@@ -804,11 +890,13 @@ class NostrPostStore:
 
     def _expire(self, now):
         for key, post in list(self._pool.items()):
-            if now - post['created_at'] > POOL_WINDOW:
+            if now - post['created_at'] > self._window:
                 del self._pool[key]
                 self._archive[key] = post
+        # The archive reaches at least as far back as the pool.
+        archive_window = max(_ARCHIVE_WINDOW, self._window)
         for key, post in list(self._archive.items()):
-            if now - post['created_at'] > _ARCHIVE_WINDOW:
+            if now - post['created_at'] > archive_window:
                 del self._archive[key]
         if len(self._archive) > _MAX_ARCHIVE:
             for key in sorted(self._archive, key=lambda k: self._archive[k]['created_at'])[:len(self._archive) - _MAX_ARCHIVE]:
@@ -847,35 +935,155 @@ class NostrPostStore:
         one comes back only when there is no other post at all.
         """
         now = now or time.time()
-        with self.lock:
-            ranked = self._ranked(self._tick, now)
-            if ranked and ranked[0][1]:
-                post = ranked[0][0]
-            elif relaxed:
-                post = self._relaxed_choice()
-                if post is None:
-                    return None
-            else:
+        self.configure(config)
+        skipped = set()
+        # A post whose image cannot be had is passed over for the next one.
+        for _ in range(6):
+            with self.lock:
+                ranked = [(p, ok) for p, ok in self._ranked(self._tick, now) if p['key'] not in skipped]
+                eligible = [p for p, ok in ranked if ok]
+                if eligible:
+                    post = eligible[0]
+                elif relaxed:
+                    post = self._relaxed_choice(skipped)
+                else:
+                    post = None
+            if post is None:
                 return None
-            post['shown'] += 1
-            post['last_tick'] = self._tick
-            self._last_key = post['key']
-        try:
-            return self._write_card(post, config, now)
-        except Exception as e:
-            print(f'⚠️ Nostr: could not render card {post["key"]}: {e}')
-            return None
+            if not self.ensure_image(post, config):
+                skipped.add(post['key'])
+                continue
+            with self.lock:
+                before = (post['key'], post['shown'], post['last_tick'])
+                post['shown'] += 1
+                post['last_tick'] = self._tick
+                self._last_key = post['key']
+            try:
+                path = self._write_card(post, config, now)
+            except Exception as e:
+                print(f'⚠️ Nostr: could not render card {post["key"]}: {e}')
+                return None
+            with self.lock:
+                self._picks[path] = before
+                while len(self._picks) > 20:
+                    self._picks.pop(next(iter(self._picks)))
+            self.start_prefetch(config)
+            return path
+        return None
 
-    def _relaxed_choice(self):
+    def _relaxed_choice(self, skipped=()):
         """With nothing else to show: never-shown posts first, newest first,
         then the one shown longest ago - from the pool and the archive alike,
         and not the post shown last while there is any other."""
-        everything = list(self._pool.values()) + list(self._archive.values())
+        everything = [p for p in list(self._pool.values()) + list(self._archive.values())
+                      if p['key'] not in skipped]
         others = [p for p in everything if p['key'] != self._last_key] or everything
         if not others:
             return None
         return min(others, key=lambda p: (p['last_tick'] if p['last_tick'] is not None else -1,
                                           -p['created_at']))
+
+    def is_unseen_choice(self, path):
+        """True when path is the card of a post picked for its first showing."""
+        with self.lock:
+            record = self._picks.get(path)
+            return bool(record) and record[1] == 0
+
+    def revert_pick(self, path):
+        """Undo a pick that will never be shown - a pre-render replaced by a
+        newer post - so that post keeps its turn."""
+        with self.lock:
+            record = self._picks.pop(path, None)
+            if not record:
+                return
+            post = self._find(record[0])
+            if post is not None:
+                post['shown'], post['last_tick'] = record[1], record[2]
+
+    # -- images ---------------------------------------------------------
+
+    def ensure_image(self, post, config, log=print):
+        """Download the post's image if it has none yet. False when it cannot
+        be had: unreachable for now, or, after _IMAGE_ATTEMPTS rounds or as a
+        repost of an image already seen, never - the post is then dropped."""
+        if post.get('image'):
+            return True
+        with self._image_lock:
+            if post.get('image'):
+                return True
+            if post.get('dead'):
+                return False
+            failed = False
+            for url in post.get('urls', []):
+                try:
+                    data = _download(url, config)
+                    img = _open_downscaled(data, _MAX_HELD_SIDE)
+                except Exception as e:
+                    code, reason, params = _describe_error(e)
+                    self._add_errors([_error(_short_url(url), code, reason, **params)])
+                    log(f'⚠️ Nostr: could not download {url}: {reason}')
+                    failed = True
+                    continue
+                if min(img.size) < _MIN_SIDE:
+                    continue
+                sha = hashlib.sha256(data).hexdigest()
+                aspect = img.width / img.height
+                dh = dhash(img)
+                with self.lock:
+                    match = next((h[4] for h in self._recent_hashes if h[1] == sha), None)
+                    if match is None:
+                        near = _near_duplicate(dh, aspect, [(h[2], h[3], h[4]) for h in self._recent_hashes])
+                        match = near[0] if near else None
+                if match:
+                    self.status['duplicates'] += 1
+                    log(f'↺ Nostr: skipped {url}, same image as {match}')
+                    self._drop(post)
+                    return False
+                img.thumbnail((_MAX_HELD_SIDE, _MAX_HELD_SIDE), Image.LANCZOS)
+                buf = io.BytesIO()
+                if img.mode in ('RGBA', 'LA') or (img.mode == 'P' and 'transparency' in img.info):
+                    img.convert('RGBA').save(buf, 'PNG')
+                else:
+                    img.convert('RGB').save(buf, 'JPEG', quality=88)
+                with self.lock:
+                    self._recent_hashes.append((time.time(), sha, dh, aspect, f'post {post["event_id"][:12]}'))
+                    post['image'] = buf.getvalue()
+                return True
+            post['attempts'] = post.get('attempts', 0) + 1
+            if not failed or post['attempts'] >= _IMAGE_ATTEMPTS:
+                # Nothing usable, or tried often enough.
+                self._drop(post)
+            return False
+
+    def _drop(self, post):
+        with self.lock:
+            post['dead'] = True
+            self._pool.pop(post['key'], None)
+            self._archive.pop(post['key'], None)
+
+    def start_prefetch(self, config):
+        """Fetch the images of the next posts in line, in the background."""
+        with self.lock:
+            if self._prefetching:
+                return
+            self._prefetching = True
+        threading.Thread(target=self._prefetch, args=(config,), name='nostr-prefetch',
+                         daemon=True).start()
+
+    def _prefetch(self, config):
+        try:
+            with self.lock:
+                ahead = [p for p, ok in self._ranked(self._tick + 1, time.time())
+                         if ok and not p.get('image')][:_PREFETCH]
+            for post in ahead:
+                self.ensure_image(post, config, log=lambda *_: None)
+            if ahead:
+                self._fill_avatars(sorted({p['pubkey'] for p in ahead}), self._profiles(), config, len(ahead))
+        except Exception as e:
+            print(f'⚠️ Nostr: prefetch failed: {e}')
+        finally:
+            with self.lock:
+                self._prefetching = False
 
     def has_posts(self):
         with self.lock:
@@ -922,11 +1130,15 @@ class NostrPostStore:
                 pass
         return path
 
-    def preview_jpeg(self, key, theme, width=None):
+    def preview_jpeg(self, key, theme, width=None, config=None):
         """The card as JPEG bytes for the settings page, or None."""
         with self.lock:
             post = self._find(key)
         if post is None:
+            return None
+        # Only the cards the page actually scrolls to are asked for, so this
+        # is where a post not yet in line gets its image.
+        if not post.get('image') and (config is None or not self.ensure_image(post, config)):
             return None
         cache_key = (key, theme, width)
         cached = self._preview_cache.get(cache_key)
@@ -958,10 +1170,12 @@ class NostrPostStore:
             self._dismissed.add(post['event_id'])
             return True
 
-    def overview(self, now=None):
+    def overview(self, now=None, config=None):
         """The pool in pick order, for the settings page."""
         now = now or time.time()
         with self.lock:
+            if config is not None:
+                self.configure(config)
             # Ranked at the next tick: what the next pick would see.
             ranked = self._ranked(self._tick + 1, now)
             posts = []
@@ -970,13 +1184,16 @@ class NostrPostStore:
                     **self._describe(p),
                     'shown': p['shown'],
                     'state': 'next' if i == 0 and eligible else ('queued' if eligible else 'waiting'),
-                    'expires_in': max(0, int(POOL_WINDOW - (now - p['created_at']))),
+                    'expires_in': max(0, int(self._window - (now - p['created_at']))),
                 })
             sample = self._describe(self._sample) if self._sample and not posts else None
+            for entry, (p, _) in zip(posts, ranked):
+                entry['ready'] = bool(p.get('image'))
             counts = {}
             for p in self._pool.values():
                 counts[p['pubkey']] = counts.get(p['pubkey'], 0) + 1
-        return {'posts': posts, 'sample': sample, 'counts': counts}
+        return {'posts': posts, 'sample': sample, 'counts': counts,
+                'window_minutes': self._window // 60}
 
     def _describe(self, p):
         profile = self._profiles().get(p['pubkey'], {})
@@ -1070,10 +1287,11 @@ class NostrPostStore:
         # Posts since the last run, never older than the window. While the
         # archive is short, a day back, to give a memes-off panel something to
         # rotate through and the settings page a preview.
+        self.configure(config)
         with self.lock:
             self._expire(now)
             older_wanted = max(0, _ARCHIVE_FILL if len(self._archive) < _ARCHIVE_MIN else 0)
-        floor = now - (_ARCHIVE_WINDOW if older_wanted else POOL_WINDOW)
+        floor = now - max(self._window, _ARCHIVE_WINDOW if older_wanted else 0)
         # One filter per group of authors, from the oldest cursor in the group;
         # anything already handled is skipped by its event id.
         filters = _author_filters(
@@ -1102,51 +1320,24 @@ class NostrPostStore:
                          and isinstance(e.get('created_at'), int)),
                         key=lambda e: -e['created_at'])
         added = 0
-        downloads = 0
         for ev in events:                       # newest first
-            eid = ev.get('id', '')
-            if eid in self._seen_events or eid in self._dismissed:
-                continue
-            in_window = now - ev['created_at'] <= POOL_WINDOW
+            in_window = now - ev['created_at'] <= self._window
             if not in_window and older_wanted <= 0:
                 continue
-            if in_window:
-                with self.lock:
-                    full = (len(self._pool) >= _MAX_POOL
-                            and ev['created_at'] <= min(p['created_at'] for p in self._pool.values()))
-                if full:
-                    # Older than every post kept: the cap would drop it straight
-                    # after downloading it.
-                    continue
-            if downloads >= _MAX_DOWNLOADS_PER_RUN:
-                break
-            downloads += 1
-            post = self._make_post(ev, config, log)
+            post = self._ingest(ev, now, log)
             if post is None:
                 continue
             with self.lock:
                 if in_window:
-                    self._pool[post['key']] = post
-                    added += 1
+                    added += self._add_post(post)
                 else:
                     self._archive[post['key']] = post
                     older_wanted -= 1
-
-        # A card needs its author's avatar now, not in a few runs.
-        with self.lock:
-            authors = {p['pubkey'] for p in self._pool.values()}
-            authors |= {p['pubkey'] for p in self._archive.values()}
-        if authors:
-            self._fill_avatars(sorted(authors), self._profiles(), config, len(authors))
 
         with self.lock:
             for ev in events:
                 pk = ev['pubkey']
                 self._cursors[pk] = max(self._cursors.get(pk, 0), ev['created_at'])
-            # Newest first beyond the cap.
-            if len(self._pool) > _MAX_POOL:
-                for key in sorted(self._pool, key=lambda k: self._pool[k]['created_at'])[:len(self._pool) - _MAX_POOL]:
-                    del self._pool[key]
             cutoff = now - 2 * DAY
             self._seen_events = {k: t for k, t in self._seen_events.items() if t > cutoff}
             self._recent_hashes = [h for h in self._recent_hashes if now - h[0] <= _DUPLICATE_MEMORY]
@@ -1158,80 +1349,78 @@ class NostrPostStore:
 
         self.status['added'] = added
         self.status['message'] = 'ok'
+        # The posts next in line get their images now; the rest when their
+        # turn comes, or never if they age out first.
+        self._prefetch_now(config)
         # Every five minutes; a line for each quiet run would only fill the journal.
         if added or self.status['duplicates']:
             log(f'🟣 Nostr: {added} new post(s), {self.status["duplicates"]} duplicate(s) skipped, '
                 f'{pool_size} in the pool')
 
-    def _make_post(self, ev, config, log):
-        """The post for an event, its first usable image held in memory; None
-        when it has none, is not genuine, or repeats one already seen."""
-        eid = ev['id']
+    def _ingest(self, ev, now, log=print):
+        """The post for an event - text and image links only, no download -
+        or None when it is not one to show: already handled, from someone not
+        followed, without an image, marked sensitive, or not genuine."""
+        eid = ev.get('id')
+        created = ev.get('created_at')
+        if not isinstance(eid, str) or eid in self._seen_events or eid in self._dismissed:
+            return None
+        if (ev.get('kind') not in _IMAGE_KINDS or ev.get('pubkey') not in self._followed
+                or not isinstance(created, int) or created > now + 300):
+            return None
+        self._seen_events[eid] = created
         urls = [u for u in image_urls(ev) if not _is_private_host(u)]
         if not urls:
-            self._seen_events[eid] = ev['created_at']
+            return None
+        if self._skip_sensitive and is_sensitive(ev):
             return None
         if not verify_event(ev):
-            self._seen_events[eid] = ev['created_at']
             log(f'⚠️ Nostr: dropped event {eid[:12]} with a bad signature')
             return None
+        return {
+            'key': eid[:16], 'event_id': eid, 'pubkey': ev['pubkey'], 'created_at': created,
+            'text': _post_text(ev.get('content', ''), image_urls(ev)),
+            'urls': urls, 'image': None, 'attempts': 0, 'shown': 0, 'last_tick': None,
+        }
 
-        failed = False
-        for url in urls:
-            try:
-                data = _download(url, config)
-                img = Image.open(io.BytesIO(data))
-                img.seek(0)
-                img = ImageOps.exif_transpose(img)
-                img.load()
-            except Exception as e:
-                code, reason, params = _describe_error(e)
-                self._add_errors([_error(_short_url(url), code, reason, **params)])
-                log(f'⚠️ Nostr: could not download {url}: {reason}')
-                failed = True
-                continue
-            if min(img.size) < _MIN_SIDE:
-                continue
+    def _add_post(self, post):
+        """Into the pool, within the per-account limit and the pool's size,
+        newest kept. 1 when the post is in the pool afterwards, else 0. The
+        caller holds the lock."""
+        self._pool[post['key']] = post
+        if self._per_account:
+            mine = sorted((p for p in self._pool.values() if p['pubkey'] == post['pubkey']),
+                          key=lambda p: -p['created_at'])
+            for old in mine[self._per_account:]:
+                del self._pool[old['key']]
+        if len(self._pool) > _MAX_POOL:
+            for key in sorted(self._pool, key=lambda k: self._pool[k]['created_at'])[:len(self._pool) - _MAX_POOL]:
+                del self._pool[key]
+        return 1 if post['key'] in self._pool else 0
 
-            sha = hashlib.sha256(data).hexdigest()
-            aspect = img.width / img.height
-            dh = dhash(img)
-            known = [(h[2], h[3], h[4]) for h in self._recent_hashes]
-            match = next((h[4] for h in self._recent_hashes if h[1] == sha), None)
-            if match is None:
-                near = _near_duplicate(dh, aspect, known)
-                match = near[0] if near else None
-            if match:
-                self.status['duplicates'] += 1
-                self._seen_events[eid] = ev['created_at']
-                log(f'↺ Nostr: skipped {url}, same image as {match}')
+    def ingest_live(self, event, config):
+        """A post pushed by a relay over a live subscription. Returns the post
+        when it joined the pool, else None."""
+        now = int(time.time())
+        with self.lock:
+            post = self._ingest(event, now)
+            if post is None or now - post['created_at'] > self._window:
                 return None
+            pk = post['pubkey']
+            self._cursors[pk] = max(self._cursors.get(pk, 0), post['created_at'])
+            if not self._add_post(post):
+                return None
+            self.status['live_added'] = self.status.get('live_added', 0) + 1
+        self.start_prefetch(config)
+        return post
 
-            img.thumbnail((_MAX_HELD_SIDE, _MAX_HELD_SIDE), Image.LANCZOS)
-            buf = io.BytesIO()
-            if img.mode in ('RGBA', 'LA') or (img.mode == 'P' and 'transparency' in img.info):
-                img.convert('RGBA').save(buf, 'PNG')
-            else:
-                img.convert('RGB').save(buf, 'JPEG', quality=88)
-            self._recent_hashes.append((time.time(), sha, dh, aspect, f'post {eid[:12]}'))
-            self._seen_events[eid] = ev['created_at']
-            self._failures.pop(eid, None)
-            return {
-                'key': eid[:16], 'event_id': eid, 'pubkey': ev['pubkey'],
-                'created_at': ev['created_at'],
-                'text': _post_text(ev.get('content', ''), image_urls(ev)),
-                'image': buf.getvalue(), 'shown': 0, 'last_tick': None,
-            }
-
-        # Every image failed to download: try again next run, but not forever.
-        if failed:
-            self._failures[eid] = self._failures.get(eid, 0) + 1
-            if self._failures[eid] >= 3:
-                self._seen_events[eid] = ev['created_at']
-                self._failures.pop(eid, None)
-        else:
-            self._seen_events[eid] = ev['created_at']
-        return None
+    def _prefetch_now(self, config):
+        """Prefetch in this thread, for the fetch run that is background already."""
+        with self.lock:
+            if self._prefetching:
+                return
+            self._prefetching = True
+        self._prefetch(config)
 
     def _prune_unfollowed(self, followed):
         for key in [k for k, p in self._pool.items() if p['pubkey'] not in followed]:
@@ -1405,9 +1594,8 @@ class NostrPostStore:
                 or _is_private_host(url)):
             return
         try:
-            img = Image.open(io.BytesIO(_download(url, config)))
-            img.seek(0)
-            img = ImageOps.fit(ImageOps.exif_transpose(img).convert('RGB'), (128, 128), Image.LANCZOS)
+            img = _open_downscaled(_download(url, config), 256)
+            img = ImageOps.fit(img.convert('RGB'), (128, 128), Image.LANCZOS)
             os.makedirs(AVATAR_DIR, exist_ok=True)
             img.save(path, 'JPEG', quality=88)
         except Exception as e:

@@ -1291,6 +1291,10 @@ function createFormField(key, field, value) {
             input = createOpsecManagementInterface(field);
             break;
 
+        case 'duration_slider':
+            input = createDurationSliderInput(field, value);
+            break;
+
         case 'nostr_accounts':
             input = createNostrAccountsInput(value || [], field);
             break;

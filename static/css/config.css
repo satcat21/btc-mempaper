@@ -1087,6 +1087,7 @@ body.dark-mode .table-delete-icon {
 .wallet-remove-icon:hover,
 .bitaxe-remove-icon:hover,
 .block-reward-remove-icon:hover,
+.nostr-remove-icon:hover,
 .ssh-remove-btn:hover {
     background: rgba(220, 53, 69, 0.82) !important;
     border-radius: 4px;
@@ -1095,6 +1096,7 @@ body.dark-mode .table-delete-icon {
 .wallet-remove-icon:hover .table-delete-icon,
 .bitaxe-remove-icon:hover .table-delete-icon,
 .block-reward-remove-icon:hover .table-delete-icon,
+.nostr-remove-icon:hover .table-delete-icon,
 .ssh-remove-btn:hover .table-delete-icon {
     filter: brightness(0) invert(1) !important;
 }
@@ -1176,6 +1178,75 @@ body.dark-mode .table-delete-icon {
     box-shadow: 0 0 0 2px var(--accent-dim);
     background: var(--bg-elevated) !important;
     color: var(--text-primary) !important;
+}
+
+/* ── Duration slider (Nostr: show posts for) ───────────────── */
+.duration-slider {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-width: 420px;
+}
+
+.duration-slider-value {
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+}
+
+.duration-slider input[type=range] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 20px;
+    background: transparent;
+    cursor: pointer;
+}
+
+.duration-slider input[type=range]:focus { outline: none; }
+
+.duration-slider input[type=range]::-webkit-slider-runnable-track {
+    height: 6px;
+    border-radius: 3px;
+    background: var(--border-color);
+}
+
+.duration-slider input[type=range]::-moz-range-track {
+    height: 6px;
+    border-radius: 3px;
+    background: var(--border-color);
+}
+
+.duration-slider input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 18px;
+    height: 18px;
+    margin-top: -6px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid #fff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+
+.duration-slider input[type=range]::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid #fff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+
+.duration-slider input[type=range]:focus-visible::-webkit-slider-thumb {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+.duration-slider-scale {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.72rem;
+    color: var(--text-secondary);
 }
 
 /* ── Add Buttons (wallet, bitaxe, block-reward, nostr) ─────────────── */

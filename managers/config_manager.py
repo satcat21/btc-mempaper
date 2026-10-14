@@ -466,6 +466,14 @@ class ConfigManager:
             # relays would otherwise learn which accounts this IP follows.
             "nostr_use_tor": True,
             "nostr_card_theme": "light",
+            "nostr_pool_minutes": 60,
+            # Relays push new posts over an open connection; polling drops to
+            # a half-hourly catch-up while that works.
+            "nostr_live": True,
+            # A wall display should not surprise anyone: posts their author
+            # marked sensitive (NIP-36) stay off it unless asked for.
+            "nostr_skip_sensitive": True,
+            "nostr_max_per_account": 3,
             # --- Donation block ---
             "show_donation_block": False,
             "donation_display_mode": "latest",

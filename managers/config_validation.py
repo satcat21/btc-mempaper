@@ -59,6 +59,8 @@ def validate_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
         "memes_enabled",
         "nostr_enabled",
         "nostr_use_tor",
+        "nostr_live",
+        "nostr_skip_sensitive",
     ]
     for setting in bool_settings:
         if setting in config:
@@ -136,6 +138,22 @@ def validate_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
                 # Only the key: the name comes from the account's own profile.
                 accounts.append({"npub": npub(pk)})
         validated["nostr_accounts"] = accounts
+
+    # Minutes a post counts as current: 10 minutes to 7 days.
+    if "nostr_pool_minutes" in config:
+        try:
+            validated["nostr_pool_minutes"] = max(10, min(10080, int(round(float(config["nostr_pool_minutes"])))))
+        except (TypeError, ValueError):
+            pass
+
+    # Posts per account in the pool, 0 for no limit.
+    if "nostr_max_per_account" in config:
+        try:
+            value = int(config["nostr_max_per_account"])
+            if value in (0, 1, 2, 3, 5, 10):
+                validated["nostr_max_per_account"] = value
+        except (TypeError, ValueError):
+            pass
 
     if config.get("nostr_card_theme") in ("light", "dark"):
         validated["nostr_card_theme"] = config["nostr_card_theme"]

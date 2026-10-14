@@ -23,7 +23,7 @@ def register(self):
     def get_nostr_pool():
         """Posts ready to show, in the order they would be picked."""
         try:
-            return jsonify(nostr_images.get_store().overview())
+            return jsonify(nostr_images.get_store().overview(config=self.config))
         except Exception as e:
             return jsonify({'success': False, 'message': _safe_error(e)}), 500
 
@@ -43,7 +43,7 @@ def register(self):
         width = request.args.get('w', type=int)
         width = max(100, min(width, 1000)) if width else None
         try:
-            data = nostr_images.get_store().preview_jpeg(key, theme, width)
+            data = nostr_images.get_store().preview_jpeg(key, theme, width, config=self.config)
         except Exception as e:
             return jsonify({'success': False, 'message': _safe_error(e)}), 500
         if data is None:
@@ -120,7 +120,9 @@ def register(self):
         store = nostr_images.get_store()
         status = dict(store.status)
         status['errors'] = status.get('errors', [])[:50]
-        return jsonify({'status': status, 'total': len(store.overview()['posts'])})
+        from lib.nostr_live import get_live
+        return jsonify({'status': status, 'total': len(store.overview()['posts']),
+                        'live': get_live().status() if self.config.get('nostr_live', True) else None})
 
     @self.app.route('/api/nostr-fetch', methods=['POST'])
     @require_auth(self.auth_manager)

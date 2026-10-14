@@ -442,11 +442,21 @@ glyph.
 ## Nostr posts
 
 Shows image posts from Nostr accounts you follow, live, as a post card in place
-of a meme. Every 5 minutes mempaper asks the relays for what those accounts
-posted since the last run. Only events whose id and signature check out against
-the account's key are used.
+of a meme. Only events whose id and signature check out against the account's
+key are used.
 
-**The pool.** A post with an image is in the pool for 60 minutes after it was
+**Live updates.** mempaper keeps a connection open to each configured relay,
+plus up to 4 of the relays the followed accounts write to, and the relays push
+new posts the moment they are published. A dropped connection reconnects on its
+own, through a fresh Tor circuit, and resumes from the last post it received.
+While live connections stand, a catch-up fetch runs every 30 minutes; with
+**Live Updates** off, or no relay connected, mempaper asks every 5 minutes
+instead. When a post arrives while the next block was going to show a meme or a
+repeat, that block's image is prepared again with the new post, at most once a
+minute. The status line in the section shows how many relays are live.
+
+**The pool.** A post with an image is in the pool for **Show Posts For** (1 hour by
+default, 10 minutes to 7 days) after it was
 published. Each block, the display picks from it:
 
 1. posts not shown yet, newest first;
@@ -458,11 +468,24 @@ published. Each block, the display picks from it:
 So a single post alternates with two memes, and three or more posts keep the
 display on Nostr for the whole hour.
 
+**Images on demand.** A new post is kept as its text and image links only, a few
+KB. Its image is downloaded when the post is about to be shown, plus the next 2
+in line ahead of time, or when the settings page shows its card - so a busy
+hour costs downloads only for what reaches the display. JPEGs are decoded
+straight at reduced size (draft mode), so a large photo is never decoded in
+full. A post whose image cannot be had after 3 tries is dropped.
+
 **Nothing is written to the SD card per post.** Images are held in memory,
-downscaled to 1200 px, at most 40 posts. The card the display shows is rendered
+downscaled to 1000 px, at most 40 posts. The card the display shows is rendered
 to `/dev/shm` (RAM), and only the last few are kept. Profile names and avatars
 are kept in `cache/nostr/`, written only when a profile changes. Reposts of an
-image seen in the last 24 hours are skipped by exact and perceptual hash.
+image seen in the last 24 hours are skipped by exact and perceptual hash, when
+the image is downloaded.
+
+**Filters.** Posts their author marked as sensitive - a NIP-36 content warning,
+or a hashtag such as `#nsfw` - are left out unless **Skip Sensitive Posts** is
+off. **Posts per Account** keeps at most that many current posts of one account,
+its newest, so a busy account cannot fill the display.
 
 **The card** looks like a post in a Nostr app: avatar, name and age (`12m`),
 up to four lines of text, then the image. Links are shortened to their host,
@@ -482,15 +505,19 @@ The settings section shows the current posts as rendered cards under **Current
 Posts**, in the order they will be picked, with when each was published, e.g.
 `5 min ago (14.10.26, 23:29)`. The one the display shows at the next block is
 marked **Next**.
-**Remove** takes a post out of the pool. When nobody posted in the last hour,
+**Remove** takes a post out of the pool. When nobody posted within that window,
 the latest older post is shown there as a preview only.
 
 | Web Label | Config Key | Type | Description | Allowed Values / Examples |
 | :--- | :--- | :--- | :--- | :--- |
 | **Show Memes** (Meme Management toggle) | `memes_enabled` | Switch | Use the meme library; with Nostr on, as the fallback | `true` (default), `false` |
-| **Show Nostr Posts** (section toggle) | `nostr_enabled` | Switch | Show live posts and fetch every 5 minutes | `true`, `false` (default) |
+| **Show Nostr Posts** (section toggle) | `nostr_enabled` | Switch | Show live posts from the followed accounts | `true`, `false` (default) |
+| **Skip Sensitive Posts** | `nostr_skip_sensitive` | Switch | Leave out posts with a content warning or a hashtag such as `#nsfw` | `true` (default), `false` |
+| **Posts per Account** | `nostr_max_per_account` | Select | Current posts kept per account, newest first; `0` for no limit | `1`, `2`, `3` (default), `5`, `10`, `0` |
 | **Followed Accounts** | `nostr_accounts` | List | Accounts to fetch from. Accepts npub, nprofile or hex; stored as npub | `[{"npub": "npub1…"}]` |
 | **Post Card Style** | `nostr_card_theme` | Toggle | Look of the post card on the display | `light` (default), `dark` |
+| **Show Posts For** (Advanced) | `nostr_pool_minutes` | Slider | How long after publication a post counts as current | `10` to `10080` minutes, `60` (default) |
+| **Live Updates** (Advanced) | `nostr_live` | Switch | Keep relay connections open for new posts; off asks every 5 minutes | `true` (default), `false` |
 | **Relays** (Advanced) | `nostr_relays` | List | Relays to query. Empty uses relay.damus.io, nos.lol, relay.primal.net, relay.snort.social | `["wss://nos.lol"]` |
 | **Fetch via Tor** (Advanced) | `nostr_use_tor` | Switch | Route relay connections and image downloads through the Tor SOCKS proxy (`tor_socks_host` / `tor_socks_port`) | `true` (default), `false` |
 

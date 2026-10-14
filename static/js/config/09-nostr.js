@@ -6,6 +6,68 @@ function _nt(key, fallback) {
     return window.translations?.[key] || fallback;
 }
 
+// --- Durations ------------------------------------------------------------
+
+// "45 Minuten", "2 Stunden", "3 Tage" in the page's language. Whole hours and
+// days only once they divide evenly, so 90 minutes stays "90 Minuten".
+function _nostrDuration(minutes) {
+    const lang = document.documentElement.lang || undefined;
+    let value = minutes, unit = 'minute';
+    if (minutes >= 1440 && minutes % 1440 === 0) { value = minutes / 1440; unit = 'day'; }
+    else if (minutes >= 60 && minutes % 60 === 0) { value = minutes / 60; unit = 'hour'; }
+    try {
+        return new Intl.NumberFormat(lang, { style: 'unit', unit, unitDisplay: 'long' }).format(value);
+    } catch (e) {
+        return `${value} ${unit}${value === 1 ? '' : 's'}`;
+    }
+}
+
+// The pool window the server is working with, from the last pool reload.
+let _nostrWindowMinutes = null;
+function _nostrWindowText() {
+    const saved = (typeof currentConfig !== 'undefined' && currentConfig?.nostr_pool_minutes) || 60;
+    return _nostrDuration(_nostrWindowMinutes || saved);
+}
+
+// A slider over fixed stops (field.stops, in minutes) rather than a straight
+// scale: 10 minutes to 7 days in even steps would leave every short value
+// crammed into the first few pixels. The value is a number of minutes.
+function createDurationSliderInput(field, value) {
+    const stops = (field.stops && field.stops.length) ? field.stops : [10, 30, 60, 180, 720, 1440, 10080];
+    const nearest = (v) => stops.reduce((best, s, i) =>
+        Math.abs(s - v) < Math.abs(stops[best] - v) ? i : best, 0);
+
+    const container = document.createElement('div');
+    container.className = 'duration-slider';
+    const head = document.createElement('div');
+    head.className = 'duration-slider-value';
+    const slider = document.createElement('input');
+    slider.type = 'range';
+    slider.min = '0';
+    slider.max = String(stops.length - 1);
+    slider.step = '1';
+    slider.value = String(nearest(Number(value ?? field.default ?? 60)));
+    const scale = document.createElement('div');
+    scale.className = 'duration-slider-scale';
+    const lo = document.createElement('span');
+    const hi = document.createElement('span');
+    lo.textContent = _nostrDuration(stops[0]);
+    hi.textContent = _nostrDuration(stops[stops.length - 1]);
+    scale.append(lo, hi);
+
+    const show = () => { head.textContent = _nostrDuration(stops[Number(slider.value)]); };
+    slider.addEventListener('input', show);
+    show();
+
+    container.append(head, slider, scale);
+    container.getValue = () => stops[Number(slider.value)];
+    Object.defineProperty(container, 'value', {
+        get: () => container.getValue(),
+        set: (v) => { slider.value = String(nearest(Number(v))); show(); },
+    });
+    return container;
+}
+
 // --- Followed accounts ---------------------------------------------------
 
 function createNostrAccountsInput(values, field) {
@@ -183,7 +245,8 @@ function _createNostrAccountRow(entry, onChange, profile) {
     nameEl.style.cssText = 'font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
     const countEl = document.createElement('span');
     countEl.className = 'nostr-account-count';
-    countEl.title = _nt('nostr_account_pool_count', 'Posts from the last 60 minutes, ready to show');
+    countEl.title = _nt('nostr_account_pool_count', 'Posts within the set time window ({window}), ready to show')
+        .replace('{window}', _nostrWindowText());
     countEl.style.cssText = 'font-size:0.75rem; padding:1px 7px; border-radius:10px; background:var(--accent); color:#fff; display:none;';
     nameLine.append(nameEl, countEl);
 
@@ -200,9 +263,10 @@ function _createNostrAccountRow(entry, onChange, profile) {
 
     const removeButton = document.createElement('button');
     removeButton.type = 'button';
+    removeButton.className = 'nostr-remove-icon';
     removeButton.title = _nt('nostr_remove_account', 'Remove account');
     removeButton.innerHTML = '<img src="/static/icons/delete.svg" alt="" class="table-delete-icon" />';
-    removeButton.style.cssText = 'background:none; border:none; padding:4px; cursor:pointer; flex:none; display:inline-flex; align-items:center;';
+    removeButton.style.cssText = 'background:none; border:none; padding:4px; cursor:pointer; flex:none; display:inline-flex; align-items:center; border-radius:4px; transition:background-color 0.2s;';
     removeButton.addEventListener('click', (e) => {
         e.preventDefault();
         row.remove();
@@ -364,6 +428,17 @@ function _nostrAgeStep(seconds) {
     return unit - (seconds % unit);
 }
 
+// After a language switch: ages, the window in the hint and the pool texts
+// again, in the new language.
+window._nostrOnLanguageChange = () => {
+    document.querySelectorAll('.nostr-age[data-ts]').forEach(el => {
+        el.textContent = _nostrAge(Number(el.dataset.ts));
+    });
+    _nostrPoolSignature = null;
+    if (document.getElementById('nostr-pool-list')) loadNostrPool();
+    refreshNostrStatus();
+};
+
 // Every age on the page moves on by itself, between the minute-wise reloads:
 // one timer, woken exactly when the next of them changes.
 let _nostrAgeTimer = null;
@@ -421,6 +496,12 @@ async function loadNostrPool() {
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const data = await resp.json();
         const posts = data.posts || [];
+        if (data.window_minutes) _nostrWindowMinutes = data.window_minutes;
+        const hint = document.getElementById('nostr-pool-hint');
+        if (hint) {
+            hint.textContent = _nt('nostr_pool_hint', 'In the order they will be shown. A post stays here for {window} after it was published.')
+                .replace('{window}', _nostrWindowText());
+        }
         const count = document.getElementById('nostr-pool-count');
         if (count) count.textContent = `(${posts.length})`;
         const signature = JSON.stringify([_nostrTheme(), posts.map(p => [p.key, p.state]),
@@ -431,7 +512,8 @@ async function loadNostrPool() {
         if (!posts.length) {
             const note = document.createElement('p');
             note.style.cssText = 'grid-column:1/-1; text-align:center; color:var(--text-secondary); margin:8px 0;';
-            note.textContent = _nt('nostr_pool_empty', 'Nobody posted an image in the last 60 minutes, so memes are shown.');
+            note.textContent = _nt('nostr_pool_empty', 'Nobody posted an image within the set time window ({window}), so memes are shown.')
+                .replace('{window}', _nostrWindowText());
             list.appendChild(note);
             if (data.sample) {
                 list.appendChild(createNostrPostTile({ ...data.sample, state: 'preview' }));
@@ -553,6 +635,11 @@ async function refreshNostrStatus() {
                 .replace('{added}', s.added || 0)
                 .replace('{duplicates}', s.duplicates || 0);
             if (s.message && s.message !== 'ok') text += ' — ' + s.message;
+            // Whether the relays are pushing new posts right now.
+            if (data.live && data.live.total) {
+                text += ' · ' + _nt('nostr_live_status', 'Live: {connected} of {total} relays connected')
+                    .replace('{connected}', data.live.connected).replace('{total}', data.live.total);
+            }
             el.textContent = text;
             if (errors.length && errList) {
                 // The count opens the list underneath: a tooltip is out of
@@ -634,8 +721,10 @@ function createNostrManagementInterface(field) {
     label.innerHTML = `${escapeHtml(_nt('nostr_management', 'Current Posts'))} <span id="nostr-pool-count" style="color:var(--text-secondary); font-weight:400;"></span>`;
     const hint = document.createElement('div');
     hint.className = 'form-description';
+    hint.id = 'nostr-pool-hint';
     hint.style.cssText = 'font-size:0.8rem; color:var(--text-secondary); margin-bottom:8px;';
-    hint.textContent = _nt('nostr_pool_hint', 'In the order the display will pick them. Each post stays for 60 minutes after it was published.');
+    hint.textContent = _nt('nostr_pool_hint', 'In the order they will be shown. A post stays here for {window} after it was published.')
+        .replace('{window}', _nostrWindowText());
 
     const list = document.createElement('div');
     list.id = 'nostr-pool-list';

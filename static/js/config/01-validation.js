@@ -521,6 +521,11 @@ function setLanguage(lang) {
     const t = window.allTranslations?.[lang];
     if (!t) return;
     window.translations = t;
+    // Dates, times and durations are formatted for the page's language; it
+    // has to follow the switch, or they stay in the language the page was
+    // loaded in while every text around them changes.
+    document.documentElement.lang = lang;
+    if (typeof window._nostrOnLanguageChange === 'function') window._nostrOnLanguageChange();
 
     // 1. Update static HTML elements tagged with data-i18n* attributes.
     document.querySelectorAll('[data-i18n]').forEach(el => {
