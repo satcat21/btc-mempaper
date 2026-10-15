@@ -107,7 +107,11 @@ function createNostrAccountsInput(values, field) {
     container.appendChild(_createNostrImportForm(importButton, list, changed));
 
     container.getValue = () => Array.from(list.querySelectorAll('.nostr-account-row'))
-        .map(row => ({ npub: row.querySelector('.nostr-npub-input').value.trim() }))
+        .map(row => {
+            const entry = { npub: row.querySelector('.nostr-npub-input').value.trim() };
+            if (row._imageOnly()) entry.image_only = true;
+            return entry;
+        })
         .filter(entry => entry.npub);
 
     Object.defineProperty(container, 'value', {
@@ -288,6 +292,41 @@ function _createNostrCopyButton(input) {
     return btn;
 }
 
+// Post card or image only, per account: some accounts post pictures with
+// nothing worth reading, and those look best on the panel bare, like a meme.
+// Same classes as the settings form's switches. On: the post card.
+function _createNostrStyleSwitch(entry, row, onChange) {
+    const wrap = document.createElement('div');
+    wrap.className = 'boolean-switch nostr-style-switch';
+    wrap.style.cssText = 'margin-left:auto; flex:none; display:flex; align-items:center; gap:6px; font-size:0.8rem; color:var(--text-secondary); cursor:pointer;';
+    wrap.title = _nt('nostr_style_hint', 'Show the post as a card with avatar, name and text, or only its image, like a meme.');
+    const switchEl = document.createElement('div');
+    switchEl.className = 'switch';
+    const thumb = document.createElement('div');
+    thumb.className = 'switch-thumb';
+    switchEl.appendChild(thumb);
+    const label = document.createElement('span');
+    label.style.whiteSpace = 'nowrap';
+    wrap.append(label, switchEl);
+
+    const show = () => {
+        label.textContent = switchEl.classList.contains('active')
+            ? _nt('nostr_style_card', 'Show post') : _nt('nostr_style_image', 'Image only');
+    };
+    switchEl.classList.toggle('active', !entry.image_only);
+    show();
+    wrap.addEventListener('click', (e) => {
+        e.preventDefault();
+        switchEl.classList.toggle('active');
+        show();
+        onChange();
+        // The prepared posts follow the switch before it is saved.
+        if (typeof loadNostrPool === 'function') setTimeout(loadNostrPool, 50);
+    });
+    row._imageOnly = () => !switchEl.classList.contains('active');
+    return wrap;
+}
+
 // profile: a profile already known (from an import), shown without asking
 // the server again. deferred: the list resolves it with all the others in
 // one request (_nostrResolveAll).
@@ -314,7 +353,7 @@ function _createNostrAccountRow(entry, onChange, profile, deferred) {
     countEl.title = _nt('nostr_account_pool_count', 'Posts within the set time window ({window}), ready to show')
         .replace('{window}', _nostrWindowText());
     countEl.style.cssText = 'font-size:0.75rem; padding:1px 7px; border-radius:10px; background:var(--accent); color:#fff; display:none;';
-    nameLine.append(nameEl, countEl);
+    nameLine.append(nameEl, countEl, _createNostrStyleSwitch(entry, row, onChange));
 
     const inputs = document.createElement('div');
     inputs.style.cssText = 'display:flex; gap:6px; align-items:center;';
@@ -454,10 +493,20 @@ function _nostrTheme() {
     return value === 'dark' || value === 'light' ? value : ((typeof currentConfig !== 'undefined' && currentConfig?.nostr_card_theme) || 'light');
 }
 
-function _nostrCardUrl(key, width) {
+// Whether the post's account is set to image only in the form, saved or
+// not, so the preview follows its switch straight away. An account no longer
+// in the list keeps what the server says.
+function _nostrImageOnly(post) {
+    const row = Array.from(document.querySelectorAll('.nostr-account-row'))
+        .find(r => r.querySelector('.nostr-npub-input')?.value.trim() === post.npub);
+    return row ? row._imageOnly() : !!post.image_only;
+}
+
+function _nostrCardUrl(post, width) {
     // A stable address, so the browser keeps the card instead of asking the
     // Pi to render it again on every reload of the list.
-    return `/api/nostr-card/${key}?theme=${_nostrTheme()}${width ? '&w=' + width : ''}`;
+    const style = _nostrImageOnly(post) ? 'image' : 'card';
+    return `/api/nostr-card/${post.key}?theme=${_nostrTheme()}&style=${style}${width ? '&w=' + width : ''}`;
 }
 
 // What the list showed last, so a reload that changes nothing leaves it be.
@@ -540,7 +589,7 @@ function createNostrPostTile(post) {
     const frame = document.createElement('div');
     frame.style.cssText = 'position:relative; border:1px solid var(--border-subtle); border-radius:10px; overflow:hidden; background:var(--bg-input);';
     const img = document.createElement('img');
-    img.src = _nostrCardUrl(post.key, 400);
+    img.src = _nostrCardUrl(post, 400);
     img.alt = post.name || '';
     img.loading = 'lazy';
     img.dataset.nostrKey = post.key;
@@ -579,7 +628,7 @@ async function loadNostrPool() {
         }
         const count = document.getElementById('nostr-pool-count');
         if (count) count.textContent = `(${posts.length})`;
-        const signature = JSON.stringify([_nostrTheme(), posts.map(p => [p.key, p.state]),
+        const signature = JSON.stringify([_nostrTheme(), posts.map(p => [p.key, p.state, _nostrImageOnly(p)]),
                                           data.sample?.key || null]);
         if (signature === _nostrPoolSignature && list.children.length) return;
         _nostrPoolSignature = signature;
@@ -619,7 +668,7 @@ function openNostrPreview(post) {
     state.closest('.meme-info-row').style.display = state.textContent ? '' : 'none';
     const image = document.getElementById('nostr-modal-image');
     image.alt = post.name || '';
-    image.src = _nostrCardUrl(post.key);
+    image.src = _nostrCardUrl(post);
     document.getElementById('nostr-modal-open-btn').style.display = post.note ? '' : 'none';
     modal.style.display = 'flex';
     _nostrScheduleAges();

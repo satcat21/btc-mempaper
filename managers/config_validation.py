@@ -136,7 +136,12 @@ def validate_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
             if pk and pk not in seen:
                 seen.add(pk)
                 # Only the key: the name comes from the account's own profile.
-                accounts.append({"npub": npub(pk)})
+                # image_only: its posts are shown as the bare image, like a
+                # meme, not as a post card; stored only when set.
+                account = {"npub": npub(pk)}
+                if item.get("image_only") is True:
+                    account["image_only"] = True
+                accounts.append(account)
         validated["nostr_accounts"] = accounts
 
     # Minutes a post counts as current: 10 minutes to 7 days.

@@ -491,6 +491,13 @@ its newest, so a busy account cannot fill the display.
 up to four lines of text, then the image. Links are shortened to their host,
 references to other notes are dropped. **Post Card Style** sets light or dark.
 
+**Post or image only, per account.** Each followed account has a switch,
+**Show post** or **Image only**. Image only shows that account's posts as the
+bare picture, laid out like a meme, without avatar, name or text - for accounts
+that post pictures with nothing worth reading. The pool, its order and the
+filters are the same either way. The preview under **Current Posts** follows
+the switch before it is saved.
+
 **Following many accounts.** **Import follows** takes an npub and adds every
 account in its follow list (NIP-02 contact list); remove the ones you do not
 want, then save. Profiles are looked up on the configured relays plus indexer
@@ -514,7 +521,7 @@ the latest older post is shown there as a preview only.
 | **Show Nostr Posts** (section toggle) | `nostr_enabled` | Switch | Show live posts from the followed accounts | `true`, `false` (default) |
 | **Skip Sensitive Posts** (Advanced) | `nostr_skip_sensitive` | Switch | Leave out posts with a content warning or a hashtag such as `#nsfw` | `true` (default), `false` |
 | **Posts per Account** (Advanced) | `nostr_max_per_account` | Select | Current posts kept per account, newest first; `0` for no limit | `1`, `2`, `3` (default), `5`, `10`, `0` |
-| **Followed Accounts** | `nostr_accounts` | List | Accounts to fetch from. Accepts npub, nprofile or hex; stored as npub | `[{"npub": "npub1…"}]` |
+| **Followed Accounts** | `nostr_accounts` | List | Accounts to fetch from. Accepts npub, nprofile or hex; stored as npub. `image_only: true` shows the account's posts as the bare image instead of a post card | `[{"npub": "npub1…"}, {"npub": "npub1…", "image_only": true}]` |
 | **Post Card Style** | `nostr_card_theme` | Toggle | Look of the post card on the display | `light` (default), `dark` |
 | **Show Posts For** (Advanced) | `nostr_pool_minutes` | Slider | How long after publication a post counts as current | `10` to `10080` minutes, `60` (default) |
 | **Live Updates** (Advanced) | `nostr_live` | Switch | Keep relay connections open for new posts; off asks every 5 minutes | `true` (default), `false` |

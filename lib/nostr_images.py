@@ -320,6 +320,15 @@ def configured_accounts(config):
     return out
 
 
+def image_only_accounts(config):
+    """Pubkeys whose posts are shown as the bare image, like a meme, instead
+    of as a post card: accounts that post pictures without much to read."""
+    return {pk for pk, entry in ((parse_pubkey(e.get('npub', '')), e)
+                                 for e in config.get('nostr_accounts', []) or []
+                                 if isinstance(e, dict))
+            if pk and entry.get('image_only') is True}
+
+
 def configured_relays(config):
     relays = [r.strip() for r in (config.get('nostr_relays') or [])
               if isinstance(r, str) and r.strip().lower().startswith(('wss://', 'ws://'))]
@@ -868,6 +877,7 @@ class NostrPostStore:
         self._followed = set()
         self._per_account = DEFAULT_MAX_PER_ACCOUNT
         self._skip_sensitive = True
+        self._image_only = set()
         # One image download at a time: a Pi Zero gains nothing from running
         # them side by side, and two picks of one post must not fetch it twice.
         self._image_lock = threading.Lock()
@@ -890,6 +900,7 @@ class NostrPostStore:
             self._followed = {pk for pk, _ in configured_accounts(config)}
             self._per_account = max_per_account(config)
             self._skip_sensitive = bool(config.get('nostr_skip_sensitive', True))
+            self._image_only = image_only_accounts(config)
 
     # -- picking --------------------------------------------------------
 
@@ -1106,10 +1117,23 @@ class NostrPostStore:
 
     # -- cards ----------------------------------------------------------
 
-    def _render(self, post, theme, now=None):
+    def _render(self, post, theme, now=None, image_only=None):
+        """The post as the panel shows it: a post card, or for an account set
+        to image only the picture alone, which the panel then lays out like a
+        meme. image_only None: as the saved config says for its account."""
         from lib.nostr_card import render_card
-        profile = self._profiles().get(post['pubkey'], {})
         image = Image.open(io.BytesIO(post['image']))
+        if image_only is None:
+            image_only = post['pubkey'] in self._image_only
+        if image_only:
+            if image.mode in ('RGBA', 'LA', 'P'):
+                # Transparency on white, as the panel would show it.
+                rgba = image.convert('RGBA')
+                flat = Image.new('RGB', image.size, 'white')
+                flat.paste(rgba, mask=rgba.split()[-1])
+                return flat
+            return image.convert('RGB')
+        profile = self._profiles().get(post['pubkey'], {})
         return render_card(image, profile.get('name') or npub(post['pubkey'])[:16] + '…',
                            post['text'], post['created_at'],
                            avatar_path=self._avatar_path(post['pubkey']), theme=theme, now=now)
@@ -1144,8 +1168,11 @@ class NostrPostStore:
                 pass
         return path
 
-    def preview_jpeg(self, key, theme, width=None, config=None):
-        """The card as JPEG bytes for the settings page, or None."""
+    def preview_jpeg(self, key, theme, width=None, config=None, image_only=None):
+        """The card as JPEG bytes for the settings page, or None.
+
+        image_only: True or False as the page's unsaved switch says, None for
+        the saved setting of the post's account."""
         with self.lock:
             post = self._find(key)
         if post is None:
@@ -1154,14 +1181,17 @@ class NostrPostStore:
         # is where a post not yet in line gets its image.
         if not post.get('image') and (config is None or not self.ensure_image(post, config)):
             return None
-        cache_key = (key, theme, width)
+        if image_only is None:
+            image_only = post['pubkey'] in (image_only_accounts(config) if config is not None
+                                            else self._image_only)
+        cache_key = (key, theme, width, bool(image_only))
         cached = self._preview_cache.get(cache_key)
         # Rendering a card costs a Pi Zero about a second, and the settings
         # page asks for all of them. The age printed on a cached preview may
         # be a few minutes behind; the page shows the exact one under it.
         if cached and time.time() - cached[0] < _PREVIEW_CACHE_SECONDS:
             return cached[1]
-        card = self._render(post, theme)
+        card = self._render(post, theme, image_only=image_only)
         if width and width < card.width:
             card = card.resize((width, round(card.height * width / card.width)), Image.LANCZOS)
         buf = io.BytesIO()
@@ -1213,7 +1243,8 @@ class NostrPostStore:
         profile = self._profiles().get(p['pubkey'], {})
         return {'key': p['key'], 'note': note_id(p['event_id']), 'pubkey': p['pubkey'],
                 'name': profile.get('name', ''), 'npub': npub(p['pubkey']),
-                'created_at': p['created_at'], 'text': p['text'][:200]}
+                'created_at': p['created_at'], 'text': p['text'][:200],
+                'image_only': p['pubkey'] in self._image_only}
 
     # -- fetching -------------------------------------------------------
 

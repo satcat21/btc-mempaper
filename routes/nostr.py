@@ -32,18 +32,21 @@ def register(self):
     def get_nostr_card(key):
         """A post rendered as it would appear on the panel.
 
-        theme comes from the request, not the config, so the page can preview
-        the switch before it is saved.
+        theme and style (card or image) come from the request, not the
+        config, so the page can preview the switches before they are saved.
         """
         if not re.fullmatch(r'[0-9a-f]{16}', key):
             return 'Not found', 404
         theme = request.args.get('theme', '')
         if theme not in ('light', 'dark'):
             theme = nostr_images.card_theme(self.config)
+        style = request.args.get('style', '')
+        image_only = {'image': True, 'card': False}.get(style)
         width = request.args.get('w', type=int)
         width = max(100, min(width, 1000)) if width else None
         try:
-            data = nostr_images.get_store().preview_jpeg(key, theme, width, config=self.config)
+            data = nostr_images.get_store().preview_jpeg(key, theme, width, config=self.config,
+                                                          image_only=image_only)
         except Exception as e:
             return jsonify({'success': False, 'message': _safe_error(e)}), 500
         if data is None:
