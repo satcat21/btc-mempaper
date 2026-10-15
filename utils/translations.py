@@ -637,7 +637,7 @@ translations = {
         "nostr_import_follows": "Import follows",
         "nostr_import_follows_hint": "Add every account an npub follows; remove the ones you do not want, then save.",
         "nostr_show_all_accounts": "Show all {count} accounts",
-        "nostr_show_fewer_accounts": "Show fewer",
+        "nostr_show_fewer_accounts": "Show less",
         "nostr_style_card": "Show post",
         "nostr_style_image": "Image only",
         "nostr_style_hint": "Show the post as a card with avatar, name and text, or only its image, like a meme.",

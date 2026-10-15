@@ -172,7 +172,7 @@ function _createNostrListToggle(list) {
         icon.style.transform = collapsed ? '' : 'rotate(180deg)';
         label.textContent = collapsed
             ? _nt('nostr_show_all_accounts', 'Show all {count} accounts').replace('{count}', count)
-            : _nt('nostr_show_fewer_accounts', 'Show fewer');
+            : _nt('nostr_show_fewer_accounts', 'Show less');
     };
     btn.addEventListener('click', (e) => {
         e.preventDefault();
