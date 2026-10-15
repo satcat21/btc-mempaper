@@ -507,6 +507,8 @@ relays the followed accounts write to, at most 8 of them, those most of the
 accounts share. Names still missing are asked from the accounts' own relays;
 an account without any profile shows a shortened npub. Avatars fill in a few
 per run, except for authors of posts in the pool, which get theirs at once.
+The settings list shows the first 3 accounts; **Show all** under them opens the
+rest, **Show fewer** closes it again. Adding or importing accounts opens it.
 
 The settings section shows the current posts as rendered cards under **Current
 Posts**, in the order they will be picked, with when each was published, e.g.

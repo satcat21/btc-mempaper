@@ -97,6 +97,8 @@ function createNostrAccountsInput(values, field) {
     const changed = () => container.dispatchEvent(new Event('change', { bubbles: true }));
     values.forEach(entry => list.appendChild(_createNostrAccountRow(entry, changed, null, true)));
     setTimeout(() => _nostrResolveAll(list), 0);
+    const expand = _createNostrListToggle(list);
+    container.appendChild(expand);
 
     const addButton = document.createElement('button');
     addButton.type = 'button';
@@ -106,6 +108,7 @@ function createNostrAccountsInput(values, field) {
         e.preventDefault();
         const row = _createNostrAccountRow({ npub: '' }, changed);
         list.appendChild(row);
+        expand.open();          // the new row is at the end, out of sight while collapsed
         row.querySelector('.nostr-npub-input')?.focus();
         changed();
     });
@@ -119,7 +122,7 @@ function createNostrAccountsInput(values, field) {
     const buttons = document.createElement('div');
     buttons.append(addButton, importButton);
     container.appendChild(buttons);
-    container.appendChild(_createNostrImportForm(importButton, list, changed));
+    container.appendChild(_createNostrImportForm(importButton, list, changed, () => expand.open()));
 
     container.getValue = () => Array.from(list.querySelectorAll('.nostr-account-row'))
         .map(row => {
@@ -144,6 +147,49 @@ function createNostrAccountsInput(values, field) {
     window._nostrAccountsInput = container;
 
     return container;
+}
+
+// Following many accounts, the list would run on for screens: it shows the
+// first NOSTR_COLLAPSED_ROWS, and a toggle under the last row shown opens
+// or closes the rest. Hidden by CSS, so rows added or removed need nothing
+// but the toggle's label brought up to date.
+const NOSTR_COLLAPSED_ROWS = 3;
+function _createNostrListToggle(list) {
+    list.classList.add('nostr-accounts-collapsed');
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'nostr-list-toggle';
+    btn.style.cssText = 'display:none; width:100%; align-items:center; justify-content:center; gap:6px; margin:-2px 0 10px; padding:6px; background:none; border:1px dashed var(--border-subtle); border-radius:8px; color:var(--text-secondary); font-size:0.85rem; cursor:pointer;';
+    const icon = _createMaskIcon('/static/icons/chevron_down.svg', 18);
+    icon.style.transition = 'transform 0.2s';
+    const label = document.createElement('span');
+    btn.append(icon, label);
+
+    const update = () => {
+        const count = list.querySelectorAll('.nostr-account-row').length;
+        const collapsed = list.classList.contains('nostr-accounts-collapsed');
+        btn.style.display = count > NOSTR_COLLAPSED_ROWS ? 'flex' : 'none';
+        icon.style.transform = collapsed ? '' : 'rotate(180deg)';
+        label.textContent = collapsed
+            ? _nt('nostr_show_all_accounts', 'Show all {count} accounts').replace('{count}', count)
+            : _nt('nostr_show_fewer_accounts', 'Show fewer');
+    };
+    btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const collapsing = !list.classList.contains('nostr-accounts-collapsed');
+        list.classList.toggle('nostr-accounts-collapsed', collapsing);
+        update();
+        // Closing a long list moves the toggle far up: follow it, so the
+        // page does not land somewhere further down the settings.
+        if (collapsing) btn.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    });
+    btn.open = () => {
+        list.classList.remove('nostr-accounts-collapsed');
+        update();
+    };
+    new MutationObserver(update).observe(list, { childList: true });
+    update();
+    return btn;
 }
 
 // Names and avatars of every row in one request. Stored profiles come back
@@ -183,7 +229,7 @@ async function _nostrResolveAll(list, round = 0) {
 
 // Inline form behind "Import follows": takes an npub, adds every account its
 // contact list follows that is not in the list yet.
-function _createNostrImportForm(toggleButton, list, onChange) {
+function _createNostrImportForm(toggleButton, list, onChange, onAdded) {
     const form = document.createElement('div');
     form.style.cssText = 'display:none; gap:6px; align-items:center; margin-top:10px; flex-wrap:wrap;';
     const input = document.createElement('input');
@@ -225,6 +271,8 @@ function _createNostrImportForm(toggleButton, list, onChange) {
                 added += 1;
             });
             onChange();
+            // Open the list: the new accounts are at its end, to be looked over.
+            if (added) onAdded?.();
             status.textContent = _nt('nostr_import_done', '{added} accounts added, {skipped} already in the list. Remove the ones you do not want, then save.')
                 .replace('{added}', added)
                 .replace('{skipped}', data.follows.length - added);

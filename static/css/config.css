@@ -826,6 +826,12 @@ body.dark-mode .toggle-option.active:hover {
     transform: translateX(18px);
 }
 
+/* Followed accounts beyond the first three, while the list is collapsed.
+   Must match NOSTR_COLLAPSED_ROWS in 09-nostr.js. */
+.nostr-accounts-collapsed > .nostr-account-row:nth-child(n+4) {
+    display: none !important;
+}
+
 /* ── Section Toggle (header enable/disable) ─────────────────── */
 .section-toggle {
     display: flex;
