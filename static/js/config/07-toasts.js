@@ -264,6 +264,11 @@ async function saveConfiguration() {
                 try { await window._usernameSaveHook(); } catch (_) { /* error shown by the hook */ }
             }
 
+            // A save of the Nostr settings starts a fetch: reload the posts once it is done
+            if (typeof window._nostrSaveHook === 'function') {
+                try { window._nostrSaveHook(); } catch (_) { /* the list reloads on its own within a minute */ }
+            }
+
             // Block notifications are always enabled - no need to update subscription
             return true;
         } else {

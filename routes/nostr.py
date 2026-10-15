@@ -1,5 +1,5 @@
 """Nostr posts: the prepared pool, card previews, avatars, profile lookup and
-the manual fetch.
+the fetch status.
 """
 
 from flask import Response
@@ -9,7 +9,6 @@ from flask import send_file
 from managers.auth_manager import require_auth
 import os
 import re
-import threading
 
 from lib import nostr_images
 
@@ -154,14 +153,3 @@ def register(self):
         from lib.nostr_live import get_live
         return jsonify({'status': status, 'total': len(store.overview()['posts']),
                         'live': get_live().status() if self.config.get('nostr_live', True) else None})
-
-    @self.app.route('/api/nostr-fetch', methods=['POST'])
-    @require_auth(self.auth_manager)
-    def trigger_nostr_fetch():
-        """Fetch now, from the saved settings."""
-        store = nostr_images.get_store()
-        if store.status.get('running'):
-            return jsonify({'success': True, 'running': True})
-        threading.Thread(target=store.fetch, args=(self.config,),
-                         name='nostr-fetch-manual', daemon=True).start()
-        return jsonify({'success': True, 'running': True})

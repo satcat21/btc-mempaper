@@ -493,13 +493,6 @@ let nostrStatusTimer = null;
 let nostrPoolTimer = null;
 let currentNostrModalPost = null;
 
-function _nostrDate(ts) {
-    if (!ts) return '';
-    const d = new Date(ts * 1000);
-    return d.toLocaleDateString(undefined, { day: '2-digit', month: '2-digit', year: '2-digit' })
-        + ' ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-}
-
 // The theme selected in the form, saved or not, so the preview follows the
 // switch straight away.
 function _nostrTheme() {
@@ -743,15 +736,16 @@ function _nostrErrorText(e) {
     return `${e.source}: ${text}`;
 }
 
+// The status line: how many relays are pushing new posts, and the sources
+// the last fetch could not reach. Fetches need no button: one runs at start,
+// on a timer, and whenever the Nostr settings are saved.
 async function refreshNostrStatus() {
     const el = document.getElementById('nostr-fetch-status');
-    const btn = document.getElementById('nostr-fetch-btn');
     if (!el) return null;
     try {
         const resp = await fetch('/api/nostr-status');
         const data = await resp.json();
         const s = data.status || {};
-        if (btn) btn.disabled = !!s.running;
         const errList = document.getElementById('nostr-fetch-errors');
         const errors = s.running ? [] : (s.errors || []);
         if (errList) {
@@ -762,65 +756,54 @@ async function refreshNostrStatus() {
             }));
             if (!errors.length) errList.style.display = 'none';
         }
-        if (s.running) {
-            el.textContent = _nt('nostr_fetching', 'Fetching…');
-        } else if (s.last_run) {
-            let text = _nt('nostr_last_fetch', 'Last fetch {time}: {added} new, {duplicates} duplicates skipped')
-                .replace('{time}', _nostrDate(s.last_run))
-                .replace('{added}', s.added || 0)
-                .replace('{duplicates}', s.duplicates || 0);
-            if (s.message && s.message !== 'ok') text += ' — ' + s.message;
-            // Whether the relays are pushing new posts right now.
-            if (data.live && data.live.total) {
-                text += ' · ' + _nt('nostr_live_status', 'Live: {connected} of {total} relays connected')
-                    .replace('{connected}', data.live.connected).replace('{total}', data.live.total);
-            }
-            el.textContent = text;
-            if (errors.length && errList) {
-                // The count opens the list underneath: a tooltip is out of
-                // reach on a phone, and the reasons are what tell you what to fix.
-                // Red only when the fetch failed. A relay or two not answering
-                // while the rest delivered is a note, not an error.
-                const failed = s.message && s.message !== 'ok';
-                const toggle = document.createElement('a');
-                toggle.href = '#';
-                toggle.style.cssText = `color:${failed ? 'var(--danger)' : 'var(--text-secondary)'}; text-decoration:underline; cursor:pointer;`;
-                toggle.textContent = (failed
-                    ? _nt('nostr_fetch_errors', '{count} error(s)')
-                    : _nt('nostr_fetch_notes', '{count} source(s) not reached'))
-                    .replace('{count}', errors.length);
-                toggle.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    errList.style.display = errList.style.display === 'none' ? 'block' : 'none';
-                });
-                el.append(' — ', toggle);
-            }
-        } else {
-            el.textContent = _nt('nostr_never_fetched', 'Not fetched yet since the last restart. Fetches run every 5 minutes.');
+        el.replaceChildren();
+        if (data.live && data.live.total) {
+            el.textContent = _nt('nostr_live_status', 'Live: {connected} of {total} relays connected')
+                .replace('{connected}', data.live.connected).replace('{total}', data.live.total);
         }
+        if (errors.length && errList) {
+            // The count opens the list underneath: a tooltip is out of
+            // reach on a phone, and the reasons are what tell you what to fix.
+            // Red only when the fetch failed. A relay or two not answering
+            // while the rest delivered is a note, not an error.
+            const failed = s.message && s.message !== 'ok';
+            const toggle = document.createElement('a');
+            toggle.href = '#';
+            toggle.style.cssText = `color:${failed ? 'var(--danger)' : 'var(--text-secondary)'}; text-decoration:underline; cursor:pointer;`;
+            toggle.textContent = (failed
+                ? _nt('nostr_fetch_errors', '{count} error(s)')
+                : _nt('nostr_fetch_notes', '{count} source(s) not reached'))
+                .replace('{count}', errors.length);
+            toggle.addEventListener('click', (e) => {
+                e.preventDefault();
+                errList.style.display = errList.style.display === 'none' ? 'block' : 'none';
+            });
+            if (el.textContent) el.append(' — ');
+            el.append(toggle);
+        }
+        el.parentElement.style.display = el.childNodes.length ? '' : 'none';
         return s;
     } catch (err) {
         return null;
     }
 }
 
-async function startNostrFetch() {
-    const btn = document.getElementById('nostr-fetch-btn');
-    if (btn) btn.disabled = true;
-    try {
-        await fetch('/api/nostr-fetch', { method: 'POST' });
-    } catch (err) {
-        if (btn) btn.disabled = false;
-        return;
-    }
+// Follows a fetch the server is running - the one a save starts - and
+// reloads the list and the account names once it is done.
+function _nostrWatchFetch() {
     clearInterval(nostrStatusTimer);
     let sawRunning = false;
     const started = Date.now();
     nostrStatusTimer = setInterval(async () => {
+        if (!document.getElementById('nostr-fetch-status')) {
+            clearInterval(nostrStatusTimer);
+            return;
+        }
         const s = await refreshNostrStatus();
         if (s?.running) sawRunning = true;
-        // Done once it has been seen running and stopped, or after the first
-        // poll if it was already finished by then.
+        // Done once it has been seen running and stopped, or after a few
+        // seconds if it never was: finished before the first poll, or no
+        // Nostr setting changed and none was started.
         if (s && !s.running && (sawRunning || Date.now() - started > 4000)) {
             clearInterval(nostrStatusTimer);
             loadNostrPool();
@@ -828,6 +811,9 @@ async function startNostrFetch() {
         }
     }, 2500);
 }
+window._nostrSaveHook = () => {
+    if (document.getElementById('nostr-fetch-status')) _nostrWatchFetch();
+};
 
 function createNostrManagementInterface(field) {
     const container = document.createElement('div');
@@ -835,17 +821,11 @@ function createNostrManagementInterface(field) {
 
     const statusRow = document.createElement('div');
     statusRow.style.cssText = 'display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:12px;';
-    const fetchBtn = document.createElement('button');
-    fetchBtn.type = 'button';
-    fetchBtn.id = 'nostr-fetch-btn';
-    fetchBtn.className = 'mempool-action-btn';
-    fetchBtn.textContent = _nt('nostr_fetch_now', 'Fetch now');
-    fetchBtn.title = _nt('nostr_fetch_now_hint', 'Uses the saved settings - save first after changing accounts.');
-    fetchBtn.addEventListener('click', startNostrFetch);
+    statusRow.style.display = 'none';
     const statusEl = document.createElement('span');
     statusEl.id = 'nostr-fetch-status';
     statusEl.style.cssText = 'font-size:0.85rem; color:var(--text-secondary);';
-    statusRow.append(fetchBtn, statusEl);
+    statusRow.append(statusEl);
 
     const errorList = document.createElement('ul');
     errorList.id = 'nostr-fetch-errors';
@@ -872,7 +852,7 @@ function createNostrManagementInterface(field) {
 
     setTimeout(() => {
         loadNostrPool();
-        refreshNostrStatus().then(s => { if (s?.running) startNostrFetch(); });
+        refreshNostrStatus().then(s => { if (s?.running) _nostrWatchFetch(); });
         // States and minutes left move on their own; a fetch in the
         // background may have added posts.
         clearInterval(nostrPoolTimer);
