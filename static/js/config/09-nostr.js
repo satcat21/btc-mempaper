@@ -784,9 +784,40 @@ function _nostrErrorText(e) {
     return `${e.source}: ${text}`;
 }
 
-// The status line: how many relays are pushing new posts, and the sources
-// the last fetch could not reach. Fetches need no button: one runs at start,
-// on a timer, and whenever the Nostr settings are saved.
+// Under the relays in the advanced settings: how many are pushing new posts
+// right now, and which, in the tooltip. Created on first use, and again
+// after the form was built anew.
+function _nostrShowLive(live) {
+    let el = document.getElementById('nostr-live-status');
+    if (!el) {
+        const group = document.querySelector('[data-config-key="nostr_relays"]')?.closest('.form-group');
+        if (!group) return;
+        el = document.createElement('div');
+        el.id = 'nostr-live-status';
+        el.className = 'form-description';
+        el.style.cssText = 'font-size:0.8rem; color:var(--text-secondary); margin-top:6px; cursor:help; width:fit-content;';
+        group.appendChild(el);
+    }
+    if (!live || !live.total) {
+        el.style.display = 'none';
+        return;
+    }
+    el.style.display = '';
+    el.textContent = _nt('nostr_live_status', 'Live: {connected} of {total} relays connected')
+        .replace('{connected}', live.connected).replace('{total}', live.total);
+    // The configured relays and the ones the followed accounts write to.
+    const relays = Object.entries(live.relays || {});
+    const up = relays.filter(([, ok]) => ok).map(([r]) => r).sort();
+    const down = relays.filter(([, ok]) => !ok).map(([r]) => r).sort();
+    const NL = '\n';
+    let tip = up.length ? up.join(NL) : _nt('nostr_live_none', 'No relay connected');
+    if (down.length) tip += NL + NL + _nt('nostr_live_not_connected', 'Not connected:') + NL + down.join(NL);
+    el.title = tip;
+}
+
+// The status line: the sources the last fetch could not reach. Fetches
+// need no button: one runs at start, on a timer, and whenever the Nostr
+// settings are saved.
 async function refreshNostrStatus() {
     const el = document.getElementById('nostr-fetch-status');
     if (!el) return null;
@@ -805,10 +836,7 @@ async function refreshNostrStatus() {
             if (!errors.length) errList.style.display = 'none';
         }
         el.replaceChildren();
-        if (data.live && data.live.total) {
-            el.textContent = _nt('nostr_live_status', 'Live: {connected} of {total} relays connected')
-                .replace('{connected}', data.live.connected).replace('{total}', data.live.total);
-        }
+        _nostrShowLive(data.live);
         if (errors.length && errList) {
             // The count opens the list underneath: a tooltip is out of
             // reach on a phone, and the reasons are what tell you what to fix.

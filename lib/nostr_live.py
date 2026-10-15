@@ -72,10 +72,12 @@ class NostrLive:
             self._state = {}
 
     def status(self):
-        """{'connected': n, 'total': m} for the settings page."""
+        """{'connected': n, 'total': m, 'relays': {relay: connected}} for the
+        settings page."""
         with self._lock:
             return {'connected': sum(1 for s in self._state.values() if s['connected']),
-                    'total': len(self._state)}
+                    'total': len(self._state),
+                    'relays': {relay: s['connected'] for relay, s in self._state.items()}}
 
     def any_connected(self):
         return self.status()['connected'] > 0
