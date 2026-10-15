@@ -23,10 +23,21 @@ function _nostrDuration(minutes) {
 }
 
 // The pool window the server is working with, from the last pool reload.
+// fromForm: the Show Posts For slider instead, saved or not - for the hint
+// that explains the setting, which should follow the slider as it moves.
 let _nostrWindowMinutes = null;
-function _nostrWindowText() {
+function _nostrWindowText(fromForm) {
     const saved = (typeof currentConfig !== 'undefined' && currentConfig?.nostr_pool_minutes) || 60;
-    return _nostrDuration(_nostrWindowMinutes || saved);
+    const form = fromForm && Number(document.querySelector('[data-config-key="nostr_pool_minutes"]')?.getValue?.());
+    return _nostrDuration(form || _nostrWindowMinutes || saved);
+}
+
+function _nostrUpdatePoolHint() {
+    const hint = document.getElementById('nostr-pool-hint');
+    if (hint) {
+        hint.textContent = _nt('nostr_pool_hint', 'In the order they will be shown. A post stays here for {window} after it was published.')
+            .replace('{window}', _nostrWindowText(true));
+    }
 }
 
 // A slider over fixed stops (field.stops, in minutes) rather than a straight
@@ -55,7 +66,11 @@ function createDurationSliderInput(field, value) {
     hi.textContent = _nostrDuration(stops[stops.length - 1]);
     scale.append(lo, hi);
 
-    const show = () => { head.textContent = _nostrDuration(stops[Number(slider.value)]); };
+    // The pool hint follows too, on a reset of the form as well as a drag.
+    const show = () => {
+        head.textContent = _nostrDuration(stops[Number(slider.value)]);
+        _nostrUpdatePoolHint();
+    };
     slider.addEventListener('input', show);
     show();
 
@@ -621,11 +636,7 @@ async function loadNostrPool() {
         const data = await resp.json();
         const posts = data.posts || [];
         if (data.window_minutes) _nostrWindowMinutes = data.window_minutes;
-        const hint = document.getElementById('nostr-pool-hint');
-        if (hint) {
-            hint.textContent = _nt('nostr_pool_hint', 'In the order they will be shown. A post stays here for {window} after it was published.')
-                .replace('{window}', _nostrWindowText());
-        }
+        _nostrUpdatePoolHint();
         const count = document.getElementById('nostr-pool-count');
         if (count) count.textContent = `(${posts.length})`;
         const signature = JSON.stringify([_nostrTheme(), posts.map(p => [p.key, p.state, _nostrImageOnly(p)]),
@@ -848,7 +859,7 @@ function createNostrManagementInterface(field) {
     hint.id = 'nostr-pool-hint';
     hint.style.cssText = 'font-size:0.8rem; color:var(--text-secondary); margin-bottom:8px;';
     hint.textContent = _nt('nostr_pool_hint', 'In the order they will be shown. A post stays here for {window} after it was published.')
-        .replace('{window}', _nostrWindowText());
+        .replace('{window}', _nostrWindowText(true));
 
     const list = document.createElement('div');
     list.id = 'nostr-pool-list';
