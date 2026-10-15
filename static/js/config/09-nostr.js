@@ -790,21 +790,21 @@ function _nostrErrorText(e) {
 function _nostrShowLive(live) {
     let el = document.getElementById('nostr-live-status');
     if (!el) {
-        const group = document.querySelector('[data-config-key="nostr_relays"]')?.closest('.form-group');
-        if (!group) return;
-        el = document.createElement('div');
+        const label = document.querySelector('[data-config-key="nostr_relays"]')
+            ?.closest('.form-group')?.querySelector('.form-label');
+        if (!label) return;
+        el = document.createElement('span');
         el.id = 'nostr-live-status';
-        el.className = 'form-description';
-        el.style.cssText = 'font-size:0.8rem; color:var(--text-secondary); margin-top:6px; width:fit-content;';
-        group.appendChild(el);
+        el.style.cssText = 'margin-left:6px; font-size:0.8em; font-weight:400; color:var(--text-secondary);';
+        label.appendChild(el);
     }
     if (!live || !live.total) {
         el.style.display = 'none';
         return;
     }
     el.style.display = '';
-    el.textContent = _nt('nostr_live_status', 'Live: {connected} of {total} relays connected')
-        .replace('{connected}', live.connected).replace('{total}', live.total);
+    el.textContent = '(' + _nt('nostr_live_count', '{connected} of {total} connected')
+        .replace('{connected}', live.connected).replace('{total}', live.total) + ')';
     // The configured relays and the ones the followed accounts write to.
     // A server from before the list was added sends only the counts: no
     // tooltip then, rather than one that says none are connected.

@@ -453,8 +453,9 @@ While live connections stand, a catch-up fetch runs every 30 minutes; with
 **Live Updates** off, or no relay connected, mempaper asks every 5 minutes
 instead. When a post arrives while the next block was going to show a meme or a
 repeat, that block's image is prepared again with the new post, at most once a
-minute. Under **Relays** (Advanced), a line shows how many relays are live;
-hovering it lists the connected ones and those not connected.
+minute. The **Relays** heading (Advanced) shows how many relays are live, e.g.
+`Relays (7 of 8 connected)`; hovering the count lists the connected ones and
+those not connected.
 
 **The pool.** A post with an image is in the pool for **Show Posts For** (1 hour by
 default, 10 minutes to 7 days) after it was
