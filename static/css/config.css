@@ -809,6 +809,23 @@ body.dark-mode .toggle-option.active:hover {
     background: #fff;
 }
 
+/* Post card or image only, per Nostr account: the size of the section
+   toggle, so it does not crowd the account's name line. */
+.nostr-style-switch .switch {
+    width: 38px;
+    height: 20px;
+    border-radius: 10px;
+}
+
+.nostr-style-switch .switch-thumb {
+    width: 14px;
+    height: 14px;
+}
+
+.nostr-style-switch .switch.active .switch-thumb {
+    transform: translateX(18px);
+}
+
 /* ── Section Toggle (header enable/disable) ─────────────────── */
 .section-toggle {
     display: flex;
