@@ -795,7 +795,7 @@ function _nostrShowLive(live) {
         el = document.createElement('div');
         el.id = 'nostr-live-status';
         el.className = 'form-description';
-        el.style.cssText = 'font-size:0.8rem; color:var(--text-secondary); margin-top:6px; cursor:help; width:fit-content;';
+        el.style.cssText = 'font-size:0.8rem; color:var(--text-secondary); margin-top:6px; width:fit-content;';
         group.appendChild(el);
     }
     if (!live || !live.total) {
@@ -806,7 +806,13 @@ function _nostrShowLive(live) {
     el.textContent = _nt('nostr_live_status', 'Live: {connected} of {total} relays connected')
         .replace('{connected}', live.connected).replace('{total}', live.total);
     // The configured relays and the ones the followed accounts write to.
-    const relays = Object.entries(live.relays || {});
+    // A server from before the list was added sends only the counts: no
+    // tooltip then, rather than one that says none are connected.
+    if (!live.relays) {
+        el.removeAttribute('title');
+        return;
+    }
+    const relays = Object.entries(live.relays);
     const up = relays.filter(([, ok]) => ok).map(([r]) => r).sort();
     const down = relays.filter(([, ok]) => !ok).map(([r]) => r).sort();
     const NL = '\n';
