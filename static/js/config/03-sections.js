@@ -939,8 +939,10 @@ async function _loadUpdateData(selectEl, updateBtn, versionEl, notesContainer) {
         if (releasesData.success && releasesData.repo_url) {
             const repoLink = document.getElementById('update-repo-link');
             if (repoLink) {
-                const isGitLab = releasesData.platform === 'GitLab';
-                repoLink.href = releasesData.repo_url + (isGitLab ? '/-/releases' : '/releases');
+                // The server knows where its own release list lives, and on a
+                // host that keeps none there is no such page at all - neither of
+                // which can be worked out here from a platform's name.
+                repoLink.href = releasesData.releases_url || releasesData.repo_url;
                 repoLink.textContent = (window.translations?.view_on_platform || 'View on {platform}').replace('{platform}', releasesData.platform || 'GitHub');
                 repoLink.style.display = '';
             }

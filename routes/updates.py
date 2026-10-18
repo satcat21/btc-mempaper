@@ -268,6 +268,52 @@ _APT_SIM_ACTION = re.compile(
 )
 
 
+# Hosts whose API shape has been established, so the next page load asks the
+# right one straight away. Per process and never written down: a host that
+# changes software between restarts is not worth the file, and a failure is
+# not recorded at all - a server that was down once is asked again.
+_RESOLVED_API_KINDS = {}
+
+
+def _release_api_request(kind, remote_url, remote_host, remote_path, api_token):
+    """(url, headers) to ask `kind` for its release list, or (None, {}).
+
+    Gitea and Forgejo copy GitHub's API deliberately, down to the field names
+    in each release, so only the path and the way the token is presented
+    differ - and the entries they return need no translation below.
+    """
+    from urllib.parse import urlparse
+
+    if kind == 'github':
+        headers = {'Accept': 'application/vnd.github.v3+json'}
+        if api_token:
+            headers['Authorization'] = f'Bearer {api_token}'
+        return f'https://api.github.com/repos/{remote_path}/releases', headers
+
+    parsed = urlparse(remote_url)
+    if not parsed.scheme or not parsed.hostname:
+        # An scp-style remote (git@host:owner/repo) carries no scheme to build
+        # an API URL from, and guessing one would be guessing at the TLS too.
+        return None, {}
+    base = f'{parsed.scheme}://{parsed.hostname}'
+    if parsed.port:
+        base += f':{parsed.port}'
+    project_path = parsed.path.lstrip('/')
+
+    if kind == 'gitlab':
+        headers = {'PRIVATE-TOKEN': api_token} if api_token else {}
+        quoted = requests.utils.quote(project_path, safe='')
+        return f'{base}/api/v4/projects/{quoted}/releases', headers
+
+    if kind == 'gitea':
+        # 'token <value>' rather than a bearer: the form Gitea and Forgejo
+        # have accepted throughout, where Bearer is newer than some instances.
+        headers = {'Authorization': f'token {api_token}'} if api_token else {}
+        return f'{base}/api/v1/repos/{project_path}/releases', headers
+
+    return None, {}
+
+
 def _simulate_dist_upgrade_detailed():
     """What a full upgrade would do, without doing any of it.
 
@@ -501,7 +547,8 @@ def _run_postinstall(wrapper, translations, emit):
 
 def register(self):
     """Register the updates routes."""
-    from mempaper_app import _parse_git_remote, _safe_error
+    from mempaper_app import (_git_env, _parse_git_remote, _platform_label,
+                              _release_api_kind, _safe_error)
 
     @self.app.route('/api/update/current', methods=['GET'])
     @require_auth(self.auth_manager)
@@ -565,49 +612,62 @@ def register(self):
             remote_url = remote_url.rstrip('/')
 
             remote_host, remote_path = _parse_git_remote(remote_url)
-            is_gitlab = remote_host not in ('github.com', 'www.github.com')
+            kind = _release_api_kind(remote_url, remote_host)
+            if kind == 'auto':
+                kind = _RESOLVED_API_KINDS.get(remote_host, 'auto')
             # The page links to this. A private mirror is fetched through a
             # URL carrying a read-only token (https://user:token@host/...),
             # which must not end up in an href on the settings page.
             repo_url = re.sub(r'^(https?://)[^@/]+@', r'\1', remote_url)
-            platform = 'GitLab' if is_gitlab else 'GitHub'
 
             # Try fetching releases from the hosting API first
             # Optional: GIT_API_TOKEN in .env for private repo access
-            api_token = os.getenv('GIT_API_TOKEN')
-            if not api_token:
-                try:
-                    from dotenv import dotenv_values
-                    env_path = os.path.join(project_dir, '.env')
-                    env_vars = dotenv_values(env_path)
-                    api_token = env_vars.get('GIT_API_TOKEN')
-                except Exception:
-                    pass
+            api_token = _git_env('GIT_API_TOKEN')
 
+            # An unresolved host is asked in turn until one answers with a list
+            # of releases. A wrong guess is a 404 and costs no more than that;
+            # a host with no release API at all simply never answers with one,
+            # and the tag pass below is then the whole of the list - which is
+            # all the update itself has ever needed.
             api_releases = None
-            try:
-                if not is_gitlab:
-                    api_url = f'https://api.github.com/repos/{remote_path}/releases'
-                    headers = {'Accept': 'application/vnd.github.v3+json'}
-                    if api_token:
-                        headers['Authorization'] = f'Bearer {api_token}'
-                else:
-                    from urllib.parse import urlparse
-                    parsed = urlparse(remote_url)
-                    project_path = parsed.path.lstrip('/')
-                    api_url = f'{parsed.scheme}://{parsed.hostname}/api/v4/projects/{requests.utils.quote(project_path, safe="")}/releases'
-                    headers = {}
-                    if api_token:
-                        headers['PRIVATE-TOKEN'] = api_token
+            for candidate in (['gitlab', 'gitea'] if kind == 'auto' else [kind]):
+                api_url, headers = _release_api_request(
+                    candidate, remote_url, remote_host, remote_path, api_token)
+                if not api_url:
+                    continue
+                try:
+                    resp = requests.get(api_url, headers=headers, timeout=15)
+                    resp.raise_for_status()
+                    payload = resp.json()
+                except (requests.RequestException, ValueError):
+                    continue
+                # A list, specifically: a login page and an error object are
+                # both perfectly good JSON and neither is a set of releases.
+                if isinstance(payload, list):
+                    api_releases = payload
+                    kind = candidate
+                    _RESOLVED_API_KINDS[remote_host] = candidate
+                    break
 
-                resp = requests.get(api_url, headers=headers, timeout=15)
-                resp.raise_for_status()
-                api_releases = resp.json()
-            except requests.RequestException:
-                pass  # Fall back to local git tags
+            if kind == 'auto':
+                # Nothing answered. Not remembered, so a host that was merely
+                # unreachable is asked again on the next load.
+                kind = 'git'
+
+            platform = _platform_label(kind, remote_url, remote_host)
+            # Each platform spells its release list differently, and a host
+            # that keeps no release objects has no such page - there the link
+            # goes to the repository, which is the most that exists.
+            if kind == 'gitlab':
+                releases_url = repo_url + '/-/releases'
+            elif kind in ('github', 'gitea'):
+                releases_url = repo_url + '/releases'
+            else:
+                releases_url = repo_url
 
             # Release entries from the API, where there are any: they carry the
-            # title, date and notes.
+            # title, date and notes. GitLab names its fields differently;
+            # Gitea's match GitHub's, so they fall to the same side here.
             result = []
             for rel in api_releases or []:
                 tag_name = rel.get('tag_name', '')
@@ -617,10 +677,13 @@ def register(self):
                 result.append({
                     'tag': tag_name,
                     'name': rel.get('name', '') or tag_name,
-                    'published_at': rel.get('released_at', '') if is_gitlab else rel.get('published_at', ''),
-                    'body': rel.get('description', '') if is_gitlab else rel.get('body', ''),
-                    'prerelease': rel.get('upcoming_release', False) if is_gitlab else rel.get('prerelease', False),
-                    'draft': False if is_gitlab else rel.get('draft', False)
+                    'published_at': (rel.get('released_at', '') if kind == 'gitlab'
+                                     else rel.get('published_at', '')),
+                    'body': (rel.get('description', '') if kind == 'gitlab'
+                             else rel.get('body', '')),
+                    'prerelease': (rel.get('upcoming_release', False) if kind == 'gitlab'
+                                   else rel.get('prerelease', False)),
+                    'draft': False if kind == 'gitlab' else rel.get('draft', False)
                 })
 
             # Every tag the remote has, whether or not a release entry exists
@@ -681,7 +744,8 @@ def register(self):
                                        _parse_version(r['tag']) or ()),
                         reverse=True)
 
-            return jsonify({'success': True, 'releases': result, 'repo_url': repo_url, 'platform': platform})
+            return jsonify({'success': True, 'releases': result, 'repo_url': repo_url,
+                            'releases_url': releases_url, 'platform': platform})
         except Exception as e:
             return jsonify({
                 'success': False,

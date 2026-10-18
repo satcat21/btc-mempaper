@@ -121,11 +121,83 @@ def _parse_git_remote(remote_url):
     rather than test for a substring: the update check decides from this whether
     to send an API token to GitHub or to a self-hosted GitLab, and a plain
     'github.com' in url test also matches hosts like github.com.example.org.
+
+    nostr:// is listed with the other schemes so that the npub or nip05 after
+    it lands in the host position instead of the scheme being read as one.
+    What comes back is an identity rather than a hostname, which is all that
+    is wanted of it: it is not github.com, and nothing here asks more.
+
+    A colon separates the host from the path in the scp-like form and from the
+    port everywhere else, so an all-digit run after it is read as a port and
+    dropped - otherwise a self-hosted instance on :3000, which is where Gitea
+    serves by default, hands back a path beginning with its own port number.
     """
     import re
-    m = re.match(r'^(?:(?:https?|ssh|git)://)?(?:[^@/]+@)?([^/:]+)[:/](.+?)/?$',
+    m = re.match(r'^(?:(?:https?|ssh|git|nostr)://)?(?:[^@/]+@)?([^/:]+)(?::\d+)?[:/](.+?)/?$',
                  (remote_url or '').strip())
     return (m.group(1).lower(), m.group(2)) if m else (None, None)
+
+
+# The release APIs this knows how to read, beside the tags every git remote
+# has. 'git' is a remote with no release objects at all - a GRASP or ngit
+# server, a nostr remote, a bare mirror - where the tag is the whole of what a
+# release is.
+RELEASE_API_KINDS = ('github', 'gitlab', 'gitea', 'git')
+
+
+def _git_env(key):
+    """A value from the environment, else from the project's .env file.
+
+    These keys are written into .env by hand on a device with no shell session
+    to export them from, so the file is the usual source and the environment
+    is the override.
+    """
+    value = os.getenv(key)
+    if value:
+        return value
+    try:
+        from dotenv import dotenv_values
+        from utils.paths import PROJECT_ROOT
+        return dotenv_values(os.path.join(PROJECT_ROOT, '.env')).get(key)
+    except Exception:
+        return None
+
+
+def _release_api_kind(remote_url, remote_host):
+    """A name from RELEASE_API_KINDS for this remote, or 'auto' to go and ask.
+
+    Only two things can be told from a URL. github.com is itself, and nostr://
+    names a protocol with no release objects in it. Everything else is someone
+    else's server - a self-hosted GitLab, a Gitea or Forgejo instance, a GRASP
+    server, a plain mirror - and a hostname says nothing about which. Those
+    resolve by request rather than by guess, which costs one round trip the
+    first time a host is seen.
+
+    GIT_API_KIND in .env names the kind outright. Worth setting on a device
+    pointed at a host that has no release API, where it saves the asking, and
+    on one pointed at a host run by somebody else, where it keeps a configured
+    token from being offered to them.
+    """
+    kind = (_git_env('GIT_API_KIND') or '').strip().lower()
+    if kind in RELEASE_API_KINDS:
+        return kind
+    if (remote_url or '').strip().lower().startswith('nostr://'):
+        return 'git'
+    if remote_host in ('github.com', 'www.github.com'):
+        return 'github'
+    return 'auto'
+
+
+def _platform_label(kind, remote_url, remote_host):
+    """What to call this remote on the settings page."""
+    named = {'github': 'GitHub', 'gitlab': 'GitLab', 'gitea': 'Gitea'}
+    if kind in named:
+        return named[kind]
+    if (remote_url or '').strip().lower().startswith('nostr://'):
+        return 'nostr'
+    # The host itself, which says more than a word for "some git server" would.
+    return remote_host or 'git'
+
 
 
 def _safe_error(exc, context=''):
