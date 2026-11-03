@@ -24,6 +24,7 @@ Cache Structure:
 import json
 import os
 import requests
+from utils.http_session import http_session
 import time
 import threading
 from utils.technical_config import build_mempool_proxies, mempool_request_timeout
@@ -212,7 +213,7 @@ class BlockRewardCache:
         try:
             base_url = self._get_mempool_base_url()
             verify_ssl = self._get_mempool_verify_ssl()
-            response = requests.get(f"{base_url}/blocks/tip/height", timeout=self._mempool_timeout(10), verify=verify_ssl,
+            response = http_session().get(f"{base_url}/blocks/tip/height", timeout=self._mempool_timeout(10), verify=verify_ssl,
                                     proxies=self._get_mempool_proxies())
             response.raise_for_status()
             return int(response.text.strip())
@@ -310,7 +311,7 @@ class BlockRewardCache:
         try:
             # Get all transactions for this address
             # Use the address API endpoint to get transaction history
-            tx_response = requests.get(f"{base_url}/address/{address}/txs", timeout=self._mempool_timeout(30), verify=verify_ssl,
+            tx_response = http_session().get(f"{base_url}/address/{address}/txs", timeout=self._mempool_timeout(30), verify=verify_ssl,
                                        proxies=self._get_mempool_proxies())
             
             if not tx_response.ok:
@@ -417,7 +418,7 @@ class BlockRewardCache:
             
             for pagination_url in pagination_urls:
                 try:
-                    response = requests.get(pagination_url, timeout=self._mempool_timeout(30), verify=self._get_mempool_verify_ssl(),
+                    response = http_session().get(pagination_url, timeout=self._mempool_timeout(30), verify=self._get_mempool_verify_ssl(),
                                             proxies=self._get_mempool_proxies())
                     if response.ok:
                         transactions = response.json()
@@ -487,7 +488,7 @@ class BlockRewardCache:
             verify_ssl = self._get_mempool_verify_ssl()
             
             # Get block transactions
-            txids_response = requests.get(f"{base_url}/block/{block_hash}/txids", timeout=self._mempool_timeout(10), verify=verify_ssl,
+            txids_response = http_session().get(f"{base_url}/block/{block_hash}/txids", timeout=self._mempool_timeout(10), verify=verify_ssl,
                                           proxies=self._get_mempool_proxies())
             if not txids_response.ok:
                 return False
@@ -500,7 +501,7 @@ class BlockRewardCache:
             coinbase_txid = txids[0]
             
             # Get coinbase transaction details
-            tx_response = requests.get(f"{base_url}/tx/{coinbase_txid}", timeout=self._mempool_timeout(10), verify=verify_ssl,
+            tx_response = http_session().get(f"{base_url}/tx/{coinbase_txid}", timeout=self._mempool_timeout(10), verify=verify_ssl,
                                        proxies=self._get_mempool_proxies())
             if not tx_response.ok:
                 return False
@@ -647,7 +648,7 @@ class BlockRewardCache:
             for height in range(batch_start, batch_end + 1):
                 try:
                     # Get block hash
-                    block_response = requests.get(f"{base_url}/block-height/{height}", timeout=self._mempool_timeout(10), verify=verify_ssl,
+                    block_response = http_session().get(f"{base_url}/block-height/{height}", timeout=self._mempool_timeout(10), verify=verify_ssl,
                                                   proxies=self._get_mempool_proxies())
                     if not block_response.ok:
                         processed_blocks += 1
@@ -656,7 +657,7 @@ class BlockRewardCache:
                     block_hash = block_response.text.strip()
                     
                     # Get coinbase transaction directly using block info endpoint (more efficient)
-                    block_response = requests.get(f"{base_url}/block/{block_hash}", timeout=self._mempool_timeout(10), verify=verify_ssl,
+                    block_response = http_session().get(f"{base_url}/block/{block_hash}", timeout=self._mempool_timeout(10), verify=verify_ssl,
                                                   proxies=self._get_mempool_proxies())
                     if not block_response.ok:
                         processed_blocks += 1

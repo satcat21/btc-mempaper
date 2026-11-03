@@ -11,6 +11,7 @@ import json
 import os
 import random
 import requests
+from utils.http_session import http_session
 import threading
 import time
 import traceback
@@ -310,7 +311,7 @@ class BlockRewardMonitor:
         block_height = None
         try:
             base_url = self._get_mempool_base_url()
-            response = requests.get(f"{base_url}/block/{block_hash}", timeout=self._mempool_timeout(5), verify=False,
+            response = http_session().get(f"{base_url}/block/{block_hash}", timeout=self._mempool_timeout(5), verify=False,
                                     proxies=self._get_mempool_proxies())
             if response.ok:
                 block_data = response.json()
@@ -382,7 +383,7 @@ class BlockRewardMonitor:
                 try:
                     print(f"👁️ Trying endpoint: {endpoint} (auth={auth_mode})")
                     # Use verify=False for self-signed HTTPS certificates
-                    txids_resp = requests.get(endpoint, timeout=self._mempool_timeout(10), verify=False, auth=mempool_auth,
+                    txids_resp = http_session().get(endpoint, timeout=self._mempool_timeout(10), verify=False, auth=mempool_auth,
                                                proxies=self._get_mempool_proxies())
                     txids_resp.raise_for_status()
                     txids = txids_resp.json()
@@ -422,7 +423,7 @@ class BlockRewardMonitor:
             coinbase_txid = transaction_ids[0]
             
             # Get coinbase transaction details
-            tx_resp = requests.get(f"{BASE_URL}/tx/{coinbase_txid}", timeout=self._mempool_timeout(10), verify=False, auth=mempool_auth,
+            tx_resp = http_session().get(f"{BASE_URL}/tx/{coinbase_txid}", timeout=self._mempool_timeout(10), verify=False, auth=mempool_auth,
                                proxies=self._get_mempool_proxies())
             tx_resp.raise_for_status()
             
@@ -452,7 +453,7 @@ class BlockRewardMonitor:
         # Startup catch-up: check current block height and process missed blocks
         try:
             base_url = self._get_mempool_base_url()
-            resp = requests.get(f"{base_url}/blocks/tip", timeout=self._mempool_timeout(10), verify=False,
+            resp = http_session().get(f"{base_url}/blocks/tip", timeout=self._mempool_timeout(10), verify=False,
                                 proxies=self._get_mempool_proxies())
             if resp.ok:
                 tip_data = resp.json()
@@ -462,7 +463,7 @@ class BlockRewardMonitor:
                     print(f"⚙️ Missed blocks detected: {last_cached_height} → {current_height}. Generating images for missed blocks...")
                     for h in range(last_cached_height + 1, current_height + 1):
                         # Fetch block hash for height
-                        block_resp = requests.get(f"{base_url}/block-height/{h}", timeout=self._mempool_timeout(10), verify=False,
+                        block_resp = http_session().get(f"{base_url}/block-height/{h}", timeout=self._mempool_timeout(10), verify=False,
                                                      proxies=self._get_mempool_proxies())
                         if block_resp.ok:
                             block_json = block_resp.json()

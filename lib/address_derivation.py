@@ -8,19 +8,132 @@ Supports both P2PKH (legacy) and P2WPKH (segwit) address formats.
 
 import hashlib
 import hmac
-from typing import List, Tuple, Optional
+import threading
+from typing import Dict, List, Tuple, Optional
 import struct
+
+
+# secp256k1
+_P = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F
+_N = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
+_G = (0x79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798,
+      0x483ADA7726A3C4655DA4FBFC0E1108A8FD17B448A68554199C47D08FFB10D4B8)
+
+# Every derivation multiplies the same point G, so G is multiplied once, up
+# front, by every 4-bit digit at every 4-bit position. A scalar multiply is then
+# 64 table lookups and additions with no doublings. The additions run in
+# Jacobian coordinates, which need no modular inverse until the very end: the
+# affine formulas spent one 256-bit exponentiation per step, ~380 per address,
+# and on a Pi Zero that was seconds of CPU for each address.
+_WINDOW = 4
+_G_TABLE: Optional[List[List[Tuple[int, int]]]] = None
+_G_TABLE_LOCK = threading.Lock()
+
+
+def _affine_add(p1, p2):
+    if p1 is None:
+        return p2
+    if p2 is None:
+        return p1
+    x1, y1 = p1
+    x2, y2 = p2
+    if x1 == x2:
+        if (y1 + y2) % _P == 0:
+            return None
+        s = 3 * x1 * x1 * pow(2 * y1, -1, _P) % _P
+    else:
+        s = (y2 - y1) * pow(x2 - x1, -1, _P) % _P
+    x3 = (s * s - x1 - x2) % _P
+    return (x3, (s * (x1 - x3) - y1) % _P)
+
+
+def _g_table() -> List[List[Tuple[int, int]]]:
+    global _G_TABLE
+    if _G_TABLE is None:
+        with _G_TABLE_LOCK:
+            if _G_TABLE is None:
+                table = []
+                base = _G
+                for _ in range(256 // _WINDOW):
+                    row = [base]
+                    for _ in range((1 << _WINDOW) - 2):
+                        row.append(_affine_add(row[-1], base))
+                    table.append(row)
+                    base = _affine_add(row[-1], base)  # 2^WINDOW * base
+                _G_TABLE = table
+    return _G_TABLE
+
+
+def _jacobian_add_affine(p, q):
+    """Jacobian point p plus affine point q (either may be None)."""
+    if q is None:
+        return p
+    if p is None:
+        return (q[0], q[1], 1)
+    x1, y1, z1 = p
+    x2, y2 = q
+    z1z1 = z1 * z1 % _P
+    u2 = x2 * z1z1 % _P
+    s2 = y2 * z1 * z1z1 % _P
+    h = (u2 - x1) % _P
+    r = (s2 - y1) % _P
+    if h == 0:
+        if r != 0:
+            return None  # p == -q
+        # p == q: double
+        ysq = y1 * y1 % _P
+        s = 4 * x1 * ysq % _P
+        m = 3 * x1 * x1 % _P
+        x3 = (m * m - 2 * s) % _P
+        return (x3, (m * (s - x3) - 8 * ysq * ysq) % _P, 2 * y1 * z1 % _P)
+    hh = h * h % _P
+    hhh = h * hh % _P
+    v = x1 * hh % _P
+    x3 = (r * r - hhh - 2 * v) % _P
+    return (x3, (r * (v - x3) - y1 * hhh) % _P, z1 * h % _P)
+
+
+def _to_affine(p):
+    if p is None:
+        return None
+    x, y, z = p
+    zinv = pow(z, -1, _P)
+    zinv2 = zinv * zinv % _P
+    return (x * zinv2 % _P, y * zinv2 * zinv % _P)
+
+
+def _mul_g(k: int):
+    """k * G, as a Jacobian point (None for the point at infinity)."""
+    table = _g_table()
+    mask = (1 << _WINDOW) - 1
+    result = None
+    i = 0
+    while k:
+        digit = k & mask
+        if digit:
+            result = _jacobian_add_affine(result, table[i][digit - 1])
+        k >>= _WINDOW
+        i += 1
+    return result
 
 
 class AddressDerivation:
     """Bitcoin address derivation from extended public keys."""
-    
+
     # Base58 alphabet
     BASE58_ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
-    
+
+    # Derived addresses never change for a given key and index, and callers
+    # re-derive from index 0 on every pass (a gap-limit search asks for 20,
+    # then 40, then 60 ...). Remember them instead of redoing the curve math.
+    _MAX_CACHED_ADDRESSES = 20000
+
     def __init__(self):
         """Initialize address derivation."""
-        pass
+        # extended key -> (external chain pubkey, chain code, address format)
+        self._chain_cache: Dict[str, Tuple[bytes, bytes, str]] = {}
+        # (extended key, index) -> address
+        self._address_cache: Dict[Tuple[str, int], str] = {}
     
     def _base58_decode(self, s: str) -> bytes:
         """Decode base58 string to bytes."""
@@ -149,53 +262,6 @@ class AddressDerivation:
             raise ValueError("Failed to convert bits for bech32 encoding")
         return self._bech32_encode('bc', [0] + converted)
     
-    def _point_add(self, p1: Tuple[int, int], p2: Tuple[int, int]) -> Tuple[int, int]:
-        """Add two points on secp256k1 curve."""
-        # secp256k1 parameters
-        P = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F
-        
-        if p1 is None:
-            return p2
-        if p2 is None:
-            return p1
-        
-        x1, y1 = p1
-        x2, y2 = p2
-        
-        if x1 == x2:
-            if y1 == y2:
-                # Point doubling
-                s = (3 * x1 * x1 * pow(2 * y1, P - 2, P)) % P
-            else:
-                # Points are inverses
-                return None
-        else:
-            # Point addition
-            s = ((y2 - y1) * pow(x2 - x1, P - 2, P)) % P
-        
-        x3 = (s * s - x1 - x2) % P
-        y3 = (s * (x1 - x3) - y1) % P
-        
-        return (x3, y3)
-    
-    def _point_multiply(self, k: int, point: Tuple[int, int]) -> Tuple[int, int]:
-        """Multiply point by scalar k."""
-        if k == 0:
-            return None
-        if k == 1:
-            return point
-        
-        result = None
-        addend = point
-        
-        while k:
-            if k & 1:
-                result = self._point_add(result, addend)
-            addend = self._point_add(addend, addend)
-            k >>= 1
-        
-        return result
-    
     def _derive_child_key(self, parent_key: bytes, parent_chain_code: bytes, index: int) -> Tuple[bytes, bytes]:
         """Derive child key using BIP32."""
         if index >= 2**31:
@@ -210,28 +276,24 @@ class AddressDerivation:
         # Split result
         child_key_int = int.from_bytes(hmac_result[:32], 'big')
         child_chain_code = hmac_result[32:]
-        
-        # secp256k1 order
-        N = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
-        
+        if child_key_int >= _N:
+            raise ValueError("Invalid child key derivation")
+
         # Parse parent public key
         if len(parent_key) == 33:
             # Compressed public key
             x = int.from_bytes(parent_key[1:], 'big')
-            y_squared = (pow(x, 3, 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F) + 7) % 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F
-            y = pow(y_squared, (0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F + 1) // 4, 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F)
+            y_squared = (pow(x, 3, _P) + 7) % _P
+            y = pow(y_squared, (_P + 1) // 4, _P)
             if y % 2 != parent_key[0] - 2:
-                y = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F - y
+                y = _P - y
             parent_point = (x, y)
         else:
             raise ValueError("Invalid public key format")
-        
-        # Calculate child public key point
-        G = (0x79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798,
-             0x483ADA7726A3C4655DA4FBFC0E1108A8FD17B448A68554199C47D08FFB10D4B8)
-        
-        child_point = self._point_add(parent_point, self._point_multiply(child_key_int, G))
-        
+
+        # Calculate child public key point: parent + k*G
+        child_point = _to_affine(_jacobian_add_affine(_mul_g(child_key_int), parent_point))
+
         if child_point is None:
             raise ValueError("Invalid child key derivation")
         
@@ -297,13 +359,22 @@ class AddressDerivation:
             List of (address, index) tuples
         """
         try:
-            public_key, chain_code, address_format = self.parse_extended_key(extended_key)
+            chain = self._chain_cache.get(extended_key)
+            if chain is None:
+                public_key, chain_code, address_format = self.parse_extended_key(extended_key)
+                # External chain (/0): the same for every index, so once per key
+                external_key, external_chain = self._derive_child_key(public_key, chain_code, 0)
+                chain = (external_key, external_chain, address_format)
+                self._chain_cache[extended_key] = chain
+            external_key, external_chain, address_format = chain
             addresses = []
 
             for i in range(start_index, start_index + count):
+                cached = self._address_cache.get((extended_key, i))
+                if cached is not None:
+                    addresses.append((cached, i))
+                    continue
                 try:
-                    # Derive child key for external chain (0) and then address index
-                    external_key, external_chain = self._derive_child_key(public_key, chain_code, 0)
                     child_key, _ = self._derive_child_key(external_key, external_chain, i)
 
                     # Generate address based on format
@@ -315,6 +386,9 @@ class AddressDerivation:
                         print(f"⚠️ Unsupported address format: {address_format}")
                         continue
 
+                    if len(self._address_cache) >= self._MAX_CACHED_ADDRESSES:
+                        self._address_cache.clear()
+                    self._address_cache[(extended_key, i)] = address
                     addresses.append((address, i))
 
                 except Exception as e:

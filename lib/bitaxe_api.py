@@ -8,7 +8,7 @@ Based on fetch_bitaxe_hashrate.py reference implementation.
 """
 
 import ipaddress
-import requests
+from utils.http_session import http_session
 from typing import Dict, List, Optional, Union
 
 
@@ -141,7 +141,7 @@ class BitaxeAPI:
         try:
             # allow_redirects=False: a redirect would let the miner point the
             # request back at a host this validation just excluded.
-            response = requests.get(f"http://{target}/api/system/info",
+            response = http_session().get(f"http://{target}/api/system/info",
                                     timeout=timeout, allow_redirects=False)
             response.raise_for_status()
             data = response.json()

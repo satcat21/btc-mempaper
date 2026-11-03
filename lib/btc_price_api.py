@@ -7,6 +7,7 @@ Based on the reference implementation from image_renderer.py.
 """
 
 import requests
+from utils.http_session import http_session
 import time
 from typing import Dict, Optional, Union
 from utils.technical_config import build_mempool_api_url, build_mempool_proxies
@@ -76,7 +77,7 @@ class BitcoinPriceAPI:
             return self._build_result(self._raw_prices, selected_currency)
 
         try:
-            response = requests.get(f"{self.base_url}/v1/prices", timeout=10,
+            response = http_session().get(f"{self.base_url}/v1/prices", timeout=10,
                                     verify=self.mempool_verify_ssl, proxies=self.mempool_proxies)
             response.raise_for_status()
             raw_prices = response.json()

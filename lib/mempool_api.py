@@ -10,6 +10,7 @@ This module handles all interactions with the Bitcoin mempool API including:
 import time
 
 import requests
+from utils.http_session import http_session
 from requests.auth import HTTPBasicAuth
 from utils.technical_config import (build_mempool_api_url, apply_tor_identity,
                                     mempool_request_timeout)
@@ -97,7 +98,7 @@ class MempoolAPI:
         """
         over_tor = bool(self.proxies)
         try:
-            response = requests.get(
+            response = http_session().get(
                 url, timeout=self._timeout(base_timeout), verify=self.verify_ssl,
                 auth=self.auth, proxies=apply_tor_identity(self.proxies))
         except requests.RequestException:
