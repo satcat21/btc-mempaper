@@ -22,7 +22,7 @@ socket.io-client@4.8.4
 # socket.io.min.js is a browser bundle that inlines engine.io-client. The
 # minified file carries no engine.io version string (only the wire protocol
 # marker EIO=4), so it is deliberately NOT pinned here rather than guessed.
-# socket.io-client 4.8.3 resolves engine.io-client to the ~6.6 line; if you
+# socket.io-client 4.8.4 resolves engine.io-client to the ~6.6 line; if you
 # want that surface scanned too, verify the exact patch against the
-# socket.io-client 4.8.3 release and uncomment:
+# socket.io-client 4.8.4 release and uncomment:
 # engine.io-client@6.6.x

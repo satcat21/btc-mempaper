@@ -5,6 +5,10 @@ pip==26.2.1  # wheel selection on armv6l changes between pip releases
 
 flask==3.1.3
 flask-socketio==5.6.1
+# Transitive via flask-socketio, pinned so updates actually move them:
+# `pip install -r` never upgrades a dependency that is already satisfied.
+python-socketio==5.17.0  # >=5.16.2: CVE-2026-48804, unbounded binary-packet memory
+python-engineio==4.14.0  # >=4.13.2: PYSEC-2026-3032/3033
 flask-compress==1.25
 brotli==1.2.1  # compression only (flask-compress)
 brotlicffi==1.2.1.0  # urllib3 decompresses with this, not brotli: bounds brotli bombs
@@ -13,6 +17,8 @@ qrcode[pil]==8.2
 babel==2.18.0
 requests==2.34.2
 urllib3==2.8.0 # transitive via requests; pinned so updates actually move it
+certifi==2026.10.23  # transitive via requests; >=2026.10.18 for PYSEC-2026-4320
+idna==3.20  # transitive via requests; >=3.15 for PYSEC-2026-215
 python-dotenv==1.2.4
 websocket-client==1.9.2
 werkzeug==3.1.9
