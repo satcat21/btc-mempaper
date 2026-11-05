@@ -506,7 +506,10 @@ want, then save. Profiles are looked up on the configured relays plus indexer
 relays (purplepag.es, user.kindpag.es, indexer.coracle.social), and each
 account's relay list (NIP-65) is remembered. Posts are also fetched from the
 relays the followed accounts write to, at most 8 of them, those most of the
-accounts share. Names still missing are asked from the accounts' own relays;
+accounts share. Paid relays that refuse every read (nostr.wine) are skipped,
+and one that refuses the connection is left out for 6 hours, or for an hour
+after failing 3 times in a row, so the next relay takes its place. Relays you
+configure yourself are always used. Names still missing are asked from the accounts' own relays;
 an account without any profile shows a shortened npub. Avatars fill in a few
 per run, except for authors of posts in the pool, which get theirs at once.
 The settings list shows the first 3 accounts; **Show all** under them opens the
@@ -529,7 +532,7 @@ the latest older post is shown there as a preview only.
 | **Post Card Style** | `nostr_card_theme` | Toggle | Look of the post card on the display | `light` (default), `dark` |
 | **Show Posts For** (Advanced) | `nostr_pool_minutes` | Slider | How long after publication a post counts as current | `10` to `10080` minutes, `60` (default) |
 | **Live Updates** (Advanced) | `nostr_live` | Switch | Keep relay connections open for new posts; off asks every 5 minutes | `true` (default), `false` |
-| **Relays** (Advanced) | `nostr_relays` | List | Relays to query. Empty uses relay.damus.io, nos.lol, relay.primal.net, relay.snort.social | `["wss://nos.lol"]` |
+| **Relays** (Advanced) | `nostr_relays` | List | Relays to query. Empty uses relay.damus.io, nos.lol, relay.primal.net, relay.snort.social, nostr.mom | `["wss://nos.lol"]` |
 | **Fetch via Tor** (Advanced) | `nostr_use_tor` | Switch | Route relay connections and image downloads through the Tor SOCKS proxy (`tor_socks_host` / `tor_socks_port`) | `true` (default), `false` |
 
 With both sources off, no image is shown.

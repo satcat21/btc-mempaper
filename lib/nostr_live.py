@@ -91,7 +91,7 @@ class NostrLive:
             for relay in profiles.get(pk, {}).get('relays', []):
                 if relay not in plan:
                     by_relay.setdefault(relay, []).append(pk)
-        for relay in sorted(by_relay, key=lambda r: -len(by_relay[r]))[:_LIVE_OUTBOX_RELAYS]:
+        for relay in N.pick_outbox_relays(by_relay, _LIVE_OUTBOX_RELAYS):
             plan[relay] = by_relay[relay]
         return plan
 
@@ -105,6 +105,7 @@ class NostrLive:
         backoff = _BACKOFF_START
         circuit = 'nostr-live'
         failures = 0
+        outbox = relay not in N.configured_relays(config)
         while self._current(generation) and not stop.is_set():
             ws = None
             try:
@@ -144,8 +145,18 @@ class NostrLive:
                         break           # the relay ended it; subscribe afresh
             except Exception as e:
                 failures += 1
+                code, text, params = N._describe_relay_error(e)
+                # Only a refusal counts against an outbox relay here: dropped
+                # connections are routine over Tor and are reconnected.
+                if outbox and params.get('status') in (401, 403):
+                    pause = N.note_outbox_result(relay, N._error(relay, code, text, **params))
+                    if pause:
+                        print(f'⚠️ Nostr live: {relay}: {text} - leaving it out for {pause // 3600} h')
+                        with self._lock:
+                            if self._current(generation):
+                                self._state.pop(relay, None)
+                        return
                 if failures == 1:
-                    code, text, _ = N._describe_relay_error(e)
                     print(f'⚠️ Nostr live: {relay}: {text} - reconnecting')
             finally:
                 self._set(relay, generation, connected=False)

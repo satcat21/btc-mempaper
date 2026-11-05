@@ -50,6 +50,7 @@ DEFAULT_RELAYS = [
     'wss://nos.lol',
     'wss://relay.primal.net',
     'wss://relay.snort.social',
+    'wss://nostr.mom',
 ]
 
 # Relays that collect profiles, follow lists and relay lists from everywhere.
@@ -68,6 +69,60 @@ _MAX_OUTBOX_RELAYS = 8
 # Further attempts, each through another Tor exit, for a relay that refuses
 # or drops the connection.
 _EXIT_RETRIES = 2
+
+# Outbox relays that serve paying members only and refuse every read with
+# HTTP 403, with or without Tor. A followed account naming one in its relay
+# list would otherwise take an outbox slot that never yields a post. A
+# configured relay is used regardless: that is the operator's choice.
+_PAID_RELAY_HOSTS = ('nostr.wine',)
+# An outbox relay that refuses the handshake (401/403) is left out this long,
+# so its slot goes to the next relay the followed accounts write to.
+_OUTBOX_REFUSED_PAUSE = 6 * 3600
+# One that fails this many times in a row for any other reason, this long.
+_OUTBOX_MAX_FAILURES = 3
+_OUTBOX_FAILING_PAUSE = 3600
+_outbox_lock = threading.Lock()
+_outbox_health = {}     # relay -> {'failures': int, 'until': monotonic time}
+
+
+def _is_paid_relay(url):
+    host = (urlparse(url).hostname or '').lower()
+    return any(host == h or host.endswith('.' + h) for h in _PAID_RELAY_HOSTS)
+
+
+def _outbox_usable(url):
+    if _is_paid_relay(url):
+        return False
+    with _outbox_lock:
+        return _outbox_health.get(url, {}).get('until', 0) <= time.monotonic()
+
+
+def note_outbox_result(url, err=None):
+    """Record how an outbox relay did. Returns the pause in seconds when it is
+    now being left out, else 0."""
+    with _outbox_lock:
+        if err is None:
+            _outbox_health.pop(url, None)
+            return 0
+        state = _outbox_health.setdefault(url, {'failures': 0, 'until': 0})
+        state['failures'] += 1
+        status = (err.get('params') or {}).get('status')
+        if status in (401, 403):
+            pause = _OUTBOX_REFUSED_PAUSE
+        elif state['failures'] >= _OUTBOX_MAX_FAILURES:
+            pause = _OUTBOX_FAILING_PAUSE
+        else:
+            return 0
+        state['failures'] = 0
+        state['until'] = time.monotonic() + pause
+        return pause
+
+
+def pick_outbox_relays(by_relay, limit):
+    """The relays most of the accounts in by_relay ({relay: [pubkey]}) write
+    to, up to limit, leaving out paid relays and ones currently failing."""
+    usable = [r for r in by_relay if _outbox_usable(r)]
+    return sorted(usable, key=lambda r: -len(by_relay[r]))[:limit]
 # An account without a name found is looked up again after this long by the
 # background lookup, and after _TYPED_RETRY when its npub is typed in. Over Tor
 # a lookup fails often enough that an hour of waiting read as "broken".
@@ -531,7 +586,9 @@ def _exit_may_matter(e):
 
     Relays behind Cloudflare drop or refuse some exits: the TLS handshake is
     cut off (SSLEOFError), the connection reset or lost, or a 403/429/503
-    returned. A timeout or a bad address is the same from every exit.
+    returned. Tor answers 'General SOCKS server failure' when the exit could
+    not complete the connection, often because the relay blocks that exit.
+    A timeout or a bad address is the same from every exit.
     """
     import ssl
     status = getattr(e, 'status_code', None)
@@ -541,6 +598,7 @@ def _exit_may_matter(e):
     return (isinstance(e, (ssl.SSLError, ConnectionResetError, ConnectionAbortedError,
                            BrokenPipeError))
             or type(e).__name__ == 'WebSocketConnectionClosedException'
+            or (type(e).__name__ == 'ProxyError' and 'general socks server failure' in text)
             or 'connection closed' in text or 'connection to remote host was lost' in text)
 
 
@@ -634,7 +692,8 @@ def query_relays(relays, filters, config, extra=None):
 
     extra: {relay: filters} asked as well, each with its own filters. Their
     failures are logged but not returned: they are a bonus on top of the
-    configured relays, and nothing the operator set up.
+    configured relays, and nothing the operator set up. How each one did is
+    recorded, so one that keeps failing is left out for a while.
 
     Returns (events, errors). Relays are asked in parallel; a slow one costs
     its own deadline, not everyone's.
@@ -661,10 +720,16 @@ def query_relays(relays, filters, config, extra=None):
     errors = []
     with ThreadPoolExecutor(max_workers=max(1, min(len(tasks), 8))) as pool:
         for i, (events, err) in enumerate(pool.map(ask, tasks)):
+            outbox = i >= len(relays)
             if err:
                 print(f'⚠️ Nostr relay: {err["source"]}: {err["text"]}')
-                if i < len(relays):
+                if not outbox:
                     errors.append(err)
+            if outbox:
+                pause = note_outbox_result(tasks[i][0], None if events or not err else err)
+                if pause:
+                    print(f'🟣 Nostr relay: {tasks[i][0]}: leaving it out for '
+                          f'{pause // 3600} h, the next relay takes its place')
             for ev in events:
                 if isinstance(ev.get('id'), str):
                     by_id.setdefault(ev['id'], ev)
@@ -1340,7 +1405,7 @@ class NostrPostStore:
             for relay in profiles.get(pk, {}).get('relays', []):
                 if relay not in relays:
                     by_relay.setdefault(relay, []).append(pk)
-        busiest = sorted(by_relay, key=lambda r: -len(by_relay[r]))[:_MAX_OUTBOX_RELAYS]
+        busiest = pick_outbox_relays(by_relay, _MAX_OUTBOX_RELAYS)
         extra = {r: _author_filters(
                     by_relay[r], kinds=_IMAGE_KINDS, limit=_EVENT_LIMIT,
                     since=lambda group: max(min(self._cursors.get(pk, 0) for pk in group) + 1, floor))
@@ -1559,7 +1624,7 @@ class NostrPostStore:
                 by_relay.setdefault(relay, []).append(pk)
         if not by_relay:
             return
-        busiest = sorted(by_relay, key=lambda r: -len(by_relay[r]))[:_MAX_OUTBOX_RELAYS * 2]
+        busiest = pick_outbox_relays(by_relay, _MAX_OUTBOX_RELAYS * 2)
         extra = {}
         for relay in busiest:
             extra[relay] = [dict(f, limit=len(f['authors']))
